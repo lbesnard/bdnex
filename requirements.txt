@@ -1,0 +1,8 @@
+rarfile
+beautifulsoup4
+numpy
+duckduckgo-search
+retrying
+argparse
+opencv-contrib-python
+imutils

@@ -1,0 +1,19 @@
+{
+    "Couleurs": "Colorist",
+    "Couverture": "CoverArtist",
+    "Dessin": "Penciller",
+    "Editeur": "Publisher",
+    "Format": "Format",
+    "Language": "LanguageISO",
+    "Scénario": "Letterer",
+    "Titre": "Title",
+    "Tome": "Volume",
+    "author": "Writer",
+    "description": "Summary",
+    "genre": "Genre",
+    "illustrator": "Inker",
+    "numberOfPages": "PageCount",
+    "publisher": "Publisher",
+    "score": "Notes",
+    "series_name": "Series"
+}
