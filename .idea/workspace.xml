@@ -1,0 +1,222 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="d26f7c36-842b-45f0-8c08-1ebc6251c8cb" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/bdnex/bdnex.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/environment.yml" beforeDir="false" afterPath="$PROJECT_DIR$/environment.yml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/setup.py" beforeDir="false" afterPath="$PROJECT_DIR$/setup.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/Couv_245127.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/test/Couv_245127.jpg" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/Couv_272757.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/test/Couv_272757.jpg" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/Nains 1 00a.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/test/Nains 1 00a.jpg" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/bd.cbr" beforeDir="false" afterPath="$PROJECT_DIR$/test/bd.cbr" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/bd.cbz" beforeDir="false" afterPath="$PROJECT_DIR$/test/bd.cbz" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/bd/ComicInfo.xml" beforeDir="false" afterPath="$PROJECT_DIR$/test/bd/ComicInfo.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/bd/a.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/test/bd/a.jpg" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/bd/b.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/test/bd/b.jpg" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/bd/c.gif" beforeDir="false" afterPath="$PROJECT_DIR$/test/bd/c.gif" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/feature_matching.jpg" beforeDir="false" afterPath="$PROJECT_DIR$/test/feature_matching.jpg" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/test_archive_tools.py" beforeDir="false" afterPath="$PROJECT_DIR$/test/test_archive_tools.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tests_bdnex/test_cover.py" beforeDir="false" afterPath="$PROJECT_DIR$/test/test_cover.py" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="FileTemplateManagerImpl">
+    <option name="RECENT_TEMPLATES">
+      <list>
+        <option value="Python Unit Test" />
+        <option value="Python Script" />
+      </list>
+    </option>
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="MarkdownSettingsMigration">
+    <option name="stateVersion" value="1" />
+  </component>
+  <component name="ProjectId" id="2C3cJrIdxO1ieUHQ9szRwVAkQB4" />
+  <component name="ProjectLevelVcsManager" settingsEditedManually="true" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="RecentsManager">
+    <key name="MoveFile.RECENT_KEYS">
+      <recent name="$PROJECT_DIR$" />
+    </key>
+  </component>
+  <component name="RunManager" selected="Python.bdnex_main">
+    <configuration name="bdnex_main" type="PythonConfigurationType" factoryName="Python" temporary="true">
+      <module name="bdnex" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/bdnex" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/bdnex/bdnex.py" />
+      <option name="PARAMETERS" value="-f &quot;$USER_HOME$/tmp/Nains T01 - Redwin de la Forge.cbz&quot;" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="cover" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="bdnex" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/bdnex/lib" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/bdnex/lib/cover.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="main" type="PythonConfigurationType" factoryName="Python" nameIsGenerated="true">
+      <module name="bdnex" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/main.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="Python tests for test_archive_tools.MyTestCase.test_archive_get_front_cover" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
+      <module name="bdnex" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/test" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;test_archive_tools.MyTestCase.test_archive_get_front_cover&quot;" />
+      <option name="_new_targetType" value="&quot;PYTHON&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="Python tests for test.test_archive_tools.MyTestCase" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
+      <module name="bdnex" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/test" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;test.test_archive_tools.MyTestCase&quot;" />
+      <option name="_new_targetType" value="&quot;PYTHON&quot;" />
+      <method v="2" />
+    </configuration>
+    <configuration name="Python tests in test_archive_tools.py" type="tests" factoryName="Autodetect" temporary="true" nameIsGenerated="true">
+      <module name="bdnex" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/test" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="_new_additionalArguments" value="&quot;&quot;" />
+      <option name="_new_target" value="&quot;$PROJECT_DIR$/test/test_archive_tools.py&quot;" />
+      <option name="_new_targetType" value="&quot;PATH&quot;" />
+      <method v="2" />
+    </configuration>
+    <list>
+      <item itemvalue="Python.main" />
+      <item itemvalue="Python.cover" />
+      <item itemvalue="Python.bdnex_main" />
+      <item itemvalue="Python tests.Python tests for test.test_archive_tools.MyTestCase" />
+      <item itemvalue="Python tests.Python tests for test_archive_tools.MyTestCase.test_archive_get_front_cover" />
+      <item itemvalue="Python tests.Python tests in test_archive_tools.py" />
+    </list>
+    <recent_temporary>
+      <list>
+        <item itemvalue="Python.bdnex_main" />
+        <item itemvalue="Python.cover" />
+        <item itemvalue="Python tests.Python tests in test_archive_tools.py" />
+        <item itemvalue="Python tests.Python tests for test_archive_tools.MyTestCase.test_archive_get_front_cover" />
+        <item itemvalue="Python tests.Python tests for test.test_archive_tools.MyTestCase" />
+      </list>
+    </recent_temporary>
+  </component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="d26f7c36-842b-45f0-8c08-1ebc6251c8cb" name="Changes" comment="" />
+      <created>1658034639886</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1658034639886</updated>
+    </task>
+    <servers />
+  </component>
+  <component name="Vcs.Log.Tabs.Properties">
+    <option name="TAB_STATES">
+      <map>
+        <entry key="MAIN">
+          <value>
+            <State />
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/bdnex/lib/bdgest.py</url>
+          <line>20</line>
+          <option name="timeStamp" value="17" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/bdnex/__main__.py</url>
+          <line>5</line>
+          <option name="timeStamp" value="18" />
+        </line-breakpoint>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/bdnex/lib/bdgest.py</url>
+          <line>139</line>
+          <option name="timeStamp" value="19" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+</project>

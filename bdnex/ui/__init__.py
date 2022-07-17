@@ -2,17 +2,17 @@
 
 import os
 
-from lib.bdgest import bdgestParse
-from lib.comicrack import comicInfo
-from lib.utils import download_link, args, Logging
+from bdnex.lib.bdgest import bdgestParse
+from bdnex.lib.comicrack import comicInfo
+from bdnex.lib.utils import download_link, args, Logging
 import tempfile
 
-from lib.archive_tools import archive_get_front_cover
-from lib.cover import front_cover_similarity
+from bdnex.lib.archive_tools import archive_get_front_cover
+from bdnex.lib.cover import front_cover_similarity
 
 
 def add_metadata_from_bdgest(filename):
-    album_name = os.path.splitext(filename)[0]
+    album_name = os.path.splitext(os.path.basename(filename))[0]
     bdgest_meta, comicrack_meta = bdgestParse(album_name).parse_album_metadata()
 
     cover_archive_fp = archive_get_front_cover(filename)
@@ -23,7 +23,7 @@ def add_metadata_from_bdgest(filename):
         comicInfo(filename, comicrack_meta).append_comicinfo_to_archive()
 
 
-if __name__ == '__main__':
+def main():
     vargs = args()
     logfile_dir = tempfile.mkdtemp()
     Logging().logging_start(os.path.join(logfile_dir, 'process.log'))
