@@ -44,11 +44,14 @@ setup(
         'rarfile',
         'beautifulsoup4',
         'numpy',
+        'thefuzz',
         'duckduckgo-search',
+        'websearch-python',
         'argparse',
         'opencv-contrib-python',
         'imutils',
         'tenacity',
+        'pandas',
     ],
 
     classifiers=[

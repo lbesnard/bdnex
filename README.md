@@ -9,6 +9,14 @@ conda activate bdnex
 ```
 ## Examples:
 
+TODO:
+create bedetheque sitemaps once off, and update if needed or doesn't exist.
+for now run 
+```
+BdGestParse.download_sitemaps() # check sitemaps exists
+```
+prior to any searh
+
 ```commandline
  bdnex -f /tmp/OneShot/Amazones\ \(Jeronaton\)/Amazones\ \(Jeronaton\).cbz
  

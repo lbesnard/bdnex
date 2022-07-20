@@ -1,0 +1,27 @@
+{
+"sitemaps": {
+        "0": "https://www.bedetheque.com/albums_1_10000_map.xml",
+        "1": "https://www.bedetheque.com/albums_10001_20000_map.xml",
+        "2": "https://www.bedetheque.com/albums_20001_30000_map.xml",
+        "3": "https://www.bedetheque.com/albums_30001_40000_map.xml",
+        "4": "https://www.bedetheque.com/albums_40001_50000_map.xml",
+        "5": "https://www.bedetheque.com/albums_50001_60000_map.xml",
+        "6": "https://www.bedetheque.com/albums_60001_70000_map.xml",
+        "7": "https://www.bedetheque.com/albums_70001_80000_map.xml",
+        "8": "https://www.bedetheque.com/albums_80001_90000_map.xml",
+        "9": "https://www.bedetheque.com/albums_90001_100000_map.xml",
+        "10": "https://www.bedetheque.com/albums_100001_150000_map.xml",
+
+
+        "10": "https://www.bedetheque.com/albums_140001_150000_map.xml",
+        "11": "https://www.bedetheque.com/albums_150001_160000_map.xml",
+        "12": "https://www.bedetheque.com/albums_160001_170000_map.xml",
+        "3": "https://www.bedetheque.com/albums_180001_190000_map.xml",
+        "4": "https://www.bedetheque.com/albums_20001_30000_map.xml",
+        "5": "https://www.bedetheque.com/albums_230001_240000_map.xml",
+        "6": "https://www.bedetheque.com/albums_240001_250000_map.xml",
+        "7": "https://www.bedetheque.com/albums_260001_270000_map.xml",
+        "8": "https://www.bedetheque.com/albums_270001_280000_map.xml",
+        "9": "https://www.bedetheque.com/albums_280001_290000_map.xml",
+        }
+}

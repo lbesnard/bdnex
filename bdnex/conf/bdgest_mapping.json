@@ -10,10 +10,10 @@
     "Tome": "Volume",
     "author": "Writer",
     "description": "Summary",
-    "genre": "Genre",
+    "Style": "Genre",
     "illustrator": "Inker",
-    "numberOfPages": "PageCount",
+    "Planches": "PageCount",
     "publisher": "Publisher",
     "score": "Notes",
-    "series_name": "Series"
+    "Série": "Series"
 }
