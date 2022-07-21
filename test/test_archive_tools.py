@@ -1,9 +1,10 @@
 import os.path
+import os
 import unittest
 from bdnex.lib.archive_tools import archive_get_front_cover
 
-ARCHIVE_CBZ_PATH = 'bd.cbz'
-ARCHIVE_CBR_PATH = 'bd.cbr'
+ARCHIVE_CBZ_PATH = os.path.join(os.path.dirname(__file__), 'bd.cbz')
+ARCHIVE_CBR_PATH = os.path.join(os.path.dirname(__file__), 'bd.cbr')
 
 
 class TestArchiveTools(unittest.TestCase):
