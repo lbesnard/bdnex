@@ -9,7 +9,7 @@ ALBUM_URL_MATCH = {
     'Redwin de la': "https://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html",
 }
 
-BEDETHEQUE_METADATA_HTML = os.path.join(os.path.dirname(__file__), 'mobile_redwin.html')
+BEDETHEQUE_METADATA_HTML = os.path.join(os.path.dirname(__file__), 'mobile_redwin.html')  # mocked html page
 
 def read_file_content(fp):
     with open(fp, 'r') as file:
@@ -82,18 +82,29 @@ class testBdgestParse(unittest.TestCase):
         self.assertEqual("Redwin de la Forge", comicrack_dict["Title"])
         self.assertEqual("Nains", comicrack_dict["Series"])
 
-        # json file of parsed data already exist for this album
-        album_meta_dict, comicrack_dict = \
-            BdGestParse().parse_album_metadata_mobile('Elfe noir coeur sombre')
-
-        self.assertEqual("Elfe noir coeur sombre", comicrack_dict["Title"])
-        self.assertEqual("Nains", comicrack_dict["Series"])
+        # delete html and json from .local so we can test the other part of the function which is doing the parsing from scratch
 
         album_metadata_html_path = os.path.join(os.path.dirname(__file__), '.local/bdnex/bedetheque/albums_html')
+        album_metadata_json_path = os.path.join(os.path.dirname(__file__), '.local/bdnex/bedetheque/albums_json')
 
-        album_html_path = '{filepath}.json'.format(filepath=os.path.join(album_metadata_html_path,
-                                                                         album_meta_dict["album_url"]))
+        album_html_path = '{filepath}'.format(filepath=os.path.join(album_metadata_html_path,
+                                                                    os.path.basename(album_meta_dict["album_url"])
+                                                                    ))
+        album_json_path = '{filepath}.json'.format(filepath=os.path.join(album_metadata_json_path,
+                                                                         os.path.basename(album_meta_dict["album_url"])
+                                                                         ))
+        # remove the previously generated files
         os.remove(album_html_path)
+        os.remove(album_json_path)
+
+        # json file of parsed data already exist for this album
+        album_meta_dict, comicrack_dict = \
+            BdGestParse().parse_album_metadata_mobile('Nains-Redwin de la forge')
+
+        self.assertEqual("Redwin de la Forge", comicrack_dict["Title"])
+        self.assertEqual("Nains", comicrack_dict["Series"])
+
+        # don't delete the html and json file so another part of the code can be testes
 
 
 if __name__ == '__main__':
