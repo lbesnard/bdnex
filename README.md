@@ -1,5 +1,5 @@
-[BDneX](https://github.com/lbesnard/bdnex/actions/workflows/test.yml/badge.svg)
-BD (french comic) tagger. this is a POF
+![BDneX](https://github.com/lbesnard/bdnex/actions/workflows/test.yml/badge.svg)
+BDneX (french comic) tagger. this is a POF
 
 ```commandline
 conda env create --file=environment.yml
