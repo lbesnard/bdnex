@@ -16,25 +16,28 @@ create bedetheque sitemaps once off, and update if needed or doesn't exist.
 for now run 
 Rename files?
 save processing info to sqlite
+
 ```
-BdGestParse.download_sitemaps() # check sitemaps exists
+bdnex -f /tmp/  # folder containing albums
 ```
-prior to any searh
 
 ```commandline
- bdnex -f /tmp/OneShot/Amazones\ \(Jeronaton\)/Amazones\ \(Jeronaton\).cbz
- 
-INFO:bdnex.lib.bdgest:searching online for Amazones (Jeronaton)
-INFO:bdnex.lib.web_search:Gogoduck search for Amazones (Jeronaton)
-INFO:bdnex.lib.bdgest:Parsing metadata from https://www.bedetheque.com/BD-Amazones-22111.html
-INFO:bdnex.lib.bdgest:Converting parsed metadata to ComicRack template
-INFO:bdnex.lib.cover:Checking Cover from archive with online cover
-[ WARN:0@7.061] global /io/opencv_contrib/modules/xfeatures2d/misc/python/shadow_sift.hpp (13) SIFT_create DEPRECATED: cv.xfeatures2d.SIFT_create() is deprecated due SIFT tranfer to the main repository. https://github.com/opencv/opencv/issues/16736
-INFO:bdnex.lib.cover:Cover matching percentage: 50.91370558375634
-INFO:bdnex.lib.comicrack:Add ComicInfo.xml to /tmp/OneShot/Amazones (Jeronaton)/Amazones (Jeronaton).cbz
-INFO:bdnex.lib.comicrack:Create ComicInfo.xml
-INFO:bdnex.lib.comicrack:Successfully appended ComicInfo.xml to /tmp/OneShot/Amazones (Jeronaton)/Amazones (Jeronaton).cbz
-
+2022-07-22 02:22:28,605 - INFO     - bdnex.ui - Processing /tmp/dummy.cbz
+2022-07-22 02:22:28,605 - INFO     - bdnex.lib.bdgest - Searching for "dummuy"" in bedetheque.com sitemap files
+2022-07-22 02:22:28,605 - DEBUG    - bdnex.lib.bdgest - Searching for "dummy"" in bedetheque.com sitemap files [FAST VERSION]
+2022-07-22 02:22:28,605 - DEBUG    - bdnex.lib.bdgest - Merging sitemaps
+2022-07-22 02:22:32,993 - DEBUG    - bdnex.lib.bdgest - Match album name succeeded
+2022-07-22 02:22:32,993 - DEBUG    - bdnex.lib.bdgest - Levenhstein score: 53.333333333333336
+2022-07-22 02:22:32,993 - DEBUG    - bdnex.lib.bdgest - Matched url: https://m.bedetheque.com/BD-dummy.html
+2022-07-22 02:22:32,993 - DEBUG    - bdnex.lib.bdgest - Parsing JSON metadata from already parsed web page ~/.local/share/bdnex/bedetheque/albums_json/BD-dummy.json
+2022-07-22 02:22:33,002 - INFO     - bdnex.lib.bdgest - Converting parsed metadata to ComicRack template
+2022-07-22 02:22:33,011 - DEBUG    - bdnex.lib.cover - Cover ~/.local/share/bdnex/bedetheque/covers/Couv_dummy.jpg already downloaded
+2022-07-22 02:22:33,011 - INFO     - bdnex.lib.cover - Checking Cover from input file with online cover
+2022-07-22 02:22:33,442 - INFO     - bdnex.lib.cover - Cover matching percentage: 44.9264705882353
+2022-07-22 02:22:33,442 - INFO     - bdnex.lib.comicrack - Add ComicInfo.xml to /tmp/dummy.cbz
+2022-07-22 02:22:33,442 - INFO     - bdnex.lib.comicrack - Create ComicInfo.xml
+2022-07-22 02:22:33,444 - INFO     - bdnex.lib.comicrack - Successfully appended ComicInfo.xml to /tmp/dummy.cbz
+2022-07-22 02:22:33,445 - INFO     - bdnex.ui - Processing album done
 ```
 
 # Roadmap
