@@ -31,6 +31,6 @@ jobs:
     - name: Test with pytest
       run: |
         conda install pytest
-        conda env activate bdnex
+        conda activate bdnex
         python setup.py install
         pytest
