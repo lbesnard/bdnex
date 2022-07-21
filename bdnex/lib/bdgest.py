@@ -8,6 +8,7 @@ from datetime import datetime
 from functools import lru_cache
 from os import listdir
 from os.path import isfile, join
+from bdnex.lib.utils import dump_json
 
 import pandas as pd
 import requests
@@ -26,6 +27,22 @@ class BdGestParse():
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
+        self.bdnex_local_path = os.path.join(os.environ["HOME"], '.local/bdnex/bedetheque/')
+        if not os.path.exists(self.bdnex_local_path):
+            os.makedirs(self.bdnex_local_path)
+
+        self.sitemaps_path = os.path.join(self.bdnex_local_path, 'sitemaps')
+        if not os.path.exists(self.sitemaps_path):
+            os.makedirs(self.sitemaps_path)
+
+        self.album_metadata_json_path = os.path.join(self.bdnex_local_path, 'albums_json')
+        if not os.path.exists(self.album_metadata_json_path):
+            os.makedirs(self.album_metadata_json_path)
+
+        self.album_metadata_html_path = os.path.join(self.bdnex_local_path, 'albums_html')
+        if not os.path.exists(self.album_metadata_html_path):
+            os.makedirs(self.album_metadata_html_path)
+
     @staticmethod
     def generate_sitemaps_url():
         urls = []
@@ -41,10 +58,6 @@ class BdGestParse():
 
     def download_sitemaps(self):
         sitemaps_url = self.generate_sitemaps_url()
-        sitemaps_path = os.path.join(os.environ["HOME"], '.config/bdnex/bedetheque/sitemaps/')
-
-        if not os.path.exists(sitemaps_path):
-            os.makedirs(sitemaps_path)
 
         for url in sitemaps_url:
             self.logger.info("downloading sitemap {url}".format(url=url))
@@ -56,15 +69,19 @@ class BdGestParse():
     def concatenate_sitemaps_files(self):
         self.logger.info("merging sitemaps")
 
-        sitemaps_path = os.path.join(os.environ["HOME"], '.local/share/bdnex/bedetheque/sitemaps/')
+        sitemaps_xml = [os.path.join(self.sitemaps_path, f)
+                        for f in listdir(self.sitemaps_path) if isfile(join(self.sitemaps_path, f))]
 
-        sitemaps_xml = [os.path.join(sitemaps_path, f) for f in listdir(sitemaps_path) if isfile(join(sitemaps_path, f))]
+        if not sitemaps_xml:
+            self.logger.error("no sitemaps files")
+            raise FileNotFoundError
 
         tmpfile_obj = tempfile.mkstemp()
         with open(tmpfile_obj[1], 'wb') as wfd:
             for f in sitemaps_xml:
                 with open(f, 'rb') as fd:
                     shutil.copyfileobj(fd, wfd)
+
         return tmpfile_obj[1]
 
     @lru_cache(maxsize=32)
@@ -256,7 +273,8 @@ class BdGestParse():
                 if fieldval:
                     album_meta_dict[fieldname] = fieldval
 
-        #dump_json('{filename}.json'.format(filename=album_meta_dict["album_name"].replace(' ', '_')), album_meta_dict)
+
+
 
         self.album_meta_dict = album_meta_dict
         comicrack_dict = self.comicinfo_metadata(album_meta_dict)
@@ -265,6 +283,16 @@ class BdGestParse():
 
     def parse_album_metadata_mobile(self, album_name):
         self.search_album_url(album_name)
+        album_meta_json_path = '{filepath}.json'.format(filepath=os.path.join(self.album_metadata_json_path,
+                                                                 os.path.basename(self.album_url)))
+        if os.path.exists(album_meta_json_path):
+            self.logger.info("Parsing metadata from already downloaded web page {album_meta_json_path}".
+                             format(album_meta_json_path=album_meta_json_path))
+
+            album_meta_dict = load_json(album_meta_json_path)
+            comicrack_dict = self.comicinfo_metadata(album_meta_dict)
+            return album_meta_dict, comicrack_dict
+
         self.logger.info("Parsing metadata from {album_url}".format(album_url=self.album_url))
 
         url = urllib.request.urlopen(self.album_url)
@@ -308,6 +336,8 @@ class BdGestParse():
 
         self.album_meta_dict = album_meta_dict
         comicrack_dict = self.comicinfo_metadata(album_meta_dict)
+
+        dump_json(album_meta_json_path, album_meta_dict)
 
         return album_meta_dict, comicrack_dict
 

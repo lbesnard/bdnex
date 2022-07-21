@@ -20,12 +20,13 @@ def read_file_content(fp):
 @patch.dict(os.environ, {"HOME": os.path.dirname(os.path.realpath(__file__))})
 class testBdgestParse(unittest.TestCase):
     def setUp(self):
-        self.bd = BdGestParse()
+        #self.bd = BdGestParse()
         pass
 
     def tearDown(self) -> None:
-        if 'self.tempfile' in locals() and os.path.exists(self.tempfile):
-            os.remove(self.tempfile)
+        pass
+        #if 'self.tempfile' in locals() and os.path.exists(self.tempfile):
+        #    os.remove(self.tempfile)
 
     def test_generate_sitemaps_url(self):
         urls = BdGestParse().generate_sitemaps_url()
@@ -34,7 +35,6 @@ class testBdgestParse(unittest.TestCase):
     def test_concatenate_sitemaps_files(self):
         self.tempfile = BdGestParse().concatenate_sitemaps_files()
 
-        file_content = []
         with open(self.tempfile, 'r') as f:
             first_line = f.readline()
 
@@ -54,17 +54,17 @@ class testBdgestParse(unittest.TestCase):
 
     def test_search_album_from_sitemaps_fast(self):
         for album_name in ALBUM_URL_MATCH.keys():
-            res = self.bd.search_album_from_sitemaps_fast(album_name)
+            res = BdGestParse().search_album_from_sitemaps_fast(album_name)
             self.assertEqual(ALBUM_URL_MATCH[album_name], res)
 
     def test_search_album_from_sitemaps_slow(self):
         for album_name in ALBUM_URL_MATCH.keys():
-            res = self.bd.search_album_from_sitemaps_slow(album_name)
+            res = BdGestParse().search_album_from_sitemaps_slow(album_name)
             self.assertEqual(ALBUM_URL_MATCH[album_name], res)
 
     def test_search_album_url(self):
         for album_name in ALBUM_URL_MATCH.keys():
-            res = self.bd.search_album_url(album_name)
+            res = BdGestParse().search_album_url(album_name)
             self.assertEqual(ALBUM_URL_MATCH[album_name], res)
 
     @patch('urllib.request.urlopen')
@@ -76,7 +76,7 @@ class testBdgestParse(unittest.TestCase):
         mock_urlopen.return_value = cm
 
         album_meta_dict, comicrack_dict = \
-            self.bd.parse_album_metadata_mobile('Nains-Redwin de la forge')
+            BdGestParse().parse_album_metadata_mobile('Nains-Redwin de la forge')
 
         self.assertEqual("Redwin de la Forge", comicrack_dict["Title"])
         self.assertEqual("Nains", comicrack_dict["Series"])

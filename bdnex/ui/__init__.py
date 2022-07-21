@@ -28,7 +28,9 @@ def main():
     vargs = args()
     logfile_dir = tempfile.mkdtemp()
     Logging().logging_start(os.path.join(logfile_dir, 'process.log'))
+
     filename = vargs.input_file
+    dirpath = vargs.input_dir
 
     #BdGestParse.download_sitemaps() # check sitemaps exists
 

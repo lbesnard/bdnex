@@ -77,12 +77,25 @@ def args():
     parser = argparse.ArgumentParser(description='BD metadata retriever')
     parser.add_argument('-f', '--input-file', dest='input_file', type=str, default=None,
                         help="BD file path",
-                        required=True)
+                        required=False)
+
+    parser.add_argument('-d', '--input-dir', dest='input_dir', type=str, default=None,
+                        help="BD dir path to process",
+                        required=False)
+
+    parser.add_argument('-i', '--init', dest='input_dir', type=str, default=None,
+                        help="initialise bdnex by downloading sitemaps from bedetheque for album matching",
+                        required=False)
 
     vargs = parser.parse_args()
 
-    if not os.path.exists(vargs.input_file):
-       raise ValueError('{path} not a valid path'.format(path=vargs.incoming_path))
+    if 'vargs.input_file' in locals():
+        if not os.path.exists(vargs.input_file):
+           raise ValueError('{path} not a valid path'.format(path=vargs.incoming_path))
+
+    if 'vargs.input_dir' in locals():
+        if not os.path.exists(vargs.input-dir):
+            raise ValueError('{path} not a valid path'.format(path=vargs.incoming_path))
 
     return vargs
 

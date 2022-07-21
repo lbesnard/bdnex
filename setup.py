@@ -46,7 +46,6 @@ setup(
         'numpy',
         'thefuzz',
         'duckduckgo-search',
-        'websearch-python',
         'argparse',
         'opencv-contrib-python',
         'imutils',
