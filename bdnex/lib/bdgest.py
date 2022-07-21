@@ -284,7 +284,9 @@ class BdGestParse():
     def parse_album_metadata_mobile(self, album_name):
         self.search_album_url(album_name)
         album_meta_json_path = '{filepath}.json'.format(filepath=os.path.join(self.album_metadata_json_path,
-                                                                 os.path.basename(self.album_url)))
+                                                                              os.path.basename(self.album_url)))
+        album_meta_html_path = '{filepath}.json'.format(filepath=os.path.join(self.album_metadata_html_path,
+                                                                              os.path.basename(self.album_url)))
         if os.path.exists(album_meta_json_path):
             self.logger.info("Parsing metadata from already downloaded web page {album_meta_json_path}".
                              format(album_meta_json_path=album_meta_json_path))
@@ -301,11 +303,14 @@ class BdGestParse():
         except:
             content = url.read()  # mainly for unittesting as content already decoded
 
+        # save html content in .local for future use if needed
+        with open(album_meta_html_path, 'wb') as out_file:
+            out_file.write(content)
+
         soup = BeautifulSoup(content, 'lxml')
 
         album_meta_dict = {}
         album_meta_dict['album_url'] = self.album_url
-
 
         for label in soup.select("label"):
             if label.contents:
@@ -318,7 +323,6 @@ class BdGestParse():
                     album_meta_dict[key] = val
                 except:
                     pass
-
 
         cover_url = soup.find_all('img', alt= True)[1].attrs['src']
         album_meta_dict['cover_url'] = cover_url

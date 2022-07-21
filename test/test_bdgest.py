@@ -75,11 +75,25 @@ class testBdgestParse(unittest.TestCase):
         cm.__enter__.return_value = cm
         mock_urlopen.return_value = cm
 
+        # json file of parsed data already exist for this album
         album_meta_dict, comicrack_dict = \
             BdGestParse().parse_album_metadata_mobile('Nains-Redwin de la forge')
 
         self.assertEqual("Redwin de la Forge", comicrack_dict["Title"])
         self.assertEqual("Nains", comicrack_dict["Series"])
+
+        # json file of parsed data already exist for this album
+        album_meta_dict, comicrack_dict = \
+            BdGestParse().parse_album_metadata_mobile('Elfe noir coeur sombre')
+
+        self.assertEqual("Elfe noir coeur sombre", comicrack_dict["Title"])
+        self.assertEqual("Nains", comicrack_dict["Series"])
+
+        album_metadata_html_path = os.path.join(os.path.dirname(__file__), '.local/bdnex/bedetheque/albums_html')
+
+        album_html_path = '{filepath}.json'.format(filepath=os.path.join(album_metadata_html_path,
+                                                                         album_meta_dict["album_url"]))
+        os.remove(album_html_path)
 
 
 if __name__ == '__main__':
