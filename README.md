@@ -1,4 +1,4 @@
-[BDneX](https://github.com/lbesnard/bdnex/workflows/data-services/badge.svg)
+[BDneX](https://github.com/lbesnard/bdnex/actions/workflows/test.yml/badge.svg)
 BD (french comic) tagger. this is a POF
 
 ```commandline
