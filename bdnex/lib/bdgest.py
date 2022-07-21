@@ -24,8 +24,8 @@ from bdnex.lib.utils import dump_json
 from bdnex.lib.utils import load_json
 from .web_search import bd_search_album
 
-BDGEST_MAPPING = resource_filename('bdnex', "/conf/bdgest_mapping.json")
-BDGEST_SITEMAPS = resource_filename('bdnex', "/conf/bedetheque_sitemap.json")
+BDGEST_MAPPING = resource_filename('bdnex', "conf/bdgest_mapping.json")
+BDGEST_SITEMAPS = resource_filename('bdnex', "conf/bedetheque_sitemap.json")
 
 
 class BdGestParse():
