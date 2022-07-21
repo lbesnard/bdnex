@@ -3,23 +3,28 @@ import os
 import re
 import shutil
 import tempfile
+import time
 import urllib
 from datetime import datetime
 from functools import lru_cache
 from os import listdir
 from os.path import isfile, join
-from bdnex.lib.utils import dump_json
+from random import randint
 
+import dateutil.parser
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 from pkg_resources import resource_filename
-from thefuzz import fuzz
+from termcolor import colored
+from rapidfuzz import process, fuzz
+#from thefuzz import fuzz
 
+from bdnex.lib.utils import dump_json
 from bdnex.lib.utils import load_json
 from .web_search import bd_search_album
 
-BDGEST_MAPPING = resource_filename(__name__, "../conf/bdgest_mapping.json")
+BDGEST_MAPPING = resource_filename('bdnex', "/conf/bdgest_mapping.json")
 BDGEST_SITEMAPS = resource_filename('bdnex', "/conf/bedetheque_sitemap.json")
 
 
@@ -27,7 +32,7 @@ class BdGestParse():
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
-        self.bdnex_local_path = os.path.join(os.environ["HOME"], '.local/bdnex/bedetheque/')
+        self.bdnex_local_path = os.path.join(os.environ["HOME"], '.local/share/bdnex/bedetheque/')
         if not os.path.exists(self.bdnex_local_path):
             os.makedirs(self.bdnex_local_path)
 
@@ -42,6 +47,10 @@ class BdGestParse():
         self.album_metadata_html_path = os.path.join(self.bdnex_local_path, 'albums_html')
         if not os.path.exists(self.album_metadata_html_path):
             os.makedirs(self.album_metadata_html_path)
+
+        if len(os.listdir(self.sitemaps_path)) == 0:
+            self.logger.info("No sitemaps exist yet. Downloading them")
+            self.download_sitemaps()
 
     @staticmethod
     def generate_sitemaps_url():
@@ -60,20 +69,21 @@ class BdGestParse():
         sitemaps_url = self.generate_sitemaps_url()
 
         for url in sitemaps_url:
-            self.logger.info("downloading sitemap {url}".format(url=url))
+            self.logger.info(f"Downloading all sitemaps from bedetheque.com {url}")
 
             r = requests.get(url, allow_redirects=True)
 
-            open(os.path.join(sitemaps_path, os.path.basename(url)), 'wb').write(r.content)
+            open(os.path.join(self.sitemaps_path, os.path.basename(url)), 'wb').write(r.content)
 
+    @lru_cache()
     def concatenate_sitemaps_files(self):
-        self.logger.info("merging sitemaps")
+        self.logger.debug("Merging sitemaps")
 
         sitemaps_xml = [os.path.join(self.sitemaps_path, f)
                         for f in listdir(self.sitemaps_path) if isfile(join(self.sitemaps_path, f))]
 
         if not sitemaps_xml:
-            self.logger.error("no sitemaps files")
+            self.logger.error(f"No sitemaps files available in {self.sitemaps_path}")
             raise FileNotFoundError
 
         tmpfile_obj = tempfile.mkstemp()
@@ -100,6 +110,7 @@ class BdGestParse():
         cleansed = [x.replace('https://m.bedetheque.com/BD-', '').replace('.html', '').replace('-', ' ')
                     for x in urls_list]
 
+        cleansed = [ re.sub(r'\d+$', '', x) for x in cleansed ]  # remove ending numbers
         # remove common french words. Will make levenshtein distance work better
         album_list = []
         for val in cleansed:
@@ -120,8 +131,21 @@ class BdGestParse():
 
         return cleaned_string
 
+    def accept_match(self, match, threshold=30):
+        if match[1] > threshold:
+            url = match[2]
+            match_score_text = colored(f'{match[1]}', 'red', attrs=['bold'])
+
+            self.logger.debug(f"Match album name succeeded")
+            self.logger.debug(f"Levenhstein score: {match_score_text}")
+            self.logger.debug(f"Matched url: {url}")
+
+            return True
+        else:
+            return False
+
     def search_album_from_sitemaps_fast(self, album_name):
-        self.logger.info("Searching for album in bedetheque.com [FAST]")
+        self.logger.debug(f"Searching for \"{album_name}\" in bedetheque.com sitemap files [FAST VERSION]")
 
         album_list, urls = self.clean_sitemaps_urls()
         album_name_simplified = self.remove_common_words_from_string(album_name)
@@ -129,7 +153,6 @@ class BdGestParse():
         # faster but relies on matching first word from album name and assuming there is no mistake in it
         album_name_first_word = re.match(r'\W*(\w[^,-_. !?"]*)', album_name_simplified).groups()[0]
 
-        #test = [x for x in album_list if album_name_first_word in x]
         test_album = [x for id,x in enumerate(album_list) if album_name_first_word in x]
         test_id = [id for id,x in enumerate(album_list) if album_name_first_word in x]
 
@@ -137,16 +160,16 @@ class BdGestParse():
         df = pd.DataFrame(df)
         df["urls"] = [urls[x] for x in test_id]
 
-        # url = df.sort_values([1], ascending=[True]).values[0][2]
-        match = df.sort_values([1], ascending=[False]).values[0]
-        if match[1] > 30:
-            url = match[2]
-            return url
-        else:
-            return
+        try:
+            match = df.sort_values([1], ascending=[False]).values[0]
+            if self.accept_match(match):
+                url = match[2]
+                return url
+        except Exception as err:
+            self.logger.error("Fast search didn't provide any results")
 
     def search_album_from_sitemaps_slow(self, album_name):
-        self.logger.info("Searching for album in bedetheque.com [SLOW]")
+        self.logger.debug(f"Searching for \"{album_name}\" in bedetheque.com sitemap files [SLOW VERSION]")
 
         # slower, but should deal with mistakes maybe a bit better
         album_list, urls = self.clean_sitemaps_urls()
@@ -155,11 +178,16 @@ class BdGestParse():
         df = [[x, fuzz.ratio(album_name_simplified, x)] for x in album_list]
         df = pd.DataFrame(df)
         df["urls"] = [urls[x] for x in range(len(album_list))]
-        url = df.sort_values([1], ascending=[False]).values[0][2]
-        return url
+
+        match = df.sort_values([1], ascending=[False]).values[0]
+        if self.accept_match(match):
+            url = match[2]
+            return url
 
     @lru_cache(maxsize=32)
     def search_album_url(self, album_name):
+        self.logger.info(f"Searching for \"{album_name}\" in bedetheque.com sitemap files")
+
         url = self.search_album_from_sitemaps_fast(album_name)
 
         if not url:
@@ -175,7 +203,7 @@ class BdGestParse():
 
     def parse_album_metadata(self, album_name):
         self.search_album_url(album_name)
-        self.logger.info("Parsing metadata from {album_url}".format(album_url=self.album_url))
+        self.logger.info(f"Parsing metadata from {self.album_url}")
 
         url = urllib.request.urlopen(self.album_url)
         content = url.read().decode('utf8')
@@ -285,41 +313,58 @@ class BdGestParse():
         self.search_album_url(album_name)
         album_meta_json_path = '{filepath}.json'.format(filepath=os.path.join(self.album_metadata_json_path,
                                                                               os.path.basename(self.album_url)))
-        album_meta_html_path = '{filepath}'.format(filepath=os.path.join(self.album_metadata_html_path,
-                                                                         os.path.basename(self.album_url)))
+        album_meta_html_path = os.path.join(self.album_metadata_html_path,
+                                            os.path.basename(self.album_url))
+
         if os.path.exists(album_meta_json_path):
-            self.logger.info("Parsing metadata from already downloaded web page {album_meta_json_path}".
-                             format(album_meta_json_path=album_meta_json_path))
+            self.logger.debug(f"Parsing JSON metadata from already parsed web page {album_meta_json_path}")
+            try:
+                album_meta_dict = load_json(album_meta_json_path)
+                comicrack_dict = self.comicinfo_metadata(album_meta_dict)
+                return album_meta_dict, comicrack_dict
 
-            album_meta_dict = load_json(album_meta_json_path)
-            comicrack_dict = self.comicinfo_metadata(album_meta_dict)
-            return album_meta_dict, comicrack_dict
+            except Exception as err:
+                self.logger.error(f"Previous saved {album_meta_json_path} is corrupted")
+                os.remove(album_meta_json_path)
 
-        self.logger.info("Parsing metadata from {album_url}".format(album_url=self.album_url))
+        if os.path.exists(album_meta_html_path):
+            self.logger.debug(f"Parsing HTML metadata from already downloaded web page {album_meta_html_path}")
 
-        url = urllib.request.urlopen(self.album_url)
-        try:
-            content = url.read().decode('utf8')
-        except:
-            content = url.read()  # mainly for unittesting as content already decoded
+            with open(album_meta_html_path) as fp:
+                soup = BeautifulSoup(fp, 'html.parser')
+        else:
 
-        # save html content in .local for future use if needed
-        with open(album_meta_html_path, 'w') as out_file:
-            out_file.write(content)
+            self.logger.debug(f"Parsing metadata from {self.album_url}")
 
-        soup = BeautifulSoup(content, 'lxml')
+            time.sleep(randint(3, 10))  # we don't want to be suspicious between queries
+
+            url = urllib.request.urlopen(self.album_url)
+            try:
+                content = url.read().decode('utf8')
+            except:
+                content = url.read()  # mainly for unittesting as content already decoded
+
+            # save html content in .local for future use if needed. reprocess can be achieved without loads on bedetheque.com
+            with open(album_meta_html_path, 'w') as out_file:
+                out_file.write(content)
+
+            soup = BeautifulSoup(content, 'lxml')
 
         album_meta_dict = {}
         album_meta_dict['album_url'] = self.album_url
 
         for label in soup.select("label"):
+
             if label.contents:
                 try:
                     key = label.contents[0].split(':')[0].rstrip().replace(' ', '_')
                     if label.find_next_sibling():
                         val = label.find_next_sibling().text.rstrip()
                     else:
-                        val = label.find_parent().contents[1]
+                        if "Dépot" in key:
+                            val = label.find_parent().contents[2]
+                        else:
+                            val = label.find_parent().contents[1]
                     album_meta_dict[key] = val
                 except:
                     pass
@@ -341,7 +386,11 @@ class BdGestParse():
         self.album_meta_dict = album_meta_dict
         comicrack_dict = self.comicinfo_metadata(album_meta_dict)
 
-        dump_json(album_meta_json_path, album_meta_dict)
+        try:
+            dump_json(album_meta_json_path, album_meta_dict)
+        except TypeError as err:
+            os.remove(album_meta_json_path)
+            self.logger.error(f"{err}. {album_meta_json_path} can not be written")
 
         return album_meta_dict, comicrack_dict
 
@@ -355,12 +404,19 @@ class BdGestParse():
                 comicrack_dict[bdgest_mapping[key]] = metadata_dict[key]
 
         try:
-            published_date = datetime.strptime(metadata_dict['Dépot_légal'], '(Parution le %d/%m/%Y)')
+            published_date = dateutil.parser.parse(metadata_dict['Dépot_légal'])
+        except dateutil.parser._parser.ParserError:
+            try:
+                published_date = datetime.strptime(metadata_dict['Dépot_légal'], '(Parution le %d/%m/%Y)')
+            except Exception as err2:
+                self.logger.error('{published_date}'.format(published_date=metadata_dict['Dépot_légal']))
+        except:
+            self.logger.error('{published_date}'.format(published_date=metadata_dict['Dépot_légal']))
+
+        if "published_date" in locals():
             comicrack_dict["Year"] = published_date.year
             comicrack_dict["Month"] = published_date.month
             comicrack_dict["Day"] = published_date.day
-        except:
-            self.logger.error('{published_date}'.format(published_date=metadata_dict['Dépot_légal']))
 
         return comicrack_dict
 

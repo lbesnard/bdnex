@@ -1,15 +1,18 @@
-import unittest
-from bdnex.lib.bdgest import BdGestParse
-from unittest.mock import Mock, patch, MagicMock
 import os
+import unittest
+import time
 
+from unittest.mock import patch, MagicMock
+
+from bdnex.lib.bdgest import BdGestParse
 
 ALBUM_URL_MATCH = {
     'Nains-Redwin de la forge': "https://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html",
-    'Redwin de la': "https://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html",
+    'Redwin de la forge': "https://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html",
 }
 
 BEDETHEQUE_METADATA_HTML = os.path.join(os.path.dirname(__file__), 'mobile_redwin.html')  # mocked html page
+
 
 def read_file_content(fp):
     with open(fp, 'r') as file:
@@ -18,16 +21,7 @@ def read_file_content(fp):
 
 
 @patch.dict(os.environ, {"HOME": os.path.dirname(os.path.realpath(__file__))})
-class testBdgestParse(unittest.TestCase):
-    def setUp(self):
-        #self.bd = BdGestParse()
-        pass
-
-    def tearDown(self) -> None:
-        pass
-        #if 'self.tempfile' in locals() and os.path.exists(self.tempfile):
-        #    os.remove(self.tempfile)
-
+class TestBdGestParse(unittest.TestCase):
     def test_generate_sitemaps_url(self):
         urls = BdGestParse().generate_sitemaps_url()
         self.assertEqual('https://www.bedetheque.com/albums_50001_60000_map.xml', urls[5])
@@ -45,7 +39,7 @@ class testBdgestParse(unittest.TestCase):
 
     def test_clean_sitemaps_urls(self):
         cleaned_list, urls_list = BdGestParse().clean_sitemaps_urls()
-        self.assertEqual('avengers marvel france 2013 24 cabale 250003', cleaned_list[0])
+        self.assertEqual('avengers marvel france 2013 24 cabale', cleaned_list[0])
         self.assertEqual('https://m.bedetheque.com/BD-Avengers-Marvel-France-2013-Tome-24-La-Cabale-250003.html', urls_list[0])
 
     def test_remove_common_words_from_string(self):
@@ -67,8 +61,11 @@ class testBdgestParse(unittest.TestCase):
             res = BdGestParse().search_album_url(album_name)
             self.assertEqual(ALBUM_URL_MATCH[album_name], res)
 
+
     @patch('urllib.request.urlopen')
-    def test_parse_album_metadata_mobile_url(self, mock_urlopen):
+    @patch('time.sleep', return_value=None)  # mocking time as we're waiting some random seconds between each query to the remote website
+    def test_parse_album_metadata_mobile_url(self, patched_time_sleep, mock_urlopen):
+        time.sleep(60)  # Should be instant
         cm = MagicMock()
         cm.getcode.return_value = 200
         cm.read.return_value = read_file_content(BEDETHEQUE_METADATA_HTML)
@@ -84,8 +81,8 @@ class testBdgestParse(unittest.TestCase):
 
         # delete html and json from .local so we can test the other part of the function which is doing the parsing from scratch
 
-        album_metadata_html_path = os.path.join(os.path.dirname(__file__), '.local/bdnex/bedetheque/albums_html')
-        album_metadata_json_path = os.path.join(os.path.dirname(__file__), '.local/bdnex/bedetheque/albums_json')
+        album_metadata_html_path = os.path.join(os.path.dirname(__file__), '.local/share/bdnex/bedetheque/albums_html')
+        album_metadata_json_path = os.path.join(os.path.dirname(__file__), '.local/share/bdnex/bedetheque/albums_json')
 
         album_html_path = '{filepath}'.format(filepath=os.path.join(album_metadata_html_path,
                                                                     os.path.basename(album_meta_dict["album_url"])

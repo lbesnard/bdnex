@@ -1,9 +1,18 @@
-import json
-import os
-import logging
-import urllib.request
-import tempfile
 import argparse
+import json
+import logging
+import logging.config
+import os
+import tempfile
+import urllib.request
+from pkg_resources import resource_filename
+
+import logging
+import sys
+
+from bdnex.lib.colargulog import ColorizedArgsFormatter
+
+LOGGING_CONF = resource_filename('bdnex', "/conf/logging.conf")
 
 
 def dump_json(json_path, json_data):
@@ -18,51 +27,43 @@ def load_json(json_path):
             return json.load(f)
 
 
-def download_link(url):
-    tmpdir = tempfile.mkdtemp()
-    urllib.request.urlretrieve(url, os.path.join(tmpdir, os.path.basename(url)))
-    return os.path.join(tmpdir, os.path.basename(url))
+def yesno(question):
+    """Simple Yes/No Function."""
+    prompt = f'{question} ? (y/n): '
+    ans = input(prompt).strip().lower()
+    if ans not in ['y', 'n']:
+        print(f'{ans} is invalid, please try again...')
+        return yesno(question)
+    if ans == 'y':
+        return True
+    return False
 
 
-class Logging:
+def download_link(url, output_folder=None):
+    if output_folder is None:
+        output_folder = tempfile.mkdtemp()
+    else:
+        if not os.path.exists(output_folder):
+            os.makedirs(output_folder)
 
-    def __init__(self):
-        self.logging_filepath = []
-        self.logger = []
+    urllib.request.urlretrieve(url, os.path.join(output_folder, os.path.basename(url)))
 
-    def logging_start(self, logging_filepath):
-        """ start logging using logging python library
-        output:
-           logger - similar to a file handler
-        """
-        self.logging_filepath = logging_filepath
-        if not os.path.exists(os.path.dirname(logging_filepath)):
-            os.makedirs(os.path.dirname(logging_filepath))
+    return os.path.join(output_folder, os.path.basename(url))
 
-        logging.basicConfig(level=logging.INFO)
-        self.logger = logging.getLogger(__name__)
-        self.logger.setLevel(logging.INFO)
 
-        # create a file handler
-        handler = logging.FileHandler(self.logging_filepath)
-        handler.setLevel(logging.INFO)
+def init_logging():
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.DEBUG)
 
-        # create a logging format
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        handler.setFormatter(formatter)
+    console_level = "DEBUG"
+    console_handler = logging.StreamHandler(stream=sys.stdout)
 
-        # add the handlers to the logger
-        self.logger.addHandler(handler)
-        return self.logger
+    console_handler.setLevel(console_level)
 
-    def logging_stop(self):
-        """ close logging """
-        # closes the handlers of the specified logger only
-        x = list(self.logger.handlers)
-        for i in x:
-            self.logger.removeHandler(i)
-            i.flush()
-            i.close()
+    console_format = "%(asctime)s - %(levelname)-8s - %(name)-5s - %(message)s"
+    colored_formatter = ColorizedArgsFormatter(console_format)
+    console_handler.setFormatter(colored_formatter)
+    root_logger.addHandler(console_handler)
 
 
 def args():
@@ -83,19 +84,28 @@ def args():
                         help="BD dir path to process",
                         required=False)
 
-    parser.add_argument('-i', '--init', dest='input_dir', type=str, default=None,
-                        help="initialise bdnex by downloading sitemaps from bedetheque for album matching",
+    parser.add_argument('-i', '--init', dest='init',
+                        help="initialise or force bdnex to download sitemaps from bedetheque for album matching",
                         required=False)
+
+    parser.add_argument('-v',
+                        '--verbose',
+                        default='info',
+                        help='Provide logging level. default=info')
+
+    init_logging()
+
+    logging.info('Logging now setup.')
 
     vargs = parser.parse_args()
 
     if 'vargs.input_file' in locals():
         if not os.path.exists(vargs.input_file):
-           raise ValueError('{path} not a valid path'.format(path=vargs.incoming_path))
+           raise ValueError('{path} not a valid path'.format(path=vargs.input_file))
 
     if 'vargs.input_dir' in locals():
-        if not os.path.exists(vargs.input-dir):
-            raise ValueError('{path} not a valid path'.format(path=vargs.incoming_path))
+        if not os.path.exists(vargs.input_dir):
+            raise ValueError('{path} not a valid path'.format(path=vargs.input_dir))
 
     return vargs
 

@@ -12,6 +12,8 @@ conda activate bdnex
 TODO:
 create bedetheque sitemaps once off, and update if needed or doesn't exist.
 for now run 
+Rename files?
+save processing info to sqlite
 ```
 BdGestParse.download_sitemaps() # check sitemaps exists
 ```
