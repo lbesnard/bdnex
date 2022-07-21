@@ -1,4 +1,5 @@
 ![BDneX](https://github.com/lbesnard/bdnex/actions/workflows/test.yml/badge.svg)
+
 BDneX (french comic) tagger. this is a POF
 
 ```commandline
