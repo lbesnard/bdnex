@@ -7,13 +7,13 @@ Contrary to music tagging, there is no agreed standard vocabulary for comics
 tagging in general. However the ComicRack standard is used by most library
 managers such as [Komga](https://komga.org/)
 
-A few teams are working on metadata for American comics, such as [(comic tagger](https://github.com/comictagger/comictagger)
+A few teams are working on metadata for American comics, such as [comic tagger](https://github.com/comictagger/comictagger)
 This tool retrieves data from the ComicVine REST API [Comic Vine](https://comicvine.gamespot.com).
 However it is mostly for american comics, and only the most famous french ones
 are represented.
 
-BDneX comes here to hopefully fill the gap, and enabling the search of metadata 
-to be added to **CBZ** and **CBR** file format. 
+BDneX comes here to hopefully fill the gap, with search capabilities of metadata,
+which then can be added to **CBZ** and **CBR** file format. 
 
 Why doing this?
 On big libraries, it becomes easy then to find a book, based on its genre,
