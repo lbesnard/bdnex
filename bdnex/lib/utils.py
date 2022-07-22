@@ -22,9 +22,16 @@ def dump_json(json_path, json_data):
 
 
 def load_json(json_path):
+    logger = logging.getLogger(__name__)
+
     if os.path.exists(json_path):
+        logger.debug(f"Loading JSON: {json_path}")
+
         with open(json_path) as f:
             return json.load(f)
+    else:
+        logger.error(f"{json_path} does not exist")
+        return
 
 
 def yesno(question):
