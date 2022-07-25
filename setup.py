@@ -31,7 +31,8 @@ setup(
         'bdnex.ui'
     ],
     package_data={  # Optional
-        "bdnex.conf": ["bdgest_mapping.conf",
+        "bdnex.conf": ["*.json",
+                       "*.ini",
                        "ComicInfo.xsd"],
     },
     entry_points={
@@ -43,13 +44,14 @@ setup(
     install_requires=[
         'rarfile',
         'beautifulsoup4',
+        'lxml',  # bs4 dependency
+        'html5lib',  # bs4 dependency
         'numpy',
         'thefuzz',
         'rapidfuzz',
         'duckduckgo-search',
         'argparse',
         'termcolor',
-        #'opencv-contrib-python',
         'imutils',
         'tenacity',
         'opencv-contrib-python-headless',

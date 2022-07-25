@@ -17,8 +17,7 @@ import requests
 from bs4 import BeautifulSoup
 from pkg_resources import resource_filename
 from termcolor import colored
-from rapidfuzz import process, fuzz
-#from thefuzz import fuzz
+from rapidfuzz import fuzz
 
 from bdnex.lib.utils import dump_json
 from bdnex.lib.utils import load_json
@@ -301,9 +300,6 @@ class BdGestParse():
                 if fieldval:
                     album_meta_dict[fieldname] = fieldval
 
-
-
-
         self.album_meta_dict = album_meta_dict
         comicrack_dict = self.comicinfo_metadata(album_meta_dict)
 
@@ -369,9 +365,9 @@ class BdGestParse():
                 except:
                     pass
 
-        cover_url = soup.find_all('img', alt= True)[1].attrs['src']
+        cover_url = soup.find_all('img', alt=True)[1].attrs['src']
         album_meta_dict['cover_url'] = cover_url
-
+        self.logger.debug(cover_url)
         summary_extract = soup.find_all('span', attrs={"class": 'infoedition'})
         for name in summary_extract:
             if 'Résumé' in name.contents[0].contents[0]:
@@ -385,6 +381,14 @@ class BdGestParse():
 
         self.album_meta_dict = album_meta_dict
         comicrack_dict = self.comicinfo_metadata(album_meta_dict)
+
+        #from colored import fg, bg, attr
+        from termcolor import colored
+
+        album_name_colored = colored(f'{album_name}', 'magenta', attrs=['bold'])
+        album_name_matched = colored(f'{album_meta_dict["Titre"]}', 'blue', attrs=['bold'])
+
+        self.logger.debug(f"Matching {album_name_colored} with {album_name_matched}")
 
         try:
             dump_json(album_meta_json_path, album_meta_dict)
