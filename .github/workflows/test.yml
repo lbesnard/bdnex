@@ -23,8 +23,9 @@ jobs:
           pytest
       - name: Generate Report
         run: |
-          pip install coverage
-          coverage run -m pytest
-          coverage xml -i
+          pytest --cov=bdnex/ --cov-report=xml test/
+          #pip install coverage
+          #coverage run -m pytest
+          #coverage xml -i
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
