@@ -1,5 +1,9 @@
 name: Run Python Tests
-on: [push]
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
 
 jobs:
   build:
@@ -19,10 +23,10 @@ jobs:
           pip install .
           pip install pytest-cov
       - name: Run tests with pytest
-        run: pytest
+        run: pytest --cov=./ --cov-report=xml
       - name: Generate Report
         run: |
           pip install coverage
-          coverage run -m unittest
+          #coverage run -m pytest
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
