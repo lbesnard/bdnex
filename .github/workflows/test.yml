@@ -19,3 +19,7 @@ jobs:
           pip install .
       - name: Run tests with pytest
         run: pytest --pdb -s
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          name: codecov-umbrella # optional
