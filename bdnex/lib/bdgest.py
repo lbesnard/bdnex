@@ -110,7 +110,7 @@ class BdGestParse():
             stringlist = [x for x in myNames if "m.bedetheque.com/BD-" in x]
 
         # various string cleaning
-        urls_list = [re.search("(?P<url>https?://[^\s]+)", x).group("url").replace('"', '') for x in stringlist]
+        urls_list = [re.search(r"(?P<url>https?://[^\s]+)", x).group("url").replace('"', '') for x in stringlist]
         #urls_list = [re.search("(?P<url>https?://[^\s]+)\"", x).group("url") for x in stringlist]
         cleansed = [x.replace('https://m.bedetheque.com/BD-', '').replace('.html', '').replace('-', ' ')
                     for x in urls_list]
