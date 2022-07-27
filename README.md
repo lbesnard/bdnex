@@ -55,12 +55,12 @@ conda activate bdnex
 
 User mode:
 ```
-./setup.py install
+pip install .
 ```
 
 Dev mode:
 ```
-./setup.py develop
+pip install -e .
 ```
 
 ## Examples:

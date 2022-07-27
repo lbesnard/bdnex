@@ -10,6 +10,7 @@ from functools import lru_cache
 from os import listdir
 from os.path import isfile, join
 from random import randint
+from termcolor import colored
 
 import dateutil.parser
 import pandas as pd
@@ -48,11 +49,16 @@ class BdGestParse():
             os.makedirs(self.album_metadata_html_path)
 
         if len(os.listdir(self.sitemaps_path)) == 0:
-            self.logger.info("No sitemaps exist yet. Downloading them")
+            self.logger.info(f"No sitemaps exist yet. Downloading all available sitemaps locally to {self.sitemaps_path}")
             self.download_sitemaps()
 
     @staticmethod
     def generate_sitemaps_url():
+        """
+        Generate a list of sitemaps urls. Each url points to a sub sitemap file
+        Returns: urls(list) : list of individual url of sitemap files
+
+        """
         urls = []
         last_val = 0
         for i in range(47):
@@ -201,6 +207,7 @@ class BdGestParse():
         return album_url
 
     def parse_album_metadata(self, album_name):
+        self.logger.warning('Deprecated function. Prefer parse_album_metadata_mobile() ')
         self.search_album_url(album_name)
         self.logger.info(f"Parsing metadata from {self.album_url}")
 
@@ -306,6 +313,14 @@ class BdGestParse():
         return album_meta_dict, comicrack_dict
 
     def parse_album_metadata_mobile(self, album_name):
+        """
+        Parse a mobile version HTML file containing metadata of an album
+        Args:
+            album_name:
+
+        Returns:
+
+        """
         self.search_album_url(album_name)
         album_meta_json_path = '{filepath}.json'.format(filepath=os.path.join(self.album_metadata_json_path,
                                                                               os.path.basename(self.album_url)))
@@ -381,9 +396,6 @@ class BdGestParse():
 
         self.album_meta_dict = album_meta_dict
         comicrack_dict = self.comicinfo_metadata(album_meta_dict)
-
-        #from colored import fg, bg, attr
-        from termcolor import colored
 
         album_name_colored = colored(f'{album_name}', 'magenta', attrs=['bold'])
         album_name_matched = colored(f'{album_meta_dict["Titre"]}', 'blue', attrs=['bold'])
