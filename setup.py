@@ -58,6 +58,18 @@ setup(
         'pandas',
     ],
 
+    extras_require={
+        'dev': [
+            'pytest',
+            'ipdb'
+        ]
+    },
+
+    tests_require=[
+        'pytest',
+        'ipdb'
+    ],
+
     classifiers=[
         'License :: OSI Approved :: MIT License',
         'Environment :: Console',

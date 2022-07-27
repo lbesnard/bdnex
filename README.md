@@ -60,7 +60,7 @@ pip install .
 
 Dev mode:
 ```
-pip install -e .
+pip install -e .[dev]
 ```
 
 ## Examples:
