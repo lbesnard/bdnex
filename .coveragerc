@@ -1,13 +1,5 @@
-[run]
-branch = True
-source = bdnex
-omit =
-    test/*
-
 [report]
+omit =
+    */test/*
 exclude_lines =
-    pragma: no cover
-    @abc.abstractmethod
-    def __repr__
-
-ignore_errors = True
+    assert False
