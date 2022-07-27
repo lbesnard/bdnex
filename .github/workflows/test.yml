@@ -20,12 +20,11 @@ jobs:
           pip install setuptools
           pip install .
           pip install --upgrade pytest
-          pip install --upgrade pytest-cov
-      #- name: Run tests with pytest
-        #run: pytest --cov=./ --cov-report=xml
+          pytest
       - name: Generate Report
         run: |
           pip install coverage
-          coverage run -m pytest && coverage report
+          coverage run -m pytest
+          coverage report
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
