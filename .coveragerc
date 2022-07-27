@@ -1,0 +1,6 @@
+# .coveragerc
+[report]
+show_missing = True
+omit =
+    test/*
+    bdnex/lib/colargulog.py
