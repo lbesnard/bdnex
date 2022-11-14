@@ -53,7 +53,7 @@ def main():
             files.append(path.absolute().as_posix())
 
         for path in Path(dirpath).rglob('*.cbr'):
-            files.append(path.absolute())
+            files.append(path.absolute().as_posix())
 
         for file in files:
             add_metadata_from_bdgest(file)
