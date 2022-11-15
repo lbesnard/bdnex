@@ -394,6 +394,14 @@ class BdGestParse():
             except:
                 pass
 
+        if isinstance(album_meta_dict['Planches'], str):
+            album_meta_dict['Planches'] = int(album_meta_dict['Planches'])
+        if isinstance(album_meta_dict['Tome'], str):
+            regex = re.compile(r'(\d+|\s+)')
+            r = regex.split(album_meta_dict['Tome'])
+            tome = list(filter(None, r))[-1]
+            album_meta_dict['Tome']= int(tome)
+
         self.album_meta_dict = album_meta_dict
         comicrack_dict = self.comicinfo_metadata(album_meta_dict)
 
