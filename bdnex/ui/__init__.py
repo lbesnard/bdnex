@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import logging
+import shutil
 
 from bdnex.lib.archive_tools import archive_get_front_cover
 from bdnex.lib.bdgest import BdGestParse
@@ -35,6 +36,9 @@ def add_metadata_from_bdgest(filename):
         ans = yesno("Cover matching confidence is low. Do you still want to append the metadata to the file?")
         if ans:
             comicInfo(filename, comicrack_meta).append_comicinfo_to_archive()
+
+    cover_path = Path(cover_archive_fp).parent.as_posix()
+    shutil.rmtree(cover_path)
 
     logger.info(f"Processing album done")
 
