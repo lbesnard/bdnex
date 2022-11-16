@@ -56,6 +56,7 @@ setup(
         'tenacity',
         'opencv-contrib-python-headless',
         'pandas',
+        'xmlschema',
     ],
 
     extras_require={
