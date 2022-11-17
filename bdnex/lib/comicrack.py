@@ -27,6 +27,7 @@ class comicInfo():
         tmpdir = tempfile.mkdtemp()
         comic_info_fp = os.path.join(tmpdir, 'ComicInfo.xml')
 
+        schema = xmlschema.XMLSchema(COMICINFO_TEMPLATE)
         data = json.dumps(self.comic_info)
         tmp_xml = xmlschema.from_json(data, preserve_root=True, schema=schema)
         ET.ElementTree(tmp_xml).write(comic_info_fp, encoding='UTF-8', xml_declaration=True)
