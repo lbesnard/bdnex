@@ -2,10 +2,11 @@ import unittest
 from bdnex.lib.cover import front_cover_similarity
 import os
 
-BDGEST_COVER = os.path.join(os.path.dirname(__file__), 'Couv_245127.jpg')
-ARCHIVE_COVER = os.path.join(os.path.dirname(__file__), 'Nains 1 00a.jpg')
-BDGEST_OTHER_COVER = os.path.join(os.path.dirname(__file__), 'Couv_272757.jpg')
+TEST_ROOT = os.path.dirname(__file__)
 
+BDGEST_COVER = os.path.join(TEST_ROOT, 'Couv_245127.jpg')
+ARCHIVE_COVER = os.path.join(TEST_ROOT, 'Nains 1 00a.jpg')
+BDGEST_OTHER_COVER = os.path.join(TEST_ROOT, 'Couv_272757.jpg')
 
 class TestCover(unittest.TestCase):
     def test_front_cover_similarity(self):
