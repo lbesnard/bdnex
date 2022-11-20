@@ -5,6 +5,8 @@ import shutil
 import rarfile
 import zipfile
 import logging
+import json
+import xmlschema
 
 from pkg_resources import resource_filename
 
@@ -22,20 +24,13 @@ class comicInfo():
     def comicInfo_xml_create(self):
         self.logger.info("Create ComicInfo.xml")
 
-        mytree = ET.parse(COMICINFO_TEMPLATE)
-        myroot = mytree.getroot()
-
-        for element in myroot[1][0]:
-            metadata_key = element.attrib['name']
-            if metadata_key in self.comic_info.keys():
-                if element.attrib["type"] == "xs:string":
-                    element.attrib['default'] = str(self.comic_info[metadata_key])
-                elif element.attrib["type"] == "xs:int":
-                    element.attrib['default'] = str(self.comic_info[metadata_key])
-
         tmpdir = tempfile.mkdtemp()
         comic_info_fp = os.path.join(tmpdir, 'ComicInfo.xml')
-        mytree.write(comic_info_fp, encoding='UTF-8', xml_declaration=True)
+
+        schema = xmlschema.XMLSchema(COMICINFO_TEMPLATE)
+        data = json.dumps(self.comic_info)
+        tmp_xml = xmlschema.from_json(data, preserve_root=True, schema=schema)
+        ET.ElementTree(tmp_xml).write(comic_info_fp, encoding='UTF-8', xml_declaration=True)
 
         return comic_info_fp
 
