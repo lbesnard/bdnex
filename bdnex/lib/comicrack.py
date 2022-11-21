@@ -53,7 +53,6 @@ class comicInfo():
             # compress as cbz
             new_filename = self.input_filename.replace('.cbr', '.cbz')
             with zipfile.ZipFile(new_filename, 'w') as zipf:
-                zipf.write(comic_info_fp, 'ComicInfo.xml')
                 for folderName, subfolders, filenames in os.walk(tmpdir):
                     for filename in filenames:
                         # create complete filepath of file in directory
