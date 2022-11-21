@@ -46,6 +46,20 @@ def yesno(question):
     return False
 
 
+def enter_album_url():
+
+    prompt = "Please enter manually a valid bedetheque mobile url starting with https://m.bedetheque.com/ "
+    ans = input(prompt).strip().lower()
+
+    ans.replace("https://www.bedetheque.com/", "https://m.bedetheque.com/")
+
+    while not ans.startswith('https://m.bedetheque.com/'):  # TODO: could modify this to replace www. with m.
+        prompt = "Please enter manually a valid bedetheque mobile url"
+        ans = input(prompt).strip().lower().replace("https://www.bedetheque.com/", "https://m.bedetheque.com/")
+
+    return ans
+
+
 def download_link(url, output_folder=None):
     if output_folder is None:
         output_folder = tempfile.mkdtemp()

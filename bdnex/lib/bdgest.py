@@ -11,6 +11,7 @@ from os import listdir
 from os.path import isfile, join
 from random import randint
 from termcolor import colored
+from InquirerPy import prompt
 
 import dateutil.parser
 import pandas as pd
@@ -173,6 +174,26 @@ class BdGestParse():
         except Exception as err:
             self.logger.error("Fast search didn't provide any results")
 
+    def search_album_from_sitemaps_interactive(self):
+        # interactive fuzzy search for user prompt
+
+        album_list, urls = self.clean_sitemaps_urls()
+
+        questions = [
+            {
+                "type": "fuzzy",
+                "message": "Write & Select album name with >TAB: (avoid writting common articles such as [le ,la ,les, de, des ...]",
+                "choices": album_list,
+                "multiselect": True,
+                "validate": lambda result: len(result) == 1,
+                "invalid_message": "maximum 1 selection",
+                "max_height": "70%",
+            },
+        ]
+        result = prompt(questions=questions)
+        self.logger.info(f"Manual matching album {result[0][0]}")
+        return urls[album_list.index(result[0][0])]
+
     def search_album_from_sitemaps_slow(self, album_name):
         self.logger.debug(f"Searching for \"{album_name}\" in bedetheque.com sitemap files [SLOW VERSION]")
 
@@ -312,7 +333,7 @@ class BdGestParse():
 
         return album_meta_dict, comicrack_dict
 
-    def parse_album_metadata_mobile(self, album_name):
+    def parse_album_metadata_mobile(self, album_name, album_url=None):
         """
         Parse a mobile version HTML file containing metadata of an album
         Args:
@@ -321,7 +342,12 @@ class BdGestParse():
         Returns:
 
         """
-        self.search_album_url(album_name)
+        # case when user enters manually a url
+        if album_url:
+            self.album_url = album_url
+        else:
+            self.search_album_url(album_name)
+
         album_meta_json_path = '{filepath}.json'.format(filepath=os.path.join(self.album_metadata_json_path,
                                                                               os.path.basename(self.album_url)))
         album_meta_html_path = os.path.join(self.album_metadata_html_path,
