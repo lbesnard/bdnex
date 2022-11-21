@@ -57,6 +57,8 @@ setup(
         'opencv-contrib-python-headless',
         'pandas',
         'xmlschema',
+        'patool',
+        'InquirerPy',
     ],
 
     extras_require={
