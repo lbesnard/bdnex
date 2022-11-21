@@ -101,7 +101,7 @@ class TestBdGestParse(unittest.TestCase):
         self.assertEqual("Redwin de la Forge", comicrack_dict["Title"])
         self.assertEqual("Nains", comicrack_dict["Series"])
 
-        # don't delete the html and json file so another part of the code can be testes
+        # don't delete the html and json file so another part of the code can be tested
 
 
 if __name__ == '__main__':
