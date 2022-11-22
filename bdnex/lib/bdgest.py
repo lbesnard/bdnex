@@ -397,7 +397,7 @@ class BdGestParse():
         if isinstance(album_meta_dict['Planches'], str):
             album_meta_dict['Planches'] = int(album_meta_dict['Planches'])
 
-        if hasattr(album_meta_dict, 'Tome'):
+        if 'Tome' in album_meta_dict:
             if isinstance(album_meta_dict['Tome'], str):
                 regex = re.compile(r'(\d+|\s+)')
                 r = regex.split(album_meta_dict['Tome'])
