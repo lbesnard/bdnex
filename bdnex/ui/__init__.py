@@ -67,7 +67,11 @@ def main():
             files.append(path.absolute().as_posix())
 
         for file in files:
-            add_metadata_from_bdgest(file)
+            try:
+                add_metadata_from_bdgest(file)
+            except:
+                logger = logging.getLogger(__name__)
+                logger.error(f"{file} couldn't be processed")
 
     elif vargs.input_file:
         file = vargs.input_file
