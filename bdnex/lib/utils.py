@@ -81,7 +81,7 @@ def init_logging():
 
     console_handler.setLevel(console_level)
 
-    console_format = "%(asctime)s - %(levelname)-8s - %(name)-5s - %(message)s"
+    console_format = "%(asctime)s - %(levelname)-8s:L%(lineno)s - %(name)-5s - %(message)s"
     colored_formatter = ColorizedArgsFormatter(console_format)
     console_handler.setFormatter(colored_formatter)
     root_logger.addHandler(console_handler)
