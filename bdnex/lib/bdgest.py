@@ -1,3 +1,4 @@
+import bs4
 import logging
 import os
 import re
@@ -354,15 +355,9 @@ class BdGestParse():
                                             os.path.basename(self.album_url))
 
         if os.path.exists(album_meta_json_path):
-            self.logger.debug(f"Parsing JSON metadata from already parsed web page {album_meta_json_path}")
-            try:
-                album_meta_dict = load_json(album_meta_json_path)
-                comicrack_dict = self.comicinfo_metadata(album_meta_dict)
-                return album_meta_dict, comicrack_dict
-
-            except Exception as err:
-                self.logger.error(f"Previous saved {album_meta_json_path} is corrupted")
-                os.remove(album_meta_json_path)
+            # deleting existing json, and re-recreating it to handle breaking code changes if they happen
+            self.logger.debug(f"Deleting existing JSON metadata from already parsed web page {album_meta_json_path}")
+            os.remove(album_meta_json_path)
 
         if os.path.exists(album_meta_html_path):
             self.logger.debug(f"Parsing HTML metadata from already downloaded web page {album_meta_html_path}")
@@ -381,7 +376,8 @@ class BdGestParse():
             except:
                 content = url.read()  # mainly for unittesting as content already decoded
 
-            # save html content in .local for future use if needed. reprocess can be achieved without loads on bedetheque.com
+            # save html content in .local for future re-parse if needed. reprocess can be achieved without
+            # unnecessary loads on bedetheque.com risking IP ban
             with open(album_meta_html_path, 'w') as out_file:
                 out_file.write(content)
 
@@ -425,7 +421,7 @@ class BdGestParse():
 
         if 'Tome' in album_meta_dict.keys():
             if isinstance(album_meta_dict['Tome'], str):
-                if 'HS' in album_meta_dict['Tome'] or "INT" in album_meta_dict['Tome']:  # dealing with Hors-Serie or integral albums
+                if not album_meta_dict['Tome'][0].isdigit():  # dealing with Hors-Serie or integral albums
                     album_meta_dict['AlternateNumber'] = album_meta_dict['Tome']
                     del album_meta_dict['Tome']
                 else:
@@ -434,6 +430,16 @@ class BdGestParse():
                     tome = list(filter(None, r))[-1]
 
                     album_meta_dict['Tome'] = int(tome)
+
+        # remove bad metadata still containing an html tag,sign it was wrongly parsed
+        key_to_remove = []
+        for key in album_meta_dict.keys():
+            if isinstance(album_meta_dict[key], bs4.element.Tag):
+                self.logger.error(f"{key} info wrongly parsed and removed from parsed metadata. Lodge an issue")
+                key_to_remove.append(key)
+        if key_to_remove:
+            for key in key_to_remove:
+                album_meta_dict.pop(key)
 
         self.album_meta_dict = album_meta_dict
         comicrack_dict = self.comicinfo_metadata(album_meta_dict)
