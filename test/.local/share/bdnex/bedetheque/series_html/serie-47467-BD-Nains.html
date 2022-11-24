@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html dir="ltr" lang="fr">
+        <head>
+                <!-- ENV/PRODUCTION/0 -->
+
+                <title>Nains</title>
+                <meta charset="utf-8" />                
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+                <meta content="yes" name="apple-mobile-web-app-capable" />
+                <meta name="keywords" content="bd, manga, comics, base, cote, argus, cotation, bdm, bande, dessinee, bandes, dessines, logiciel, gestion, collection, couverture, comix, petites annonces, ventes" />    
+                <meta name="description" content="La base de donnÃ©es BD, manga et comics de rÃ©fÃ©rence. SÃ©ries, albums, auteurs, cotes, informations dÃ©taillÃ©es et petites annonces de ventes BD" />
+                <meta name="author" lang="fr" content="Philippe MAGNERON" />
+                <meta name="category" content="BD, bande dessinee" />
+                
+                <meta name="theme-color" content="#333333">
+                <meta name="robots" content="index,follow" />
+                                
+                <link rel="icon" href="https://www.bedetheque.com/favicon_bdgest.svg"  type="image/svg+xml">
+                
+                                        <link rel="canonical" href="https://www.bedetheque.com/serie-47467-BD-Nains.html" >
+                
+                <!-- bootstrap -->
+                <link rel="stylesheet" href="https://m.bedetheque.com/css/bootstrap.min.css" />
+
+                <!-- jQueryMobileCSS - styling-->
+                <link rel="stylesheet" href="https://m.bedetheque.com/css/themes/bedetheque.min.css" />
+                <link rel="stylesheet" href="https://m.bedetheque.com/css/themes/jquery.mobile.icons.min.css" />
+                <link rel="stylesheet" href="https://code.jquery.com/mobile/1.4.5/jquery.mobile.structure-1.4.5.min.css" />
+
+                <!-- jQueryMobile core CSS -->
+                <link rel="stylesheet" href="https://m.bedetheque.com/css/jquery.mobile.min.css" />
+
+                <!-- Owl stylesheet -->
+                <link rel="stylesheet" href="https://m.bedetheque.com/css/owl.carousel.css">
+
+                <!-- Owl Theme -->
+                <link rel="stylesheet" href="https://m.bedetheque.com/css/owl.theme.css">
+
+                <!-- NIGHTLY style -->
+                <link rel="stylesheet" href="https://m.bedetheque.com/css/nightly.css" />
+
+                <!-- Load Google Fonts -->
+                <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Open+Sans:300,400,700" type="text/css">
+                <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,600,700,900,300italic,400italic,600italic,700italic|Oswald:400,700" type="text/css">
+
+                <!-- Load Font Awesome Icons -->
+                <link rel="stylesheet" href="https://m.bedetheque.com/css/font-awesome.min.css">
+
+                <!-- Custom style -->
+                <link rel="stylesheet" href="https://www.bdgest.com/assets/css/mobile.css?v=4ed8926b" />
+                <link rel="stylesheet" href="https://www.bdgest.com/assets/css/aurelien.css?v=4ed8926b" />
+                
+                
+
+        <input type="hidden" value="" id="yyt">
+
+
+        <script src='https://www.bedetheque.com/javascript/campagne?Zone[]=14&rd=6119'></script> 
+</head>
+
+
+
+<body class="serie">
+
+                        <script>
+                if (Campagnes[14] != "") {
+                        document.write("<div class=\"inter\">");
+                        AfficheZone(14);
+                        document.write("<a href=\"#\" data-role=\"none\" class=\"ui-btn ui-btn-inline ui-icon-delete ui-btn-icon-left close-inter ui-btn-d ui-mini\">Fermer la publicité</a>");
+                        document.write("</div>");
+                }
+                </script> 
+        
+
+        <div data-role="page" data-theme='d' id="myPage"> 
+                <div data-role="panel" data-display="push" id="sidebar" data-theme='d'>
+                        <div class="logo">
+                                <img src="https://www.bdgest.com/skin/Logo_BDGest_v5.png" />
+                        </div>
+                        <ul data-role="listview">
+                                <li><a  href="https://m.bedetheque.com/" data-transition="slide" data-ajax="false"><i class="fa fa-home"></i> Accueil</a></li>
+                                <li><a  href="https://m.bedetheque.com/album" data-transition="slide" data-ajax="false"><i class="fa fa-book"></i> Albums</a></li>                                        
+                                <li><a href="https://m.bedetheque.com/serie" data-transition="slide" data-ajax="false"><i class="fa fa-comments"></i> Séries </a></li>
+                                <li><a href="https://m.bedetheque.com/auteur" data-transition="slide" data-ajax="false"><i class="fa fa-users"></i> Auteurs</a></li>
+                                <li><a href="https://m.bedetheque.com/nouveautes" data-transition="slide" data-ajax="false"><i class="fa fa-calendar"></i> Sorties BD</a></li>
+                                <li><a href="https://m.bedetheque.com/revue" data-transition="slide" data-ajax="false"><i class="fa fa-newspaper-o"></i> Revues</a></li>
+                                <li><a href="https://m.bedetheque.com/parabd" data-transition="slide" data-ajax="false"><i class="fa fa-legal"></i> Para-BD</a></li>
+                                <li><a href="https://m.bedetheque.com/ventes" data-transition="slide" data-ajax="false"><i class="fa fa-shopping-cart"></i> Petites annonces</a></li>
+                                <li><a href="https://m.bedetheque.com/chroniques" data-transition="slide" data-ajax="false"><i class="fa fa-heart"></i> Chroniques </a></li>
+                                <li><a href="https://m.bedetheque.com/previews" data-transition="slide" data-ajax="false"><i class="fa fa-picture-o"></i> Previews </a></li>
+
+                        </ul>
+                </div>
+
+                <div data-role="header" data-tap-toggle="false" id="header" data-position="fixed">    
+                                                <a href='#sidebar'data-role="none"><img src="https://m.bedetheque.com/images/menu-icon.png" alt="sidebar" id="header-menu-icon" /></a>
+                        <h1 class="header-title">
+                                                                        <i class="fa fa-comments"></i> 
+                                                                Nains                        </h1>
+                        <a data-role="none" href="#" data-rel="back" class="header-back-button"><i class="fa fa-chevron-left"></i></a>
+
+                                        </div>
+
+                <div data-role="content">  
+
+                                                
+                                <div class="info-serie">
+
+                <h3>Nains</h3>
+
+                <h4><i class="fa fa-globe"></i> Europe <span class="serie-style">/ Fantasy</span></h4>
+
+                <h5>
+
+                        <img src="https://www.bdgest.com/skin/flags/France.png" class="drapeau" /> Français                        <i class="fa fa-calendar" style="margin-left: 5px;"></i> 2015-2022                        <span class="parution" style="margin-left: 5px;"><i class="fa fa-info-circle"></i> En cours </span>    
+                </h5>
+                                        <div class="mots-cles">
+                                                                        <span class="label label-default">Nain</span>
+                                                                        <span class="label label-default">Série concept</span>
+                                                                        <span class="label label-default">Terres d'Arran</span>
+                                                        </div>
+                
+                <p id="commentaire">
+                        <input type="hidden" id="full-commentaire" value="Redwin, fils d'Ulrog, a grandi auprès d'un père aimant et attentif à son apprentissage de la forge. Mais, autrefois admiré de tous, Ulrog ne veut plus créer d'armes runiques. À compter de ce jour, Ulrog le forgeron est devenu Ulrog le Lâche.
+Humilié, fou de rage, Redwin est prêt à tout pour s'éloigner de son père et devenir un seigneur des runes : le maître forgeron et maître combattant de l'ordre de la Forge.
+Contre la volonté de son père, il se rend à la forteresse-état retrouver son oncle, un Vénérable de l'Ordre qui accepte de lui enseigner le combat et la forge d'armes.
+Pourtant ses victoires ne lui apportent aucune paix, aucun répit, bien au contraire, sa haine envers son père grandit de jour en jour.
+Dévoré par sa propre colère, Redwin deviendra seigneur des runes. Loin d'être un aboutissement, ça sera le début d'un long calvaire..." />
+                        Redwin, fils d'Ulrog, a grandi auprès d'un père aimant et attentif à son apprentissage de la forge. Mais, autrefois admiré de tous, Ulrog ne veut plus créer d'armes runiques. À compter de ce jour, Ulrog le forgeron est devenu Ulrog le Lâche. Humilié, fou de rage, Redwin est prêt à tout pour s'éloigner de son père et devenir un seigneur des runes : le maître forgeron et maître combattant de l'ordre... <a class="more-commentaire" href="#"> Lire la suite</a>                </p>
+
+
+                <h4 style="margin:25px 0 10px 0;">26 albums :</h4>
+                <ul data-role="listview" data-theme="d" style="border-top: 1px solid #e5e9ec !important" class="li-album">
+
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_245127.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        1. Redwin de la Forge<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">06/2015</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-2-Ordo-du-Talion-253769.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_253769.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        2. Ordo du Talion<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">09/2015</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-3-Aral-du-temple-272757.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_272757.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        3. Aral du temple<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">02/2016</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-4-Oosram-des-Errants-278351.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_278351.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        4. Oösram des Errants<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">05/2016</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-5-Tiss-du-Bouclier-286973.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_286973.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        5. Tiss du Bouclier<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">08/2016</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-6-Jorun-de-la-Forge-294404.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_294404.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        6. Jorun de la Forge<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">01/2017</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-7-Derdhr-du-Talion-301826.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_301826.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        7. Derdhr du Talion<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">04/2017</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-8-Sriza-du-Temple-308029.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_308029.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        8. Sriza du Temple<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">08/2017</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-9-Droh-des-Errants-312569.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_312569.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        9. Dröh des Errants<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">10/2017</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-10-Abokar-du-Bouclier-319337.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_319337.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        10. Abokar du Bouclier<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">01/2018</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-11-Torun-de-la-Forge-341031.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_341031.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        11. Torun de la Forge<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">08/2018</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-12-Kardum-du-Talion-346509.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_346509.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        12. Kardum du Talion<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">10/2018</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-13-Fey-du-Temple-351585.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_351585.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        13. Fey du Temple<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">12/2018</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-14-Brum-des-Errants-361318.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_361318.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        14. Brum des Errants<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">03/2019</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-15-Oboron-du-Bouclier-366492.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_366492.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        15. Oboron du Bouclier<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">06/2019</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-16-Tala-de-la-Forge-375018.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_375018.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        16. Tala de la Forge<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">10/2019</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-17-Gurdan-du-Malt-397030.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_397030.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        17. Gurdan du Malt<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">06/2020</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-18-Ararun-du-Temple-401604.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_401604.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        18. Ararun du Temple<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">08/2020</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-19-Tadgar-des-Errants-402402.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_402402.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        19. Tadgar des Errants<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">10/2020</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-20-Svara-du-Bouclier-416718.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_416718.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        20. Svara du Bouclier<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">03/2021</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-21-Ulrog-de-la-Forge-432364.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_432364.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        21. Ulrog de la Forge<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">10/2021</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-22-Borogam-du-Malt-442866.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_442866.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        22. Borogam du Malt<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">03/2022</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-23-Ararun-et-la-rage-bleue-448278.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_448278.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        23. Ararun et la rage bleue<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">05/2022</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-24-Akab-des-Errants-453149.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_453149.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        24. Akab des Errants<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">09/2022</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-Tome-25-Volgrir-du-Bouclier-461924.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_461924.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        25. Volgrir du Bouclier<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">11/2022</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                                        <li data-theme="a" ><a href="https://m.bedetheque.com/BD-Nains-INT01-L-integrale-de-la-forge-415849.html" data-ajax="false">
+                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_415849.jpg" class="couv">
+                                                <h2 class="serie">Nains</h2>
+                                                <p class="titre">
+                                                        <span class="numa">INT01</span>. L'intégrale de la forge<br/>
+                                                        <span class="editeur">Soleil Productions</span> - <span class="dl">01/2021</span>
+                                                </p>
+
+                                        </a>
+                                </li>
+                                        </ul>
+                
+
+                                        <h4 style="margin:25px 0 10px 0;">A lire aussi :</h4>
+                        <div data-role="none" id="alire-slider" class="owl-carousel nightly-inline-slider">
+                                                                        <div class="item">
+                                                <div class="col-xs-4" style="padding:0 5px 0 0;">
+                                                        <a href="https://m.bedetheque.com/serie-25234-BD-Dwarf.html" data-ajax="false">
+                                                                <img src="https://www.bedetheque.com/cache/thb_couv/113588_c.jpg" />
+                                                        </a>
+                                                </div>
+                                                                                                        <div class="col-xs-4" style="padding:0 5px 0 5px;">
+                                                                <a href="https://m.bedetheque.com/serie-29316-BD-Guerre-des-Orcs.html" data-ajax="false">
+                                                                        <img src="https://www.bedetheque.com/cache/thb_couv/Couv_136136.jpg" />
+                                                                </a>
+                                                        </div>
+                                                                                                                                                        <div class="col-xs-4" style="padding:0 0 0 5px;">
+                                                                <a href="https://m.bedetheque.com/serie-46610-BD-Maitres-Inquisiteurs.html" data-ajax="false">
+                                                                        <img src="https://www.bedetheque.com/cache/thb_couv/Couv_239288.jpg" />
+                                                                </a>
+                                                        </div>
+                                                                                        </div>
+                                                                        <div class="item">
+                                                <div class="col-xs-4" style="padding:0 5px 0 0;">
+                                                        <a href="https://m.bedetheque.com/serie-36604-BD-Mjollnir.html" data-ajax="false">
+                                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_179118.jpg" />
+                                                        </a>
+                                                </div>
+                                                                                                        <div class="col-xs-4" style="padding:0 5px 0 5px;">
+                                                                <a href="https://m.bedetheque.com/serie-26242-BD-Ogres.html" data-ajax="false">
+                                                                        <img src="https://www.bedetheque.com/cache/thb_couv/Couv_118837.jpg" />
+                                                                </a>
+                                                        </div>
+                                                                                                                                                        <div class="col-xs-4" style="padding:0 0 0 5px;">
+                                                                <a href="https://m.bedetheque.com/serie-33208-BD-Orcs.html" data-ajax="false">
+                                                                        <img src="https://www.bedetheque.com/cache/thb_couv/Couv_160976.jpg" />
+                                                                </a>
+                                                        </div>
+                                                                                        </div>
+                                                                        <div class="item">
+                                                <div class="col-xs-4" style="padding:0 5px 0 0;">
+                                                        <a href="https://m.bedetheque.com/serie-26254-BD-Wollodrin.html" data-ajax="false">
+                                                                <img src="https://www.bedetheque.com/cache/thb_couv/118878_c.jpg" />
+                                                        </a>
+                                                </div>
+                                                                                                                                        </div>
+                                
+                        </div>
+
+                
+                                        <h4 style="margin:25px 0 10px 0;">Dans le même univers :</h4>
+                        <div data-role="none" id="spinoff-slider" class="owl-carousel nightly-inline-slider">
+                                                                        <div class="item">
+                                                <div class="col-xs-4" style="padding:0 5px 0 0;">
+                                                        <a href="https://m.bedetheque.com/serie-37239-BD-Elfes.html" data-ajax="false">
+                                                                <img src="https://www.bedetheque.com/cache/thb_couv/Couv_182486.jpg" />
+                                                        </a>
+                                                </div>
+                                                                                                        <div class="col-xs-4" style="padding:0 5px 0 5px;">
+                                                                <a href="https://m.bedetheque.com/serie-58099-BD-Orcs-Gobelins.html" data-ajax="false">
+                                                                        <img src="https://www.bedetheque.com/cache/thb_couv/Couv_311781.jpg" />
+                                                                </a>
+                                                        </div>
+                                                                                                                                                        <div class="col-xs-4" style="padding:0 0 0 5px;">
+                                                                <a href="https://m.bedetheque.com/serie-65683-BD-Mages.html" data-ajax="false">
+                                                                        <img src="https://www.bedetheque.com/cache/thb_couv/Couv_366461.jpg" />
+                                                                </a>
+                                                        </div>
+                                                                                        </div>
+                                
+                        </div>
+                
+                
+
+
+
+        </div>
+
+
+
+
+
+                </div>
+
+                <div data-role="footer" data-theme="none" data-border="false">
+                        <p>
+                                <i class="fa fa-copyright"></i> BDGest 2014 - Tous droits réservés
+                        </p>
+                        
+                </div>                        
+
+        </div>
+
+        <input type="hidden" value="https://m.bedetheque.com/" id="baseurl">
+        <input type="hidden" value="https://www.bedetheque.com/" id="belurl">
+        <input type="hidden" value="https://www.bdgest.com/" id="bdgesturl">
+        <input type="hidden" value="BEL" id="site">
+        <input type="hidden" value="Mobile" id="rubrique">
+        <input type="hidden" value="" id="referer">
+
+
+        <!-- jQuery / jQueryMobile Scripts -->
+        <script src="https://m.bedetheque.com/js/jquery.min.js"></script>
+        <script src="https://m.bedetheque.com/js/jquery.mobile.min.js"></script>
+        <script src="https://m.bedetheque.com/js/owl.carousel.min.js"></script>
+
+        <script src="https://www.bdgest.com/assets/js/mobile/mobile.js?v=4ed8926b"></script>
+
+        <script src='https://www.bdgest.com/js/vu.min.js?v=4ed8926b'></script>
+
+                                                <script type='text/javascript' src='https://www.bdgest.com/assets/js/mobile/serie_detail.js?v=4ed8926b'></script>
+                        
+       
+</body>
+</html>
+

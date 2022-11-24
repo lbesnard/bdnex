@@ -537,8 +537,6 @@ class BdGestParse():
 
             soup = BeautifulSoup(content, 'lxml')
 
-        soup.find_all(id='full-commentaire')[0]
-
         series_abstract = soup.find(id='full-commentaire').attrs['value']
         series_meta_dict = {}
         series_meta_dict['series_abstract'] = series_abstract

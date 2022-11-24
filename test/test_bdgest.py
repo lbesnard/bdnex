@@ -11,6 +11,10 @@ ALBUM_URL_MATCH = {
     'Redwin de la forge': "https://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html",
 }
 
+SERIE_URL_MATCH = {
+    'Nains': "https://m.bedetheque.com/serie-47467-BD-Nains.html"
+}
+
 BEDETHEQUE_METADATA_HTML = os.path.join(os.path.dirname(__file__), 'mobile_redwin.html')  # mocked html page
 
 
@@ -100,6 +104,7 @@ class TestBdGestParse(unittest.TestCase):
 
         self.assertEqual("Redwin de la Forge", comicrack_dict["Title"])
         self.assertEqual("Nains", comicrack_dict["Series"])
+        self.assertTrue(comicrack_dict["Summary"].startswith("Redwin,"))  # this tests the function parse_serie_metadata_mobile
 
         # don't delete the html and json file so another part of the code can be tested
 
