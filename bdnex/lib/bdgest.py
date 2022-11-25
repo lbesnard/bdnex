@@ -1,4 +1,3 @@
-import bs4
 import logging
 import os
 import re
@@ -11,21 +10,18 @@ from functools import lru_cache
 from os import listdir
 from os.path import isfile, join
 from random import randint
-from termcolor import colored
-from InquirerPy import prompt
 
+import bs4
 import dateutil.parser
 import pandas as pd
 import requests
+from InquirerPy import prompt
 from bs4 import BeautifulSoup
 from pkg_resources import resource_filename
-from termcolor import colored
 from rapidfuzz import fuzz
-import contextlib
+from termcolor import colored
 
-from bdnex.lib.utils import dump_json
-from bdnex.lib.utils import load_json
-from .web_search import bd_search_album
+from bdnex.lib.utils import dump_json, load_json
 
 BDGEST_MAPPING = resource_filename('bdnex', "conf/bdgest_mapping.json")
 BDGEST_SITEMAPS = resource_filename('bdnex', "conf/bedetheque_sitemap.json")
@@ -62,14 +58,6 @@ class BdGestParse():
         if len(os.listdir(self.sitemaps_path)) == 0:
             self.logger.info(f"No sitemaps exist yet. Downloading all available sitemaps locally to {self.sitemaps_path}")
             self.download_sitemaps()
-
-    @contextlib.contextmanager
-    def temporary_directory(*args, **kwargs):
-        d = tempfile.mkdtemp(*args, **kwargs)
-        try:
-            yield d
-        finally:
-            shutil.rmtree(d)
 
     @staticmethod
     def generate_sitemaps_url():
@@ -239,117 +227,6 @@ class BdGestParse():
 
         self.album_url = url
         return url
-
-    def gogo_search_album(self):
-        self.logger.info("searching online for {album_name}".format(album_name=self.album_name))
-        album_url = bd_search_album(self.album_name, 'm.bedetheque.com')
-        return album_url
-
-    def parse_album_metadata(self, album_name):
-        self.logger.warning('Deprecated function. Prefer parse_album_metadata_mobile() ')
-        self.search_album_url(album_name)
-        self.logger.info(f"Parsing metadata from {self.album_url}")
-
-        url = urllib.request.urlopen(self.album_url)
-        content = url.read().decode('utf8')
-        soup = BeautifulSoup(content, 'lxml')
-
-        data_extracted = soup.find_all('div', attrs={"class": "album-main"})[0].find_all("li")
-
-        album_meta_dict = {}
-        album_meta_dict['album_url'] = self.album_url
-
-        for item in data_extracted:
-            try:
-                fieldname = item.label.contents[0].strip(' :')
-                fieldval = item.contents[1].strip()
-
-                album_meta_dict[fieldname] = fieldval
-            except:
-                pass
-
-        for label in soup.select("label"):
-            if label.contents:
-                try:
-                    key = label.contents[0].split(':')[0].rstrip().replace(' ', '_')
-                    if label.find_next_sibling():
-                        val = label.find_next_sibling().text.rstrip()
-                    else:
-                        val = label.find_parent().contents[1]
-                    album_meta_dict[key] = val
-                except:
-                    pass
-
-        album_meta_dict["Language"] = soup.find_all('meta', itemprop='inLanguage')[0].attrs['content'].upper()
-
-        data_extracted = soup.find_all('div', attrs={"class": "tab_content_liste_albums"})
-        if data_extracted:
-            data_extracted = data_extracted[0].find_all("li")[0]
-            series_name = data_extracted.contents[1]
-            # data_extracted.contents[0]
-            album_meta_dict["series_name"] = series_name
-
-        data_extracted = soup.find_all('div', attrs={"class": "bandeau-image album"})
-        if data_extracted:
-            cover_url = data_extracted[0].a['href']
-            album_meta_dict['cover_url'] = cover_url
-        else:
-            album_meta_dict["cover_url"] = soup.find_all('meta', property='og:image')[0].attrs['content']
-
-        album_meta_dict["album_name"] = soup.find_all('meta', property='og:title')[0].attrs['content']
-        #album_meta_dict["album_name"] = soup.find_all("div", attrs={'class': "big-title"})[0].contents[0].a.contents[0].strip()
-
-        album_meta_dict["numberOfPages"] = int(soup.find_all('span', itemprop='numberOfPages')[0].contents[0])
-        album_meta_dict["author"] = soup.find_all('span', itemprop='author')[0].contents[0]#.text
-        album_meta_dict["isbn"] = soup.find_all('span', itemprop='isbn')[0].contents[0].text
-
-        album_meta_dict["publisher"] = soup.find_all('span', itemprop='publisher')[0].contents[0]#.text
-        album_meta_dict["datePublished"] = soup.find_all('meta', itemprop='datePublished')[0].attrs['content']
-        try:
-            album_meta_dict["score"] = float(soup.find_all('span', itemprop='ratingValue')[0].contents[0]) * 2  # rating value is /5 . doing /10
-        except:
-            pass
-
-        try:
-            album_meta_dict["description"] = soup.find_all('span', itemprop='description')[0].contents[0]
-        except:
-            album_meta_dict["description"] = soup.find_all('meta', property='og:description')[0].attrs['content']
-
-        try:
-            album_meta_dict["illustrator"] = soup.find_all('span', itemprop='illustrator')[0].contents[0]
-        except:
-            pass
-
-        try:
-            album_meta_dict["genre"] = soup.find_all('meta', itemprop='genre')[0].attrs['content']
-        except:
-            pass
-
-        # other info, n pages, editeur, isbn ...
-        data_extracted = soup.find_all('ul', attrs={"class": "infos"})
-        # doesn't always exist
-        if data_extracted:
-            data_extracted = data_extracted[0]
-
-            for item in data_extracted.find_all('li'):
-                fieldname = item.label.contents[0].strip(' :')
-                try:
-                    fieldval = item.contents[1].strip()
-                except:
-                    try:
-                        fieldval = item.a.contents[0].strip()
-                    except:
-                        fieldval = ''
-
-                        pass
-
-                if fieldval:
-                    album_meta_dict[fieldname] = fieldval
-
-        self.album_meta_dict = album_meta_dict
-        comicrack_dict = self.comicinfo_metadata(album_meta_dict)
-
-        return album_meta_dict, comicrack_dict
 
     def parse_album_metadata_mobile(self, album_name, album_url=None):
         """

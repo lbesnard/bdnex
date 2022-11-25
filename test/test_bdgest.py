@@ -1,7 +1,6 @@
 import os
-import unittest
 import time
-
+import unittest
 from unittest.mock import patch, MagicMock
 
 from bdnex.lib.bdgest import BdGestParse
