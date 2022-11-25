@@ -10,6 +10,8 @@ import patoolib
 import rarfile
 import xmlschema
 from pkg_resources import resource_filename
+from xmldiff import formatting
+from xmldiff import main
 
 from bdnex.lib.utils import yesno
 
@@ -53,14 +55,36 @@ class comicInfo():
                                         os.path.basename(os.path.splitext(self.input_filename)[0]) + '.cbz')
 
         if os.path.exists(os.path.join(extracted_dir, 'ComicInfo.xml')):
+            formatter = formatting.XmlDiffFormatter(pretty_print=True, normalize=formatting.WS_BOTH)
+            diff = main.diff_files(os.path.join(extracted_dir, 'ComicInfo.xml'), comic_info_fp, formatter=formatter)
+
+            self.logger.warning("Displaying difference between original and newly created ComicInfo.xml")
+            self.logger.warning(diff)
+
             ans = yesno('ComicInfo.xml already exist, replace ? Y/N')
             if ans:
                 os.remove(os.path.join(extracted_dir, 'ComicInfo.xml'))
 
-                files_folders_to_add = glob.glob(extracted_dir + '/*')
+                files_folders_to_add = glob.glob(glob.escape(extracted_dir) + '/*')  # have to escape special characters otherwise the returned list is empty
+                if files_folders_to_add == []:
+                    self.logger.error("new archive file counldn't be created, report bug")
+                    return
+
                 patoolib.create_archive(new_archive_path,
                                         (comic_info_fp, *files_folders_to_add),
                                         interactive=False)
+
+                # compare original and new archive file size to make sure we're not making a "bad" archive
+                og_file_size = os.path.getsize(self.input_filename)
+                new_file_size = os.path.getsize(new_archive_path)
+                similarity = 1 - abs(og_file_size - new_file_size) / (og_file_size + new_file_size)
+
+                if similarity < 0.9:
+                    self.logger.warning(f"New comic {new_archive_path} created is significantly smaller in size from original {self.input_filename}. Please check Manually")
+                    ans = yesno("Replace original comic file with new one")
+                    if ans is False:
+                        return
+
             else:
                 self.logger.info("Original file not modified")
                 shutil.rmtree(os.path.dirname(comic_info_fp))
