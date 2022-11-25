@@ -1,3 +1,4 @@
+import bs4
 import logging
 import os
 import re
@@ -11,6 +12,7 @@ from os import listdir
 from os.path import isfile, join
 from random import randint
 from termcolor import colored
+from InquirerPy import prompt
 
 import dateutil.parser
 import pandas as pd
@@ -19,6 +21,7 @@ from bs4 import BeautifulSoup
 from pkg_resources import resource_filename
 from termcolor import colored
 from rapidfuzz import fuzz
+import contextlib
 
 from bdnex.lib.utils import dump_json
 from bdnex.lib.utils import load_json
@@ -48,9 +51,25 @@ class BdGestParse():
         if not os.path.exists(self.album_metadata_html_path):
             os.makedirs(self.album_metadata_html_path)
 
+        self.serie_metadata_json_path = os.path.join(self.bdnex_local_path, 'series_json')
+        if not os.path.exists(self.serie_metadata_json_path):
+            os.makedirs(self.serie_metadata_json_path)
+
+        self.serie_metadata_html_path = os.path.join(self.bdnex_local_path, 'series_html')
+        if not os.path.exists(self.serie_metadata_html_path):
+            os.makedirs(self.serie_metadata_html_path)
+
         if len(os.listdir(self.sitemaps_path)) == 0:
             self.logger.info(f"No sitemaps exist yet. Downloading all available sitemaps locally to {self.sitemaps_path}")
             self.download_sitemaps()
+
+    @contextlib.contextmanager
+    def temporary_directory(*args, **kwargs):
+        d = tempfile.mkdtemp(*args, **kwargs)
+        try:
+            yield d
+        finally:
+            shutil.rmtree(d)
 
     @staticmethod
     def generate_sitemaps_url():
@@ -87,6 +106,8 @@ class BdGestParse():
         sitemaps_xml = [os.path.join(self.sitemaps_path, f)
                         for f in listdir(self.sitemaps_path) if isfile(join(self.sitemaps_path, f))]
 
+        sitemaps_xml.sort()
+
         if not sitemaps_xml:
             self.logger.error(f"No sitemaps files available in {self.sitemaps_path}")
             raise FileNotFoundError
@@ -111,7 +132,6 @@ class BdGestParse():
 
         # various string cleaning
         urls_list = [re.search(r"(?P<url>https?://[^\s]+)", x).group("url").replace('"', '') for x in stringlist]
-        #urls_list = [re.search("(?P<url>https?://[^\s]+)\"", x).group("url") for x in stringlist]
         cleansed = [x.replace('https://m.bedetheque.com/BD-', '').replace('.html', '').replace('-', ' ')
                     for x in urls_list]
 
@@ -122,7 +142,6 @@ class BdGestParse():
             album_list.append(self.remove_common_words_from_string(val))
 
         os.remove(tempfile_path)
-
         return album_list, urls_list
 
     @staticmethod
@@ -172,6 +191,26 @@ class BdGestParse():
                 return url
         except Exception as err:
             self.logger.error("Fast search didn't provide any results")
+
+    def search_album_from_sitemaps_interactive(self):
+        # interactive fuzzy search for user prompt
+
+        album_list, urls = self.clean_sitemaps_urls()
+
+        questions = [
+            {
+                "type": "fuzzy",
+                "message": "Write & Select album name with >TAB: (avoid writting common articles such as [le ,la ,les, de, des ...]",
+                "choices": album_list,
+                "multiselect": True,
+                "validate": lambda result: len(result) == 1,
+                "invalid_message": "maximum 1 selection",
+                "max_height": "70%",
+            },
+        ]
+        result = prompt(questions=questions)
+        self.logger.info(f"Manual matching album {result[0][0]}")
+        return urls[album_list.index(result[0][0])]
 
     def search_album_from_sitemaps_slow(self, album_name):
         self.logger.debug(f"Searching for \"{album_name}\" in bedetheque.com sitemap files [SLOW VERSION]")
@@ -312,7 +351,7 @@ class BdGestParse():
 
         return album_meta_dict, comicrack_dict
 
-    def parse_album_metadata_mobile(self, album_name):
+    def parse_album_metadata_mobile(self, album_name, album_url=None):
         """
         Parse a mobile version HTML file containing metadata of an album
         Args:
@@ -321,22 +360,21 @@ class BdGestParse():
         Returns:
 
         """
-        self.search_album_url(album_name)
+        # case when user enters manually a url
+        if album_url:
+            self.album_url = album_url
+        else:
+            self.search_album_url(album_name)
+
         album_meta_json_path = '{filepath}.json'.format(filepath=os.path.join(self.album_metadata_json_path,
                                                                               os.path.basename(self.album_url)))
         album_meta_html_path = os.path.join(self.album_metadata_html_path,
                                             os.path.basename(self.album_url))
 
         if os.path.exists(album_meta_json_path):
-            self.logger.debug(f"Parsing JSON metadata from already parsed web page {album_meta_json_path}")
-            try:
-                album_meta_dict = load_json(album_meta_json_path)
-                comicrack_dict = self.comicinfo_metadata(album_meta_dict)
-                return album_meta_dict, comicrack_dict
-
-            except Exception as err:
-                self.logger.error(f"Previous saved {album_meta_json_path} is corrupted")
-                os.remove(album_meta_json_path)
+            # deleting existing json, and re-recreating it to handle breaking code changes if they happen
+            self.logger.debug(f"Deleting existing JSON metadata from already parsed web page {album_meta_json_path}")
+            os.remove(album_meta_json_path)
 
         if os.path.exists(album_meta_html_path):
             self.logger.debug(f"Parsing HTML metadata from already downloaded web page {album_meta_html_path}")
@@ -355,7 +393,8 @@ class BdGestParse():
             except:
                 content = url.read()  # mainly for unittesting as content already decoded
 
-            # save html content in .local for future use if needed. reprocess can be achieved without loads on bedetheque.com
+            # save html content in .local for future re-parse if needed. reprocess can be achieved without
+            # unnecessary loads on bedetheque.com risking IP ban
             with open(album_meta_html_path, 'w') as out_file:
                 out_file.write(content)
 
@@ -376,6 +415,11 @@ class BdGestParse():
                             val = label.find_parent().contents[2]
                         else:
                             val = label.find_parent().contents[1]
+                    if key == 'Série':
+                        try:
+                            series_href = label.find_parent().find_all(href=True)[0].get('href')  # get series link
+                        except:
+                            pass
                     album_meta_dict[key] = val
                 except:
                     pass
@@ -397,14 +441,46 @@ class BdGestParse():
         if isinstance(album_meta_dict['Planches'], str):
             album_meta_dict['Planches'] = int(album_meta_dict['Planches'])
 
-        if hasattr(album_meta_dict, 'Tome'):
+        if 'Tome' in album_meta_dict.keys():
             if isinstance(album_meta_dict['Tome'], str):
-                regex = re.compile(r'(\d+|\s+)')
-                r = regex.split(album_meta_dict['Tome'])
-                tome = list(filter(None, r))[-1]
-                album_meta_dict['Tome']= int(tome)
+                if not album_meta_dict['Tome'][0].isdigit():  # dealing with Hors-Serie or integral albums
+                    album_meta_dict['AlternateNumber'] = album_meta_dict['Tome']
+                    del album_meta_dict['Tome']
+                else:
+                    regex = re.compile(r'(\d+|\s+)')
+                    r = regex.split(album_meta_dict['Tome'])
+                    tome = list(filter(None, r))[-1]
+
+                    album_meta_dict['Tome'] = int(tome)
+
+        # remove bad metadata still containing an html tag,sign it was wrongly parsed
+        key_to_remove = []
+        for key in album_meta_dict.keys():
+            if isinstance(album_meta_dict[key], bs4.element.Tag):
+                self.logger.error(f"{key} info wrongly parsed and removed from parsed metadata. Lodge an issue")
+                key_to_remove.append(key)
+        if key_to_remove:
+            for key in key_to_remove:
+                album_meta_dict.pop(key)
 
         self.album_meta_dict = album_meta_dict
+
+        # retrieving series information (abstract mainly)
+        if 'Tome' in album_meta_dict.keys():  # this should mean this is a series
+            if 'series_href' in locals():
+                series_meta_dict = self.parse_serie_metadata_mobile(series_href)
+                if 'series_abstract' in series_meta_dict:
+                    series_abstract = series_meta_dict['series_abstract']
+
+        # append summary from series to album summary
+        if 'description' in album_meta_dict:
+            if 'series_abstract' in locals():
+                album_meta_dict['description'] = f"{series_abstract}\n {album_meta_dict['description']}"
+
+        else:
+            if 'series_abstract' in locals():
+                album_meta_dict['description'] = series_abstract
+
         comicrack_dict = self.comicinfo_metadata(album_meta_dict)
 
         album_name_colored = colored(f'{album_name}', 'magenta', attrs=['bold'])
@@ -419,6 +495,55 @@ class BdGestParse():
             self.logger.error(f"{err}. {album_meta_json_path} can not be written")
 
         return album_meta_dict, comicrack_dict
+
+    def parse_serie_metadata_mobile(self, serie_url):
+        """
+        Parse a mobile version HTML file containing metadata of an album
+        Args:
+            series_url:
+
+        Returns:
+
+        """
+        serie_meta_json_path = '{filepath}.json'.format(filepath=os.path.join(self.serie_metadata_json_path,
+                                                                              os.path.basename(serie_url)))
+        serie_meta_html_path = os.path.join(self.serie_metadata_html_path,
+                                            os.path.basename(serie_url))
+
+        if os.path.exists(serie_meta_json_path):
+            # deleting existing json, and re-recreating it to handle breaking code changes if they happen
+            self.logger.debug(f"Deleting existing JSON metadata from already parsed web page {serie_meta_json_path}")
+            os.remove(serie_meta_json_path)
+
+        if os.path.exists(serie_meta_html_path):
+            self.logger.debug(f"Parsing HTML metadata from already downloaded web page {serie_meta_html_path}")
+
+            with open(serie_meta_html_path) as fp:
+                soup = BeautifulSoup(fp, 'html.parser')
+        else:
+
+            self.logger.debug(f"Parsing metadata from {serie_url}")
+
+            time.sleep(randint(3, 10))  # we don't want to be suspicious between queries
+
+            url = urllib.request.urlopen(serie_url)
+            try:
+                content = url.read().decode('utf8')
+            except:
+                content = url.read()  # mainly for unittesting as content already decoded
+
+            # save html content in .local for future re-parse if needed. reprocess can be achieved without
+            # unnecessary loads on bedetheque.com risking IP ban
+            with open(serie_meta_html_path, 'w') as out_file:
+                out_file.write(content)
+
+            soup = BeautifulSoup(content, 'lxml')
+
+        series_abstract = soup.find(id='full-commentaire').attrs['value']
+        series_meta_dict = {}
+        series_meta_dict['series_abstract'] = series_abstract
+
+        return series_meta_dict
 
     def comicinfo_metadata(self, metadata_dict):
         self.logger.info("Converting parsed metadata to ComicRack template")

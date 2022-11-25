@@ -11,6 +11,10 @@ ALBUM_URL_MATCH = {
     'Redwin de la forge': "https://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html",
 }
 
+SERIE_URL_MATCH = {
+    'Nains': "https://m.bedetheque.com/serie-47467-BD-Nains.html"
+}
+
 BEDETHEQUE_METADATA_HTML = os.path.join(os.path.dirname(__file__), 'mobile_redwin.html')  # mocked html page
 
 
@@ -39,8 +43,8 @@ class TestBdGestParse(unittest.TestCase):
 
     def test_clean_sitemaps_urls(self):
         cleaned_list, urls_list = BdGestParse().clean_sitemaps_urls()
-        self.assertEqual('avengers marvel france 2013 24 cabale', cleaned_list[0])
-        self.assertEqual('https://m.bedetheque.com/BD-Avengers-Marvel-France-2013-Tome-24-La-Cabale-250003.html', urls_list[0])
+        self.assertEqual('mimura kataguri days of days of mimura kataguri', cleaned_list[0])
+        self.assertEqual('https://m.bedetheque.com/BD-Mimura-Kataguri-Days-of-Days-of-Mimura-Kataguri-240001.html', urls_list[0])
 
     def test_remove_common_words_from_string(self):
         res = BdGestParse().remove_common_words_from_string("la MAisOn du lAc")
@@ -60,7 +64,6 @@ class TestBdGestParse(unittest.TestCase):
         for album_name in ALBUM_URL_MATCH.keys():
             res = BdGestParse().search_album_url(album_name)
             self.assertEqual(ALBUM_URL_MATCH[album_name], res)
-
 
     @patch('urllib.request.urlopen')
     @patch('time.sleep', return_value=None)  # mocking time as we're waiting some random seconds between each query to the remote website
@@ -100,8 +103,15 @@ class TestBdGestParse(unittest.TestCase):
 
         self.assertEqual("Redwin de la Forge", comicrack_dict["Title"])
         self.assertEqual("Nains", comicrack_dict["Series"])
+        self.assertTrue(comicrack_dict["Summary"].startswith("Redwin,"))  # this tests the function parse_serie_metadata_mobile
 
         # don't delete the html and json file so another part of the code can be tested
+
+    @patch("bdnex.lib.bdgest.prompt")
+    def test_search_album_from_sitemaps_interactive(self, mocked_prompt):
+        mocked_prompt.return_value = [["love peach"]]
+        res = BdGestParse().search_album_from_sitemaps_interactive()
+        self.assertEqual("https://m.bedetheque.com/BD-Love-Peach-250200.html", res)
 
 
 if __name__ == '__main__':

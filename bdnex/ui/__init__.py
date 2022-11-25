@@ -36,11 +36,18 @@ def add_metadata_from_bdgest(filename):
         ans = yesno("Cover matching confidence is low. Do you still want to append the metadata to the file?")
         if ans:
             comicInfo(filename, comicrack_meta).append_comicinfo_to_archive()
+        else:
+            logger.info(f"Looking manually for {colored(os.path.basename(filename), 'red', attrs=['bold'])}")
+            album_url = BdGestParse().search_album_from_sitemaps_interactive()
+
+            bdgest_meta, comicrack_meta = BdGestParse().parse_album_metadata_mobile(album_name, album_url=album_url)
+            comicInfo(filename, comicrack_meta).append_comicinfo_to_archive()
 
     cover_path = Path(cover_archive_fp).parent.as_posix()
     shutil.rmtree(cover_path)
 
     logger.info(f"Processing album done")
+
 
 def main():
     vargs = args()
@@ -60,7 +67,11 @@ def main():
             files.append(path.absolute().as_posix())
 
         for file in files:
-            add_metadata_from_bdgest(file)
+            try:
+                add_metadata_from_bdgest(file)
+            except:
+                logger = logging.getLogger(__name__)
+                logger.error(f"{file} couldn't be processed")
 
     elif vargs.input_file:
         file = vargs.input_file
