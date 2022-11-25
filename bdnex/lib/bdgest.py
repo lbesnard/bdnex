@@ -285,13 +285,19 @@ class BdGestParse():
             if label.contents:
                 try:
                     key = label.contents[0].split(':')[0].rstrip().replace(' ', '_')
-                    if label.find_next_sibling():
+                    if "Note" in key:
+                        val = label.find_parent().contents[8]
+                        val = float(re.search(r'(\d+.*)/', val).group()[:-1])
+
+                    elif label.find_next_sibling():
                         val = label.find_next_sibling().text.rstrip()
+
                     else:
                         if "Dépot" in key:
                             val = label.find_parent().contents[2]
                         else:
                             val = label.find_parent().contents[1]
+
                     if key == 'Série':
                         try:
                             series_href = label.find_parent().find_all(href=True)[0].get('href')  # get series link
