@@ -80,9 +80,10 @@ class TestBdGestParse(unittest.TestCase):
 
         self.assertEqual("Redwin de la Forge", comicrack_dict["Title"])
         self.assertEqual("Nains", comicrack_dict["Series"])
+        self.assertEqual("https://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html", comicrack_dict["Web"])
+        self.assertEqual(4.25, comicrack_dict["CommunityRating"])
 
         # delete html and json from .local so we can test the other part of the function which is doing the parsing from scratch
-
         album_metadata_html_path = os.path.join(os.path.dirname(__file__), '.local/share/bdnex/bedetheque/albums_html')
         album_metadata_json_path = os.path.join(os.path.dirname(__file__), '.local/share/bdnex/bedetheque/albums_json')
 
