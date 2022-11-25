@@ -65,7 +65,6 @@ class TestBdGestParse(unittest.TestCase):
             res = BdGestParse().search_album_url(album_name)
             self.assertEqual(ALBUM_URL_MATCH[album_name], res)
 
-
     @patch('urllib.request.urlopen')
     @patch('time.sleep', return_value=None)  # mocking time as we're waiting some random seconds between each query to the remote website
     def test_parse_album_metadata_mobile_url(self, patched_time_sleep, mock_urlopen):
@@ -107,6 +106,12 @@ class TestBdGestParse(unittest.TestCase):
         self.assertTrue(comicrack_dict["Summary"].startswith("Redwin,"))  # this tests the function parse_serie_metadata_mobile
 
         # don't delete the html and json file so another part of the code can be tested
+
+    @patch("bdnex.lib.bdgest.prompt")
+    def test_search_album_from_sitemaps_interactive(self, mocked_prompt):
+        mocked_prompt.return_value = [["love peach"]]
+        res = BdGestParse().search_album_from_sitemaps_interactive()
+        self.assertEqual("https://m.bedetheque.com/BD-Love-Peach-250200.html", res)
 
 
 if __name__ == '__main__':
