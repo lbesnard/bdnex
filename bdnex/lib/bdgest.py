@@ -106,6 +106,8 @@ class BdGestParse():
         sitemaps_xml = [os.path.join(self.sitemaps_path, f)
                         for f in listdir(self.sitemaps_path) if isfile(join(self.sitemaps_path, f))]
 
+        sitemaps_xml.sort()
+
         if not sitemaps_xml:
             self.logger.error(f"No sitemaps files available in {self.sitemaps_path}")
             raise FileNotFoundError

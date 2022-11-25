@@ -43,8 +43,8 @@ class TestBdGestParse(unittest.TestCase):
 
     def test_clean_sitemaps_urls(self):
         cleaned_list, urls_list = BdGestParse().clean_sitemaps_urls()
-        self.assertEqual('avengers marvel france 2013 24 cabale', cleaned_list[0])
-        self.assertEqual('https://m.bedetheque.com/BD-Avengers-Marvel-France-2013-Tome-24-La-Cabale-250003.html', urls_list[0])
+        self.assertEqual('mimura kataguri days of days of mimura kataguri', cleaned_list[0])
+        self.assertEqual('https://m.bedetheque.com/BD-Mimura-Kataguri-Days-of-Days-of-Mimura-Kataguri-240001.html', urls_list[0])
 
     def test_remove_common_words_from_string(self):
         res = BdGestParse().remove_common_words_from_string("la MAisOn du lAc")
