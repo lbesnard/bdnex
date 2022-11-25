@@ -12,6 +12,7 @@ import xmlschema
 from pkg_resources import resource_filename
 from xmldiff import formatting
 from xmldiff import main
+from termcolor import colored
 
 from bdnex.lib.utils import yesno
 
@@ -57,6 +58,12 @@ class comicInfo():
         if os.path.exists(os.path.join(extracted_dir, 'ComicInfo.xml')):
             formatter = formatting.XmlDiffFormatter(pretty_print=True, normalize=formatting.WS_BOTH)
             diff = main.diff_files(os.path.join(extracted_dir, 'ComicInfo.xml'), comic_info_fp, formatter=formatter)
+
+            diff = diff.replace('remove', colored(f'remove', 'red', attrs=['bold']))
+            diff = diff.replace('insert', colored(f'insert', 'green', attrs=['bold']))
+            diff = diff.replace('update', colored(f'update', 'yellow', attrs=['bold']))
+            diff = diff.replace('move-after', colored(f'move-after', 'yellow', attrs=['bold']))
+            diff = diff.replace('move-first', colored(f'move-first', 'yellow', attrs=['bold']))
 
             self.logger.warning("Displaying difference between original and newly created ComicInfo.xml")
             self.logger.warning(diff)
