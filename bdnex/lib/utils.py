@@ -3,9 +3,11 @@ import json
 import logging
 import logging.config
 import os
+import shutil
 import tempfile
 import urllib.request
 from pkg_resources import resource_filename
+import contextlib
 
 import logging
 import sys
@@ -130,3 +132,11 @@ def args():
 
     return vargs
 
+
+@contextlib.contextmanager
+def temporary_directory(*args, **kwargs):
+    d = tempfile.mkdtemp(*args, **kwargs)
+    try:
+        yield d
+    finally:
+        shutil.rmtree(d)

@@ -59,6 +59,7 @@ setup(
         'xmlschema',
         'patool',
         'InquirerPy',
+        'xmldiff',
     ],
 
     extras_require={

@@ -17,5 +17,7 @@
     "Planches": "PageCount",
     "publisher": "Publisher",
     "score": "Notes",
-    "Série": "Series"
+    "Série": "Series",
+    "album_url": "Web",
+    "Note": "CommunityRating"
 }
