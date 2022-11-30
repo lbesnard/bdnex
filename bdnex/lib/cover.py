@@ -1,9 +1,10 @@
+import logging
 import os.path
 
 import cv2
 import imutils
-import logging
 from termcolor import colored
+
 from bdnex.lib.utils import download_link
 
 

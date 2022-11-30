@@ -21,17 +21,20 @@ from pkg_resources import resource_filename
 from rapidfuzz import fuzz
 from termcolor import colored
 
-from bdnex.lib.utils import dump_json, load_json
+from bdnex.lib.utils import dump_json, load_json, bdnex_config
 
 BDGEST_MAPPING = resource_filename('bdnex', "conf/bdgest_mapping.json")
 BDGEST_SITEMAPS = resource_filename('bdnex', "conf/bedetheque_sitemap.json")
 
 
-class BdGestParse():
+class BdGestParse:
     def __init__(self):
         self.logger = logging.getLogger(__name__)
 
-        self.bdnex_local_path = os.path.join(os.environ["HOME"], '.local/share/bdnex/bedetheque/')
+        bdnex_conf = bdnex_config()
+        share_path = os.path.expanduser(bdnex_conf['bdnex']['share_path'])
+
+        self.bdnex_local_path = os.path.join(share_path, 'bedetheque/')
         if not os.path.exists(self.bdnex_local_path):
             os.makedirs(self.bdnex_local_path)
 
@@ -70,7 +73,7 @@ class BdGestParse():
         last_val = 0
         for i in range(47):
             val_min = 1 + last_val
-            val_max= val_min + 9999
+            val_max = val_min + 9999
             last_val = val_max
             url = "https://www.bedetheque.com/albums_{val_min}_{val_max}_map.xml".format(val_min=val_min,
                                                                                          val_max=val_max)

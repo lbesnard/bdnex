@@ -1,6 +1,7 @@
-import os.path
 import os
+import os.path
 import unittest
+
 from bdnex.lib.archive_tools import archive_get_front_cover
 
 ARCHIVE_CBZ_PATH = os.path.join(os.path.dirname(__file__), 'bd.cbz')

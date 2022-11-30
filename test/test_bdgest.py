@@ -23,8 +23,22 @@ def read_file_content(fp):
         return data
 
 
-@patch.dict(os.environ, {"HOME": os.path.dirname(os.path.realpath(__file__))})
 class TestBdGestParse(unittest.TestCase):
+    def setUp(self):
+        # mock patch at the class level
+        # see https://stackoverflow.com/questions/25857655/django-tests-patch-object-in-all-tests
+        self.patcher = patch('bdnex.lib.bdgest.bdnex_config')
+        self.bdnex_config_mock = self.patcher.start()
+
+        self.bdnex_config_mock.return_value = {
+            "bdnex": {"share_path": os.path.join(os.path.dirname(os.path.realpath(__file__)),
+                                                 '.local/share/bdnex'),
+                      }
+        }
+
+    def tearDown(self):
+        self.patcher.stop()
+
     def test_generate_sitemaps_url(self):
         urls = BdGestParse().generate_sitemaps_url()
         self.assertEqual('https://www.bedetheque.com/albums_50001_60000_map.xml', urls[5])

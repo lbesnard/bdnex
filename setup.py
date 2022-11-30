@@ -42,24 +42,25 @@ setup(
     },
 
     install_requires=[
-        'rarfile',
-        'beautifulsoup4',
-        'lxml',  # bs4 dependency
-        'html5lib',  # bs4 dependency
-        'numpy',
-        'thefuzz',
-        'rapidfuzz',
-        'duckduckgo-search',
+        'InquirerPy',
         'argparse',
-        'termcolor',
+        'beautifulsoup4',
+        'duckduckgo-search',
+        'html5lib',  # bs4 dependency
         'imutils',
-        'tenacity',
+        'lxml',  # bs4 dependency
+        'numpy',
         'opencv-contrib-python-headless',
         'pandas',
-        'xmlschema',
         'patool',
-        'InquirerPy',
+        'pyyaml',
+        'rapidfuzz',
+        'rarfile',
+        'tenacity',
+        'termcolor',
+        'thefuzz',
         'xmldiff',
+        'xmlschema',
     ],
 
     extras_require={

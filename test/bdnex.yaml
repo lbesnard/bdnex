@@ -1,0 +1,22 @@
+bdnex:
+  config_path: ~/.config/bdnex
+  share_path: ~/.local/share/bdnex
+
+directory: /path/to/comics/library
+
+import:
+  copy: no
+  move: yes
+  replace: yes
+  autotag: no
+  rename: yes
+
+library: ~/.local/share/bdnex/bdnex.sqlite
+
+paths:
+  default: '%language/%type/%title (%author) [%year]/%title - %volume (%author) [%year]'
+  oneshot: '%language/oneShots/%title (%author) [%year]/%title (%author) [%year]'
+  series: '%language/series/%title (%author)/%title - %volume'
+
+cover:
+  match_percentage: 40

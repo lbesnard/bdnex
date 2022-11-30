@@ -1,20 +1,23 @@
 import argparse
+import contextlib
 import json
 import logging
 import logging.config
 import os
 import shutil
+import sys
 import tempfile
 import urllib.request
-from pkg_resources import resource_filename
-import contextlib
 
-import logging
-import sys
+import yaml
+from pkg_resources import resource_filename
 
 from bdnex.lib.colargulog import ColorizedArgsFormatter
 
 LOGGING_CONF = resource_filename('bdnex', "/conf/logging.conf")
+DEFAULT_CONFIG_YAML = resource_filename('bdnex', "/conf/bdnex.yaml")
+UNIX_DIR_VAR = 'XDG_CONFIG_HOME'
+UNIX_DIR_FALLBACK = '~/.config'
 
 
 def dump_json(json_path, json_data):
@@ -53,13 +56,21 @@ def enter_album_url():
     prompt = "Please enter manually a valid bedetheque mobile url starting with https://m.bedetheque.com/ "
     ans = input(prompt).strip().lower()
 
-    ans.replace("https://www.bedetheque.com/", "https://m.bedetheque.com/")
+    ans = ans.replace("https://www.bedetheque.com/", "https://m.bedetheque.com/")
 
-    while not ans.startswith('https://m.bedetheque.com/'):  # TODO: could modify this to replace www. with m.
+    iter = 0
+    while not ans.startswith('https://m.bedetheque.com/') and iter < 2:  # TODO: could modify this to replace www. with m.
         prompt = "Please enter manually a valid bedetheque mobile url"
         ans = input(prompt).strip().lower().replace("https://www.bedetheque.com/", "https://m.bedetheque.com/")
+        iter += 1
 
-    return ans
+    if 'ans' in locals():
+        return ans
+    else:
+        logger = logging.getLogger(__name__)
+        logger.error("No valid url was entered")
+
+        return
 
 
 def download_link(url, output_folder=None):
@@ -87,6 +98,39 @@ def init_logging():
     colored_formatter = ColorizedArgsFormatter(console_format)
     console_handler.setFormatter(colored_formatter)
     root_logger.addHandler(console_handler)
+
+
+def _init_config():
+    if UNIX_DIR_VAR in os.environ:
+        bdnex_user_path = os.path.join(os.environ[UNIX_DIR_VAR],
+                                       'bdnex')
+    else:
+        bdnex_user_path = os.path.join(os.environ[UNIX_DIR_FALLBACK],
+                                       'bdnex')
+    user_config_path = os.path.join(bdnex_user_path,
+                                   'bdnex.yaml')
+
+    if os.path.exists(bdnex_user_path):
+        if os.path.exists(user_config_path):
+            return user_config_path
+        else:
+            shutil.copy(DEFAULT_CONFIG_YAML, user_config_path)
+            return user_config_path
+    else:
+        os.makedirs(bdnex_user_path)
+        shutil.copy(DEFAULT_CONFIG_YAML, user_config_path)
+        return _init_config()
+
+
+def bdnex_config():
+    """
+    Parse bdnex configuration
+    Returns: dictionary containing configuration
+
+    """
+    config = yaml.safe_load(open(_init_config()))
+
+    return config
 
 
 def args():
