@@ -10,9 +10,9 @@ import patoolib
 import rarfile
 import xmlschema
 from pkg_resources import resource_filename
+from termcolor import colored
 from xmldiff import formatting
 from xmldiff import main
-from termcolor import colored
 
 from bdnex.lib.utils import yesno
 

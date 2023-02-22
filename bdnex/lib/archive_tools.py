@@ -1,7 +1,8 @@
-import zipfile
-import rarfile
-import tempfile
 import os
+import tempfile
+import zipfile
+
+import rarfile
 
 
 def archive_get_front_cover(archive_path):

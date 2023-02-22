@@ -7,12 +7,13 @@ from bdnex.lib.archive_tools import archive_get_front_cover
 from bdnex.lib.bdgest import BdGestParse
 from bdnex.lib.comicrack import comicInfo
 from bdnex.lib.cover import front_cover_similarity, get_bdgest_cover
-from bdnex.lib.utils import yesno, args
+from bdnex.lib.utils import yesno, args, bdnex_config
 from pathlib import Path
 from termcolor import colored
 
 
 def add_metadata_from_bdgest(filename):
+    bdnex_conf = bdnex_config()
 
     logger = logging.getLogger(__name__)
     start_separator = colored(f'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
@@ -29,7 +30,7 @@ def add_metadata_from_bdgest(filename):
 
     percentage_similarity = front_cover_similarity(cover_archive_fp, cover_web_fp)
 
-    if percentage_similarity > 40:
+    if percentage_similarity > bdnex_conf['cover']['match_percentage']:
         comicInfo(filename, comicrack_meta).append_comicinfo_to_archive()
     else:
         logger.warning("UserPrompt required")
