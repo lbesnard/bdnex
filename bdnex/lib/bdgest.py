@@ -17,14 +17,13 @@ import pandas as pd
 import requests
 from InquirerPy import prompt
 from bs4 import BeautifulSoup
-from pkg_resources import resource_filename
 from rapidfuzz import fuzz
 from termcolor import colored
 
-from bdnex.lib.utils import dump_json, load_json, bdnex_config
+from bdnex.lib.utils import CONF_DIR, dump_json, load_json, bdnex_config
 
-BDGEST_MAPPING = resource_filename('bdnex', "conf/bdgest_mapping.json")
-BDGEST_SITEMAPS = resource_filename('bdnex', "conf/bedetheque_sitemap.json")
+BDGEST_MAPPING = os.path.join(CONF_DIR, "bdgest_mapping.json")
+BDGEST_SITEMAPS = os.path.join(CONF_DIR, "bedetheque_sitemap.json")
 
 
 class BdGestParse:
@@ -115,7 +114,7 @@ class BdGestParse:
     def clean_sitemaps_urls(self):
         tempfile_path = self.concatenate_sitemaps_files()
 
-        with open(tempfile_path, 'r') as f:
+        with open(tempfile_path, 'r', encoding='utf-8') as f:
             myNames = [line.strip() for line in f]
 
             # keep only mobile links
@@ -259,7 +258,7 @@ class BdGestParse:
         if os.path.exists(album_meta_html_path):
             self.logger.debug(f"Parsing HTML metadata from already downloaded web page {album_meta_html_path}")
 
-            with open(album_meta_html_path) as fp:
+            with open(album_meta_html_path, encoding='utf-8') as fp:
                 soup = BeautifulSoup(fp, 'html.parser')
         else:
 
@@ -275,7 +274,7 @@ class BdGestParse:
 
             # save html content in .local for future re-parse if needed. reprocess can be achieved without
             # unnecessary loads on bedetheque.com risking IP ban
-            with open(album_meta_html_path, 'w') as out_file:
+            with open(album_meta_html_path, 'w', encoding='utf-8') as out_file:
                 out_file.write(content)
 
             soup = BeautifulSoup(content, 'lxml')
@@ -404,7 +403,7 @@ class BdGestParse:
         if os.path.exists(serie_meta_html_path):
             self.logger.debug(f"Parsing HTML metadata from already downloaded web page {serie_meta_html_path}")
 
-            with open(serie_meta_html_path) as fp:
+            with open(serie_meta_html_path, encoding='utf-8') as fp:
                 soup = BeautifulSoup(fp, 'html.parser')
         else:
 
@@ -420,7 +419,7 @@ class BdGestParse:
 
             # save html content in .local for future re-parse if needed. reprocess can be achieved without
             # unnecessary loads on bedetheque.com risking IP ban
-            with open(serie_meta_html_path, 'w') as out_file:
+            with open(serie_meta_html_path, 'w', encoding='utf-8') as out_file:
                 out_file.write(content)
 
             soup = BeautifulSoup(content, 'lxml')
