@@ -55,7 +55,7 @@ format cannot be written without proprietary tools.
 
 ## Next steps
 
-- [Import into the library](importing.md) *(planned)*
-- [Query your library](queries.md) *(planned)*
+- [Import into the library](importing.md)
+- [Query your library](queries.md)
 - [Write tags and organise files](writing.md) *(planned)*
 - [Configuration](configuration.md)

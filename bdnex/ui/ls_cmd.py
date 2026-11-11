@@ -1,0 +1,71 @@
+"""``bdnex ls``: query the library."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import string
+import sys
+from typing import Any
+
+from bdnex.config import ConfigError, load_config
+from bdnex.library import Library
+from bdnex.library.query import ALL_FIELDS, QueryError
+
+DEFAULT_ALBUM_FORMAT = "$label$flag  ($authors) [$year]  $files_label"
+DEFAULT_FILE_FORMAT = "$path  $label"
+
+
+def decorate(row: dict[str, Any]) -> dict[str, Any]:
+    """Add the derived fields usable in ``--format`` (``$label``, ``$vol``, ...)."""
+    row = {k: ("" if v is None else v) for k, v in row.items()}
+    volume, title, series = row.get("volume"), row.get("title") or "", row.get("series") or ""
+    row["vol"] = f"{int(volume):02d}" if volume != "" else (row.get("alternate_number") or "")
+    if series and row["vol"]:
+        row["label"] = f"{series} - T{row['vol']} - {title}" if title and title != series else f"{series} - T{row['vol']}"
+    else:
+        row["label"] = title or series
+    if not row.get("id") and "file_id" in row:
+        row["label"] = "(not imported)"
+    row["flag"] = " [partial]" if row.get("partial") else ""
+    n = row.get("files", 0)
+    row["files_label"] = f"{n} file{'s' if n != 1 else ''}" if n != "" else ""
+    return row
+
+
+def run(argv: list[str], out=sys.stdout) -> int:
+    parser = argparse.ArgumentParser(
+        prog="bdnex ls", description="List albums (or files) of the library. Terms are ANDed.",
+        epilog="fields: " + ", ".join(ALL_FIELDS))
+    parser.add_argument("query", nargs="*", help="terms such as  series:nains  author:uderzo  year:2010..2015  ^genre:humour")
+    parser.add_argument("--files", action="store_true", help="list files instead of albums")
+    parser.add_argument("--format", help="output template, e.g. '$series T$vol $title'")
+    parser.add_argument("-c", "--count", action="store_true", help="print only the number of results")
+    parser.add_argument("--json", action="store_true", help="print results as JSON")
+    args = parser.parse_args(argv)
+
+    try:
+        settings = load_config().settings
+    except ConfigError as err:
+        print(err, file=sys.stderr)
+        return 1
+    if not settings.library_path.exists():
+        print(f"No library yet ({settings.library_path}): run `bdnex import <folder>` first.", file=sys.stderr)
+        return 1
+
+    with Library(settings.library_path) as library:
+        try:
+            rows = library.query(args.query, files=args.files)
+        except QueryError as err:
+            print(f"bad query: {err}", file=sys.stderr)
+            return 2
+
+    if args.count:
+        print(len(rows), file=out)
+    elif args.json:
+        print(json.dumps(rows, ensure_ascii=False, indent=2), file=out)
+    else:
+        template = string.Template(args.format or (DEFAULT_FILE_FORMAT if args.files else DEFAULT_ALBUM_FORMAT))
+        for row in rows:
+            print(template.safe_substitute(decorate(row)), file=out)
+    return 0
