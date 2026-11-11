@@ -1,9 +1,5 @@
 # bdnex default configuration. Your own file only needs the options you change.
-config_version: 1
-
-bdnex:
-  config_path: ~/.config/bdnex
-  share_path: ~/.local/share/bdnex      # sitemaps, cached pages, covers
+config_version: 2
 
 directory: /path/to/comics/library      # root of the managed library (placeholder)
 library: ~/.local/share/bdnex/bdnex.sqlite
@@ -34,8 +30,12 @@ paths:
   missing_field: ask                    # ask | placeholder | skip
   placeholder: Unknown
 
+source: bedetheque                      # metadata source: a built-in name, an installed plugin, or 'package.module:factory'
+plugins: {}                             # free-form options of third-party sources, by source name
+
 bedetheque:
-  delay: [3, 10]                        # seconds slept before each real request
+  delay: [3, 10]                        # seconds slept before each real album/series page request
+  sitemap_delay: [0.5, 1.5]             # seconds slept between sitemap files (about 55 plain XML files)
   pages_dir: ~/.local/share/bdnex/pages # where saved album pages are looked up
   fetcher: null                         # "package.module:function" returning page bytes for a url
   fetcher_endpoint: null                # free string for your fetcher (e.g. a server url)

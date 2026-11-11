@@ -52,19 +52,19 @@ def test_library_directory_placeholder_is_refused(conf_path):
     settings = load_config().settings
     with pytest.raises(ConfigError, match="directory"):
         settings.require_library_directory()
-    write(conf_path, {"config_version": 1, "directory": "~/comics"})
+    write(conf_path, {"config_version": 2, "directory": "~/comics"})
     assert str(load_config().settings.require_library_directory()) == os.path.expanduser("~/comics")
 
 
 def test_user_overrides_are_deep_merged(conf_path):
-    write(conf_path, {"config_version": 1, "import": {"mode": "copy"}, "match": {"medium_threshold": 60}})
+    write(conf_path, {"config_version": 2, "import": {"mode": "copy"}, "match": {"medium_threshold": 60}})
     s = load_config().settings
     assert s.import_.mode == "copy" and s.import_.resume is True  # sibling default kept
     assert s.match.medium_threshold == 60 and s.match.strong_threshold == 90
 
 
 def test_unknown_key_is_an_error_naming_the_key(conf_path):
-    write(conf_path, {"config_version": 1, "import": {"mod": "copy"}, "bogus": 1})
+    write(conf_path, {"config_version": 2, "import": {"mod": "copy"}, "bogus": 1})
     with pytest.raises(ConfigError) as err:
         load_config()
     assert "import.mod" in str(err.value) and "bogus" in str(err.value)
@@ -79,13 +79,13 @@ def test_unknown_key_is_an_error_naming_the_key(conf_path):
     ({"write": {"format": "cbr"}}, "write.format"),
 ])
 def test_invalid_values_report_key(conf_path, data, key):
-    write(conf_path, {"config_version": 1, **data})
+    write(conf_path, {"config_version": 2, **data})
     with pytest.raises(ConfigError, match=key):
         load_config()
 
 
 def test_all_problems_reported_together(conf_path):
-    write(conf_path, {"config_version": 1, "typo": 1, "match": {"strong_threshold": "high"}})
+    write(conf_path, {"config_version": 2, "typo": 1, "match": {"strong_threshold": "high"}})
     with pytest.raises(ConfigError) as err:
         load_config()
     assert "typo" in str(err.value) and "match.strong_threshold" in str(err.value)
@@ -134,7 +134,7 @@ def test_env_and_xdg_path_resolution(tmp_path, monkeypatch):
 
 def test_derived_paths_expand_user(conf_path):
     s = load_config().settings
-    assert s.library_path == s.library_path.expanduser() and "~" not in str(s.share_dir)
+    assert s.library_path == s.library_path.expanduser()
     assert "~" not in str(s.pages_dir)
 
 
@@ -144,7 +144,7 @@ def test_default_fetcher_is_directory_of_saved_pages(conf_path):
 
 
 def test_fetcher_spec_resolves_to_the_function(conf_path):
-    write(conf_path, {"config_version": 1, "bedetheque": {"fetcher": "helpers:fake_fetch"}})
+    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher": "helpers:fake_fetch"}})
     fetch = build_fetcher(load_config().settings)
     assert fetch is helpers.fake_fetch
     assert fetch("https://x/BD-a-1.html") == b"<html>https://x/BD-a-1.html</html>"
@@ -152,12 +152,12 @@ def test_fetcher_spec_resolves_to_the_function(conf_path):
 
 def test_fetcher_endpoint_is_optional_and_readable(conf_path):
     assert load_config().settings.bedetheque.fetcher_endpoint is None
-    write(conf_path, {"config_version": 1, "bedetheque": {"fetcher_endpoint": "http://localhost:8191"}})
+    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher_endpoint": "http://localhost:8191"}})
     assert load_config().settings.bedetheque.fetcher_endpoint == "http://localhost:8191"
 
 
 def test_fetcher_endpoint_must_be_a_string(conf_path):
-    write(conf_path, {"config_version": 1, "bedetheque": {"fetcher_endpoint": 8191}})
+    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher_endpoint": 8191}})
     with pytest.raises(ConfigError, match="fetcher_endpoint"):
         load_config()
 
@@ -166,7 +166,7 @@ def test_fetcher_spec_must_be_callable(conf_path, monkeypatch):
     module = types.ModuleType("not_callable_mod")
     module.value = 3
     monkeypatch.setitem(sys.modules, "not_callable_mod", module)
-    write(conf_path, {"config_version": 1, "bedetheque": {"fetcher": "not_callable_mod:value"}})
+    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher": "not_callable_mod:value"}})
     with pytest.raises(TypeError):
         build_fetcher(load_config().settings)
 
@@ -174,7 +174,7 @@ def test_fetcher_spec_must_be_callable(conf_path, monkeypatch):
 def test_plugin_runs_with_configured_fetcher(conf_path):
     from bdnex.importer.bedetheque import Bedetheque
     from bdnex.library import Library
-    write(conf_path, {"config_version": 1, "bedetheque": {
+    write(conf_path, {"config_version": 2, "bedetheque": {
         "fetcher": "helpers:fake_fetch"}})
     with Library(":memory:") as lib:
         plugin = Bedetheque(lib, fetch=build_fetcher(load_config().settings), sleep=lambda s: None)
@@ -191,7 +191,7 @@ def test_first_launch_tells_user_to_edit_config(conf_path, capsys):
 
 
 def test_check_config_blocks_on_invalid_config(conf_path, capsys):
-    write(conf_path, {"config_version": 1, "oops": 1})
+    write(conf_path, {"config_version": 2, "oops": 1})
     assert check_config() is False
     assert "oops" in capsys.readouterr().err
 
@@ -212,13 +212,13 @@ def test_config_command_path_show_defaults(conf_path, capsys):
 
 
 def test_config_path_works_even_when_file_is_invalid(conf_path, capsys):
-    write(conf_path, {"config_version": 1, "oops": 1})
+    write(conf_path, {"config_version": 2, "oops": 1})
     assert config_cmd.run(["-p"]) == 0
     assert capsys.readouterr().out.strip() == str(conf_path)
 
 
 def test_config_command_reports_invalid_config(conf_path, capsys):
-    write(conf_path, {"config_version": 1, "oops": 1})
+    write(conf_path, {"config_version": 2, "oops": 1})
     assert config_cmd.run([]) == 1
     assert "oops" in capsys.readouterr().err
 
@@ -231,18 +231,24 @@ def test_config_edit_uses_editor(conf_path, monkeypatch):
     assert calls == [["myeditor", "--flag", str(conf_path)]]
 
 
-# --------------------------------------------------------------------- legacy
-def test_legacy_bdnex_config_merges_defaults(conf_path):
-    from bdnex.lib.utils import bdnex_config
-    write(conf_path, {"directory": "~/c"})  # old-style file lacking most keys
-    conf = bdnex_config()
-    assert conf["directory"] == "~/c"
-    assert conf["bdnex"]["share_path"] and conf["match"]["strong_threshold"] == 90
-
-
 def test_options_that_did_nothing_are_gone(conf_path):
-    for removed in ({"match": {"use_cover": True}}, {"import": {"autotag": True}}, {"plugins": ["x"]},
-                    {"paths": {"default": "x"}}, {"write": {"format": "cbz"}}):
-        write(conf_path, {"config_version": 1, **removed})
+    for removed in ({"match": {"use_cover": True}}, {"import": {"autotag": True}}, {"paths": {"default": "x"}}, {"write": {"format": "cbz"}}):
+        write(conf_path, {"config_version": 2, **removed})
         with pytest.raises(ConfigError, match="unknown option"):
             load_config()
+
+
+def test_plugins_section_must_be_a_mapping(conf_path):
+    write(conf_path, {"config_version": 2, "plugins": ["x"]})
+    with pytest.raises(ConfigError, match="plugins"):
+        load_config()
+
+
+def test_version_1_config_with_the_old_paths_block_is_stale_not_broken(conf_path):
+    """A full v1 config (as written by `bdnex config`) keeps working after the `bdnex:` block was removed."""
+    write(conf_path, {"config_version": 1, "bdnex": {"config_path": "~/.config/bdnex", "share_path": "~/.local/share/bdnex"},
+                      "directory": "~/comics", "match": {"strong_threshold": 85}})
+    loaded = load_config()
+    assert loaded.settings.match.strong_threshold == 85 and loaded.settings.directory == "~/comics"
+    assert any("stale" in w for w in loaded.warnings)
+    assert any("ignored keys no longer used: bdnex" in w for w in loaded.warnings)

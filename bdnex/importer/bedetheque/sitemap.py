@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
-from dataclasses import dataclass
+
+from bdnex.importer.source import Candidate
 
 SITEMAP_PAGE = 10000
 MAX_SITEMAPS = 200  # safety cap; the real number grows with the site (55+ in 2026)
@@ -19,18 +20,6 @@ _NS = {"sm": "http://www.sitemaps.org/schemas/sitemap/0.9",
 
 STOPWORDS = frozenset(["le", "de", "a", "les", "l", "au", "int", "des", "aut", "du", "tome",
                        "un", "la", "et", "en", "que", "il", "ne", "se"])
-
-
-@dataclass(frozen=True)
-class Candidate:
-    source_id: str
-    url: str  # album url (www)
-    name: str  # normalised name used for matching
-    volume: int | None = None  # from "-Tome-N-" in the slug; None for one-shots/specials
-
-    @property
-    def kind(self) -> str:
-        return "series" if self.volume is not None else "oneshot"
 
 
 def sitemap_url(index: int) -> str:

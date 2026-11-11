@@ -37,7 +37,7 @@ class FakePrompter:
 
 
 def settings_for(tmp_path, **overrides):
-    user = {"config_version": 1, "directory": str(tmp_path / "library"), **overrides}
+    user = {"config_version": 2, "directory": str(tmp_path / "library"), **overrides}
     return build_settings(user)[0]
 
 
@@ -334,7 +334,7 @@ def test_batch_continues_after_a_failure(lib, make_cbz, tmp_path):
 
 def test_move_needs_a_real_library_directory(lib, make_cbz):
     from bdnex.config import ConfigError
-    settings = build_settings({"config_version": 1})[0]  # placeholder directory
+    settings = build_settings({"config_version": 2})[0]  # placeholder directory
     row = registered(lib, make_cbz(), add_series_album(lib))
     results = Organizer(lib, settings).run([row], MOVE)
     assert results[0].outcome == FAILED and "directory" in results[0].note

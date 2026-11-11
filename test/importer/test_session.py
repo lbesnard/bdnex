@@ -5,9 +5,9 @@ import pytest
 from bdnex.config import build_settings
 from bdnex.importer.bedetheque import Bedetheque
 from bdnex.importer.bedetheque.bedetheque import BlockedError
-from bdnex.importer.matching import (Recommendation, query_from_filename, recommend, rerank,
-                                     slug_album_info, volumes_in)
-from bdnex.importer.bedetheque.sitemap import Candidate
+from bdnex.importer.bedetheque.parser import partial_album_info as slug_album_info
+from bdnex.importer.matching import Recommendation, query_from_filename, recommend, rerank, volumes_in
+from bdnex.importer.source import Candidate
 from bdnex.importer.session import DUPLICATE, FAILED, PARTIAL, PRETEND, SKIPPED, TAGGED, ImportSession
 from bdnex.library import Library
 from helpers import ALBUM_URL, FakeWeb
@@ -33,7 +33,7 @@ class FakePrompter:
 
 
 def make_settings(**overrides):
-    user = {"config_version": 1, **overrides}
+    user = {"config_version": 2, **overrides}
     return build_settings(user)[0]
 
 
@@ -279,3 +279,16 @@ def test_nothing_to_import_makes_no_network_access(env, tmp_path):
     report = env.session.run([str(tmp_path / "empty"), str(tmp_path / "missing.cbz")])
     assert env.web.calls == [] and env.lib.stats()["files"] == 0
     assert [r.outcome for r in report.results] == [FAILED] and "no such file" in report.results[0].note
+
+
+def test_session_reports_progress(web, make_cbz, tmp_path):
+    messages = []
+    env = Env(web, make_settings(), FakePrompter(), progress=messages.append)
+    make_cbz(FILE)
+    make_cbz("zzzzzzzz qqqqqqqq.cbz", pages=7)
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    env.session.run([str(tmp_path)])
+    assert messages[0].startswith("Preparing the bedetheque source")
+    assert [m for m in messages if m.startswith("[")] == ["[1/2] Nains - T01 - Redwin de la forge.cbz",
+                                                         "[2/2] zzzzzzzz qqqqqqqq.cbz"]
+    env.lib.close()

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from bdnex.importer.bedetheque.sitemap import Candidate
+from bdnex.importer.source import Candidate
 from bdnex.importer.matching import Match
 
 

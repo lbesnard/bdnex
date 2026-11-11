@@ -7,10 +7,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
-from bdnex.importer.bedetheque.sitemap import Candidate, remove_common_words
-from bdnex.library.models import KIND_ONESHOT, KIND_SERIES, AlbumInfo, SeriesInfo
-
-SOURCE = "bedetheque"
+from bdnex.importer.source import Candidate
 
 VOLUME_MATCH_BONUS = 5.0
 VOLUME_MISMATCH_PENALTY = 15.0
@@ -66,26 +63,4 @@ def recommend(score: float, strong: float, medium: float) -> Recommendation:
     return Recommendation.NONE
 
 
-def slug_album_info(candidate: Candidate) -> AlbumInfo:
-    """Minimal metadata taken from the sitemap URL alone (no page needed).
-
-    ``BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html`` -> series ``Nains``, volume 1,
-    title ``Redwin de la Forge``. One-shots (no ``-Tome-N-``) get the slug as title.
-    """
-    slug = candidate.url.rsplit("/", 1)[-1]
-    slug = re.sub(r"^BD-", "", re.sub(r"\.html$", "", slug))
-    slug = re.sub(r"-\d+$", "", slug)  # album id
-    match = re.match(r"(?P<series>.+?)-Tome-(?P<vol>\d+)(?:-(?P<title>.*))?$", slug)
-    if match:
-        series_name = match["series"].replace("-", " ")
-        title = (match["title"] or "").replace("-", " ") or series_name
-        series = SeriesInfo(SOURCE, f"slug:{series_name.lower()}", series_name)
-        return AlbumInfo(source=SOURCE, source_id=candidate.source_id, title=title, series=series,
-                         volume=int(match["vol"]), language="fr", url=candidate.url,
-                         extra={"partial": True})
-    return AlbumInfo(source=SOURCE, source_id=candidate.source_id, title=slug.replace("-", " "),
-                     language="fr", url=candidate.url, extra={"partial": True})
-
-
-__all__ = ["Match", "Recommendation", "KIND_ONESHOT", "KIND_SERIES", "query_from_filename",
-           "volumes_in", "rerank", "recommend", "slug_album_info", "remove_common_words"]
+__all__ = ["Match", "Recommendation", "query_from_filename", "volumes_in", "rerank", "recommend"]

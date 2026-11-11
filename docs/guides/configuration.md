@@ -9,7 +9,7 @@ On the **first launch** bdnex creates a short, commented file there and tells yo
 to edit it. The only required edit is `directory`, your comics folder:
 
 ```yaml
-config_version: 1
+config_version: 2
 directory: ~/comics
 ```
 
@@ -72,6 +72,15 @@ paths:
   missing_field: ask                     # ask | placeholder | skip
 ```
 
+## Metadata source
+
+```yaml
+source: bedetheque          # or an installed plugin, or "package.module:factory"
+plugins: {}                 # free-form options of third-party sources, by name
+```
+
+See [Metadata source plugins](../dev/plugins.md).
+
 ## Page fetching (Bédéthèque)
 
 By default bdnex reads album pages you saved from your browser into
@@ -84,5 +93,6 @@ bedetheque:
   fetcher_endpoint: "http://localhost:8191"   # free string, only your function reads it
 ```
 
-bdnex does nothing with `fetcher_endpoint`. A fetcher can read it with
+bedetheque's sitemap files wait `bedetheque.sitemap_delay` (default 0.5 to 1.5 s) between downloads;
+album pages wait `bedetheque.delay` (3 to 10 s). bdnex does nothing with `fetcher_endpoint`. A fetcher can read it with
 `load_config().settings.bedetheque.fetcher_endpoint`.

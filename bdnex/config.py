@@ -20,13 +20,13 @@ from typing import Any, Literal, Optional
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
 PLACEHOLDER_DIRECTORY = "/path/to/comics/library"
 CONF_DIR = Path(__file__).resolve().parent / "conf"
 DEFAULTS_PATH = CONF_DIR / "bdnex.yaml"
 
 # Sections whose content is free-form and never checked for unknown keys.
-FREE_FORM = {("bedetheque", "fetcher_endpoint")}
+FREE_FORM: set[tuple[str, ...]] = {("plugins",)}
 
 USER_TEMPLATE = """\
 # bdnex configuration. Only list what you want to change: every other option
@@ -50,11 +50,6 @@ class ConfigError(Exception):
 
 class _Section(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-
-class BdnexPaths(_Section):
-    config_path: str
-    share_path: str
 
 
 class Match(_Section):
@@ -90,6 +85,7 @@ class Paths(_Section):
 
 class Bedetheque(_Section):
     delay: tuple[float, float]
+    sitemap_delay: tuple[float, float]
     pages_dir: str
     fetcher: Optional[str] = None
     fetcher_endpoint: Optional[str] = None
@@ -97,7 +93,6 @@ class Bedetheque(_Section):
 
 class Settings(_Section):
     config_version: int = Field(ge=0)
-    bdnex: BdnexPaths
     directory: str
     library: str
     match: Match
@@ -106,6 +101,8 @@ class Settings(_Section):
     duplicates: Duplicates
     write: Write
     paths: Paths
+    source: str = Field(min_length=1)
+    plugins: dict[str, dict[str, Any]] = Field(default_factory=dict)
     bedetheque: Bedetheque
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
@@ -113,10 +110,6 @@ class Settings(_Section):
     @property
     def library_path(self) -> Path:
         return Path(os.path.expanduser(self.library))
-
-    @property
-    def share_dir(self) -> Path:
-        return Path(os.path.expanduser(self.bdnex.share_path))
 
     @property
     def pages_dir(self) -> Path:

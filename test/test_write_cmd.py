@@ -15,7 +15,7 @@ from helpers import ALBUM_URL, FakeWeb
 def env(tmp_path, monkeypatch, make_cbz):
     db = tmp_path / "lib.sqlite"
     conf = tmp_path / "bdnex.yaml"
-    conf.write_text(yaml.safe_dump({"config_version": 1, "library": str(db), "directory": str(tmp_path / "comics"),
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(db), "directory": str(tmp_path / "comics"),
                                     "bedetheque": {"delay": [0, 0]}}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     with Library(db) as lib:
@@ -74,7 +74,7 @@ def test_move_into_library_tree_and_copy(env):
 
 def test_move_requires_a_directory(env, monkeypatch, tmp_path):
     conf = tmp_path / "nodir.yaml"
-    conf.write_text(yaml.safe_dump({"config_version": 1, "library": str(tmp_path / "lib.sqlite")}))
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite")}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     assert run("move")[0] == 1
 
@@ -82,7 +82,7 @@ def test_move_requires_a_directory(env, monkeypatch, tmp_path):
 def test_errors(env, monkeypatch, tmp_path, capsys):
     assert run("write", "year:abc")[0] == 2 and "bad query" in capsys.readouterr().err
     conf = tmp_path / "none.yaml"
-    conf.write_text(yaml.safe_dump({"config_version": 1, "library": str(tmp_path / "missing.sqlite")}))
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "missing.sqlite")}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     assert run("write")[0] == 1 and "bdnex import" in capsys.readouterr().err
 
@@ -90,7 +90,7 @@ def test_errors(env, monkeypatch, tmp_path, capsys):
 def test_main_dispatches_write_and_move(monkeypatch, tmp_path):
     from bdnex import ui
     conf = tmp_path / "c.yaml"
-    conf.write_text("config_version: 1\ndirectory: ~/c\n")
+    conf.write_text("config_version: 2\ndirectory: ~/c\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     seen = []
     monkeypatch.setattr("bdnex.ui.write_cmd.run", lambda cmd, argv: seen.append((cmd, argv)) or 0)
@@ -105,15 +105,16 @@ def test_main_dispatches_write_and_move(monkeypatch, tmp_path):
 def import_env(tmp_path, monkeypatch, make_cbz):
     def configure(extra=None):
         conf = tmp_path / "bdnex.yaml"
-        conf.write_text(yaml.safe_dump({"config_version": 1, "library": str(tmp_path / "lib.sqlite"),
+        conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"),
                                         "directory": str(tmp_path / "comics"),
                                         "bedetheque": {"delay": [0, 0]}, **(extra or {})}))
         monkeypatch.setenv("BDNEX_CONFIG", str(conf))
 
     configure()
     web = FakeWeb()
-    monkeypatch.setattr(import_cmd, "http_fetch", web)
-    monkeypatch.setattr(import_cmd, "build_fetcher", lambda settings: web)
+    import bdnex.importer.bedetheque as bdt_plugin
+    monkeypatch.setattr(bdt_plugin, "http_fetch", web)
+    monkeypatch.setattr(bdt_plugin, "build_fetcher", lambda settings: web)
     original = Bedetheque.album_info
     monkeypatch.setattr(Bedetheque, "album_info", lambda self, url, recache=False: original(self, ALBUM_URL, recache))
     monkeypatch.setattr("bdnex.importer.bedetheque.bedetheque.uniform", lambda a, b: 0)
@@ -165,7 +166,7 @@ def test_import_pretend_does_no_file_operations(import_env):
 def test_import_move_without_directory_explains_and_keeps_the_import(import_env, capsys):
     path, tmp, configure = import_env
     conf = tmp / "bdnex.yaml"
-    conf.write_text(yaml.safe_dump({"config_version": 1, "library": str(tmp / "lib.sqlite"),
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp / "lib.sqlite"),
                                     "bedetheque": {"delay": [0, 0]}}))
     code, text = do_import("--move", path)
     assert code == 1 and os.path.exists(path)

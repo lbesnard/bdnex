@@ -9,6 +9,7 @@
 | `bdnex ls`: query the library | available |
 | `bdnex write` / `move`: write tags, rename, convert CBR/PDF | available |
 | Bédéthèque source plugin, pluggable page fetchers | available |
-| Other metadata sources | planned |
+| Plugin system for other metadata sources | available |
+| A second source (e.g. BnF) | planned |
 
 See [Library database](dev/library.md) for what is already in place.
