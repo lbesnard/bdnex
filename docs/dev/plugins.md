@@ -64,3 +64,13 @@ raises `BlockedError` (and caches nothing). Pages can be saved from a browser
 and loaded with `Bedetheque.album_info_from_html(html, url)`, which stores them
 in the cache for later offline use. Both the current desktop layout (schema.org
 microdata) and the former mobile layout are parsed.
+
+## Page fetchers
+
+`Bedetheque(library, fetch=...)` accepts any callable `url -> bytes`. The module
+`bdnex.importer.bedetheque.fetchers` provides:
+
+- `load_fetcher("package.module:function")` to resolve a callable from a config string;
+- `placeholder_fetch`, a stub that raises a clear `NotImplementedError`;
+- `DirectoryFetcher(folder)`, which serves pages you saved from your browser
+  (`<id>.html` or the browser's own file name containing the album id).
