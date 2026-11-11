@@ -27,15 +27,41 @@ Fetcher = Callable[[str], bytes]
 
 
 
+class FetcherError(ValueError):
+    """The ``bedetheque.fetcher`` setting does not lead to a usable function."""
+
+
 def load_fetcher(spec: str) -> Fetcher:
-    """Import ``"package.module:function"`` and return the callable."""
+    """Import ``"package.module:function"`` and return the callable.
+
+    Raises :class:`FetcherError` with a hint when the module or function can not be found.
+    """
     module_name, sep, attr = spec.partition(":")
     if not sep or not module_name or not attr:
-        raise ValueError(f"fetcher must look like 'package.module:function', got {spec!r}")
-    func = getattr(importlib.import_module(module_name), attr)
+        raise FetcherError(f"fetcher must look like 'package.module:function', got {spec!r}")
+    try:
+        module = importlib.import_module(module_name)
+    except ImportError as err:
+        raise FetcherError(f"can not import the module {module_name!r} of fetcher {spec!r} ({err}).{_hint(module_name, attr)}") from err
+    try:
+        func = getattr(module, attr)
+    except AttributeError:
+        raise FetcherError(f"module {module_name!r} has no function {attr!r} (fetcher {spec!r})") from None
     if not callable(func):
         raise TypeError(f"{spec} is not callable")
     return func
+
+
+def _hint(module_name: str, attr: str) -> str:
+    """Suggest 'parent.module:function' when the function name was written into the module path."""
+    parent = module_name.rpartition(".")[0]
+    if parent:
+        try:
+            if callable(getattr(importlib.import_module(parent), attr, None)):
+                return f" Did you mean '{parent}:{attr}'? The part before ':' is the module, the part after is the function."
+        except ImportError:
+            pass
+    return " The part before ':' must be a module (a .py file), the part after it a function inside that module."
 
 
 def build_fetcher(settings) -> Fetcher:

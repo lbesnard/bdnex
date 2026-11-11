@@ -134,3 +134,14 @@ def test_import_command_retry_partial_flag(setup, monkeypatch):
     from bdnex.library import Library
     with Library(tmp_path / "lib.sqlite") as lib:
         assert lib.query(["partial:true"]) == []
+
+
+def test_import_with_a_mistyped_fetcher_prints_a_message_not_a_traceback(tmp_path, monkeypatch, capsys, make_cbz):
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"), "bedetheque": {
+        "fetcher": "bdnex.importer.bedetheque.flaresolverr_fetch:flaresolverr_fetch"}}))
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    assert import_cmd.run([make_cbz("a.cbz")], out=io.StringIO()) == 1
+    err = capsys.readouterr().err
+    assert "Did you mean 'bdnex.importer.bedetheque:flaresolverr_fetch'?" in err
+    assert "bedetheque.fetcher" in err and "Traceback" not in err
