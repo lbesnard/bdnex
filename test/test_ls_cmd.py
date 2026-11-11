@@ -12,7 +12,7 @@ from bdnex.ui import ls_cmd
 def setup(tmp_path, monkeypatch, make_cbz):
     db = tmp_path / "lib.sqlite"
     conf = tmp_path / "bdnex.yaml"
-    conf.write_text(yaml.safe_dump({"config_version": 1, "library": str(db)}))
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(db)}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     with Library(db) as lib:
         a = lib.add_album(AlbumInfo("bedetheque", "1", "Redwin de la Forge",
@@ -69,7 +69,7 @@ def test_bad_query_exit_code_2(setup, capsys):
 
 def test_no_library_yet(tmp_path, monkeypatch, capsys):
     conf = tmp_path / "bdnex.yaml"
-    conf.write_text(yaml.safe_dump({"config_version": 1, "library": str(tmp_path / "none.sqlite")}))
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "none.sqlite")}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     assert run()[0] == 1
     assert "bdnex import" in capsys.readouterr().err
@@ -78,7 +78,7 @@ def test_no_library_yet(tmp_path, monkeypatch, capsys):
 
 def test_invalid_config(tmp_path, monkeypatch, capsys):
     conf = tmp_path / "bad.yaml"
-    conf.write_text("config_version: 1\noops: 1\n")
+    conf.write_text("config_version: 2\noops: 1\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     assert run()[0] == 1 and "oops" in capsys.readouterr().err
 
@@ -86,7 +86,7 @@ def test_invalid_config(tmp_path, monkeypatch, capsys):
 def test_main_dispatches_ls(monkeypatch, tmp_path):
     from bdnex import ui
     conf = tmp_path / "c.yaml"
-    conf.write_text("config_version: 1\ndirectory: ~/c\n")
+    conf.write_text("config_version: 2\ndirectory: ~/c\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     seen = {}
     monkeypatch.setattr("bdnex.ui.ls_cmd.run", lambda argv: seen.setdefault("argv", argv) and 0)

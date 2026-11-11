@@ -9,7 +9,7 @@ On the **first launch** bdnex creates a short, commented file there and tells yo
 to edit it. The only required edit is `directory`, your comics folder:
 
 ```yaml
-config_version: 1
+config_version: 2
 directory: ~/comics
 ```
 

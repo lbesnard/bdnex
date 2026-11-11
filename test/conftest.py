@@ -5,15 +5,17 @@ import zipfile
 import pytest
 
 
-def make_image_bytes(color=(200, 30, 30), size=(8, 8)):
-    """A tiny valid PNG, built with OpenCV (already a dependency)."""
-    import cv2
-    import numpy as np
+def _solid(color, size, fmt):
+    import pymupdf
 
-    img = np.full((size[1], size[0], 3), color, dtype=np.uint8)
-    ok, buf = cv2.imencode(".png", img)
-    assert ok
-    return buf.tobytes()
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, *size), False)
+    pix.set_rect(pix.irect, color)
+    return pix.tobytes(fmt)
+
+
+def make_image_bytes(color=(200, 30, 30), size=(8, 8)):
+    """A tiny valid PNG (PyMuPDF is already a dependency)."""
+    return _solid(color, size, "png")
 
 
 @pytest.fixture
@@ -53,13 +55,7 @@ def make_pdf(tmp_path):
 
 
 def make_jpeg_bytes(color=(30, 120, 200), size=(40, 60)):
-    import cv2
-    import numpy as np
-
-    img = np.full((size[1], size[0], 3), color, dtype=np.uint8)
-    ok, buf = cv2.imencode(".jpg", img)
-    assert ok
-    return buf.tobytes()
+    return _solid(color, size, "jpeg")
 
 
 @pytest.fixture
@@ -69,7 +65,7 @@ def make_image_pdf(tmp_path):
     def _make(name="scan.pdf", pages=3):
         import pymupdf
 
-        jpegs = [make_jpeg_bytes(color=(40 * i + 10, 90, 160), size=(40 + i, 60)) for i in range(pages)]
+        jpegs = [make_jpeg_bytes(color=((40 * i + 10) % 256, 90, 160), size=(40 + i, 60)) for i in range(pages)]
         doc = pymupdf.open()
         for jpeg in jpegs:
             page = doc.new_page(width=200, height=300)

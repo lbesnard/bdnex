@@ -33,7 +33,7 @@ class FakePrompter:
 
 
 def make_settings(**overrides):
-    user = {"config_version": 1, **overrides}
+    user = {"config_version": 2, **overrides}
     return build_settings(user)[0]
 
 

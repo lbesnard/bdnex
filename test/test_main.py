@@ -7,7 +7,7 @@ from bdnex import ui
 @pytest.fixture
 def conf(tmp_path, monkeypatch):
     path = tmp_path / "c.yaml"
-    path.write_text(yaml.safe_dump({"config_version": 1, "directory": "~/c"}))
+    path.write_text(yaml.safe_dump({"config_version": 2, "directory": "~/c"}))
     monkeypatch.setenv("BDNEX_CONFIG", str(path))
 
 
@@ -44,7 +44,7 @@ def test_legacy_init_flag_explains(conf, capsys):
 
 def test_invalid_config_blocks_every_command(tmp_path, monkeypatch, capsys):
     path = tmp_path / "bad.yaml"
-    path.write_text("config_version: 1\noops: 1\n")
+    path.write_text("config_version: 2\noops: 1\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(path))
     assert run_main("ls") == 1 and "oops" in capsys.readouterr().err
     assert run_main("config", "--path") == 0  # but `config` itself always works

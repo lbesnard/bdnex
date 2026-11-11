@@ -12,7 +12,7 @@ from helpers import ALBUM_URL, FakeWeb
 @pytest.fixture
 def setup(tmp_path, monkeypatch, make_cbz):
     conf = tmp_path / "bdnex.yaml"
-    conf.write_text(yaml.safe_dump({"config_version": 1, "library": str(tmp_path / "lib.sqlite"),
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"),
                                     "bedetheque": {"delay": [0, 0]}}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     web = FakeWeb()
@@ -50,7 +50,7 @@ def test_import_command_pretend_leaves_library_empty(setup):
 
 def test_import_command_rejects_invalid_config(tmp_path, monkeypatch, capsys):
     conf = tmp_path / "bad.yaml"
-    conf.write_text("config_version: 1\noops: 1\n")
+    conf.write_text("config_version: 2\noops: 1\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     assert import_cmd.run(["x.cbz"]) == 1
     assert "oops" in capsys.readouterr().err
@@ -59,7 +59,7 @@ def test_import_command_rejects_invalid_config(tmp_path, monkeypatch, capsys):
 def test_main_dispatches_import(monkeypatch, tmp_path):
     from bdnex import ui
     conf = tmp_path / "c.yaml"
-    conf.write_text("config_version: 1\ndirectory: ~/c\n")
+    conf.write_text("config_version: 2\ndirectory: ~/c\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     seen = {}
     monkeypatch.setattr("bdnex.ui.import_cmd.run", lambda argv: seen.setdefault("argv", argv) and 0)

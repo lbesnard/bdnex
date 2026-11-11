@@ -1,9 +1,5 @@
 # bdnex default configuration. Your own file only needs the options you change.
-config_version: 1
-
-bdnex:
-  config_path: ~/.config/bdnex
-  share_path: ~/.local/share/bdnex      # sitemaps, cached pages, covers
+config_version: 2
 
 directory: /path/to/comics/library      # root of the managed library (placeholder)
 library: ~/.local/share/bdnex/bdnex.sqlite

@@ -69,11 +69,15 @@ def main(argv=None):
 
 def legacy(argv):
     """The pre-library options: `-f FILE`, `-d DIR`, `-i` (kept as shortcuts for the new commands)."""
-    from bdnex.lib.utils import args
+    import argparse
+
     from bdnex.ui.import_cmd import run as run_import
 
-    sys.argv = ["bdnex", *argv]
-    vargs = args()
+    parser = argparse.ArgumentParser(prog="bdnex", usage=USAGE, add_help=False)
+    parser.add_argument("-f", "--input-file")
+    parser.add_argument("-d", "--input-dir")
+    parser.add_argument("-i", "--init", action="store_true")
+    vargs = parser.parse_args(argv)
     paths = [p for p in (vargs.input_file, vargs.input_dir) if p]
     if vargs.init:
         print("note: `-i` is no longer needed: `bdnex import` downloads the sitemaps itself "

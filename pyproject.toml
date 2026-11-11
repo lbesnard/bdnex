@@ -23,20 +23,14 @@ classifiers = [
 dependencies = [
   "InquirerPy",
   "beautifulsoup4",
-  "imutils",
   "lxml",
-  "opencv-contrib-python-headless",
-  "pandas",
   "pydantic>=2",
   "pymupdf",
-  "patool",
   "python-dateutil",
   "pyyaml",
   "rapidfuzz",
   "rarfile",
   "requests",
-  "termcolor",
-  "xmldiff",
   "xmlschema",
 ]
 

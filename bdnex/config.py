@@ -20,7 +20,7 @@ from typing import Any, Literal, Optional
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-CONFIG_VERSION = 1
+CONFIG_VERSION = 2
 PLACEHOLDER_DIRECTORY = "/path/to/comics/library"
 CONF_DIR = Path(__file__).resolve().parent / "conf"
 DEFAULTS_PATH = CONF_DIR / "bdnex.yaml"
@@ -50,11 +50,6 @@ class ConfigError(Exception):
 
 class _Section(BaseModel):
     model_config = ConfigDict(extra="forbid")
-
-
-class BdnexPaths(_Section):
-    config_path: str
-    share_path: str
 
 
 class Match(_Section):
@@ -98,7 +93,6 @@ class Bedetheque(_Section):
 
 class Settings(_Section):
     config_version: int = Field(ge=0)
-    bdnex: BdnexPaths
     directory: str
     library: str
     match: Match
@@ -114,10 +108,6 @@ class Settings(_Section):
     @property
     def library_path(self) -> Path:
         return Path(os.path.expanduser(self.library))
-
-    @property
-    def share_dir(self) -> Path:
-        return Path(os.path.expanduser(self.bdnex.share_path))
 
     @property
     def pages_dir(self) -> Path:
