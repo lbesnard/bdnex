@@ -230,6 +230,11 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
     merged["config_version"] = version
     try:
         settings = Settings.model_validate(merged)
+        if settings.bedetheque.fetcher_endpoint and not settings.bedetheque.fetcher:
+            warnings.append(
+                "bedetheque.fetcher_endpoint is set but bedetheque.fetcher is not, so nothing uses it: "
+                f"album pages are read from {settings.bedetheque.pages_dir}. Set bedetheque.fetcher to the "
+                "'package.module:function' that should fetch pages.")
     except ValidationError as err:
         errors.extend(_format_errors(err))
     if errors:
