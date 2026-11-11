@@ -36,8 +36,6 @@ def render(changes: list[Change], on: bool) -> list[str]:
         note = paint(f"  {c.note}", "dim", on) if c.note else ""
         if c.kind == "+":
             lines.append(paint(f"  + {name}  {c.after}", "green", on) + note)
-        elif c.kind == "-":
-            lines.append(paint(f"  - {name}  {c.before}", "red", on) + note)
         else:
             old, new = highlight(c.before or "", c.after or "", on)
             lines.append(paint(f"  ~ {c.field}", "yellow", on) + note)
@@ -48,7 +46,7 @@ def render(changes: list[Change], on: bool) -> list[str]:
 
 def legend(on: bool) -> str:
     return (paint("red", "red", on) + " = in the file   " + paint("green", "green", on)
-            + " = in the database   (only changed words are bold)")
+            + " = in the database   (only changed words are bold; other fields of the file are kept)")
 
 
 def conflict_text(path: str, changes: list[Change], on: bool) -> str:

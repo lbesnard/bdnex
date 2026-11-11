@@ -96,7 +96,7 @@ class Change(str):
     """One difference. As a string it is the plain one-line form (``~ Title: A  ->  B``); the parts are
     attributes, so a terminal can show it in colour."""
 
-    kind: str  # "+" only in the database, "-" only in the file, "~" differs
+    kind: str  # "+" the database has a value the file lacks, "~" both have a value and they differ
     field: str
     before: Optional[str]  # shortened value in the file
     after: Optional[str]  # shortened value in the database
@@ -106,8 +106,6 @@ class Change(str):
         before, after, note = excerpts(before, after)
         if kind == "+":
             text = f"+ {field}: {after}"
-        elif kind == "-":
-            text = f"- {field}: {before}"
         else:
             text = f"~ {field}: {before}  ->  {after}"
         obj = super().__new__(cls, text + (f"  {note}" if note else ""))
@@ -116,26 +114,18 @@ class Change(str):
 
 
 def diff_fields(old: dict[str, str], new: dict[str, str]) -> list[Change]:
-    """Differences between a file's ComicInfo (``old``) and the database's (``new``), for the fields
-    bdnex manages plus fields present only in ``old`` and managed by bdnex."""
+    """What writing the database's values (``new``) would change in a file's ComicInfo (``old``).
+
+    A field the database has no value for is never a difference: it is kept, not erased.
+    """
     changes = []
-    for name in sorted(set(old) | set(new)):
-        before, after = old.get(name), new.get(name)
-        if before == after:
-            continue
-        if name not in new and name not in MANAGED:
-            continue  # a field bdnex never writes: leave it alone, not a difference
-        kind = "+" if before is None else "-" if after is None else "~"
-        changes.append(Change(kind, name, before, after))
+    for name in sorted(new):
+        before, after = old.get(name), new[name]
+        if before != after:
+            changes.append(Change("+" if before is None else "~", name, before, after))
     return changes
 
 
-MANAGED = {"Title", "Series", "Number", "Volume", "AlternateNumber", "Year", "Month", "Day", *CREDIT_FIELDS,
-           "Summary", "Publisher", "Web", "LanguageISO", "Format", "Genre", "CommunityRating", "Notes", "PageCount"}
-
-
 def merge_with_existing(existing: dict[str, str], new: dict[str, str]) -> dict[str, str]:
-    """Database values win for managed fields; other fields of the file are kept."""
-    merged = {k: v for k, v in existing.items() if k not in MANAGED}
-    merged.update(new)
-    return merged
+    """The database's values win; everything else already in the file is kept."""
+    return {**existing, **new}

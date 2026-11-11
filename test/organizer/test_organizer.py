@@ -451,3 +451,38 @@ def test_preview_of_a_conversion_in_place_does_not_say_move(lib, tmp_path):
     assert "move" not in result.note and os.path.exists(src)
     moved = Organizer(lib, settings_for(tmp_path), pretend=True).process(row, MOVE)
     assert "move to " in moved.note  # a real move still says so
+
+
+# ---------------------------------------- the database never erases what it does not know
+def file_with_extra_fields(make_cbz):
+    return existing_xml_cbz(make_cbz, None, xml=(b"<ComicInfo><Title>Old title</Title><Format>One Shot</Format>"
+                                                 b"<Writer>Someone Else</Writer><Manga>No</Manga></ComicInfo>"))
+
+
+def test_choosing_the_database_keeps_fields_it_has_no_value_for(lib, make_cbz, tmp_path):
+    path = file_with_extra_fields(make_cbz)
+    album_id = lib.add_album(AlbumInfo("bedetheque", "7", "New title", credits={}))  # no writer, no format
+    row = registered(lib, path, album_id)
+    prompter = FakePrompter(conflict="database")
+    Organizer(lib, settings_for(tmp_path), prompter).process(row, WRITE)
+    info = comicinfo_of(path)
+    assert info["Title"] == "New title"  # the database had a value: it wins
+    assert info["Writer"] == "Someone Else" and info["Format"] == "One Shot" and info["Manga"] == "No"  # kept
+    [(kind, diff)] = prompter.asked
+    assert all("Writer" not in line and "Format" not in line for line in diff)  # nothing about them was asked
+
+
+def test_nothing_to_decide_means_no_question_and_no_rewrite(lib, make_cbz, tmp_path):
+    """The file already holds everything the database knows, plus a field only the file has."""
+    path = make_cbz("c.cbz", pages=3)
+    album_id = add_series_album(lib)
+    fields = comicinfo.album_to_fields(lib.get_album(album_id), page_count=3)
+    xml = comicinfo.build_xml({**fields, "Format": "One Shot"})
+    with zipfile.ZipFile(path, "a") as zf:
+        zf.writestr("ComicInfo.xml", xml)
+    row = registered(lib, path, album_id)
+    before = file_md5(path)
+    prompter = FakePrompter()
+    result = Organizer(lib, settings_for(tmp_path), prompter).process(row, WRITE)
+    assert result.outcome == UNCHANGED and prompter.asked == []
+    assert file_md5(path) == before and comicinfo_of(path)["Format"] == "One Shot"

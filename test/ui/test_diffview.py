@@ -16,25 +16,24 @@ def strip(text):
 def changes():
     return comicinfo.diff_fields(
         {"Writer": "Wilfrid Lupano", "Format": "One Shot", "Series": "Same"},
-        {"Writer": "Lupano, Wilfrid", "Year": "2021", "Series": "Same"})
+        {"Writer": "Lupano, Wilfrid", "Year": "2021", "Series": "Same"})  # Format: only in the file, kept
 
 
 def test_plain_layout_is_a_familiar_minus_plus_diff():
     lines = diffview.render(changes(), on=False)
-    assert lines == ["  - Format  One Shot",
-                     "  ~ Writer",
+    assert lines == ["  ~ Writer",
                      "      - Wilfrid Lupano",
                      "      + Lupano, Wilfrid",
                      "  + Year    2021"]
+    assert not any("Format" in line for line in lines)  # a file-only field is not shown as a change
     assert not any("\x1b" in line for line in lines)
 
 
 def test_colours_follow_the_convention():
     lines = diffview.render(changes(), on=True)
-    assert lines[0].startswith("\x1b[31m") and "One Shot" in lines[0]  # only in the file: red
-    assert lines[1].startswith("\x1b[33m")  # changed: yellow header
-    assert "\x1b[31m      - \x1b[0m" in lines[2] and "\x1b[32m      + \x1b[0m" in lines[3]
-    assert lines[4].startswith("\x1b[32m") and "2021" in lines[4]  # only in the database: green
+    assert lines[0].startswith("\x1b[33m")  # changed: yellow header
+    assert "\x1b[31m      - \x1b[0m" in lines[1] and "\x1b[32m      + \x1b[0m" in lines[2]
+    assert lines[3].startswith("\x1b[32m") and "2021" in lines[3]  # only in the database: green
     assert [strip(x) for x in lines] == diffview.render(changes(), on=False)  # colour adds no text
 
 
@@ -63,7 +62,7 @@ def test_long_values_carry_a_dim_note():
 def test_conflict_text_has_header_legend_and_changes():
     text = strip(diffview.conflict_text("book.cbz", changes(), on=True))
     assert text.splitlines()[:3] == ["book.cbz", "ComicInfo.xml in the file differs from the database:",
-                                     "red = in the file   green = in the database   (only changed words are bold)"]
+                                     "red = in the file   green = in the database   (only changed words are bold; other fields of the file are kept)"]
     assert "  ~ Writer" in text
 
 
