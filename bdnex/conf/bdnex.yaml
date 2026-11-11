@@ -1,22 +1,50 @@
+# bdnex default configuration. Your own file only needs the options you change.
+config_version: 1
+
 bdnex:
   config_path: ~/.config/bdnex
-  share_path: ~/.local/share/bdnex
+  share_path: ~/.local/share/bdnex      # sitemaps, cached pages, covers
 
-directory: /path/to/comics/library
-
-import:
-  copy: no
-  move: yes
-  replace: yes
-  autotag: no
-  rename: yes
-
+directory: /path/to/comics/library      # root of the managed library (placeholder)
 library: ~/.local/share/bdnex/bdnex.sqlite
 
-paths:
-  default: '%language/%type/%title (%author) [%year]/%title - %volume (%author) [%year]'
-  oneshot: '%language/oneShots/%title (%author) [%year]/%title (%author) [%year]'
-  series: '%language/series/%title (%author)/%title - %volume'
-
 cover:
-  match_percentage: 40
+  match_percentage: 40                  # minimum cover similarity to trust a match
+
+match:
+  strong_threshold: 90                  # title score (0-100): applied without asking
+  medium_threshold: 70                  # between medium and strong: ask; below: no match
+  use_cover: true
+  use_isbn: true
+
+import:
+  mode: in_place                        # in_place | copy | move
+  autotag: true
+  resume: true
+
+duplicates:
+  keys: [series, volume]
+  action: ask                           # ask | skip | keep_both | replace
+
+write:
+  format: cbz
+  cbr: convert                          # convert | skip
+  pdf: convert                          # convert | skip
+  pdf_mode: auto                        # auto | extract | render
+  delete_original: ask                  # ask | yes | no
+  conflict: ask                         # ask | file | database
+
+paths:
+  oneshot: 'OneShot/$language/$title - $authors/$title - $authors'
+  series: 'Series/$series/$series - T$volume:02 - $title'
+  default: '$kind/$title'
+  missing_field: ask                    # ask | placeholder | skip
+  placeholder: Unknown
+
+plugins: [bedetheque]
+
+bedetheque:
+  delay: [3, 10]                        # seconds slept before each real request
+  pages_dir: ~/.local/share/bdnex/pages # where saved album pages are looked up
+  fetcher: null                         # "package.module:function" returning page bytes for a url
+  fetcher_endpoint: null                # free string for your fetcher (e.g. a server url)
