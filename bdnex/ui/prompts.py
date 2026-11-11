@@ -65,3 +65,14 @@ class InquirerPrompter:
                      {"name": "Keep both (add a number)", "value": "keep_both"},
                      {"name": "Replace", "value": "replace"}],
         ).execute()
+
+    def corrupted_action(self, path: str, problems: list[str], can_move: bool) -> str:
+        from InquirerPy import inquirer
+
+        print(f"\n{path}\nThe archive is damaged and could not be repaired:")
+        for line in problems:
+            print(f"  - {line}")
+        choices = [{"name": "Leave it as it is", "value": "leave"}]
+        if can_move:
+            choices.append({"name": "Move it anyway (as it is, no tags written)", "value": "move"})
+        return inquirer.select(message="What now?", choices=choices).execute()

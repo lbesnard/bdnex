@@ -6,6 +6,7 @@ The library database holds the metadata. Two commands push it into your files:
 |---|---|
 | `bdnex write [query]` | write `ComicInfo.xml` where the files are; CBR and PDF files become a CBZ next to the original |
 | `bdnex move [query]` | the same, then rename into the library tree (`directory` + `paths` in the config) |
+| `bdnex repair [query]` | rebuild damaged archives as clean CBZ files, nothing else |
 | `bdnex move --copy [query]` | as `move`, but the source stays untouched; the **copy** is what the database tracks |
 
 `query` selects files with the same terms as [`bdnex ls --files`](queries.md); only files already
@@ -30,6 +31,23 @@ After every write the file's checksum is recomputed and stored in the database.
   byte for byte, ComicInfo present) before it replaces or sits next to anything.
 - If verification fails, the original is left untouched and no temporary file remains.
 - One failing file never stops the batch.
+
+## Damaged archives
+
+`bdnex import` opens every archive. A file that cannot be opened at all is reported as `failed`. A
+file that opens but has a page failing its checksum is still **matched and recorded**, marked
+*corrupted*: `bdnex ls --files corrupted:true` lists them.
+
+`bdnex write` and `bdnex move` try to repair such a file first, and `bdnex repair [query]` does only
+that. The repair recovers a page whose stored checksum is wrong while its data is complete (the right
+size, and a picture that decodes), then rebuilds the archive with correct checksums. It changes no
+page and keeps the file's `ComicInfo.xml`, and the new archive is verified before it replaces the
+old one.
+
+If a page cannot be recovered (its data is truncated or is not an image), nothing is changed and
+bdnex asks what to do: **leave** the file as it is, or **move it anyway**, as it is and without
+tags (`move` and `--copy` only). `write.corrupted: ask | leave | move` decides in advance; `--force`
+and `--pretend` never ask (`--force` leaves it, `--pretend` says you would be asked).
 
 ## Conflicts
 

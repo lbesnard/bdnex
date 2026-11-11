@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import shutil
 from dataclasses import dataclass
 from typing import Any, Optional, Protocol
 
@@ -24,8 +25,8 @@ from bdnex.organizer import archive, comicinfo, template
 logger = logging.getLogger(__name__)
 
 WRITE, MOVE, COPY = "write", "move", "copy"
-WRITTEN, MOVED, COPIED, UNCHANGED, SKIPPED, FAILED, PRETEND = (
-    "written", "moved", "copied", "unchanged", "skipped", "failed", "pretend")
+WRITTEN, MOVED, COPIED, UNCHANGED, SKIPPED, FAILED, PRETEND, REPAIRED = (
+    "written", "moved", "copied", "unchanged", "skipped", "failed", "pretend", "repaired")
 TMP_SUFFIX = ".bdnex-tmp"
 
 # template fields that can be saved back to the database when typed at a prompt
@@ -44,6 +45,9 @@ class Prompter(Protocol):
 
     def collision(self, dest: str) -> str:
         """The destination exists: ``skip``, ``keep_both`` or ``replace``."""
+
+    def corrupted_action(self, path: str, problems: list[str], can_move: bool) -> str:
+        """A damaged archive could not be repaired: ``leave`` it as it is, or ``move`` it as is."""
 
 
 @dataclass
@@ -90,20 +94,29 @@ class Organizer:
             return FileResult(path, SKIPPED, note="not matched to an album: run `bdnex import`")
         if not os.path.exists(path):
             return FileResult(path, FAILED, note="file not found")
-        if row.get("corrupted"):
-            return FileResult(path, SKIPPED, note="corrupted archive")
         write = self.settings.write
         if fmt == "cbr" and write.cbr == "skip":
             return FileResult(path, SKIPPED, note="cbr skipped (write.cbr: skip)")
         if fmt == "pdf" and write.pdf == "skip":
             return FileResult(path, SKIPPED, note="pdf skipped (write.pdf: skip)")
 
+        repaired_pages: list[str] = []
+        recovered = None
+        if row.get("corrupted"):  # try to repair first; ask what to do if that fails
+            recovered = archive.read_entries_lenient(path, fmt)
+            if not recovered.ok:
+                return self._unrepairable(row, album_id, fmt, mode, recovered)
+            repaired_pages = recovered.repaired
+
         dest = self._destination(path, fmt, album_id, mode)
         if isinstance(dest, FileResult):
             return dest
         album = self.library.get_album(album_id)  # reload: a prompt may have completed it
 
-        entries, existing = archive.read_entries(path, fmt, write.pdf_mode, write.pdf_dpi)
+        if recovered is not None:
+            entries, existing = recovered.entries, recovered.comicinfo
+        else:
+            entries, existing = archive.read_entries(path, fmt, write.pdf_mode, write.pdf_dpi)
         new_fields = comicinfo.album_to_fields(album, archive.page_count(entries))
         xml = self._resolve_xml(path, existing, new_fields)
         if isinstance(xml, FileResult):
@@ -111,10 +124,11 @@ class Organizer:
 
         converted = fmt != "cbz"
         same_place = os.path.abspath(dest) == os.path.abspath(path)
-        if same_place and not converted and xml == existing:
+        if same_place and not converted and xml == existing and not repaired_pages:
             return FileResult(path, UNCHANGED, dest, "ComicInfo.xml already up to date")
 
-        steps = [f"convert {fmt} -> cbz"] if converted else []
+        steps = [f"repair {len(repaired_pages)} page(s) with a wrong checksum"] if repaired_pages else []
+        steps += [f"convert {fmt} -> cbz"] if converted else []
         steps.append("write ComicInfo.xml" if xml != existing else "keep ComicInfo.xml")
         if not same_place:
             steps.append(f"{'copy' if mode == COPY else 'move'} to {dest}")
@@ -126,6 +140,39 @@ class Organizer:
             if dest is None:
                 return FileResult(path, SKIPPED, note="destination exists")
 
+        self._build(dest, entries, xml)
+
+        removed = self._dispose_source(path, dest, mode, converted)
+        self._update_library(path, dest)
+        outcome = {WRITE: WRITTEN, MOVE: MOVED, COPY: COPIED}[mode]
+        return FileResult(path, outcome, dest, "; ".join(steps) + ("" if removed or same_place else " (original kept)"))
+
+    # --------------------------------------------------------------- repairing
+    def repair(self, row: dict[str, Any]) -> FileResult:
+        """Rebuild a damaged CBZ/CBR as a clean CBZ, keeping its ComicInfo.xml and pages untouched."""
+        path, fmt = row["path"], row["format"]
+        if not os.path.exists(path):
+            return FileResult(path, FAILED, note="file not found")
+        if not row.get("corrupted"):
+            return FileResult(path, UNCHANGED, note="not damaged")
+        recovered = archive.read_entries_lenient(path, fmt)
+        if not recovered.ok:
+            return FileResult(path, FAILED, note="can not be repaired: " + "; ".join(recovered.lost))
+        dest = path if fmt == "cbz" else os.path.splitext(path)[0] + ".cbz"
+        note = f"{len(recovered.repaired)} page(s) with a wrong checksum rebuilt: {', '.join(recovered.repaired)}"
+        if self.pretend:
+            return FileResult(path, PRETEND, dest, "would repair: " + note)
+        if dest != path and os.path.exists(dest):
+            return FileResult(path, SKIPPED, note=f"{dest} already exists")
+        self._build(dest, recovered.entries, recovered.comicinfo)
+        if dest != path and self.settings.write.delete_original != "no" and (
+                self.settings.write.delete_original == "yes" or self._confirm(f"Delete the damaged original {path}?")):
+            os.remove(path)
+        self._update_library(path, dest)
+        return FileResult(path, REPAIRED, dest, note)
+
+    def _build(self, dest: str, entries, xml: Optional[bytes]) -> None:
+        """Write ``dest`` through a verified temporary file."""
         tmp = dest + TMP_SUFFIX
         try:
             archive.write_cbz(tmp, entries, xml)
@@ -136,10 +183,38 @@ class Organizer:
             raise
         os.replace(tmp, dest)
 
-        removed = self._dispose_source(path, dest, mode, converted)
+    def _unrepairable(self, row, album_id, fmt, mode, recovered) -> FileResult:
+        path = row["path"]
+        problems = recovered.lost
+        note = "can not be repaired: " + "; ".join(problems)
+        can_move = mode != WRITE
+        choice = self.settings.write.corrupted
+        if choice == "ask":
+            if self.pretend:
+                return FileResult(path, PRETEND, note=note + " (you would be asked: leave it, or move it as it is)")
+            if self.force or self.prompter is None:
+                choice = "leave"
+            else:
+                choice = self.prompter.corrupted_action(path, problems, can_move)
+        if choice != "move" or not can_move:
+            return FileResult(path, SKIPPED, note=note + " (left as it is)")
+        dest = self._destination(path, fmt, album_id, mode)
+        if isinstance(dest, FileResult):
+            return dest
+        if self.pretend:
+            return FileResult(path, PRETEND, dest, note + f" (would be moved as it is to {dest})")
+        if os.path.abspath(dest) != os.path.abspath(path) and os.path.exists(dest):
+            dest = self._resolve_collision(dest)
+            if dest is None:
+                return FileResult(path, SKIPPED, note="destination exists")
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        if mode == COPY:
+            shutil.copy2(path, dest)
+        elif os.path.abspath(dest) != os.path.abspath(path):
+            shutil.move(path, dest)
         self._update_library(path, dest)
-        outcome = {WRITE: WRITTEN, MOVE: MOVED, COPY: COPIED}[mode]
-        return FileResult(path, outcome, dest, "; ".join(steps) + ("" if removed or same_place else " (original kept)"))
+        return FileResult(path, COPIED if mode == COPY else MOVED, dest,
+                          note + " (moved as it is: no tags written)")
 
     # -------------------------------------------------------------- helpers
     def _destination(self, path: str, fmt: str, album_id: int, mode: str):
