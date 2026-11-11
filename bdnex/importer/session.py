@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import dataclass, field
-from typing import Optional, Protocol
+from typing import Callable, Optional, Protocol
 
 from bdnex.config import Settings
 from bdnex.importer.bedetheque import Bedetheque
@@ -59,7 +59,8 @@ class ImportReport:
 class ImportSession:
     def __init__(self, library: Library, source: Bedetheque, settings: Settings,
                  prompter: Optional[Prompter] = None, pretend: bool = False,
-                 force: bool = False, recache: bool = False):
+                 force: bool = False, recache: bool = False,
+                 progress: Optional[Callable[[str], None]] = None):
         self.library = library
         self.source = source
         self.settings = settings
@@ -67,6 +68,7 @@ class ImportSession:
         self.pretend = pretend
         self.force = force
         self.recache = recache
+        self.progress = progress or (lambda message: None)
 
     # ------------------------------------------------------------------ run
     def run(self, paths: list[str]) -> ImportReport:
@@ -80,9 +82,10 @@ class ImportSession:
         if not files:
             return report
         if self.source.sitemaps_cached() == 0 or self.recache:
-            logger.info("Updating Bédéthèque sitemaps")
-            self.source.update_sitemaps(recache=self.recache)
-        for path in files:
+            self.progress("Downloading the Bédéthèque sitemaps (first run only, about a minute)...")
+            self.source.update_sitemaps(recache=self.recache, progress=self.progress)
+        for number, path in enumerate(files, start=1):
+            self.progress(f"[{number}/{len(files)}] {os.path.basename(path)}")
             try:
                 result = self.import_file(path)
             except Exception as err:  # one bad file must not stop the batch

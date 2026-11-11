@@ -10,6 +10,7 @@ from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.organizer.organizer import COPY, FAILED, MOVE, WRITE, Organizer
+from bdnex.ui.output import add_verbosity, progress, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
 OUTCOMES = ("written", "moved", "copied", "unchanged", "skipped", "failed", "pretend")
@@ -30,6 +31,7 @@ def _parser(command: str) -> argparse.ArgumentParser:
     if command == "move":
         parser.add_argument("--copy", action="store_true",
                             help="leave the source files untouched; the copy is what the database tracks")
+    add_verbosity(parser)
     return parser
 
 
@@ -49,6 +51,7 @@ def report(results, out) -> int:
 
 def run(command: str, argv: list[str], out=sys.stdout) -> int:
     args = _parser(command).parse_args(argv)
+    setup_logging(args.verbose)
     mode = WRITE if command == "write" else (COPY if args.copy else MOVE)
     try:
         settings = load_config().settings
@@ -69,7 +72,7 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
             return 2
         organizer = Organizer(library, settings, prompter=None if args.force else InquirerPrompter(),
                               pretend=args.pretend, force=args.force)
-        results = organizer.run(rows, mode)
+        results = organizer.run(rows, mode, progress=progress)
     return report(results, out)
 
 

@@ -70,9 +70,11 @@ class Organizer:
         self.force = force
 
     # ------------------------------------------------------------------ run
-    def run(self, rows: list[dict[str, Any]], mode: str) -> list[FileResult]:
+    def run(self, rows: list[dict[str, Any]], mode: str, progress=None) -> list[FileResult]:
         results = []
-        for row in rows:
+        for number, row in enumerate(rows, start=1):
+            if progress:
+                progress(f"[{number}/{len(rows)}] {os.path.basename(row['path'])}")
             try:
                 results.append(self.process(row, mode))
             except Exception as err:  # one file must not stop the batch

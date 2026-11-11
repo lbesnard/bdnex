@@ -279,3 +279,16 @@ def test_nothing_to_import_makes_no_network_access(env, tmp_path):
     report = env.session.run([str(tmp_path / "empty"), str(tmp_path / "missing.cbz")])
     assert env.web.calls == [] and env.lib.stats()["files"] == 0
     assert [r.outcome for r in report.results] == [FAILED] and "no such file" in report.results[0].note
+
+
+def test_session_reports_progress(web, make_cbz, tmp_path):
+    messages = []
+    env = Env(web, make_settings(), FakePrompter(), progress=messages.append)
+    make_cbz(FILE)
+    make_cbz("zzzzzzzz qqqqqqqq.cbz", pages=7)
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    env.session.run([str(tmp_path)])
+    assert messages[0].startswith("Downloading the Bédéthèque sitemaps")
+    assert [m for m in messages if m.startswith("[")] == ["[1/2] Nains - T01 - Redwin de la forge.cbz",
+                                                         "[2/2] zzzzzzzz qqqqqqqq.cbz"]
+    env.lib.close()

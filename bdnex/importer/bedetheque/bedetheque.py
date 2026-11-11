@@ -57,11 +57,13 @@ class Bedetheque:
 
     def __init__(self, library: Library, fetch: Callable[[str], bytes] = http_fetch,
                  delay: tuple[float, float] = (3, 10), sleep: Callable[[float], None] = time.sleep,
-                 sitemap_fetch: Optional[Callable[[str], bytes]] = None):
+                 sitemap_fetch: Optional[Callable[[str], bytes]] = None,
+                 sitemap_delay: tuple[float, float] = (0.5, 1.5)):
         self.library = library
         self._fetch = fetch
         self._sitemap_fetch = sitemap_fetch or fetch
         self.delay = delay
+        self.sitemap_delay = sitemap_delay
         self._sleep = sleep
         self._index: Optional[list[Candidate]] = None
 
@@ -71,17 +73,18 @@ class Bedetheque:
             cached = self.library.cache_get(SOURCE, kind, url)
             if cached is not None:
                 return cached
-        self._sleep(uniform(*self.delay))
+        self._sleep(uniform(*(self.sitemap_delay if kind == "sitemap" else self.delay)))
         logger.debug(f"Fetching {url}")
         content = (self._sitemap_fetch if kind == "sitemap" else self._fetch)(url)
         self.library.cache_put(SOURCE, kind, url, content)
         return content
 
     # --------------------------------------------------------------- sitemaps
-    def update_sitemaps(self, recache: bool = False) -> int:
+    def update_sitemaps(self, recache: bool = False,
+                        progress: Optional[Callable[[str], None]] = None) -> int:
         """Download (or refresh) sitemaps until the site serves an empty one.
 
-        Returns how many files were fetched from the network.
+        ``progress`` receives a short message per file fetched. Returns how many files were fetched.
         """
         fetched = 0
         for url in sitemap.sitemap_urls():
@@ -90,6 +93,8 @@ class Bedetheque:
                 if sitemap.is_empty_sitemap(cached):
                     break
                 continue
+            if progress:
+                progress(f"  sitemap {fetched + 1}: {url.rsplit('/', 1)[-1]}")
             content = self._get("sitemap", url, recache=True)
             fetched += 1
             if sitemap.is_empty_sitemap(content):

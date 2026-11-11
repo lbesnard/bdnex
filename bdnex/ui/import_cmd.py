@@ -11,6 +11,7 @@ from bdnex.importer.bedetheque import Bedetheque, build_fetcher
 from bdnex.importer.bedetheque.bedetheque import http_fetch
 from bdnex.importer.session import ImportSession
 from bdnex.library import Library
+from bdnex.ui.output import add_verbosity, progress, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
 
@@ -27,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="after importing, write tags and move the files into the library tree")
     parser.add_argument("--copy", action="store_true",
                         help="after importing, copy the files into the library tree (originals untouched)")
+    add_verbosity(parser)
     parser.add_argument("--recache", action="store_true",
                         help="refetch sitemaps and album pages instead of using the cache")
     return parser
@@ -34,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def run(argv: list[str], out=sys.stdout) -> int:
     args = build_parser().parse_args(argv)
+    setup_logging(args.verbose)
     try:
         settings = load_config().settings
     except ConfigError as err:
@@ -42,9 +45,11 @@ def run(argv: list[str], out=sys.stdout) -> int:
 
     with Library(settings.library_path) as library:
         source = Bedetheque(library, fetch=build_fetcher(settings), sitemap_fetch=http_fetch,
-                            delay=tuple(settings.bedetheque.delay))
+                            delay=tuple(settings.bedetheque.delay),
+                            sitemap_delay=tuple(settings.bedetheque.sitemap_delay))
         session = ImportSession(library, source, settings, prompter=InquirerPrompter(),
-                                pretend=args.pretend, force=args.force, recache=args.recache)
+                                pretend=args.pretend, force=args.force, recache=args.recache,
+                                progress=progress)
         report = session.run(args.paths)
         try:
             organize_results = _organize(args, settings, library, report) if not args.pretend else []
@@ -84,6 +89,6 @@ def _organize(args, settings, library, report):
         settings.require_library_directory()
     rows = [library.get_file(r.path) for r in report.results if r.outcome in ("tagged", "partial")]
     organizer = Organizer(library, settings, prompter=None if args.force else InquirerPrompter(), force=args.force)
-    return organizer.run([r for r in rows if r], mode)
+    return organizer.run([r for r in rows if r], mode, progress=progress)
 
 

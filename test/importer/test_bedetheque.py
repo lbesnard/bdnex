@@ -253,3 +253,20 @@ def test_saved_page_is_cached_for_offline_reuse(lib, web):
     web.calls.clear()
     assert plugin.album_info(ONESHOT_URL).source_id == "433432"
     assert web.calls == []
+
+
+# ------------------------------------------------- delays and progress
+def test_sitemaps_use_their_own_short_delay_pages_the_long_one(lib, web):
+    sleeps = []
+    plugin = Bedetheque(lib, fetch=web, sleep=sleeps.append, delay=(5, 5), sitemap_delay=(0.1, 0.1))
+    plugin.update_sitemaps()
+    assert set(sleeps) == {0.1}  # 27 sitemap requests, none of them waits the page delay
+    sleeps.clear()
+    plugin.album_info(ALBUM_URL)
+    assert set(sleeps) == {5}  # album + series pages
+
+
+def test_update_sitemaps_reports_progress(lib, web):
+    messages = []
+    Bedetheque(lib, fetch=web, sleep=lambda s: None).update_sitemaps(progress=messages.append)
+    assert len(messages) == 27 and messages[0] == "  sitemap 1: albums_1_10000_map.xml"

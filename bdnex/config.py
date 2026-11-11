@@ -90,6 +90,7 @@ class Paths(_Section):
 
 class Bedetheque(_Section):
     delay: tuple[float, float]
+    sitemap_delay: tuple[float, float]
     pages_dir: str
     fetcher: Optional[str] = None
     fetcher_endpoint: Optional[str] = None

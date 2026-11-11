@@ -66,3 +66,24 @@ def test_main_dispatches_import(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exit_:
         ui.main(["import", "-n", "foo.cbz"])
     assert seen["argv"] == ["-n", "foo.cbz"] and exit_.value.code == 0
+
+
+def test_import_command_shows_progress_on_stderr(setup, capsys):
+    path, tmp_path = setup
+    import_cmd.run([path], out=io.StringIO())
+    err = capsys.readouterr().err
+    assert "Downloading the Bédéthèque sitemaps" in err and "[1/1] Nains - T01 - Redwin de la forge.cbz" in err
+
+
+def test_verbosity_levels():
+    import logging
+    from bdnex.ui.output import setup_logging
+    for flags, level in ((0, logging.WARNING), (1, logging.INFO), (2, logging.DEBUG)):
+        setup_logging(flags)
+        assert logging.getLogger().level == level
+    setup_logging(0)
+
+
+def test_import_accepts_verbose_flag(setup):
+    path, tmp_path = setup
+    assert import_cmd.run(["-vv", "-n", path], out=io.StringIO()) == 0
