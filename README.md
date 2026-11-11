@@ -48,27 +48,51 @@ Get inspiration from beets music manager: [beets](https://github.com/beetbox/bee
 
 ## Installation
 
-It is recommended to create a virtual environmnent with Conda
-```commandline
-conda env create --file=environment.yml
-conda activate bdnex
+Requires Python 3.10 to 3.13. [uv](https://docs.astral.sh/uv/) is the recommended installer.
+
+### Stable release (recommended)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lbesnard/bdnex/main/install.sh | sh
 ```
 
-User mode:
-```
-pip install .
+The script fetches the latest GitHub release wheel and installs it with `uv tool`
+(falling back to `pipx`, then `pip`).
+
+Or directly with uv, from a specific release on the [Releases page](https://github.com/lbesnard/bdnex/releases):
+
+```bash
+uv tool install https://github.com/lbesnard/bdnex/releases/download/vX.Y.Z/bdnex-X.Y.Z-py3-none-any.whl
 ```
 
-Dev mode:
+### Latest from source
+
+```bash
+uv tool install git+https://github.com/lbesnard/bdnex.git
 ```
-pip install -e .[dev]
+
+### Development
+
+```bash
+git clone https://github.com/lbesnard/bdnex.git
+cd bdnex
+uv sync --extra dev
+uv run pytest
+uv run bdnex --help
 ```
+
+### Releasing
+
+Run the **Release** workflow from the GitHub Actions tab and pick `patch`, `minor`
+or `major`. It runs the tests, bumps the version in `pyproject.toml`, tags it, builds
+the wheel and publishes a GitHub release.
 
 
 ## Examples:
 
 ```
-bdnex -f /tmp/  # folder containing albums
+bdnex -d /tmp/  # folder containing albums
+bdnex -f /tmp/album.cbz  # single album
 ```
 
 ```commandline

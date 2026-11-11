@@ -9,14 +9,13 @@ import xml.etree.ElementTree as ET
 import patoolib
 import rarfile
 import xmlschema
-from pkg_resources import resource_filename
 from termcolor import colored
 from xmldiff import formatting
 from xmldiff import main
 
-from bdnex.lib.utils import yesno
+from bdnex.lib.utils import CONF_DIR, yesno
 
-COMICINFO_TEMPLATE = resource_filename(__name__, "../conf/ComicInfo.xsd")
+COMICINFO_TEMPLATE = os.path.join(CONF_DIR, "ComicInfo.xsd")
 
 
 class comicInfo():

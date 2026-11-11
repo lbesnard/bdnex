@@ -10,18 +10,18 @@ import tempfile
 import urllib.request
 
 import yaml
-from pkg_resources import resource_filename
 
 from bdnex.lib.colargulog import ColorizedArgsFormatter
 
-LOGGING_CONF = resource_filename('bdnex', "/conf/logging.conf")
-DEFAULT_CONFIG_YAML = resource_filename('bdnex', "/conf/bdnex.yaml")
+CONF_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'conf')
+LOGGING_CONF = os.path.join(CONF_DIR, 'logging.conf')
+DEFAULT_CONFIG_YAML = os.path.join(CONF_DIR, 'bdnex.yaml')
 UNIX_DIR_VAR = 'XDG_CONFIG_HOME'
 UNIX_DIR_FALLBACK = '~/.config'
 
 
 def dump_json(json_path, json_data):
-    with open(json_path, "w") as outfile:
+    with open(json_path, "w", encoding='utf-8') as outfile:
         json.dump(json_data, outfile, indent=4,
                   sort_keys=True, ensure_ascii=False)
 
@@ -32,7 +32,7 @@ def load_json(json_path):
     if os.path.exists(json_path):
         logger.debug(f"Loading JSON: {json_path}")
 
-        with open(json_path) as f:
+        with open(json_path, encoding='utf-8') as f:
             return json.load(f)
     else:
         logger.error(f"{json_path} does not exist")
@@ -105,7 +105,7 @@ def _init_config():
         bdnex_user_path = os.path.join(os.environ[UNIX_DIR_VAR],
                                        'bdnex')
     else:
-        bdnex_user_path = os.path.join(os.environ[UNIX_DIR_FALLBACK],
+        bdnex_user_path = os.path.join(os.path.expanduser(UNIX_DIR_FALLBACK),
                                        'bdnex')
     user_config_path = os.path.join(bdnex_user_path,
                                    'bdnex.yaml')
@@ -128,7 +128,8 @@ def bdnex_config():
     Returns: dictionary containing configuration
 
     """
-    config = yaml.safe_load(open(_init_config()))
+    with open(_init_config(), encoding='utf-8') as f:
+        config = yaml.safe_load(f)
 
     return config
 
@@ -151,7 +152,7 @@ def args():
                         help="BD dir path to process",
                         required=False)
 
-    parser.add_argument('-i', '--init', dest='init',
+    parser.add_argument('-i', '--init', dest='init', action='store_true',
                         help="initialise or force bdnex to download sitemaps from bedetheque for album matching",
                         required=False)
 

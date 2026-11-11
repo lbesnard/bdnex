@@ -1,0 +1,59 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bdnex"
+version = "0.1.0"
+description = "BD (french comic) tagger and library organizer"
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+authors = [{ name = "Laurent Besnard", email = "besnard.laurent@gmail.com" }]
+license = { text = "MIT" }
+keywords = ["comics", "bd", "bedetheque", "comicrack", "cbz", "cbr", "metadata"]
+classifiers = [
+  "License :: OSI Approved :: MIT License",
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+  "InquirerPy",
+  "beautifulsoup4",
+  "imutils",
+  "lxml",
+  "opencv-contrib-python-headless",
+  "pandas",
+  "patool",
+  "python-dateutil",
+  "pyyaml",
+  "rapidfuzz",
+  "rarfile",
+  "requests",
+  "termcolor",
+  "xmldiff",
+  "xmlschema",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ipdb"]
+
+[project.urls]
+Homepage = "https://github.com/lbesnard/bdnex"
+Issues = "https://github.com/lbesnard/bdnex/issues"
+
+[project.scripts]
+bdnex = "bdnex.ui:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bdnex*"]
+
+[tool.setuptools.package-data]
+"bdnex.conf" = ["*.json", "*.ini", "*.yaml", "*.xsd", "*.conf"]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
