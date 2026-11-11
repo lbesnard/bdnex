@@ -54,7 +54,7 @@ class ImportReport:
 class ImportSession:
     def __init__(self, library: Library, source: MetadataSource, settings: Settings,
                  prompter: Optional[Prompter] = None, pretend: bool = False,
-                 force: bool = False, recache: bool = False,
+                 force: bool = False, recache: bool = False, retry_partial: bool = False,
                  progress: Optional[Callable[[str], None]] = None):
         self.library = library
         self.source = source
@@ -63,6 +63,7 @@ class ImportSession:
         self.pretend = pretend
         self.force = force
         self.recache = recache
+        self.retry_partial = retry_partial
         self.progress = progress or (lambda message: None)
 
     # ------------------------------------------------------------------ run
@@ -105,7 +106,12 @@ class ImportSession:
     def import_file(self, path: str) -> ImportResult:
         known = self.library.get_file(path)
         if known and known["album_id"] is not None and self.settings.import_.resume and not self.force:
-            return ImportResult(path, SKIPPED, album_id=known["album_id"], note="already imported")
+            album = self.library.get_album(known["album_id"])
+            partial = bool(album and album["extra"].get("partial"))
+            if partial and self.retry_partial:
+                return self._retry_partial(path, album)
+            hint = " (partial: `--retry-partial` fetches its page)" if partial else ""
+            return ImportResult(path, SKIPPED, album_id=known["album_id"], note="already imported" + hint)
 
         info = inspect_file(path)
         if not info.readable:
@@ -144,6 +150,19 @@ class ImportSession:
         outcome = PARTIAL if partial else TAGGED
         self._log(path, outcome, score, album_id)
         return ImportResult(path, outcome, score=score, album_id=album_id, note=note)
+
+    def _retry_partial(self, path: str, album: dict) -> ImportResult:
+        """Complete an album that was recorded from the sitemap only: its page URL is already known."""
+        if album["source"] != self.source.name:
+            return ImportResult(path, SKIPPED, album_id=album["id"],
+                                note=f"partial album of source {album['source']!r}, not {self.source.name!r}")
+        if self.pretend:
+            return ImportResult(path, PRETEND, album_id=album["id"], note=f"would fetch {album['url']}")
+        candidate = Candidate(album["source_id"], album["url"], "", album["volume"])
+        album_id, partial, note = self._album_for(candidate)
+        outcome = PARTIAL if partial else TAGGED
+        self._log(path, outcome, album_id=album_id)
+        return ImportResult(path, outcome, album_id=album_id, note=note or "page fetched")
 
     # -------------------------------------------------------------- helpers
     def _log(self, path, outcome, score=None, album_id=None):
