@@ -27,6 +27,7 @@ dependencies = [
   "lxml",
   "opencv-contrib-python-headless",
   "pandas",
+  "pymupdf",
   "patool",
   "python-dateutil",
   "pyyaml",
@@ -40,6 +41,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "ipdb"]
+docs = ["sphinx>=7", "furo", "myst-parser"]
 
 [project.urls]
 Homepage = "https://github.com/lbesnard/bdnex"
