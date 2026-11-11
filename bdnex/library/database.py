@@ -9,6 +9,7 @@ import sqlite3
 from typing import Any, Iterable, Optional
 
 from bdnex.library.hashing import file_md5
+from bdnex.library.query import register_functions, run_query
 from bdnex.library.models import AlbumInfo, SeriesInfo
 from bdnex.library.scan import inspect_file, iter_comic_files
 from bdnex.library.schema import MIGRATIONS
@@ -36,6 +37,7 @@ class Library:
         self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
+        register_functions(self.conn)
         self._migrate()
 
     # ------------------------------------------------------------------ setup
@@ -238,6 +240,11 @@ class Library:
             groups.append([dict(r) for r in self.conn.execute(
                 "SELECT * FROM files WHERE md5 = ? ORDER BY path", (row["md5"],))])
         return groups
+
+    # ---------------------------------------------------------------- query
+    def query(self, terms: list[str], files: bool = False) -> list[dict[str, Any]]:
+        """Albums (or files with ``files=True``) matching the query terms. See ``library.query``."""
+        return run_query(self.conn, terms, files_mode=files)
 
     # ----------------------------------------------------------- source cache
     def cache_put(self, source: str, kind: str, url: str, content: bytes | str) -> None:

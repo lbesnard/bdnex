@@ -1,0 +1,95 @@
+import io
+import json
+
+import pytest
+import yaml
+
+from bdnex.library import AlbumInfo, Library, SeriesInfo
+from bdnex.ui import ls_cmd
+
+
+@pytest.fixture
+def setup(tmp_path, monkeypatch, make_cbz):
+    db = tmp_path / "lib.sqlite"
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(yaml.safe_dump({"config_version": 1, "library": str(db)}))
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    with Library(db) as lib:
+        a = lib.add_album(AlbumInfo("bedetheque", "1", "Redwin de la Forge",
+                                    series=SeriesInfo("bedetheque", "47467", "Nains"), volume=1,
+                                    year=2015, credits={"Writer": ["Jarry, Nicolas"]}, genres=["Fantasy"]))
+        b = lib.add_album(AlbumInfo("bedetheque", "2", "La bibliomule de Cordoue", year=2021,
+                                    credits={"Writer": ["Lupano, Wilfrid"]}, extra={"partial": True}))
+        lib.add_file(make_cbz("nains1.cbz", pages=3), a)
+        lib.add_file(make_cbz("bib.cbz", pages=4), b)
+        lib.add_file(make_cbz("loose.cbz", pages=5))
+    return tmp_path
+
+
+def run(*argv):
+    out = io.StringIO()
+    code = ls_cmd.run(list(argv), out=out)
+    return code, out.getvalue()
+
+
+def test_default_listing(setup):
+    code, text = run()
+    assert code == 0
+    lines = text.strip().splitlines()
+    assert lines[0] == "La bibliomule de Cordoue [partial]  (Lupano, Wilfrid) [2021]  1 file"
+    assert lines[1] == "Nains - T01 - Redwin de la Forge  (Jarry, Nicolas) [2015]  1 file"
+
+
+def test_query_and_count(setup):
+    assert run("author:lupano") [1].startswith("La bibliomule")
+    assert run("-c", "series:nains") == (0, "1\n")
+    assert run("-c", "^series:nains") == (0, "1\n")
+
+
+def test_custom_format(setup):
+    assert run("--format", "$series|$vol|$title", "series:nains") == (0, "Nains|01|Redwin de la Forge\n")
+    assert run("--format", "$unknown-$year", "year:2021") == (0, "$unknown-2021\n")  # safe_substitute
+
+
+def test_files_listing_shows_untagged(setup):
+    code, text = run("--files", "tagged:false")
+    assert code == 0 and "loose.cbz" in text and "(not imported)" in text
+
+
+def test_json_output(setup):
+    code, text = run("--json", "year:2015")
+    data = json.loads(text)
+    assert code == 0 and data[0]["title"] == "Redwin de la Forge" and data[0]["genres"] == "Fantasy"
+
+
+def test_bad_query_exit_code_2(setup, capsys):
+    assert run("year:abc")[0] == 2
+    assert "bad query" in capsys.readouterr().err
+
+
+def test_no_library_yet(tmp_path, monkeypatch, capsys):
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(yaml.safe_dump({"config_version": 1, "library": str(tmp_path / "none.sqlite")}))
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    assert run()[0] == 1
+    assert "bdnex import" in capsys.readouterr().err
+    assert not (tmp_path / "none.sqlite").exists()  # ls must not create an empty library
+
+
+def test_invalid_config(tmp_path, monkeypatch, capsys):
+    conf = tmp_path / "bad.yaml"
+    conf.write_text("config_version: 1\noops: 1\n")
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    assert run()[0] == 1 and "oops" in capsys.readouterr().err
+
+
+def test_main_dispatches_ls(monkeypatch, tmp_path):
+    from bdnex import ui
+    conf = tmp_path / "c.yaml"
+    conf.write_text("config_version: 1\ndirectory: ~/c\n")
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    seen = {}
+    monkeypatch.setattr("bdnex.ui.ls_cmd.run", lambda argv: seen.setdefault("argv", argv) and 0)
+    with pytest.raises(SystemExit) as exit_:
+        ui.main(["ls", "series:nains"])
+    assert seen["argv"] == ["series:nains"] and exit_.value.code == 0

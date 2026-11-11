@@ -81,6 +81,10 @@ def main(argv=None):
     if not check_config():
         sys.exit(1)
 
+    if argv and argv[0] == "ls":
+        from bdnex.ui.ls_cmd import run as run_ls
+        sys.exit(run_ls(argv[1:]))
+
     if argv and argv[0] == "import":
         from bdnex.ui.import_cmd import run as run_import
         sys.exit(run_import(argv[1:]))
