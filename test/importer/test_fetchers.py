@@ -98,3 +98,42 @@ def test_plugin_with_directory_fetcher_end_to_end(tmp_path):
         assert info.kind == "oneshot" and info.title == "La bibliomule de Cordoue"
         lib.add_album(info)
         assert lib.stats()["oneshots"] == 1
+
+
+# ------------------------------------------------------------- friendly errors
+from bdnex.importer.bedetheque import FetcherError  # noqa: E402
+
+
+def test_function_name_written_into_the_module_path_gets_a_suggestion():
+    with pytest.raises(FetcherError) as err:
+        load_fetcher("bdnex.importer.bedetheque.flaresolverr_fetch:flaresolverr_fetch")
+    message = str(err.value)
+    assert "can not import the module 'bdnex.importer.bedetheque.flaresolverr_fetch'" in message
+    assert "Did you mean 'bdnex.importer.bedetheque:flaresolverr_fetch'?" in message
+
+
+@pytest.mark.parametrize("spec", ["bdnex.importer.bedetheque:flaresolverr_fetch",
+                                  "bdnex.importer.bedetheque.fetchers:flaresolverr_fetch"])
+def test_both_valid_spellings_load_the_same_function(spec):
+    assert load_fetcher(spec).__name__ == "flaresolverr_fetch"
+
+
+def test_the_suggestion_is_itself_loadable():
+    with pytest.raises(FetcherError) as err:
+        load_fetcher("bdnex.importer.bedetheque.flaresolverr_fetch:flaresolverr_fetch")
+    suggested = err.value.args[0].split("Did you mean '")[1].split("'")[0]
+    assert load_fetcher(suggested).__name__ == "flaresolverr_fetch"
+
+
+def test_unknown_module_without_a_suggestion_still_explains():
+    with pytest.raises(FetcherError, match="part before ':' must be a module"):
+        load_fetcher("no_such_package.thing:func")
+
+
+def test_missing_function_in_an_existing_module():
+    with pytest.raises(FetcherError, match="has no function 'nope'"):
+        load_fetcher("bdnex.importer.bedetheque.fetchers:nope")
+
+
+def test_fetcher_error_is_still_a_value_error():
+    assert issubclass(FetcherError, ValueError)  # code and tests that expect ValueError keep working
