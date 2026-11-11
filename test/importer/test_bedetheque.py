@@ -4,6 +4,7 @@ import pytest
 
 from bdnex.importer.bedetheque import Bedetheque, parser, sitemap
 from bdnex.library import Library
+from helpers import FakeWeb
 
 TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
 BDGEST = os.path.join(TEST_ROOT, ".local/share/bdnex/bedetheque")
@@ -21,28 +22,6 @@ SERIES_URL = "https://m.bedetheque.com/serie-47467-BD-Nains.html"
 def read(path, mode="rb"):
     with open(path, mode) as fh:
         return fh.read()
-
-
-class FakeWeb:
-    """Replaces the network: serves fixtures and counts requests."""
-
-    def __init__(self):
-        self.calls = []
-        self.pages = {ALBUM_URL: read(ALBUM_HTML), SERIES_URL: read(SERIES_HTML),
-                      "https://www.bedetheque.com/media/Couvertures/Couv_245127.jpg": b"JPEGDATA"}
-        ns = 'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"'
-        for n, url in enumerate(sitemap.sitemap_urls(60)):
-            if n < 26:  # 26 non-empty files, then the site serves empty ones
-                self.pages[url] = (f'<?xml version="1.0"?><urlset {ns}><url><loc>https://www.bedetheque.com/'
-                                   f'BD-Dummy-{n}-{n + 1000000}.html</loc></url></urlset>').encode()
-            else:
-                self.pages[url] = f'<?xml version="1.0"?><urlset {ns}>\n</urlset>'.encode()
-        for name in os.listdir(SITEMAPS):  # real fixtures replace files 25 and 26
-            self.pages["https://www.bedetheque.com/" + name] = read(os.path.join(SITEMAPS, name))
-
-    def __call__(self, url):
-        self.calls.append(url)
-        return self.pages[url]
 
 
 @pytest.fixture
