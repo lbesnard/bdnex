@@ -46,15 +46,61 @@ def test_invalid_field_rejected_by_schema():
         comicinfo.build_xml({"Title": "x", "CommunityRating": "12"})
 
 
-def test_diff_reports_added_removed_changed_and_ignores_foreign_fields():
+def test_diff_reports_added_and_changed_values_only():
     old = {"Title": "A", "Series": "S", "Writer": "W", "Manga": "No", "Notes": "keep"}
     new = {"Title": "B", "Series": "S", "Year": "2015"}
     diff = comicinfo.diff_fields(old, new)
-    assert "~ Title: A  ->  B" in diff and "+ Year: 2015" in diff and "- Writer: W" in diff
-    assert not any("Manga" in line for line in diff)  # a field bdnex never writes is not a conflict
+    assert diff == ["~ Title: A  ->  B", "+ Year: 2015"]
     assert comicinfo.diff_fields(new, new) == []
 
 
-def test_merge_keeps_foreign_fields_database_wins_on_managed():
-    merged = comicinfo.merge_with_existing({"Title": "old", "Manga": "No"}, {"Title": "new"})
-    assert merged == {"Manga": "No", "Title": "new"}
+def test_a_field_the_database_lacks_is_never_a_difference():
+    old = {"Format": "One Shot", "Writer": "W", "Title": "T"}
+    assert comicinfo.diff_fields(old, {"Title": "T"}) == []  # nothing to decide: nothing is erased
+
+
+def test_merge_database_wins_where_it_has_a_value_and_the_rest_is_kept():
+    merged = comicinfo.merge_with_existing({"Title": "old", "Manga": "No", "Format": "One Shot"}, {"Title": "new"})
+    assert merged == {"Title": "new", "Manga": "No", "Format": "One Shot"}
+
+
+# --------------------------------------------------------------- readable differences
+def test_change_is_a_plain_string_with_its_parts_attached():
+    [change] = comicinfo.diff_fields({"Series": "A"}, {"Series": "B"})
+    assert isinstance(change, str) and change == "~ Series: A  ->  B"
+    assert (change.kind, change.field, change.before, change.after, change.note) == ("~", "Series", "A", "B", "")
+
+
+def test_squash_collapses_newlines_and_runs_of_spaces():
+    assert comicinfo.squash("a\n\n  b \t c ") == "a b c" and comicinfo.squash(None) is None
+
+
+def test_short_values_are_shown_in_full():
+    assert comicinfo.excerpts("a" * 100, "b" * 100) == ("a" * 100, "b" * 100, "")
+
+
+def test_long_values_are_cut_around_their_first_difference():
+    common = "mot " * 100
+    before, after, note = comicinfo.excerpts(common + "UN reste", common + "DEUX reste")
+    assert "UN" in before and "DEUX" in after and before.startswith("…") and len(before) <= 102
+    assert note == f"({len(common) + 8} -> {len(common) + 10} characters, first difference at {len(common)})"
+    assert after.split("UN")[0] == "" or "UN" not in after  # each side shows its own text
+
+
+def test_a_long_value_present_on_one_side_only_is_cut_to_its_start():
+    before, after, note = comicinfo.excerpts(None, "x" * 500)
+    assert before is None and after == "x" * 100 + "…" and note == "(500 characters)"
+    before, after, note = comicinfo.excerpts("y" * 500, None)
+    assert after is None and before == "y" * 100 + "…"
+
+
+def test_multiline_values_become_one_line_in_the_plain_text():
+    [change] = comicinfo.diff_fields({"Summary": "line one\nline two"}, {"Summary": "line one\nline 2"})
+    assert "\n" not in change and change == "~ Summary: line one line two  ->  line one line 2"
+
+
+def test_a_huge_summary_no_longer_floods_the_output():
+    old = {"Summary": ("Un texte. " * 400) + "fin A"}
+    new = {"Summary": ("Un texte. " * 200) + "fin B"}
+    [change] = comicinfo.diff_fields(old, new)
+    assert len(change) < 400 and "characters, first difference at" in change
