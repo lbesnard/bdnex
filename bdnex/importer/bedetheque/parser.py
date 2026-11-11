@@ -28,8 +28,92 @@ CREDIT_LABELS = {
 }
 
 
+# Desktop-layout role labels -> the legacy field names used by build_album_info
+V2_ROLE_FIELDS = {"Scénario": "Scénario", "Dessin": "Dessin", "Couleurs": "Couleurs",
+                  "Lettrage": "Lettrage", "Couverture": "Couverture"}
+
+
 def parse_album_page(html: str, album_url: str) -> tuple[dict[str, Any], Optional[str]]:
-    """Return the raw ``label -> value`` fields of an album page and its series url."""
+    """Return the raw fields of an album page and its series url.
+
+    Handles both the current desktop layout (schema.org microdata, ``bdt-ah``)
+    and the former mobile layout (``<label>`` lists).
+    """
+    if "bdt-ah" in html:
+        return _parse_album_page_desktop(html, album_url)
+    return _parse_album_page_mobile(html, album_url)
+
+
+def _meta(soup, prop):
+    node = soup.find(attrs={"itemprop": prop})
+    if node is None:
+        return None
+    return (node.get("content") if node.name == "meta" else node.get_text(" ", strip=True)) or None
+
+
+def _parse_album_page_desktop(html: str, album_url: str) -> tuple[dict[str, Any], Optional[str]]:
+    soup = BeautifulSoup(html, "lxml")
+    header = soup.select_one("section.bdt-ah") or soup
+    fields: dict[str, Any] = {"album_url": album_url}
+
+    h1 = header.find("h1")
+    series_href = None
+    if h1 is not None:
+        fields["Titre"] = h1.get_text(strip=True)
+        link = h1.find("a", href=True)
+        series_href = link["href"] if link else None
+        if fields["Titre"]:
+            fields["Série"] = fields["Titre"]
+
+    ident = header.select_one(".bdt-ah-idbel")
+    match = re.search(r"-(\d+)\.html$", album_url)
+    fields["Identifiant"] = (ident.get_text(strip=True) if ident else None) or (match.group(1) if match else "")
+
+    volume = re.search(r"-Tome-(\d+)(?:-|\.html)", album_url)
+    if volume:
+        fields["Tome"] = volume.group(1)
+
+    if (pub := _meta(header, "publisher")):
+        fields["Editeur"] = pub
+    if (isbn := _meta(header, "isbn")):
+        fields["ISBN"] = isbn
+    if (pages := _meta(header, "numberOfPages")):
+        fields["Planches"] = pages
+    if (date := _meta(header, "datePublished")):
+        fields["Dépot_légal"] = date
+    if (desc := _meta(header, "description")):
+        fields["description"] = desc
+    if (rating := _meta(header, "ratingValue")):
+        try:
+            fields["Note"] = float(rating)
+        except ValueError:
+            pass
+    if (genre := _meta(header, "genre")):
+        origin, _, rest = genre.partition(" - ")
+        fields["Origine"] = origin if rest else ""
+        fields["Style"] = rest or genre
+
+    credits: dict[str, list[str]] = {}
+    for span in header.select(".bdt-ah-auteurs > span"):
+        name = span.find("a")
+        role = span.find("small")
+        if not name or not role:
+            continue
+        label = role.get_text(strip=True).strip("()")
+        credits.setdefault(label, []).append(name.get_text(strip=True))
+    for label, names in credits.items():
+        if label in V2_ROLE_FIELDS:
+            fields[V2_ROLE_FIELDS[label]] = "\n".join(names)
+        else:
+            fields.setdefault("autres_credits", {})[label] = names
+
+    cover = header.select_one("a.bdt-img--couv[href]")
+    if cover:
+        fields["cover_url"] = cover["href"]
+    return fields, series_href
+
+
+def _parse_album_page_mobile(html: str, album_url: str) -> tuple[dict[str, Any], Optional[str]]:
     soup = BeautifulSoup(html, "lxml")
     fields: dict[str, Any] = {"album_url": album_url}
     series_href = None
@@ -80,8 +164,12 @@ def parse_album_page(html: str, album_url: str) -> tuple[dict[str, Any], Optiona
 
 def parse_series_page(html: str) -> Optional[str]:
     """Return the series abstract, if any."""
-    node = BeautifulSoup(html, "lxml").find(id="full-commentaire")
-    return node.attrs.get("value") if node is not None else None
+    soup = BeautifulSoup(html, "lxml")
+    node = soup.find(id="full-commentaire")
+    if node is not None and node.get("value"):
+        return node.attrs["value"]
+    node = soup.find(attrs={"itemprop": "description"})
+    return node.get_text(" ", strip=True) if node is not None else None
 
 
 def series_id_from_url(url: str) -> Optional[str]:

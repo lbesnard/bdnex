@@ -76,27 +76,42 @@ class Bedetheque:
 
     # --------------------------------------------------------------- sitemaps
     def update_sitemaps(self, recache: bool = False) -> int:
-        """Download (or refresh) all sitemaps; returns how many were fetched."""
+        """Download (or refresh) sitemaps until the site serves an empty one.
+
+        Returns how many files were fetched from the network.
+        """
         fetched = 0
         for url in sitemap.sitemap_urls():
-            if not recache and self.library.cache_get(SOURCE, "sitemap", url) is not None:
+            cached = None if recache else self.library.cache_get(SOURCE, "sitemap", url)
+            if cached is not None:
+                if sitemap.is_empty_sitemap(cached):
+                    break
                 continue
-            self._get("sitemap", url, recache=True)
+            content = self._get("sitemap", url, recache=True)
             fetched += 1
+            if sitemap.is_empty_sitemap(content):
+                break
         self._index = None
         return fetched
 
     def sitemaps_cached(self) -> int:
-        return sum(1 for u in sitemap.sitemap_urls()
-                   if self.library.cache_get(SOURCE, "sitemap", u) is not None)
+        """Number of cached, non-empty sitemap files."""
+        count = 0
+        for url in sitemap.sitemap_urls():
+            content = self.library.cache_get(SOURCE, "sitemap", url)
+            if content is None or sitemap.is_empty_sitemap(content):
+                break
+            count += 1
+        return count
 
     def _load_index(self) -> list[Candidate]:
         if self._index is None:
             index: list[Candidate] = []
             for url in sitemap.sitemap_urls():
                 content = self.library.cache_get(SOURCE, "sitemap", url)
-                if content is not None:
-                    index.extend(sitemap.parse_sitemap(content))
+                if content is None or sitemap.is_empty_sitemap(content):
+                    break
+                index.extend(sitemap.parse_sitemap(content))
             if not index:
                 raise FileNotFoundError("No Bédéthèque sitemaps cached: run update_sitemaps() first")
             self._index = index
@@ -124,6 +139,15 @@ class Bedetheque:
             except Exception as err:  # a missing series page must not lose the album
                 logger.warning(f"Series page {series_href} unavailable: {err}")
         return parser.build_album_info(fields, series_href, abstract)
+
+    def album_info_from_html(self, html: str, url: str) -> AlbumInfo:
+        """Use a page saved from a browser (the site blocks scripted page requests).
+
+        The page is stored in the cache, so later ``album_info(url)`` calls work
+        offline.
+        """
+        self.library.cache_put(SOURCE, "album", url, html)
+        return self.album_info(url)
 
     def cover(self, info: AlbumInfo, recache: bool = False) -> Optional[bytes]:
         """Cover image bytes (cached)."""

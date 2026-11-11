@@ -25,10 +25,10 @@ never touch the website.
 
 `bdnex.importer.bedetheque.Bedetheque`:
 
-- `update_sitemaps(recache=False)` downloads the 47 sitemap files into the cache.
+- `update_sitemaps(recache=False)` downloads sitemap files into the cache until the site serves an empty one (55 non-empty files in 2026, growing).
 - Matching normalises the slug of every album URL (drops the id and French
   stopwords) and ranks them with `rapidfuzz`.
-- An album is a **one-shot** when its page has no `Tome` number; a numbered
+- The sitemap slug already tells series from one-shot: `-Tome-N-` in the URL means volume N. An album is a **one-shot** when it has no `Tome` number; a numbered
   `Tome`, or a special such as `Hors-série` or `INT 3` (stored as
   `alternate_number`), makes it part of a series.
 - A random delay (default 3 to 10 s) is slept before each real request only.
@@ -55,3 +55,12 @@ plugins: [bedetheque]
 bedetheque:
   delay: [3, 10]       # seconds between requests
 ```
+
+## Anti-bot protection
+
+Sitemaps download normally, but album pages are served behind a Cloudflare
+challenge to scripted clients. bdnex does not try to bypass it: `http_fetch`
+raises `BlockedError` (and caches nothing). Pages can be saved from a browser
+and loaded with `Bedetheque.album_info_from_html(html, url)`, which stores them
+in the cache for later offline use. Both the current desktop layout (schema.org
+microdata) and the former mobile layout are parsed.

@@ -10,7 +10,11 @@ BDGEST = os.path.join(TEST_ROOT, ".local/share/bdnex/bedetheque")
 ALBUM_HTML = os.path.join(TEST_ROOT, "mobile_redwin.html")
 SERIES_HTML = os.path.join(BDGEST, "series_html/serie-47467-BD-Nains.html")
 SITEMAPS = os.path.join(BDGEST, "sitemaps")
-ALBUM_URL = "https://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html"
+ALBUM_URL = "https://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html"  # legacy mobile layout
+WWW_URL = "https://www.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html"
+ONESHOT_URL = "https://www.bedetheque.com/BD-Bibliomule-de-Cordoue-433432.html"
+ONESHOT_HTML = os.path.join(TEST_ROOT, "bedetheque_oneshot_bibliomule.html")
+NEW_SITEMAP = os.path.join(TEST_ROOT, "sitemap_430001_440000_new_format.xml")
 SERIES_URL = "https://m.bedetheque.com/serie-47467-BD-Nains.html"
 
 
@@ -26,9 +30,14 @@ class FakeWeb:
         self.calls = []
         self.pages = {ALBUM_URL: read(ALBUM_HTML), SERIES_URL: read(SERIES_HTML),
                       "https://www.bedetheque.com/media/Couvertures/Couv_245127.jpg": b"JPEGDATA"}
-        for url in sitemap.sitemap_urls():
-            self.pages[url] = b'<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"/>'
-        for name in os.listdir(SITEMAPS):
+        ns = 'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"'
+        for n, url in enumerate(sitemap.sitemap_urls(60)):
+            if n < 26:  # 26 non-empty files, then the site serves empty ones
+                self.pages[url] = (f'<?xml version="1.0"?><urlset {ns}><url><loc>https://www.bedetheque.com/'
+                                   f'BD-Dummy-{n}-{n + 1000000}.html</loc></url></urlset>').encode()
+            else:
+                self.pages[url] = f'<?xml version="1.0"?><urlset {ns}>\n</urlset>'.encode()
+        for name in os.listdir(SITEMAPS):  # real fixtures replace files 25 and 26
             self.pages["https://www.bedetheque.com/" + name] = read(os.path.join(SITEMAPS, name))
 
     def __call__(self, url):
@@ -57,7 +66,7 @@ def bdt(lib, web):
 
 # ------------------------------------------------------------------ sitemap
 def test_sitemap_urls():
-    urls = sitemap.sitemap_urls()
+    urls = sitemap.sitemap_urls(47)
     assert len(urls) == 47
     assert urls[0] == "https://www.bedetheque.com/albums_1_10000_map.xml"
     assert urls[5] == "https://www.bedetheque.com/albums_50001_60000_map.xml"
@@ -76,17 +85,18 @@ def test_normalise_slug_and_id():
 def test_parse_sitemap_fixture():
     cands = sitemap.parse_sitemap(read(os.path.join(SITEMAPS, "albums_240001_250000_map.xml")))
     assert cands[0].source_id == "240001"
-    assert cands[0].url.startswith("https://m.bedetheque.com/BD-Mimura")
+    assert cands[0].url.startswith("https://www.bedetheque.com/BD-Mimura")
+    assert cands[0].volume is None and cands[0].kind == "oneshot"
     assert cands[0].name == "mimura kataguri days of days of mimura kataguri"
 
 
 # ------------------------------------------------------------------- caching
 def test_update_sitemaps_fetches_once(bdt, web, lib):
-    assert bdt.update_sitemaps() == 47
-    assert len(bdt.sleeps) == 47
-    assert bdt.sitemaps_cached() == 47
+    assert bdt.update_sitemaps() == 27  # 26 files + the empty one that ends the list
+    assert len(bdt.sleeps) == 27
+    assert bdt.sitemaps_cached() == 26
     assert bdt.update_sitemaps() == 0  # all cached
-    assert bdt.update_sitemaps(recache=True) == 47
+    assert bdt.update_sitemaps(recache=True) == 27
 
 
 def test_candidates_need_sitemaps(bdt):
@@ -98,7 +108,8 @@ def test_candidates_need_sitemaps(bdt):
 def test_candidates_rank_expected_album_first(bdt, name):
     bdt.update_sitemaps()
     cand, score = bdt.candidates(name)[0]
-    assert cand.url == ALBUM_URL and score > 30
+    assert cand.url == WWW_URL and score > 30
+    assert cand.volume == 1 and cand.kind == 'series'
 
 
 def test_candidates_limit(bdt):
@@ -216,3 +227,50 @@ def test_blocked_response_raises_and_is_not_cached(lib):
         with pytest.raises(BlockedError):
             plugin.album_info(ALBUM_URL)
     assert lib.cache_get("bedetheque", "album", ALBUM_URL) is None
+
+
+# --------------------------------------------- current sitemap + desktop layout
+def test_new_format_sitemap_has_no_mobile_links():
+    cands = sitemap.parse_sitemap(read(NEW_SITEMAP))
+    assert len(cands) == 5
+    one = [c for c in cands if c.source_id == "433432"][0]
+    assert one.url == ONESHOT_URL and one.volume is None and one.kind == "oneshot"
+    assert one.name == "bibliomule cordoue"
+
+
+def test_volume_from_slug():
+    assert sitemap.volume_from_url(WWW_URL) == 1
+    assert sitemap.volume_from_url("https://x/BD-Asterix-Tome-12-Titre-9.html") == 12
+    assert sitemap.volume_from_url(ONESHOT_URL) is None
+
+
+def test_empty_sitemap_detected():
+    assert sitemap.is_empty_sitemap(b'<urlset xmlns="x">\n</urlset>')
+    assert not sitemap.is_empty_sitemap(read(NEW_SITEMAP))
+
+
+def test_oneshot_desktop_page_parsed(lib, web):
+    html = open(ONESHOT_HTML, encoding="utf-8").read()
+    info = Bedetheque(lib, fetch=web, sleep=lambda s: None).album_info_from_html(html, ONESHOT_URL)
+    assert info.kind == "oneshot" and info.series is None
+    assert info.source_id == "433432" and info.title == "La bibliomule de Cordoue"
+    assert info.publisher == "Dargaud" and info.isbn == "9782505078647"
+    assert (info.year, info.month, info.day) == (2021, 11, 26) and info.pages == 251
+    assert info.language == "fr" and info.rating == 4.2
+    assert info.credits["Writer"] == ["Lupano, Wilfrid"]
+    assert info.credits["Penciller"] == ["Chemineau, Léonard"]
+    assert info.credits["Colorist"] == ["Bouchard, Christophe"]
+    assert info.genres == ["Conte ou légende", "Satire"]
+    assert info.extra["Origine"] == "Franco-Belge"
+    assert info.extra["autres_credits"] == {"Autres": ["Ferté, Ségolène"]}
+    assert info.summary.startswith("Califat")
+    assert info.cover_url == "https://www.bedetheque.com/media/Couvertures/Couv_433432.jpg"
+
+
+def test_saved_page_is_cached_for_offline_reuse(lib, web):
+    html = open(ONESHOT_HTML, encoding="utf-8").read()
+    plugin = Bedetheque(lib, fetch=web, sleep=lambda s: None)
+    plugin.album_info_from_html(html, ONESHOT_URL)
+    web.calls.clear()
+    assert plugin.album_info(ONESHOT_URL).source_id == "433432"
+    assert web.calls == []
