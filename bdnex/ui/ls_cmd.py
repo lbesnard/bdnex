@@ -11,6 +11,7 @@ from typing import Any
 from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.query import ALL_FIELDS, QueryError
+from bdnex.ui import describe
 
 DEFAULT_ALBUM_FORMAT = "$label$flag  ($authors) [$year]  $files_label"
 DEFAULT_FILE_FORMAT = "$path  $label"
@@ -41,6 +42,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
     parser.add_argument("--files", action="store_true", help="list files instead of albums")
     parser.add_argument("--format", help="output template, e.g. '$series T$vol $title'")
     parser.add_argument("-c", "--count", action="store_true", help="print only the number of results")
+    parser.add_argument("-l", "--long", action="store_true",
+                        help="show everything known about each result (with --json: the complete records)")
     parser.add_argument("--json", action="store_true", help="print results as JSON")
     args = parser.parse_args(argv)
 
@@ -59,13 +62,33 @@ def run(argv: list[str], out=sys.stdout) -> int:
         except QueryError as err:
             print(f"bad query: {err}", file=sys.stderr)
             return 2
+        details = _details(library, rows, args) if args.long else None
 
     if args.count:
         print(len(rows), file=out)
     elif args.json:
-        print(json.dumps(rows, ensure_ascii=False, indent=2), file=out)
+        print(json.dumps(details if details is not None else rows, ensure_ascii=False, indent=2), file=out)
+    elif args.long:
+        print("\n\n".join(details["text"]), file=out)
     else:
         template = string.Template(args.format or (DEFAULT_FILE_FORMAT if args.files else DEFAULT_ALBUM_FORMAT))
         for row in rows:
             print(template.safe_substitute(decorate(row)), file=out)
     return 0
+
+
+def _details(library, rows, args) -> dict:
+    """Complete records (for --long): albums with credits, genres and files; or files with their album."""
+    records, text = [], []
+    for row in rows:
+        album_id = row["id"]
+        album = library.get_album(album_id) if album_id else None
+        if args.files:
+            label = describe.label(album) if album else "(not imported)"
+            text.append(describe.file_block(row, label))
+            records.append({**row, "album_record": album})
+        else:
+            files = library.files_for_album(album_id)
+            text.append(describe.long(album, files))
+            records.append({**album, "file_records": files})
+    return records if args.json else {"text": text, "records": records}

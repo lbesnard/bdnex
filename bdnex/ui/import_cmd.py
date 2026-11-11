@@ -11,6 +11,7 @@ from bdnex.importer.bedetheque.fetchers import FetcherError
 from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.importer.session import ImportSession
 from bdnex.library import Library
+from bdnex.ui import describe
 from bdnex.ui.output import add_verbosity, progress, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
@@ -66,7 +67,16 @@ def run(argv: list[str], out=sys.stdout) -> int:
 
     for r in report.results:
         score = f"{r.score:5.1f}" if r.score is not None else "  -  "
-        print(f"{r.outcome:<9} {score}  {r.path}" + (f"  ({r.note})" if r.note else ""), file=out)
+        print(f"{r.outcome:<9} {score}  {r.path}", file=out)
+        if r.album_id is not None and r.outcome in ("tagged", "partial", "skipped", "duplicate"):
+            with Library(settings.library_path) as library:
+                album = library.get_album(r.album_id)
+            if album:
+                print(f"             -> {describe.short(album)}", file=out)
+        if r.note:
+            print(f"             {r.note}", file=out)
+    if report.results:
+        print("\nSee everything that was recorded with `bdnex ls --long` (add `--files` for the files).", file=out)
     summary = ", ".join(f"{report.count(o)} {o}" for o in
                         ("tagged", "partial", "skipped", "duplicate", "failed", "pretend") if report.count(o))
     print(f"\n{len(report.results)} file(s): {summary or 'nothing to do'}", file=out)
