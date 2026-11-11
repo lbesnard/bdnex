@@ -1,0 +1,68 @@
+import os
+import sys
+import types
+
+import pytest
+
+from bdnex.importer.bedetheque import Bedetheque, DirectoryFetcher, load_fetcher, placeholder_fetch
+from bdnex.library import Library
+
+TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
+ONESHOT_URL = "https://www.bedetheque.com/BD-Bibliomule-de-Cordoue-433432.html"
+ONESHOT_HTML = os.path.join(TEST_ROOT, "bedetheque_oneshot_bibliomule.html")
+
+
+def test_load_fetcher_resolves_module_function(monkeypatch):
+    module = types.ModuleType("fake_fetcher_mod")
+    module.fetch = lambda url: b"x"
+    monkeypatch.setitem(sys.modules, "fake_fetcher_mod", module)
+    assert load_fetcher("fake_fetcher_mod:fetch")("u") == b"x"
+
+
+@pytest.mark.parametrize("spec", ["nocolon", ":func", "mod:"])
+def test_load_fetcher_rejects_bad_spec(spec):
+    with pytest.raises(ValueError):
+        load_fetcher(spec)
+
+
+def test_load_fetcher_rejects_non_callable(monkeypatch):
+    module = types.ModuleType("fake_fetcher_mod2")
+    module.value = 3
+    monkeypatch.setitem(sys.modules, "fake_fetcher_mod2", module)
+    with pytest.raises(TypeError):
+        load_fetcher("fake_fetcher_mod2:value")
+
+
+def test_placeholder_fails_clearly():
+    with pytest.raises(NotImplementedError, match="No page fetcher"):
+        placeholder_fetch(ONESHOT_URL)
+
+
+def test_directory_fetcher_by_id(tmp_path):
+    (tmp_path / "433432.html").write_bytes(b"<html>page</html>")
+    assert DirectoryFetcher(tmp_path)(ONESHOT_URL) == b"<html>page</html>"
+
+
+def test_directory_fetcher_matches_saved_browser_name(tmp_path):
+    (tmp_path / "BD-Bibliomule-de-Cordoue-433432.html").write_bytes(b"ok")
+    assert DirectoryFetcher(tmp_path)(ONESHOT_URL) == b"ok"
+
+
+def test_directory_fetcher_missing_page_message(tmp_path):
+    with pytest.raises(FileNotFoundError, match="433432.html"):
+        DirectoryFetcher(tmp_path)(ONESHOT_URL)
+    with pytest.raises(FileNotFoundError):
+        DirectoryFetcher(tmp_path / "nope")(ONESHOT_URL)
+
+
+def test_plugin_with_directory_fetcher_end_to_end(tmp_path):
+    saved = tmp_path / "pages"
+    saved.mkdir()
+    with open(ONESHOT_HTML, "rb") as src:
+        (saved / "433432.html").write_bytes(src.read())
+    with Library(":memory:") as lib:
+        plugin = Bedetheque(lib, fetch=DirectoryFetcher(saved), sleep=lambda s: None)
+        info = plugin.album_info(ONESHOT_URL)
+        assert info.kind == "oneshot" and info.title == "La bibliomule de Cordoue"
+        lib.add_album(info)
+        assert lib.stats()["oneshots"] == 1
