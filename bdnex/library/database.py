@@ -185,6 +185,62 @@ class Library:
     def files_with_md5(self, md5: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.conn.execute("SELECT * FROM files WHERE md5 = ? ORDER BY path", (md5,))]
 
+    # ------------------------------------------------------- merging a fresh parse
+    SCALARS = ("title", "volume", "alternate_number", "publisher", "isbn", "year", "month", "day", "pages",
+               "language", "format", "summary", "rating", "cover_url", "url")
+
+    def _merged_info(self, old: dict[str, Any], info: AlbumInfo) -> AlbumInfo:
+        """``info`` completed with what the library already holds: a fresh parse overrides the values it
+        has, and never erases the ones it lacks (e.g. a credit typed at a prompt)."""
+        series = info.series
+        if series is None and old["kind"] == "series":
+            row = self.conn.execute(
+                "SELECT s.* FROM series s JOIN albums a ON a.series_id = s.id WHERE a.id = ?", (old["id"],)).fetchone()
+            series = SeriesInfo(row["source"], row["source_id"], row["name"], row["summary"], row["url"]) if row else None
+        credits = {**old["credits"], **{role: names for role, names in info.credits.items() if names}}
+        extra = {**old["extra"], **info.extra}
+        if not info.extra.get("partial"):
+            extra.pop("partial", None)  # a full parse replaces a sitemap-only record
+        values = {key: getattr(info, key) if getattr(info, key) not in (None, "") else old.get(key)
+                  for key in self.SCALARS}
+        return AlbumInfo(source=info.source, source_id=info.source_id, series=series, credits=credits,
+                         genres=info.genres or old["genres"], extra=extra,
+                         publisher=values.pop("publisher"), **values)
+
+    def preview_merge(self, info: AlbumInfo) -> list[str]:
+        """What :meth:`merge_album` would change, one short line each (empty when nothing)."""
+        album_id = self.find_album(info.source, info.source_id)
+        if album_id is None:
+            return ["new album"]
+        old = self.get_album(album_id)
+        new = self._merged_info(old, info)
+        changes = []
+        for key in self.SCALARS + ("publisher",):
+            if getattr(new, key) != old.get(key):
+                changes.append(f"{key}: {old.get(key)!r} -> {getattr(new, key)!r}")
+        if (new.series.name if new.series else None) != old["series"]:
+            changes.append(f"series: {old['series']!r} -> {new.series.name if new.series else None!r}")
+        for role in sorted(set(new.credits) | set(old["credits"])):
+            if new.credits.get(role, []) != old["credits"].get(role, []):
+                changes.append(f"{role}: {', '.join(old['credits'].get(role, [])) or '-'} -> "
+                               f"{', '.join(new.credits.get(role, [])) or '-'}")
+        if sorted(new.genres) != sorted(old["genres"]):
+            changes.append(f"genres: {', '.join(old['genres']) or '-'} -> {', '.join(new.genres) or '-'}")
+        added = sorted(set(new.extra) - set(old["extra"]))
+        changed = sorted(k for k in set(new.extra) & set(old["extra"]) if new.extra[k] != old["extra"][k])
+        removed = sorted(set(old["extra"]) - set(new.extra))
+        for label, keys in (("new details", added), ("updated details", changed), ("dropped details", removed)):
+            if keys:
+                changes.append(f"{label}: {', '.join(keys)}")
+        return changes
+
+    def merge_album(self, info: AlbumInfo) -> int:
+        """Store a fresh parse of an existing album without erasing anything it does not mention."""
+        album_id = self.find_album(info.source, info.source_id)
+        if album_id is None:
+            return self.add_album(info)
+        return self.add_album(self._merged_info(self.get_album(album_id), info))
+
     def get_album(self, album_id: int) -> Optional[dict[str, Any]]:
         """Return an album as a flat dict with series, publisher, credits and genres."""
         row = self.conn.execute(

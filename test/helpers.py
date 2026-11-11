@@ -104,3 +104,12 @@ def create_fake_source(library, settings):
 
 def create_incomplete_source(library, settings):
     return object()
+
+
+FETCHED = []
+
+
+def recording_fetch(url):
+    """A configured fetcher that would reach the network: tests assert it is never called."""
+    FETCHED.append(url)
+    return b"<html>should not be used</html>"

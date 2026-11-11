@@ -69,14 +69,21 @@ def long(album: dict[str, Any], files: list[dict[str, Any]]) -> str:
         add("series", album["series"])
     add("volume", album.get("volume") if album.get("volume") is not None else album.get("alternate_number"))
     add("title", album["title"])
-    for role in ROLE_ORDER:
-        add(role.lower(), ", ".join((album.get("credits") or {}).get(role, [])))
+    credits = album.get("credits") or {}
+    for role in [*ROLE_ORDER, *sorted(set(credits) - set(ROLE_ORDER))]:  # standard roles, then Translator, Other...
+        add(role.lower(), ", ".join(credits.get(role, [])))
     add("publisher", album.get("publisher"))
     add("published", date_of(album))
     add("pages", album.get("pages"))
     add("genres", ", ".join(album.get("genres") or []))
     add("rating", f"{album['rating']} / 5" if album.get("rating") is not None else None)
     add("isbn", album.get("isbn"))
+    add("format", album.get("format"))
+    extra = album.get("extra") or {}
+    edition = extra.get("edition_fields") or {}
+    add("weight", edition.get("Poids"))
+    add("printed", edition.get("Achevé impr."))
+    add("edition", extra.get("edition_info"))
     add("language", album.get("language"))
     add("source", f"{album['source']} #{album['source_id']}")
     add("url", album.get("url"))
