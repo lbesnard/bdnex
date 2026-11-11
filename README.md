@@ -88,6 +88,10 @@ or `major`. It runs the tests, bumps the version in `pyproject.toml`, tags it, b
 the wheel and publishes a GitHub release.
 
 
+## Documentation
+
+Build locally with `uv sync --extra docs && uv run sphinx-build -b html docs docs/_build/html`, then open `docs/_build/html/index.html`.
+
 ## Examples:
 
 ```
