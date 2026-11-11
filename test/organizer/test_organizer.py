@@ -1,0 +1,340 @@
+import os
+import shutil
+import zipfile
+
+import pytest
+
+from bdnex.config import build_settings
+from bdnex.library import AlbumInfo, Library, SeriesInfo
+from bdnex.library.hashing import file_md5
+from bdnex.organizer import archive, comicinfo
+from bdnex.organizer.organizer import (COPIED, COPY, FAILED, MOVE, MOVED, PRETEND, SKIPPED, UNCHANGED, WRITE,
+                                       WRITTEN, Organizer)
+
+BD_CBR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bd.cbr")
+
+
+class FakePrompter:
+    def __init__(self, conflict="database", confirm=True, value="Anon", collision="skip"):
+        self._conflict, self._confirm, self._value, self._collision = conflict, confirm, value, collision
+        self.asked = []
+
+    def conflict(self, path, diff_lines):
+        self.asked.append(("conflict", diff_lines))
+        return self._conflict
+
+    def confirm(self, message):
+        self.asked.append(("confirm", message))
+        return self._confirm
+
+    def ask_value(self, field, label):
+        self.asked.append(("value", field))
+        return self._value
+
+    def collision(self, dest):
+        self.asked.append(("collision", dest))
+        return self._collision
+
+
+def settings_for(tmp_path, **overrides):
+    user = {"config_version": 1, "directory": str(tmp_path / "library"), **overrides}
+    return build_settings(user)[0]
+
+
+@pytest.fixture
+def lib():
+    with Library(":memory:") as library:
+        yield library
+
+
+def add_series_album(lib, source_id="1", volume=1, **kw):
+    return lib.add_album(AlbumInfo(
+        "bedetheque", source_id, kw.pop("title", "Redwin de la Forge"),
+        series=SeriesInfo("bedetheque", "47467", "Nains"), volume=volume, year=2015, language="fr",
+        credits=kw.pop("credits", {"Writer": ["Jarry, Nicolas"], "Penciller": ["Goux"]}), genres=["Fantasy"], **kw))
+
+
+def add_oneshot(lib, **kw):
+    return lib.add_album(AlbumInfo("bedetheque", "433432", "La bibliomule", language="fr",
+                                   credits=kw.pop("credits", {"Writer": ["Lupano"]}), **kw))
+
+
+def registered(lib, path, album_id):
+    lib.add_file(path, album_id)
+    return lib.get_file(path)
+
+
+def zip_names(path):
+    with zipfile.ZipFile(path) as zf:
+        return zf.namelist()
+
+
+def comicinfo_of(path):
+    with zipfile.ZipFile(path) as zf:
+        return comicinfo.parse_xml(zf.read("ComicInfo.xml"))
+
+
+# ---------------------------------------------------------------- write in place
+def test_write_in_place_cbz(lib, make_cbz, tmp_path):
+    path = make_cbz("a.cbz", pages=3)
+    row = registered(lib, path, add_series_album(lib))
+    before = row["md5"]
+    result = Organizer(lib, settings_for(tmp_path)).process(row, WRITE)
+    assert result.outcome == WRITTEN and result.dest == path
+    info = comicinfo_of(path)
+    assert info["Series"] == "Nains" and info["Number"] == "1" and info["PageCount"] == "3"
+    assert [n for n in zip_names(path) if n.endswith(".png")] == ["page000.png", "page001.png", "page002.png"]
+    after = lib.get_file(path)
+    assert after["md5"] == file_md5(path) != before and after["has_metadata"] == 1  # checksum written back
+    assert not os.path.exists(path + ".bdnex-tmp")
+
+
+def test_second_write_is_unchanged(lib, make_cbz, tmp_path):
+    path = make_cbz()
+    organizer = Organizer(lib, settings_for(tmp_path))
+    row = registered(lib, path, add_series_album(lib))
+    organizer.process(row, WRITE)
+    md5 = file_md5(path)
+    assert organizer.process(lib.get_file(path), WRITE).outcome == UNCHANGED
+    assert file_md5(path) == md5
+
+
+def test_works_with_both_row_shapes(lib, make_cbz, tmp_path):
+    path = make_cbz()
+    registered(lib, path, add_series_album(lib))
+    ls_row = lib.query([], files=True)[0]  # ls --files shape: id = album, file_id = file
+    assert Organizer(lib, settings_for(tmp_path)).process(ls_row, WRITE).outcome == WRITTEN
+
+
+def test_unmatched_corrupted_missing_files(lib, make_cbz, tmp_path, tmp_path_factory):
+    org = Organizer(lib, settings_for(tmp_path))
+    loose = registered(lib, make_cbz("loose.cbz"), None)
+    assert org.process(loose, WRITE).outcome == SKIPPED and "import" in org.process(loose, WRITE).note
+    bad = tmp_path / "bad.cbz"
+    bad.write_bytes(b"nope")
+    lib.add_file(str(bad), add_oneshot(lib))
+    assert org.process(lib.get_file(str(bad)), WRITE).note == "corrupted archive"
+    row = {**lib.get_file(str(bad)), "corrupted": 0, "path": str(tmp_path / "gone.cbz")}
+    assert org.process(row, WRITE).outcome == FAILED
+
+
+# -------------------------------------------------------------------- conflicts
+def existing_xml_cbz(make_cbz, tmp_path, xml=b"<ComicInfo><Title>Old title</Title><Manga>No</Manga></ComicInfo>"):
+    path = make_cbz("c.cbz")
+    with zipfile.ZipFile(path, "a") as zf:
+        zf.writestr("ComicInfo.xml", xml)
+    return path
+
+
+@pytest.mark.parametrize("answer, expect_title", [("database", "Redwin de la Forge"), ("file", "Old title")])
+def test_conflict_prompt_decides(lib, make_cbz, tmp_path, answer, expect_title):
+    path = existing_xml_cbz(make_cbz, tmp_path)
+    prompter = FakePrompter(conflict=answer)
+    row = registered(lib, path, add_series_album(lib))
+    Organizer(lib, settings_for(tmp_path), prompter).process(row, WRITE)
+    assert comicinfo_of(path)["Title"] == expect_title
+    kind, diff = prompter.asked[0]
+    assert kind == "conflict" and any("Old title" in line for line in diff)
+
+
+def test_conflict_database_keeps_foreign_fields(lib, make_cbz, tmp_path):
+    path = existing_xml_cbz(make_cbz, tmp_path)
+    row = registered(lib, path, add_series_album(lib))
+    Organizer(lib, settings_for(tmp_path, write={"conflict": "database"})).process(row, WRITE)
+    info = comicinfo_of(path)
+    assert info["Title"] == "Redwin de la Forge" and info["Manga"] == "No"
+
+
+def test_conflict_skip_and_config_file_and_force(lib, make_cbz, tmp_path):
+    path = existing_xml_cbz(make_cbz, tmp_path)
+    row = registered(lib, path, add_series_album(lib))
+    original = file_md5(path)
+    assert Organizer(lib, settings_for(tmp_path), FakePrompter(conflict="skip")).process(row, WRITE).outcome == SKIPPED
+    assert Organizer(lib, settings_for(tmp_path, write={"conflict": "file"})).process(row, WRITE).outcome == UNCHANGED
+    assert file_md5(path) == original
+    forced = FakePrompter()
+    assert Organizer(lib, settings_for(tmp_path), forced, force=True).process(row, WRITE).outcome == WRITTEN
+    assert forced.asked == [] and comicinfo_of(path)["Title"] == "Redwin de la Forge"
+
+
+def test_unreadable_existing_xml_is_replaced(lib, make_cbz, tmp_path):
+    path = existing_xml_cbz(make_cbz, tmp_path, xml=b"<<not xml")
+    row = registered(lib, path, add_series_album(lib))
+    assert Organizer(lib, settings_for(tmp_path)).process(row, WRITE).outcome == WRITTEN
+    assert comicinfo_of(path)["Series"] == "Nains"
+
+
+# ------------------------------------------------------------------ conversion
+def test_cbr_converted_to_cbz_next_to_original(lib, tmp_path):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    result = Organizer(lib, settings_for(tmp_path, write={"delete_original": "yes"})).process(row, WRITE)
+    dest = str(tmp_path / "old.cbz")
+    assert result.outcome == WRITTEN and result.dest == dest
+    assert not os.path.exists(src) and comicinfo_of(dest)["Title"] == "La bibliomule"
+    assert lib.get_file(src) is None and lib.get_file(dest)["format"] == "cbz"
+    assert lib.get_file(dest)["id"] == row["id"]  # same row, new path
+
+
+@pytest.mark.parametrize("policy, confirm, original_survives", [
+    ("no", True, True), ("yes", False, False), ("ask", True, False), ("ask", False, True)])
+def test_delete_original_policy(lib, tmp_path, policy, confirm, original_survives):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    prompter = FakePrompter(confirm=confirm)
+    Organizer(lib, settings_for(tmp_path, write={"delete_original": policy}), prompter).process(row, WRITE)
+    assert os.path.exists(src) is original_survives
+    assert os.path.exists(tmp_path / "old.cbz") and lib.get_file(str(tmp_path / "old.cbz")) is not None
+
+
+def test_cbr_skipped_by_config(lib, tmp_path):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    result = Organizer(lib, settings_for(tmp_path, write={"cbr": "skip"})).process(row, WRITE)
+    assert result.outcome == SKIPPED and os.path.exists(src)
+
+
+def test_pdf_converted_losslessly(lib, make_image_pdf, tmp_path):
+    src, jpegs = make_image_pdf(pages=2)
+    row = registered(lib, src, add_oneshot(lib))
+    result = Organizer(lib, settings_for(tmp_path, write={"delete_original": "no"})).process(row, WRITE)
+    dest = result.dest
+    assert dest.endswith(".cbz") and os.path.exists(src)  # original kept
+    with zipfile.ZipFile(dest) as zf:
+        assert [zf.read(n) for n in zf.namelist() if n.endswith(".jpg")] == jpegs
+    assert comicinfo_of(dest)["PageCount"] == "2"
+
+
+def test_pdf_skipped_by_config(lib, make_pdf, tmp_path):
+    row = registered(lib, make_pdf(), add_oneshot(lib))
+    assert Organizer(lib, settings_for(tmp_path, write={"pdf": "skip"})).process(row, WRITE).outcome == SKIPPED
+
+
+# ---------------------------------------------------------------------- move/copy
+def test_move_renames_into_library_tree(lib, make_cbz, tmp_path):
+    src = make_cbz("whatever.cbz")
+    row = registered(lib, src, add_series_album(lib))
+    settings = settings_for(tmp_path)
+    result = Organizer(lib, settings).process(row, MOVE)
+    expected = str(tmp_path / "library" / "Series" / "Nains" / "Nains - T01 - Redwin de la Forge.cbz")
+    assert result.outcome == MOVED and result.dest == expected
+    assert os.path.exists(expected) and not os.path.exists(src)
+    assert comicinfo_of(expected)["Series"] == "Nains"
+    assert lib.get_file(expected)["md5"] == file_md5(expected) and lib.get_file(src) is None
+
+
+def test_oneshot_template_used_for_oneshots(lib, make_cbz, tmp_path):
+    row = registered(lib, make_cbz(), add_oneshot(lib))
+    result = Organizer(lib, settings_for(tmp_path)).process(row, MOVE)
+    assert result.dest == str(tmp_path / "library" / "OneShot" / "fr" / "La bibliomule - Lupano" /
+                              "La bibliomule - Lupano.cbz")
+
+
+def test_copy_keeps_source_and_database_tracks_the_copy(lib, make_cbz, tmp_path):
+    src = make_cbz("keep.cbz")
+    original = file_md5(src)
+    row = registered(lib, src, add_series_album(lib))
+    result = Organizer(lib, settings_for(tmp_path)).process(row, COPY)
+    assert result.outcome == COPIED and os.path.exists(src) and file_md5(src) == original  # untouched
+    assert lib.get_file(src) is None and lib.get_file(result.dest)["id"] == row["id"]
+
+
+@pytest.mark.parametrize("answer, expect", [("skip", SKIPPED), ("keep_both", MOVED), ("replace", MOVED)])
+def test_destination_collision(lib, make_cbz, tmp_path, answer, expect):
+    settings = settings_for(tmp_path)
+    org = Organizer(lib, settings, FakePrompter(collision=answer))
+    a = registered(lib, make_cbz("a.cbz", pages=3), add_series_album(lib))
+    first = org.process(a, MOVE)
+    b = registered(lib, make_cbz("b.cbz", pages=5), add_series_album(lib, source_id="2"))  # same name again
+    second = org.process(b, MOVE)
+    assert second.outcome == expect
+    if answer == "skip":
+        assert os.path.exists(b["path"]) and lib.get_file(first.dest) is not None
+    if answer == "keep_both":
+        assert second.dest.endswith("(2).cbz") and os.path.exists(first.dest)
+    if answer == "replace":
+        assert second.dest == first.dest and lib.get_file(first.dest)["id"] == b["id"]
+        assert lib.stats()["files"] == 1  # the replaced file's row is gone, not duplicated
+
+
+def test_force_numbers_clashes_instead_of_asking(lib, make_cbz, tmp_path):
+    org = Organizer(lib, settings_for(tmp_path), FakePrompter(), force=True)
+    org.process(registered(lib, make_cbz("a.cbz", pages=3), add_series_album(lib)), MOVE)
+    result = org.process(registered(lib, make_cbz("b.cbz", pages=5), add_series_album(lib, source_id="2")), MOVE)
+    assert result.dest.endswith("(2).cbz") and org.prompter.asked == []
+
+
+# ---------------------------------------------------------------- missing fields
+def test_missing_field_asks_and_saves_to_database(lib, make_cbz, tmp_path):
+    album_id = add_oneshot(lib, credits={})
+    prompter = FakePrompter(value="Jane Doe")
+    result = Organizer(lib, settings_for(tmp_path), prompter).process(registered(lib, make_cbz(), album_id), MOVE)
+    assert "Jane Doe" in result.dest and prompter.asked == [("value", "authors")]  # asked once, used twice
+    assert lib.get_album(album_id)["credits"] == {"Writer": ["Jane Doe"]}
+    assert "Jane Doe" in comicinfo_of(result.dest).get("Writer", "")  # the file got it too
+
+
+def test_missing_field_placeholder_and_skip_and_empty_answer(lib, make_cbz, tmp_path):
+    album_id = add_oneshot(lib, credits={})
+    row = registered(lib, make_cbz(), album_id)
+    placeholder = Organizer(lib, settings_for(tmp_path, paths={"missing_field": "placeholder", "placeholder": "Inconnu"}))
+    assert "Inconnu" in placeholder.process(row, MOVE).dest
+    row = registered(lib, make_cbz("b.cbz", pages=9), album_id)
+    skip = Organizer(lib, settings_for(tmp_path, paths={"missing_field": "skip"})).process(row, MOVE)
+    assert skip.outcome == SKIPPED and "authors" in skip.note
+    empty = Organizer(lib, settings_for(tmp_path), FakePrompter(value="")).process(row, MOVE)
+    assert empty.outcome == SKIPPED
+
+
+def test_missing_year_persisted_as_integer(lib, make_cbz, tmp_path):
+    album_id = add_series_album(lib)
+    org = Organizer(lib, settings_for(tmp_path, paths={"series": "$series/$year/$title"}), FakePrompter(value="1999"))
+    lib.set_album_fields(album_id, year=None)
+    org.process(registered(lib, make_cbz(), album_id), MOVE)
+    assert lib.get_album(album_id)["year"] == 1999
+
+
+# ---------------------------------------------------------------------- safety
+def test_pretend_changes_nothing(lib, make_cbz, tmp_path):
+    src = make_cbz()
+    row = registered(lib, src, add_series_album(lib))
+    md5 = file_md5(src)
+    prompter = FakePrompter()
+    result = Organizer(lib, settings_for(tmp_path), prompter, pretend=True).process(row, MOVE)
+    assert result.outcome == PRETEND and "move to" in result.note
+    assert file_md5(src) == md5 and not (tmp_path / "library").exists()
+    assert lib.get_file(src)["md5"] == md5 and prompter.asked == []
+
+
+def test_failed_verification_leaves_original_and_no_temp_file(lib, make_cbz, tmp_path, monkeypatch):
+    src = make_cbz()
+    md5 = file_md5(src)
+    row = registered(lib, src, add_series_album(lib))
+
+    def boom(*a, **k):
+        raise archive.ArchiveError("mismatch")
+
+    monkeypatch.setattr(archive, "verify_cbz", boom)
+    result = Organizer(lib, settings_for(tmp_path)).run([row], MOVE)[0]
+    assert result.outcome == FAILED and "mismatch" in result.note
+    assert file_md5(src) == md5 and lib.get_file(src) is not None
+    leftovers = [n for _, _, files in os.walk(tmp_path) for n in files if n.endswith(".bdnex-tmp")]
+    assert leftovers == []
+
+
+def test_batch_continues_after_a_failure(lib, make_cbz, tmp_path):
+    good = registered(lib, make_cbz("good.cbz"), add_series_album(lib))
+    broken = {**good, "path": str(tmp_path / "ghost.cbz")}
+    results = Organizer(lib, settings_for(tmp_path)).run([broken, good], WRITE)
+    assert [r.outcome for r in results] == [FAILED, WRITTEN]
+
+
+def test_move_needs_a_real_library_directory(lib, make_cbz):
+    from bdnex.config import ConfigError
+    settings = build_settings({"config_version": 1})[0]  # placeholder directory
+    row = registered(lib, make_cbz(), add_series_album(lib))
+    results = Organizer(lib, settings).run([row], MOVE)
+    assert results[0].outcome == FAILED and "directory" in results[0].note

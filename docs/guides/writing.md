@@ -1,28 +1,51 @@
-# Writing tags and organising files *(planned)*
+# Writing tags and organising files
 
-Metadata lives in the library database. `bdnex write` pushes it back into the
-files as `ComicInfo.xml`, and optionally renames and moves them.
+The library database holds the metadata. Two commands push it into your files:
 
 | Command | Effect |
 |---|---|
-| `bdnex write` | write tags, leave files where they are |
-| `bdnex move` | write tags and rename into the library tree from the path templates |
-| `--copy` | keep the source file untouched; the copy is registered in the database |
-| `--pretend` | show old and new paths only |
+| `bdnex write [query]` | write `ComicInfo.xml` where the files are; CBR and PDF files become a CBZ next to the original |
+| `bdnex move [query]` | the same, then rename into the library tree (`directory` + `paths` in the config) |
+| `bdnex move --copy [query]` | as `move`, but the source stays untouched; the **copy** is what the database tracks |
+
+`query` selects files with the same terms as [`bdnex ls --files`](queries.md); only files already
+matched to an album are processed (`bdnex import` first). Options: `-n/--pretend` shows what would
+happen and changes nothing, `--force` never asks.
+
+`bdnex import` can do it in one go: `-W/--write`, `--move` or `--copy`, or set `import.mode`
+(`in_place`, `copy`, `move`) in the configuration.
+
+## What is written
+
+`ComicInfo.xml` at the root of the CBZ, validated against the ComicInfo schema: title, series,
+volume (as both `Number`, which readers sort on, and `Volume`), writer, penciller, colorist, inker,
+letterer, cover artist, publisher, genre, year/month/day, summary, language, web page, community
+rating, the ISBN (in `Notes`) and the **real** page count. A one-shot uses its title as `Series`.
+
+After every write the file's checksum is recomputed and stored in the database.
+
+## Safety
+
+- The new archive is built in a temporary file next to its destination and **verified** (same pages,
+  byte for byte, ComicInfo present) before it replaces or sits next to anything.
+- If verification fails, the original is left untouched and no temporary file remains.
+- One failing file never stops the batch.
 
 ## Conflicts
 
-If a file already has a different `ComicInfo.xml`, bdnex shows the difference
-and asks what to do. `--force` overwrites without asking.
+If the file already has a `ComicInfo.xml` that differs from the database, bdnex shows the
+differences and asks which wins (`write.conflict: ask`). Set it to `database` or `file` to decide
+once, or use `--force` (the database wins). Fields bdnex does not manage are kept.
 
 ## Formats
 
 - `.cbz` is the only format bdnex writes.
-- `.cbr` files are converted to `.cbz`, or skipped (`write.cbr: skip`).
-- `.pdf` files are converted by extracting the embedded page images unchanged
-  (no re-encoding), or rendered when a page is not a plain image.
-- Before the original is replaced, page count and image bytes are verified.
-- After every write the new checksum is stored in the database.
+- `.cbr` cannot be written (RAR is proprietary): it is converted to CBZ (`write.cbr: convert`), or
+  left alone (`skip`).
+- `.pdf`: `write.pdf_mode: auto` extracts the embedded page images **unchanged** when every page is a
+  single plain image (no re-encoding, no quality loss); otherwise pages are rendered to PNG at
+  `write.pdf_dpi`. `extract` refuses anything that is not extractable, `render` always renders.
+- `write.delete_original: ask | yes | no` decides what happens to the CBR/PDF after conversion.
 
 ## Path templates
 
@@ -32,5 +55,21 @@ paths:
   series:  'Series/$series/$series - T$volume:02 - $title'
 ```
 
-If a field used by a template is empty, bdnex asks for it, or uses a
-placeholder (`paths.missing_field`).
+- `$field` or `${field}`; `$volume:02` zero-pads a number. A special such as *Hors-série* is used
+  as `$volume` when there is no number.
+- Fields: `kind series title volume language year publisher isbn genre authors writer penciller colorist`.
+- Every value is made safe for file names (`/ \ : * ? " < > |` become `_`), so a value can never
+  create a folder. The extension `.cbz` is added for you.
+- If a name already exists, bdnex asks (skip, keep both with a number, or replace); `--force` keeps both.
+
+### Missing values
+
+When a field used by the template is empty, `paths.missing_field` decides:
+
+| Value | Behaviour |
+|---|---|
+| `ask` | ask for it, and **save the answer to the library** (and into the file) |
+| `placeholder` | use `paths.placeholder` (default `Unknown`) |
+| `skip` | leave that file alone |
+
+Without a terminal (or with `--force`, or `--pretend`) `ask` falls back to the placeholder.

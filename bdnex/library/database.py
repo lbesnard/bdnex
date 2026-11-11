@@ -9,7 +9,7 @@ import sqlite3
 from typing import Any, Iterable, Optional
 
 from bdnex.library.hashing import file_md5
-from bdnex.library.query import register_functions, run_query
+from bdnex.library.query import fold, register_functions, run_query
 from bdnex.library.models import AlbumInfo, SeriesInfo
 from bdnex.library.scan import inspect_file, iter_comic_files
 from bdnex.library.schema import MIGRATIONS
@@ -128,6 +128,29 @@ class Library:
                     (album_id, self._get_or_create("genres", genre)))
         return album_id
 
+    EDITABLE_ALBUM_COLUMNS = frozenset({"title", "year", "month", "day", "volume", "language", "isbn",
+                                        "pages", "summary"})
+
+    def set_album_fields(self, album_id: int, **columns: Any) -> None:
+        """Update simple album columns (and ``publisher`` by name), e.g. a value typed at a prompt."""
+        publisher = columns.pop("publisher", None)
+        unknown = set(columns) - self.EDITABLE_ALBUM_COLUMNS
+        if unknown:
+            raise ValueError(f"can not edit: {', '.join(sorted(unknown))}")
+        with self.conn:
+            if columns:
+                assignments = ", ".join(f"{c} = ?" for c in columns)
+                self.conn.execute(f"UPDATE albums SET {assignments} WHERE id = ?", [*columns.values(), album_id])
+            if publisher:
+                self.conn.execute("UPDATE albums SET publisher_id = ? WHERE id = ?",
+                                  (self._get_or_create("publishers", publisher), album_id))
+
+    def add_credit(self, album_id: int, role: str, name: str) -> None:
+        with self.conn:
+            self.conn.execute(
+                "INSERT OR IGNORE INTO album_credits(album_id, person_id, role) VALUES (?, ?, ?)",
+                (album_id, self._get_or_create("people", name), role))
+
     def prune_orphan_series(self) -> int:
         """Delete series no album refers to (e.g. slug-based placeholders replaced by real ones)."""
         with self.conn:
@@ -138,6 +161,26 @@ class Library:
     def files_for_album(self, album_id: int) -> list[dict[str, Any]]:
         return [dict(r) for r in self.conn.execute(
             "SELECT * FROM files WHERE album_id = ? ORDER BY path", (album_id,))]
+
+    def files_matching_album(self, source: str, source_id: str, keys: dict[str, Any],
+                             exclude_path: str) -> list[dict[str, Any]]:
+        """Files linked to the same album (``source``/``source_id``) or to an album with the same
+        ``keys`` values (``series``, ``volume``, ``title``; accents and case ignored)."""
+        clauses, params = [], []
+        if "series" in keys:
+            clauses.append("fold(s.name) = ?")
+            params.append(fold(keys["series"]))
+        if "volume" in keys:
+            clauses.append("a.volume = ?")
+            params.append(keys["volume"])
+        if "title" in keys:
+            clauses.append("fold(a.title) = ?")
+            params.append(fold(keys["title"]))
+        same_keys = f"({' AND '.join(clauses)})" if clauses else "0"
+        sql = ("SELECT f.* FROM files f JOIN albums a ON a.id = f.album_id "
+               "LEFT JOIN series s ON s.id = a.series_id "
+               f"WHERE f.path != ? AND ((a.source = ? AND a.source_id = ?) OR {same_keys}) ORDER BY f.path")
+        return [dict(r) for r in self.conn.execute(sql, [os.path.abspath(exclude_path), source, source_id, *params])]
 
     def files_with_md5(self, md5: str) -> list[dict[str, Any]]:
         return [dict(r) for r in self.conn.execute("SELECT * FROM files WHERE md5 = ? ORDER BY path", (md5,))]

@@ -70,11 +70,19 @@ class ImportSession:
 
     # ------------------------------------------------------------------ run
     def run(self, paths: list[str]) -> ImportReport:
+        report = ImportReport()
+        files = []
+        for path in paths:
+            if not os.path.exists(path):  # say so now, before any network access
+                report.results.append(ImportResult(os.path.abspath(path), FAILED, note="no such file or folder"))
+            else:
+                files.extend(self._collect([path]))
+        if not files:
+            return report
         if self.source.sitemaps_cached() == 0 or self.recache:
             logger.info("Updating Bédéthèque sitemaps")
             self.source.update_sitemaps(recache=self.recache)
-        report = ImportReport()
-        for path in self._collect(paths):
+        for path in files:
             try:
                 result = self.import_file(path)
             except Exception as err:  # one bad file must not stop the batch
@@ -161,12 +169,17 @@ class ImportSession:
         return ImportResult(path, DUPLICATE, note=f"identical to {same[0]}")
 
     def _duplicate_album(self, path, candidate: Candidate) -> str:
-        """Album already linked to a different file. Returns skip | keep_both | replace."""
-        album_id = self.library.find_album("bedetheque", candidate.source_id)
-        if album_id is None:
-            return "keep_both"
-        others = [f["path"] for f in self.library.files_for_album(album_id)
-                  if f["path"] != os.path.abspath(path)]
+        """Another file for the same album, or for an album with the same `duplicates.keys`
+        (e.g. two editions of the same tome). Returns skip | keep_both | replace."""
+        info = slug_album_info(candidate)
+        available = {"series": info.series.name if info.series else None, "volume": info.volume,
+                     "title": info.title}
+        keys = {k: available[k] for k in self.settings.duplicates.keys if available.get(k) is not None}
+        # a one-shot has no series/volume: only an identical album counts, never "all one-shots"
+        if not info.series:
+            keys = {k: v for k, v in keys.items() if k == "title"}
+        others = [f["path"] for f in self.library.files_matching_album(
+            "bedetheque", candidate.source_id, keys, path)]
         if not others:
             return "keep_both"
         return self._resolve_duplicate(path, others, "album already linked")

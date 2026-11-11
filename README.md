@@ -1,4 +1,4 @@
-![BDneX](https://github.com/lbesnard/bdnex/actions/workflows/test.yml/badge.svg)
+![BDneX](https://github.com/lbesnard/bdnex/actions/workflows/ci.yml/badge.svg)
 [![codecov](https://codecov.io/gh/lbesnard/bdnex/branch/main/graph/badge.svg?token=V9WJWRCTK5)](https://codecov.io/gh/lbesnard/bdnex)
 
 BDneX french comics tagger and library manager (POF at this stage)
@@ -23,28 +23,19 @@ community score, author, colorist, penciller!
 Read List can then be generated and more easily shared accross the community as
 based on metadata and not an obscure filename.
 
-### Current Features
-- retrieve sitemaps from bedetheque.com 
-- levenhstein fuzzy string matching to find album name on external website
-    (since no API is available)
-- alternatively, there is currently a duckduckgo search, but will probably be
-    deprecated
-- Parse content of webpage with beautifulSoup
-- convert parsed metadata into ComicInfo.xsd template
-- Image comparaison between online cover and archive cover to bring confidence
-    into creating metadata file
+### Features
+- `bdnex import`: fuzzy-matches comic files (`.cbz`, `.cbr`, `.pdf`) against the Bédéthèque
+  sitemaps and records them in a SQLite library (series, one-shots, authors, genres, checksums)
+- duplicate handling, resume, interactive choices or `--force`
+- `bdnex ls`: search the library (`series:nains author:uderzo year:2010..2015 ^genre:humour`)
+- `bdnex write` / `bdnex move`: write `ComicInfo.xml`, convert CBR and PDF to CBZ losslessly
+  (verified before anything is replaced), rename into a library tree from your own templates
+- validated YAML configuration, with a message when it is stale
 
-### Roadmap (?)
-Further Feature(?):
-- SQLight database to keep record of already processed data
-- Interactive mode
-- catalog manager
-- renaming convention, based on the paths templates in ~/.config/bdnex/bdnex.yaml
-- add more "API", fmor bdfuge ...
-- resume
+Inspired by the [beets](https://github.com/beetbox/beets) music manager.
 
-Get inspiration from beets music manager: [beets](https://github.com/beetbox/beets)
-
+Bédéthèque serves album pages only to browsers, so full metadata needs the pages to be saved
+from a browser (or fetched by your own function). See the documentation, *Getting started*.
 
 ## Installation
 
@@ -92,29 +83,13 @@ the wheel and publishes a GitHub release.
 
 Build locally with `uv sync --extra docs && uv run sphinx-build -b html docs docs/_build/html`, then open `docs/_build/html/index.html`.
 
-## Examples:
+## Examples
 
-```
-bdnex -d /tmp/  # folder containing albums
-bdnex -f /tmp/album.cbz  # single album
+```bash
+bdnex import ~/comics            # match and record
+bdnex ls series:nains            # query
+bdnex write                      # write ComicInfo.xml into matched files
+bdnex move --copy                # copy into the library tree defined in the config
 ```
 
-```commandline
-2022-07-22 02:22:28,605 - INFO     - bdnex.ui - Processing /tmp/dummy.cbz
-2022-07-22 02:22:28,605 - INFO     - bdnex.lib.bdgest - Searching for "dummuy"" in bedetheque.com sitemap files
-2022-07-22 02:22:28,605 - DEBUG    - bdnex.lib.bdgest - Searching for "dummy"" in bedetheque.com sitemap files [FAST VERSION]
-2022-07-22 02:22:28,605 - DEBUG    - bdnex.lib.bdgest - Merging sitemaps
-2022-07-22 02:22:32,993 - DEBUG    - bdnex.lib.bdgest - Match album name succeeded
-2022-07-22 02:22:32,993 - DEBUG    - bdnex.lib.bdgest - Levenhstein score: 53.333333333333336
-2022-07-22 02:22:32,993 - DEBUG    - bdnex.lib.bdgest - Matched url: https://m.bedetheque.com/BD-dummy.html
-2022-07-22 02:22:32,993 - DEBUG    - bdnex.lib.bdgest - Parsing JSON metadata from already parsed web page ~/.local/share/bdnex/bedetheque/albums_json/BD-dummy.json
-2022-07-22 02:22:33,002 - INFO     - bdnex.lib.bdgest - Converting parsed metadata to ComicRack template
-2022-07-22 02:22:33,011 - DEBUG    - bdnex.lib.cover - Cover ~/.local/share/bdnex/bedetheque/covers/Couv_dummy.jpg already downloaded
-2022-07-22 02:22:33,011 - INFO     - bdnex.lib.cover - Checking Cover from input file with online cover
-2022-07-22 02:22:33,442 - INFO     - bdnex.lib.cover - Cover matching percentage: 44.9264705882353
-2022-07-22 02:22:33,442 - INFO     - bdnex.lib.comicrack - Add ComicInfo.xml to /tmp/dummy.cbz
-2022-07-22 02:22:33,442 - INFO     - bdnex.lib.comicrack - Create ComicInfo.xml
-2022-07-22 02:22:33,444 - INFO     - bdnex.lib.comicrack - Successfully appended ComicInfo.xml to /tmp/dummy.cbz
-2022-07-22 02:22:33,445 - INFO     - bdnex.ui - Processing album done
-...
-```
+Full documentation: `docs/` (build with the command above).

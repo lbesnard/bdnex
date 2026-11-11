@@ -235,3 +235,47 @@ def test_album_duplicate_asks_when_action_is_ask(env, make_cbz):
     env.session.import_file(make_cbz("a Nains - T01 - Redwin de la forge.cbz"))
     env.session.import_file(make_cbz("b Nains - T01 - Redwin de la forge.cbz", pages=5))
     assert ("dup", "album already linked") in env.session.prompter.asked
+
+
+def test_duplicate_keys_catch_another_edition_of_the_same_tome(web, make_cbz):
+    """Different source ids, same series + volume: a duplicate according to duplicates.keys."""
+    from bdnex.library import AlbumInfo, SeriesInfo
+    env = Env(web, make_settings(duplicates={"action": "skip"}), FakePrompter())
+    env.source.update_sitemaps()
+    other = env.lib.add_album(AlbumInfo("bedetheque", "999999", "Autre édition",
+                                        series=SeriesInfo("bedetheque", "5", "Nains"), volume=1))
+    env.lib.add_file(make_cbz("other-edition.cbz", pages=9), other)
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    result = env.session.import_file(make_cbz(FILE))
+    assert result.outcome == DUPLICATE
+    env.lib.close()
+
+
+def test_duplicate_keys_can_be_narrowed_to_the_title(web, make_cbz):
+    from bdnex.library import AlbumInfo, SeriesInfo
+    env = Env(web, make_settings(duplicates={"action": "skip", "keys": ["title"]}), FakePrompter())
+    env.source.update_sitemaps()
+    other = env.lib.add_album(AlbumInfo("bedetheque", "999999", "Autre édition",
+                                        series=SeriesInfo("bedetheque", "5", "Nains"), volume=1))
+    env.lib.add_file(make_cbz("other-edition.cbz", pages=9), other)
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    assert env.session.import_file(make_cbz(FILE)).outcome == TAGGED  # title differs: not a duplicate
+    env.lib.close()
+
+
+def test_one_shots_are_never_duplicates_of_each_other(web, make_cbz):
+    from bdnex.library import AlbumInfo
+    env = Env(web, make_settings(duplicates={"action": "skip"}), FakePrompter())
+    env.source.update_sitemaps()
+    other = env.lib.add_album(AlbumInfo("bedetheque", "777", "Un autre one-shot"))
+    env.lib.add_file(make_cbz("other.cbz", pages=9), other)
+    assert env.lib.files_matching_album("bedetheque", "433432", {}, "/x") == []
+    env.lib.close()
+
+
+def test_nothing_to_import_makes_no_network_access(env, tmp_path):
+    (tmp_path / "empty").mkdir()
+    (tmp_path / "notes.txt").write_text("x")
+    report = env.session.run([str(tmp_path / "empty"), str(tmp_path / "missing.cbz")])
+    assert env.web.calls == [] and env.lib.stats()["files"] == 0
+    assert [r.outcome for r in report.results] == [FAILED] and "no such file" in report.results[0].note

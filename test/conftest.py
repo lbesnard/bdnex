@@ -50,3 +50,33 @@ def make_pdf(tmp_path):
         return path
 
     return _make
+
+
+def make_jpeg_bytes(color=(30, 120, 200), size=(40, 60)):
+    import cv2
+    import numpy as np
+
+    img = np.full((size[1], size[0], 3), color, dtype=np.uint8)
+    ok, buf = cv2.imencode(".jpg", img)
+    assert ok
+    return buf.tobytes()
+
+
+@pytest.fixture
+def make_image_pdf(tmp_path):
+    """PDF with one embedded JPEG per page; returns (path, [jpeg bytes per page])."""
+
+    def _make(name="scan.pdf", pages=3):
+        import pymupdf
+
+        jpegs = [make_jpeg_bytes(color=(40 * i + 10, 90, 160), size=(40 + i, 60)) for i in range(pages)]
+        doc = pymupdf.open()
+        for jpeg in jpegs:
+            page = doc.new_page(width=200, height=300)
+            page.insert_image(page.rect, stream=jpeg)
+        path = os.path.join(tmp_path, name)
+        doc.save(path)
+        doc.close()
+        return path, jpegs
+
+    return _make

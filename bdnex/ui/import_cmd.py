@@ -5,40 +5,13 @@ from __future__ import annotations
 import argparse
 import logging
 import sys
-from typing import Optional
 
 from bdnex.config import ConfigError, load_config
 from bdnex.importer.bedetheque import Bedetheque, build_fetcher
 from bdnex.importer.bedetheque.bedetheque import http_fetch
-from bdnex.importer.bedetheque.sitemap import Candidate
-from bdnex.importer.matching import Match
 from bdnex.importer.session import ImportSession
 from bdnex.library import Library
-
-
-class InquirerPrompter:
-    """Interactive prompts (InquirerPy)."""
-
-    SKIP = "__skip__"
-
-    def choose_match(self, path: str, matches: list[Match]) -> Optional[Candidate]:
-        from InquirerPy import inquirer
-
-        choices = [{"name": f"{m.score:5.1f}  {m.candidate.url.rsplit('/', 1)[-1]}", "value": m.candidate}
-                   for m in matches]
-        choices.append({"name": "Skip this file", "value": self.SKIP})
-        answer = inquirer.select(message=f"Match for {path}", choices=choices).execute()
-        return None if answer == self.SKIP else answer
-
-    def duplicate_action(self, path: str, others: list[str], what: str) -> str:
-        from InquirerPy import inquirer
-
-        return inquirer.select(
-            message=f"{what}: {path}\n  already: {', '.join(others)}",
-            choices=[{"name": "Skip", "value": "skip"},
-                     {"name": "Keep both", "value": "keep_both"},
-                     {"name": "Replace (the new file becomes the album's file)", "value": "replace"}],
-        ).execute()
+from bdnex.ui.prompts import InquirerPrompter
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -48,6 +21,12 @@ def build_parser() -> argparse.ArgumentParser:
                         help="show what would be matched; change nothing")
     parser.add_argument("--force", action="store_true",
                         help="never ask: apply the best match (strong or medium), re-import known files")
+    parser.add_argument("-W", "--write", action="store_true",
+                        help="after importing, write ComicInfo.xml into the imported files (in place)")
+    parser.add_argument("--move", action="store_true",
+                        help="after importing, write tags and move the files into the library tree")
+    parser.add_argument("--copy", action="store_true",
+                        help="after importing, copy the files into the library tree (originals untouched)")
     parser.add_argument("--recache", action="store_true",
                         help="refetch sitemaps and album pages instead of using the cache")
     return parser
@@ -67,6 +46,14 @@ def run(argv: list[str], out=sys.stdout) -> int:
         session = ImportSession(library, source, settings, prompter=InquirerPrompter(),
                                 pretend=args.pretend, force=args.force, recache=args.recache)
         report = session.run(args.paths)
+        try:
+            organize_results = _organize(args, settings, library, report) if not args.pretend else []
+        except ConfigError as err:
+            print(f"The import was recorded, but the files were not touched: {err}", file=sys.stderr)
+            organize_results = []
+            organize_failed = True
+        else:
+            organize_failed = False
 
     for r in report.results:
         score = f"{r.score:5.1f}" if r.score is not None else "  -  "
@@ -74,6 +61,29 @@ def run(argv: list[str], out=sys.stdout) -> int:
     summary = ", ".join(f"{report.count(o)} {o}" for o in
                         ("tagged", "partial", "skipped", "duplicate", "failed", "pretend") if report.count(o))
     print(f"\n{len(report.results)} file(s): {summary or 'nothing to do'}", file=out)
-    return 1 if report.count("failed") else 0
+    if organize_results:
+        from bdnex.ui.write_cmd import report as organizer_report
+        print("\nFiles:", file=out)
+        organizer_report(organize_results, out)
+    return 1 if organize_failed or report.count("failed") or any(r.outcome == "failed" for r in organize_results) else 0
+
+
+def _organize(args, settings, library, report):
+    """File operations after the import: flags win over the `import.mode` setting."""
+    from bdnex.organizer.organizer import COPY, MOVE, WRITE, Organizer
+
+    if args.move:
+        mode = MOVE
+    elif args.copy:
+        mode = COPY
+    else:
+        mode = {"copy": COPY, "move": MOVE}.get(settings.import_.mode, WRITE if args.write else None)
+    if mode is None:
+        return []
+    if mode != WRITE:
+        settings.require_library_directory()
+    rows = [library.get_file(r.path) for r in report.results if r.outcome in ("tagged", "partial")]
+    organizer = Organizer(library, settings, prompter=None if args.force else InquirerPrompter(), force=args.force)
+    return organizer.run([r for r in rows if r], mode)
 
 
