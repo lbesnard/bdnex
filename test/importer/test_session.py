@@ -292,3 +292,24 @@ def test_session_reports_progress(web, make_cbz, tmp_path):
     assert [m for m in messages if m.startswith("[")] == ["[1/2] Nains - T01 - Redwin de la forge.cbz",
                                                          "[2/2] zzzzzzzz qqqqqqqq.cbz"]
     env.lib.close()
+
+
+@pytest.mark.parametrize("name, expected", [
+    ("La Bibliomule De Cordoue (Wilfrid Lupano) [2021].cbz", "La Bibliomule De Cordoue"),
+    ("Nains - T01 - Redwin (Jarry) [2015].cbz", "Nains 1 Redwin"),
+    ("Astérix (T3).cbz", "Astérix 3"),
+    ("Astérix [12] - Le tour.cbz", "Astérix 12 Le tour"),
+    ("Astérix (Tome 3) (Goscinny).cbz", "Astérix 3"),
+    ("(Goscinny) [1961].cbz", "(Goscinny) [1961]"),  # nothing left otherwise: keep the name as it is
+    ("Plain name.cbz", "Plain name"),
+])
+def test_query_ignores_author_and_year_groups(name, expected):
+    assert query_from_filename("/x/" + name) == expected
+
+
+def test_a_title_with_author_and_year_in_its_file_name_is_now_a_strong_match():
+    from rapidfuzz import fuzz
+    from bdnex.importer.bedetheque.sitemap import normalise_slug, remove_common_words
+    query = query_from_filename("/x/La Bibliomule De Cordoue (Wilfrid Lupano) [2021].cbz")
+    slug = normalise_slug("https://www.bedetheque.com/BD-Bibliomule-de-Cordoue-433432.html")
+    assert fuzz.ratio(remove_common_words(query), slug) == 100.0

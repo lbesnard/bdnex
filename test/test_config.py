@@ -274,3 +274,16 @@ def test_stale_warning_tells_you_to_delete_the_ignored_keys_first(conf_path):
     first, second = load_config().warnings
     assert "Delete the ignored keys" in first and "set `config_version: 2`" in first
     assert second == "ignored keys no longer used: bdnex"
+
+
+def test_endpoint_without_a_fetcher_is_called_out(conf_path):
+    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher_endpoint": "http://localhost:1"}})
+    warnings = load_config().warnings
+    assert len(warnings) == 1 and "fetcher_endpoint is set but bedetheque.fetcher is not" in warnings[0]
+
+
+def test_no_warning_when_the_fetcher_is_set_or_nothing_is(conf_path):
+    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher": "helpers:fake_fetch", "fetcher_endpoint": "x"}})
+    assert load_config().warnings == []
+    write(conf_path, {"config_version": 2})
+    assert load_config().warnings == []
