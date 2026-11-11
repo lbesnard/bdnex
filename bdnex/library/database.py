@@ -126,6 +126,20 @@ class Library:
                     (album_id, self._get_or_create("genres", genre)))
         return album_id
 
+    def prune_orphan_series(self) -> int:
+        """Delete series no album refers to (e.g. slug-based placeholders replaced by real ones)."""
+        with self.conn:
+            return self.conn.execute(
+                "DELETE FROM series WHERE id NOT IN (SELECT series_id FROM albums WHERE series_id IS NOT NULL)"
+            ).rowcount
+
+    def files_for_album(self, album_id: int) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.conn.execute(
+            "SELECT * FROM files WHERE album_id = ? ORDER BY path", (album_id,))]
+
+    def files_with_md5(self, md5: str) -> list[dict[str, Any]]:
+        return [dict(r) for r in self.conn.execute("SELECT * FROM files WHERE md5 = ? ORDER BY path", (md5,))]
+
     def get_album(self, album_id: int) -> Optional[dict[str, Any]]:
         """Return an album as a flat dict with series, publisher, credits and genres."""
         row = self.conn.execute(

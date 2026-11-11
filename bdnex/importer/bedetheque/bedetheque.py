@@ -49,15 +49,18 @@ class Bedetheque:
     """Look albums up on Bédéthèque, through the library cache.
 
     :param library: where responses are cached
-    :param fetch: ``url -> bytes``; replaced in tests
+    :param fetch: ``url -> bytes`` for album/series pages and covers; replaced in tests
+    :param sitemap_fetch: ``url -> bytes`` for the sitemap files (defaults to ``fetch``)
     :param delay: ``(min, max)`` seconds slept before each *real* request
     :param sleep: replaced in tests
     """
 
     def __init__(self, library: Library, fetch: Callable[[str], bytes] = http_fetch,
-                 delay: tuple[float, float] = (3, 10), sleep: Callable[[float], None] = time.sleep):
+                 delay: tuple[float, float] = (3, 10), sleep: Callable[[float], None] = time.sleep,
+                 sitemap_fetch: Optional[Callable[[str], bytes]] = None):
         self.library = library
         self._fetch = fetch
+        self._sitemap_fetch = sitemap_fetch or fetch
         self.delay = delay
         self._sleep = sleep
         self._index: Optional[list[Candidate]] = None
@@ -70,7 +73,7 @@ class Bedetheque:
                 return cached
         self._sleep(uniform(*self.delay))
         logger.debug(f"Fetching {url}")
-        content = self._fetch(url)
+        content = (self._sitemap_fetch if kind == "sitemap" else self._fetch)(url)
         self.library.cache_put(SOURCE, kind, url, content)
         return content
 

@@ -81,6 +81,10 @@ def main(argv=None):
     if not check_config():
         sys.exit(1)
 
+    if argv and argv[0] == "import":
+        from bdnex.ui.import_cmd import run as run_import
+        sys.exit(run_import(argv[1:]))
+
     vargs = args()
 
     if vargs.init:
