@@ -35,9 +35,10 @@ class InquirerPrompter:
     def conflict(self, path: str, diff_lines: list[str]) -> str:
         from InquirerPy import inquirer
 
-        print(f"\n{path}\nComicInfo.xml in the file differs from the database:")
-        for line in diff_lines:
-            print(f"  {line}")
+        from bdnex.ui import diffview
+        from bdnex.ui.color import enabled
+
+        print("\n" + diffview.conflict_text(path, diff_lines, enabled()))
         return inquirer.select(
             message="Which one wins?",
             choices=[{"name": "Database (overwrite the file's values)", "value": "database"},

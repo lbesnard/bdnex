@@ -52,7 +52,19 @@ and `--pretend` never ask (`--force` leaves it, `--pretend` says you would be as
 ## Conflicts
 
 If the file already has a `ComicInfo.xml` that differs from the database, bdnex shows the
-differences and asks which wins (`write.conflict: ask`). Set it to `database` or `file` to decide
+differences and asks which wins (`write.conflict: ask`). The differences are shown like a `git diff`:
+
+```text
+  ~ Writer
+      - Wilfrid Lupano          (red: in the file)
+      + Lupano, Wilfrid         (green: in the database)
+  + CommunityRating  4.20       (only in the database)
+  - Format           One Shot   (only in the file)
+```
+
+Only the words that changed are bold, newlines are folded, and a long value such as a summary is cut
+around its first difference with its length before and after. Colours appear on a terminal only;
+`NO_COLOR=1` turns them off and `FORCE_COLOR=1` forces them. Set it to `database` or `file` to decide
 once, or use `--force` (the database wins). Fields bdnex does not manage are kept.
 
 ## Formats

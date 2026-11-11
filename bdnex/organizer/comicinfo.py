@@ -65,23 +65,69 @@ def parse_xml(data: bytes) -> dict[str, str]:
     return {child.tag: (child.text or "").strip() for child in root if len(child) == 0 and (child.text or "").strip()}
 
 
-def diff_fields(old: dict[str, str], new: dict[str, str]) -> list[str]:
-    """Human-readable differences, for the fields bdnex manages (``new``'s keys)
-    plus fields present only in ``old`` and managed by bdnex."""
-    lines = []
+WIDTH = 100  # longest value shown in full; longer ones are shown around their first difference
+
+
+def squash(value: Optional[str]) -> Optional[str]:
+    """Collapse newlines and runs of spaces: a summary of 1000 characters is one line, not twenty."""
+    return None if value is None else " ".join(value.split())
+
+
+def excerpts(before: Optional[str], after: Optional[str], width: int = WIDTH) -> tuple[Optional[str], Optional[str], str]:
+    """Short versions of two values, centred on where they first differ. Returns (before, after, note)."""
+    before, after = squash(before), squash(after)
+    if max(len(before or ""), len(after or "")) <= width:
+        return before, after, ""
+    if before is None or after is None:  # only one side exists: show its start
+        value = before if after is None else after
+        cut = value[:width] + "…"
+        return (cut, None, f"({len(value)} characters)") if after is None else (None, cut, f"({len(value)} characters)")
+    first = next((i for i, (x, y) in enumerate(zip(before, after)) if x != y), min(len(before), len(after)))
+    start = max(0, first - 30)
+
+    def window(text: str) -> str:
+        piece = text[start:start + width]
+        return ("…" if start else "") + piece + ("…" if start + width < len(text) else "")
+
+    return window(before), window(after), f"({len(before)} -> {len(after)} characters, first difference at {first})"
+
+
+class Change(str):
+    """One difference. As a string it is the plain one-line form (``~ Title: A  ->  B``); the parts are
+    attributes, so a terminal can show it in colour."""
+
+    kind: str  # "+" only in the database, "-" only in the file, "~" differs
+    field: str
+    before: Optional[str]  # shortened value in the file
+    after: Optional[str]  # shortened value in the database
+    note: str
+
+    def __new__(cls, kind: str, field: str, before: Optional[str], after: Optional[str]):
+        before, after, note = excerpts(before, after)
+        if kind == "+":
+            text = f"+ {field}: {after}"
+        elif kind == "-":
+            text = f"- {field}: {before}"
+        else:
+            text = f"~ {field}: {before}  ->  {after}"
+        obj = super().__new__(cls, text + (f"  {note}" if note else ""))
+        obj.kind, obj.field, obj.before, obj.after, obj.note = kind, field, before, after, note
+        return obj
+
+
+def diff_fields(old: dict[str, str], new: dict[str, str]) -> list[Change]:
+    """Differences between a file's ComicInfo (``old``) and the database's (``new``), for the fields
+    bdnex manages plus fields present only in ``old`` and managed by bdnex."""
+    changes = []
     for name in sorted(set(old) | set(new)):
         before, after = old.get(name), new.get(name)
         if before == after:
             continue
         if name not in new and name not in MANAGED:
             continue  # a field bdnex never writes: leave it alone, not a difference
-        if before is None:
-            lines.append(f"+ {name}: {after}")
-        elif after is None:
-            lines.append(f"- {name}: {before}")
-        else:
-            lines.append(f"~ {name}: {before}  ->  {after}")
-    return lines
+        kind = "+" if before is None else "-" if after is None else "~"
+        changes.append(Change(kind, name, before, after))
+    return changes
 
 
 MANAGED = {"Title", "Series", "Number", "Volume", "AlternateNumber", "Year", "Month", "Day", *CREDIT_FIELDS,
