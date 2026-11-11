@@ -29,6 +29,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--copy", action="store_true",
                         help="after importing, copy the files into the library tree (originals untouched)")
     add_verbosity(parser)
+    parser.add_argument("--retry-partial", action="store_true",
+                        help="for files recorded from the sitemap only (partial), try to fetch the album page again")
     parser.add_argument("--recache", action="store_true",
                         help="refetch sitemaps and album pages instead of using the cache")
     return parser
@@ -50,7 +52,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
             print(f"{err}\nCheck `source` and `bedetheque.fetcher` in your configuration (`bdnex config --edit`).", file=sys.stderr)
             return 1
         session = ImportSession(library, source, settings, prompter=InquirerPrompter(),
-                                pretend=args.pretend, force=args.force, recache=args.recache,
+                                pretend=args.pretend, force=args.force, recache=args.recache, retry_partial=args.retry_partial,
                                 progress=progress)
         report = session.run(args.paths)
         try:

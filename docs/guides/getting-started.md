@@ -51,7 +51,7 @@ as `partial`: `bdnex ls partial:true` lists them.
 To complete them, save the album page from your browser (Ctrl+S, "Web page, HTML only") into
 `~/.local/share/bdnex/pages/` (`bedetheque.pages_dir`) under any name that ends with the album id
 (`BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html`, or just `245127.html`), then run
-`bdnex import --force` on the file again. Pages are cached in the library: each is read once.
+`bdnex import --retry-partial` to complete the partial albums (nothing else is redone). Pages are cached in the library: each is read once.
 
 You can also supply pages another way with your own function; see *Page fetching* in
 [Configuration](configuration.md).
