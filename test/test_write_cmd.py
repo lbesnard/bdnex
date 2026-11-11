@@ -173,3 +173,63 @@ def test_import_move_without_directory_explains_and_keeps_the_import(import_env,
     assert "directory" in capsys.readouterr().err
     with Library(tmp / "lib.sqlite") as lib:
         assert lib.stats()["albums"] == 1  # the match itself was recorded
+
+
+# ------------------------------------------------------------------ damaged files
+def test_import_records_a_damaged_but_readable_file(import_env, make_damaged_cbz):
+    _, tmp, _ = import_env
+    path, _ = make_damaged_cbz("Nains - T01 - Redwin de la forge.cbz")
+    code, text = do_import(path)
+    assert code == 0 and "1 tagged" in text
+    assert "archive damaged (page p01.jpg failed its checksum)" in text and "bdnex repair" in text
+    with Library(tmp / "lib.sqlite") as lib:
+        assert lib.get_file(path)["corrupted"] == 1 and lib.get_file(path)["album_id"] is not None
+        assert [r["path"] for r in lib.query(["corrupted:true"], files=True)] == [path]
+
+
+def test_import_still_fails_on_a_file_that_cannot_be_opened(import_env):
+    _, tmp, _ = import_env
+    bad = tmp / "Nains - T01 - bad.cbz"
+    bad.write_bytes(b"not an archive")
+    code, text = do_import(str(bad))
+    assert code == 1 and "1 failed" in text
+
+
+def test_repair_command_end_to_end(import_env, make_damaged_cbz):
+    _, tmp, _ = import_env
+    path, originals = make_damaged_cbz("Nains - T01 - Redwin de la forge.cbz")
+    do_import(path)
+    out = io.StringIO()
+    assert write_cmd.run("repair", ["-n"], out=out) == 0
+    assert "1 pretend" in out.getvalue()
+    out = io.StringIO()
+    assert write_cmd.run("repair", ["--force"], out=out) == 0
+    assert "1 repaired" in out.getvalue()
+    with zipfile.ZipFile(path) as zf:
+        assert zf.testzip() is None
+    with Library(tmp / "lib.sqlite") as lib:
+        assert lib.get_file(path)["corrupted"] == 0
+    out = io.StringIO()
+    write_cmd.run("repair", [], out=out)
+    assert "nothing to do" in out.getvalue()  # nothing damaged any more
+
+
+def test_move_force_leaves_unrepairable_files_alone(import_env, make_damaged_cbz):
+    _, tmp, _ = import_env
+    path, _ = make_damaged_cbz("Nains - T01 - Redwin de la forge.cbz", damage="junk")
+    do_import(path)
+    out = io.StringIO()
+    assert write_cmd.run("move", ["--force"], out=out) == 0
+    assert "1 skipped" in out.getvalue() and "can not be repaired" in out.getvalue() and os.path.exists(path)
+
+
+def test_main_dispatches_repair(monkeypatch, tmp_path):
+    from bdnex import ui
+    conf = tmp_path / "c.yaml"
+    conf.write_text("config_version: 2\ndirectory: ~/c\n")
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    seen = []
+    monkeypatch.setattr("bdnex.ui.write_cmd.run", lambda cmd, argv: seen.append(cmd) or 0)
+    with pytest.raises(SystemExit):
+        ui.main(["repair"])
+    assert seen == ["repair"]

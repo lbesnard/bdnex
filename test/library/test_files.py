@@ -143,3 +143,13 @@ def test_set_file_album_and_remove(lib, make_cbz):
     assert lib.stats()["untagged"] == 0
     lib.remove_file(path)
     assert lib.get_file(path) is None
+
+
+def test_inspect_distinguishes_damaged_from_unreadable(make_damaged_cbz, tmp_path):
+    damaged, _ = make_damaged_cbz()
+    info = inspect_file(damaged)
+    assert info.corrupted and info.readable and info.problem == "page p01.jpg failed its checksum"
+    junk = tmp_path / "x.cbz"
+    junk.write_bytes(b"hello")
+    info = inspect_file(junk)
+    assert info.corrupted and not info.readable and info.problem

@@ -23,6 +23,7 @@ write:
   pdf_dpi: 200                          # resolution when pages have to be rendered
   delete_original: ask                  # ask | yes | no
   conflict: ask                         # ask | file | database
+  corrupted: ask                        # when a damaged archive can't be repaired: ask | leave | move (as is, no tags)
 
 paths:
   oneshot: 'OneShot/$language/$title - $authors/$title - $authors'

@@ -6,6 +6,7 @@ import hashlib
 import os
 import posixpath
 import zipfile
+import zlib
 from dataclasses import dataclass
 from typing import Optional
 
@@ -25,6 +26,7 @@ class ArchiveError(Exception):
 class Entry:
     name: str
     data: bytes
+    compress_type: Optional[int] = None  # kept from the source archive; None = decide from the extension
 
     @property
     def is_image(self) -> bool:
@@ -61,7 +63,7 @@ def _read_zip(path):
             if _is_comicinfo(item.filename):
                 info = info or data
             else:
-                entries.append(Entry(item.filename, data))
+                entries.append(Entry(item.filename, data, item.compress_type))
     return entries, info
 
 
@@ -130,7 +132,9 @@ def write_cbz(dest: str, entries: list[Entry], comicinfo: Optional[bytes]) -> No
         if comicinfo is not None:
             zf.writestr("ComicInfo.xml", comicinfo, compress_type=zipfile.ZIP_DEFLATED)
         for entry in entries:
-            kind = zipfile.ZIP_STORED if entry.name.lower().endswith(STORED_EXTS) else zipfile.ZIP_DEFLATED
+            kind = entry.compress_type
+            if kind not in (zipfile.ZIP_STORED, zipfile.ZIP_DEFLATED):  # unknown or from another format
+                kind = zipfile.ZIP_STORED if entry.name.lower().endswith(STORED_EXTS) else zipfile.ZIP_DEFLATED
             zf.writestr(entry.name, entry.data, compress_type=kind)
 
 
@@ -161,3 +165,105 @@ def verify_cbz(dest: str, entries: list[Entry], comicinfo: Optional[bytes]) -> N
         raise ArchiveError("the new archive differs from the source (page count or bytes)")
     if comicinfo is not None and info != comicinfo:
         raise ArchiveError("ComicInfo.xml was not written correctly")
+
+
+# ------------------------------------------------------------------ repairing
+@dataclass
+class LenientRead:
+    """Everything that could be read from a damaged archive."""
+
+    entries: list[Entry]
+    comicinfo: Optional[bytes]
+    repaired: list[str]  # members whose checksum was wrong but whose data is complete and decodable
+    lost: list[str]  # members that could not be recovered (with the reason)
+
+    @property
+    def ok(self) -> bool:
+        return not self.lost
+
+
+DECODABLE = (".jpg", ".jpeg", ".png", ".gif", ".bmp")
+
+
+def _decodes(name: str, data: bytes) -> bool:
+    """True if ``data`` is a readable image (images only; other members are accepted)."""
+    if not name.lower().endswith(DECODABLE):
+        return True
+    try:
+        import pymupdf
+
+        pymupdf.Pixmap(data)
+        return True
+    except Exception:
+        return False
+
+
+def _read_ignoring_crc(zf: zipfile.ZipFile, info: zipfile.ZipInfo) -> bytes:
+    with zf.open(info) as handle:
+        handle._expected_crc = None  # zipfile skips the CRC test when there is no reference value
+        return handle.read()
+
+
+def read_entries_lenient(path: str, fmt: str) -> LenientRead:
+    """Read an archive, keeping members whose only fault is a wrong checksum.
+
+    A member is *repaired* when it decompresses to its declared size and, for images, decodes. Anything
+    else is *lost*. The caller decides what to do when something is lost; nothing is written here.
+    """
+    if fmt == "cbz":
+        return _lenient_zip(path)
+    if fmt == "cbr":
+        return _lenient_rar(path)
+    return LenientRead([], None, [], [f"{fmt}: nothing to repair here"])
+
+
+def _lenient_zip(path: str) -> LenientRead:
+    result = LenientRead([], None, [], [])
+    with zipfile.ZipFile(path) as zf:
+        for info in zf.infolist():
+            if info.is_dir():
+                continue
+            repaired = False
+            try:
+                data = zf.read(info)
+            except zipfile.BadZipFile as err:
+                if "CRC" not in str(err):
+                    result.lost.append(f"{info.filename}: {err}")
+                    continue
+                try:
+                    data = _read_ignoring_crc(zf, info)
+                except (zlib.error, EOFError, zipfile.BadZipFile, NotImplementedError) as err2:
+                    result.lost.append(f"{info.filename}: data damaged ({err2})")
+                    continue
+                if len(data) != info.file_size or not _decodes(info.filename, data):
+                    result.lost.append(f"{info.filename}: data damaged beyond the checksum")
+                    continue
+                repaired = True
+            except (zlib.error, EOFError, NotImplementedError, RuntimeError) as err:
+                result.lost.append(f"{info.filename}: data damaged ({err})")
+                continue
+            if _is_comicinfo(info.filename):
+                result.comicinfo = result.comicinfo or data
+            else:
+                result.entries.append(Entry(info.filename, data, info.compress_type))
+                if repaired:
+                    result.repaired.append(info.filename)
+    return result
+
+
+def _lenient_rar(path: str) -> LenientRead:
+    result = LenientRead([], None, [], [])
+    with rarfile.RarFile(path) as rf:
+        for info in rf.infolist():
+            if info.is_dir():
+                continue
+            try:
+                data = rf.read(info)
+            except Exception as err:
+                result.lost.append(f"{info.filename}: {err}")
+                continue
+            if _is_comicinfo(info.filename):
+                result.comicinfo = result.comicinfo or data
+            else:
+                result.entries.append(Entry(info.filename.replace("\\", "/"), data))
+    return result

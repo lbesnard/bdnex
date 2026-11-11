@@ -26,6 +26,8 @@ class FileInfo:
     page_count: Optional[int]
     corrupted: bool
     has_metadata: bool
+    readable: bool = True  # False when the archive can not even be opened (nothing can be done with it)
+    problem: Optional[str] = None  # why it is corrupted, in words
 
 
 def detect_format(path) -> Optional[str]:
@@ -69,11 +71,15 @@ def inspect_file(path) -> FileInfo:
     page_count = None
     corrupted = False
     has_metadata = False
+    readable = True
+    problem = None
 
     try:
         if fmt == "cbz":
             with zipfile.ZipFile(path) as zf:
-                corrupted = zf.testzip() is not None
+                bad = zf.testzip()
+                if bad is not None:
+                    corrupted, problem = True, f"page {bad} failed its checksum"
                 names = zf.namelist()
                 page_count = _count_images(names)
                 has_metadata = any(os.path.basename(n) == "ComicInfo.xml" for n in names)
@@ -89,11 +95,12 @@ def inspect_file(path) -> FileInfo:
                 page_count = doc.page_count
         else:
             fmt = "unknown"
-            corrupted = True
+            corrupted, readable, problem = True, False, "not a CBZ, CBR or PDF file"
     except Exception as err:  # broken archive, missing unrar tool, ...
         logger.warning(f"{path} could not be read: {err}")
-        corrupted = True
+        corrupted, readable, problem = True, False, f"can not be opened: {err}"
         fmt = fmt or "unknown"
 
     return FileInfo(path=path, format=fmt, size=stat.st_size, mtime=stat.st_mtime,
-                    page_count=page_count, corrupted=corrupted, has_metadata=has_metadata)
+                    page_count=page_count, corrupted=corrupted, has_metadata=has_metadata,
+                    readable=readable, problem=problem)

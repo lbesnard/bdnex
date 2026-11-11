@@ -87,3 +87,53 @@ def test_unreadable_archives_raise_archive_error(tmp_path):
         archive.read_entries(str(bad), "pdf")
     with pytest.raises(ArchiveError):
         archive.read_entries(str(bad), "tar")
+
+
+def test_lenient_read_recovers_a_page_with_a_wrong_checksum(make_damaged_cbz):
+    path, originals = make_damaged_cbz()
+    with pytest.raises(ArchiveError):
+        archive.read_entries(path, "cbz")  # the strict reader refuses it
+    result = archive.read_entries_lenient(path, "cbz")
+    assert result.ok and result.repaired == ["p01.jpg"] and result.lost == []
+    assert {e.name for e in result.entries} == set(originals)
+    assert {e.name: e.data for e in result.entries if e.name != "p01.jpg"} == \
+        {k: v for k, v in originals.items() if k != "p01.jpg"}
+
+
+def test_lenient_read_reports_pages_it_cannot_recover(make_damaged_cbz):
+    path, _ = make_damaged_cbz(damage="junk")
+    result = archive.read_entries_lenient(path, "cbz")
+    assert not result.ok and result.repaired == [] and len(result.lost) == 1 and "p01.jpg" in result.lost[0]
+
+
+def test_lenient_read_of_a_healthy_archive_changes_nothing():
+    result = archive.read_entries_lenient(BD_CBZ, "cbz")
+    assert result.ok and result.repaired == [] and sorted(e.name for e in result.entries) == \
+        ["bd/a.jpg", "bd/b.jpg", "bd/c.gif"]
+
+
+def test_lenient_read_of_formats_it_cannot_repair(make_pdf):
+    assert not archive.read_entries_lenient(make_pdf(), "pdf").ok
+
+
+def test_zip_sources_keep_each_pages_compression(tmp_path):
+    src = str(tmp_path / "s.cbz")
+    with zipfile.ZipFile(src, "w") as zf:
+        zf.writestr("a.jpg", b"A" * 1000, compress_type=zipfile.ZIP_DEFLATED)
+        zf.writestr("b.jpg", b"B" * 1000, compress_type=zipfile.ZIP_STORED)
+    entries, _ = archive.read_entries(src, "cbz")
+    out = str(tmp_path / "o.cbz")
+    archive.write_cbz(out, entries, None)
+    with zipfile.ZipFile(out) as zf:
+        assert zf.getinfo("a.jpg").compress_type == zipfile.ZIP_DEFLATED  # not re-decided from ".jpg"
+        assert zf.getinfo("b.jpg").compress_type == zipfile.ZIP_STORED
+    assert zipfile.ZipFile(out).getinfo("a.jpg").compress_size < 100
+    archive.verify_cbz(out, entries, None)
+
+
+def test_entries_from_other_formats_still_use_the_extension_rule(tmp_path):
+    out = str(tmp_path / "o.cbz")
+    archive.write_cbz(out, [Entry("p.jpg", b"x" * 100), Entry("n.txt", b"x" * 100)], None)
+    with zipfile.ZipFile(out) as zf:
+        assert zf.getinfo("p.jpg").compress_type == zipfile.ZIP_STORED
+        assert zf.getinfo("n.txt").compress_type == zipfile.ZIP_DEFLATED

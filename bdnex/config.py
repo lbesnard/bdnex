@@ -74,6 +74,7 @@ class Write(_Section):
     pdf_dpi: int = Field(ge=72, le=1200)
     delete_original: Literal["ask", "yes", "no"]
     conflict: Literal["ask", "file", "database"]
+    corrupted: Literal["ask", "leave", "move"]
 
 
 class Paths(_Section):

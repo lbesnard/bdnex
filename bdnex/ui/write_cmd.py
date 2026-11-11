@@ -3,21 +3,25 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from typing import Optional
 
 from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.query import QueryError
-from bdnex.organizer.organizer import COPY, FAILED, MOVE, WRITE, Organizer
+from bdnex.organizer.organizer import COPY, FAILED, MOVE, WRITE, FileResult, Organizer
 from bdnex.ui.output import add_verbosity, progress, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
-OUTCOMES = ("written", "moved", "copied", "unchanged", "skipped", "failed", "pretend")
+OUTCOMES = ("repaired", "written", "moved", "copied", "unchanged", "skipped", "failed", "pretend")
 
 
 def _parser(command: str) -> argparse.ArgumentParser:
-    if command == "write":
+    if command == "repair":
+        doc = ("Rebuild damaged archives (a page whose checksum is wrong but whose data is intact) as a clean "
+               "CBZ. Only files marked corrupted are touched; ComicInfo.xml and pages are kept as they are.")
+    elif command == "write":
         doc = ("Write ComicInfo.xml into the files where they are. CBR and PDF files are "
                "converted to CBZ next to the original (see write.cbr / write.pdf).")
     else:
@@ -52,7 +56,7 @@ def report(results, out) -> int:
 def run(command: str, argv: list[str], out=sys.stdout) -> int:
     args = _parser(command).parse_args(argv)
     setup_logging(args.verbose)
-    mode = WRITE if command == "write" else (COPY if args.copy else MOVE)
+    mode = WRITE if command in ("write", "repair") else (COPY if args.copy else MOVE)
     try:
         settings = load_config().settings
         if mode != WRITE:
@@ -66,13 +70,23 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
 
     with Library(settings.library_path) as library:
         try:
-            rows = library.query([*args.query, "tagged:true"], files=True)
+            rows = library.query([*args.query, "corrupted:true"] if command == "repair"
+                                 else [*args.query, "tagged:true"], files=True)
         except QueryError as err:
             print(f"bad query: {err}", file=sys.stderr)
             return 2
         organizer = Organizer(library, settings, prompter=None if args.force else InquirerPrompter(),
                               pretend=args.pretend, force=args.force)
-        results = organizer.run(rows, mode, progress=progress)
+        if command == "repair":
+            results = []
+            for number, row in enumerate(rows, start=1):
+                progress(f"[{number}/{len(rows)}] {os.path.basename(row['path'])}")
+                try:
+                    results.append(organizer.repair(row))
+                except Exception as err:
+                    results.append(FileResult(row["path"], FAILED, note=str(err)))
+        else:
+            results = organizer.run(rows, mode, progress=progress)
     return report(results, out)
 
 
@@ -82,3 +96,7 @@ def run_write(argv: list[str], out=sys.stdout) -> int:
 
 def run_move(argv: list[str], out=sys.stdout) -> int:
     return run("move", argv, out)
+
+
+def run_repair(argv: list[str], out=sys.stdout) -> int:
+    return run("repair", argv, out)

@@ -8,8 +8,8 @@ from bdnex.config import build_settings
 from bdnex.library import AlbumInfo, Library, SeriesInfo
 from bdnex.library.hashing import file_md5
 from bdnex.organizer import archive, comicinfo
-from bdnex.organizer.organizer import (COPIED, COPY, FAILED, MOVE, MOVED, PRETEND, SKIPPED, UNCHANGED, WRITE,
-                                       WRITTEN, Organizer)
+from bdnex.organizer.organizer import (COPIED, COPY, FAILED, MOVE, MOVED, PRETEND, REPAIRED, SKIPPED, UNCHANGED,
+                                       WRITE, WRITTEN, Organizer)
 
 BD_CBR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "bd.cbr")
 
@@ -34,6 +34,10 @@ class FakePrompter:
     def collision(self, dest):
         self.asked.append(("collision", dest))
         return self._collision
+
+    def corrupted_action(self, path, problems, can_move):
+        self.asked.append(("corrupted", problems, can_move))
+        return getattr(self, "corrupted_answer", "leave")
 
 
 def settings_for(tmp_path, **overrides):
@@ -113,7 +117,7 @@ def test_unmatched_corrupted_missing_files(lib, make_cbz, tmp_path, tmp_path_fac
     bad = tmp_path / "bad.cbz"
     bad.write_bytes(b"nope")
     lib.add_file(str(bad), add_oneshot(lib))
-    assert org.process(lib.get_file(str(bad)), WRITE).note == "corrupted archive"
+    assert "can not be repaired" in org.process(lib.get_file(str(bad)), WRITE).note
     row = {**lib.get_file(str(bad)), "corrupted": 0, "path": str(tmp_path / "gone.cbz")}
     assert org.process(row, WRITE).outcome == FAILED
 
@@ -338,3 +342,101 @@ def test_move_needs_a_real_library_directory(lib, make_cbz):
     row = registered(lib, make_cbz(), add_series_album(lib))
     results = Organizer(lib, settings).run([row], MOVE)
     assert results[0].outcome == FAILED and "directory" in results[0].note
+
+
+# ------------------------------------------------------------- damaged archives
+def damaged_row(lib, path, album_id=None):
+    return registered(lib, path, album_id if album_id is not None else add_series_album(lib))
+
+
+def test_write_repairs_a_page_with_a_wrong_checksum_then_tags(lib, make_damaged_cbz, tmp_path):
+    path, originals = make_damaged_cbz()
+    row = damaged_row(lib, path)
+    assert row["corrupted"] == 1
+    result = Organizer(lib, settings_for(tmp_path)).process(row, WRITE)
+    assert result.outcome == WRITTEN and "repair 1 page(s)" in result.note
+    with zipfile.ZipFile(path) as zf:
+        assert zf.testzip() is None  # clean now
+        damaged = zf.read("p01.jpg")
+        assert zf.read("p00.jpg") == originals["p00.jpg"] and zf.read("p02.jpg") == originals["p02.jpg"]
+    assert len(damaged) == len(originals["p01.jpg"])  # same data the damaged file gave: nothing else lost
+    assert comicinfo_of(path)["Series"] == "Nains"
+    assert lib.get_file(path)["corrupted"] == 0 and lib.get_file(path)["md5"] == file_md5(path)
+
+
+def test_repair_command_rebuilds_without_adding_tags(lib, make_damaged_cbz, tmp_path):
+    path, originals = make_damaged_cbz(comicinfo=b"<ComicInfo><Title>Mine</Title></ComicInfo>")
+    row = damaged_row(lib, path)
+    result = Organizer(lib, settings_for(tmp_path)).repair(row)
+    assert result.outcome == REPAIRED and "p01.jpg" in result.note
+    with zipfile.ZipFile(path) as zf:
+        assert zf.testzip() is None and zf.read("ComicInfo.xml") == b"<ComicInfo><Title>Mine</Title></ComicInfo>"
+    assert lib.get_file(path)["corrupted"] == 0
+
+
+def test_repair_pretend_and_healthy_files(lib, make_damaged_cbz, make_cbz, tmp_path):
+    path, _ = make_damaged_cbz()
+    before = file_md5(path)
+    row = damaged_row(lib, path)
+    pretend = Organizer(lib, settings_for(tmp_path), pretend=True).repair(row)
+    assert pretend.outcome == PRETEND and file_md5(path) == before
+    healthy = registered(lib, make_cbz(), add_oneshot(lib))
+    assert Organizer(lib, settings_for(tmp_path)).repair(healthy).outcome == UNCHANGED
+
+
+def test_move_repairs_before_moving(lib, make_damaged_cbz, tmp_path):
+    path, _ = make_damaged_cbz()
+    result = Organizer(lib, settings_for(tmp_path)).process(damaged_row(lib, path), MOVE)
+    assert result.outcome == MOVED
+    with zipfile.ZipFile(result.dest) as zf:
+        assert zf.testzip() is None
+    assert not os.path.exists(path)
+
+
+@pytest.mark.parametrize("answer, mode, expect, source_stays, dest_exists", [
+    ("leave", MOVE, SKIPPED, True, False),
+    ("move", MOVE, MOVED, False, True),
+    ("move", COPY, COPIED, True, True)])
+def test_unrepairable_asks_then_leaves_or_moves_as_is(lib, make_damaged_cbz, tmp_path, answer, mode, expect,
+                                                      source_stays, dest_exists):
+    path, _ = make_damaged_cbz(damage="junk")
+    original = file_md5(path)
+    prompter = FakePrompter()
+    prompter.corrupted_answer = answer
+    result = Organizer(lib, settings_for(tmp_path), prompter).process(damaged_row(lib, path), mode)
+    assert result.outcome == expect and "can not be repaired" in result.note and "p01.jpg" in result.note
+    assert prompter.asked[0][0] == "corrupted" and prompter.asked[0][2] is True  # moving was offered
+    assert os.path.exists(path) is source_stays
+    expected_dest = tmp_path / "library" / "Series" / "Nains" / "Nains - T01 - Redwin de la Forge.cbz"
+    assert expected_dest.exists() is dest_exists
+    if dest_exists:
+        assert file_md5(str(expected_dest)) == original  # moved as it is: no tags, no repair
+        assert lib.get_file(str(expected_dest)) is not None and lib.get_file(str(expected_dest))["corrupted"] == 1
+
+
+def test_unrepairable_in_write_mode_can_only_be_left(lib, make_damaged_cbz, tmp_path):
+    path, _ = make_damaged_cbz(damage="junk")
+    prompter = FakePrompter()
+    prompter.corrupted_answer = "move"
+    result = Organizer(lib, settings_for(tmp_path), prompter).process(damaged_row(lib, path), WRITE)
+    assert result.outcome == SKIPPED and prompter.asked[0][2] is False  # `move` was not even offered
+    assert os.path.exists(path)
+
+
+@pytest.mark.parametrize("setting, kwargs, expect", [
+    ("leave", {}, SKIPPED), ("move", {}, MOVED), ("ask", {"force": True}, SKIPPED), ("ask", {"pretend": True}, PRETEND)])
+def test_corrupted_setting_decides_without_asking(lib, make_damaged_cbz, tmp_path, setting, kwargs, expect):
+    path, _ = make_damaged_cbz(damage="junk")
+    prompter = FakePrompter()
+    result = Organizer(lib, settings_for(tmp_path, write={"corrupted": setting}), prompter, **kwargs).process(
+        damaged_row(lib, path), MOVE)
+    assert result.outcome == expect and prompter.asked == []
+    if kwargs.get("pretend"):
+        assert os.path.exists(path) and not (tmp_path / "library").exists()
+
+
+def test_repair_command_reports_what_it_cannot_fix(lib, make_damaged_cbz, tmp_path):
+    path, _ = make_damaged_cbz(damage="junk")
+    before = file_md5(path)
+    result = Organizer(lib, settings_for(tmp_path)).repair(damaged_row(lib, path))
+    assert result.outcome == FAILED and "p01.jpg" in result.note and file_md5(path) == before

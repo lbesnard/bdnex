@@ -107,9 +107,10 @@ class ImportSession:
             return ImportResult(path, SKIPPED, album_id=known["album_id"], note="already imported")
 
         info = inspect_file(path)
-        if info.corrupted:
+        if not info.readable:
             self._log(path, FAILED)
-            return ImportResult(path, FAILED, note="corrupted or unreadable archive")
+            return ImportResult(path, FAILED, note=info.problem or "unreadable archive")
+        damaged = f"archive damaged ({info.problem}): `bdnex repair` can try to fix it" if info.corrupted else ""
 
         dup = self._duplicate_file(path)
         if dup is not None:
@@ -131,6 +132,7 @@ class ImportSession:
             return ImportResult(path, DUPLICATE, score=score, note="album already in library")
 
         album_id, partial, note = self._album_for(candidate)
+        note = "; ".join(n for n in (note, damaged) if n)
         if album_action == "replace":
             for other in self.library.files_for_album(album_id):
                 if other["path"] != os.path.abspath(path):

@@ -76,3 +76,52 @@ def make_image_pdf(tmp_path):
         return path, jpegs
 
     return _make
+
+
+def noisy_jpeg(seed, size=(60, 80)):
+    """A deterministic, incompressible JPEG: a flipped byte inside it still decodes (with artefacts)."""
+    import random
+
+    import pymupdf
+
+    rng = random.Random(seed)
+    raw = bytes(rng.randrange(256) for _ in range(size[0] * size[1] * 3))
+    return pymupdf.Pixmap(pymupdf.csRGB, size[0], size[1], raw, False).tobytes("jpeg")
+
+
+@pytest.fixture
+def make_damaged_cbz(tmp_path):
+    """CBZ whose page ``bad_page`` fails its checksum.
+
+    damage="crc":  the data is intact in size and still decodes, only the checksum is wrong (repairable).
+    damage="junk": the page is not an image at all (not repairable).
+    Returns (path, {member name: original bytes}).
+    """
+    import struct
+    import zipfile
+
+    def _make(name="damaged.cbz", pages=4, bad_page=1, damage="crc", comicinfo=None):
+        path = os.path.join(tmp_path, name)
+        originals = {}
+        with zipfile.ZipFile(path, "w") as zf:
+            if comicinfo:
+                zf.writestr("ComicInfo.xml", comicinfo)
+            for i in range(pages):
+                data = noisy_jpeg(i)
+                if i == bad_page and damage == "junk":
+                    data = b"this is definitely not a picture " * 500
+                originals[f"p{i:02d}.jpg"] = data
+                zf.writestr(f"p{i:02d}.jpg", data, compress_type=zipfile.ZIP_STORED)
+        with zipfile.ZipFile(path) as zf:
+            info = zf.getinfo(f"p{bad_page:02d}.jpg")
+        with open(path, "r+b") as fh:
+            fh.seek(info.header_offset + 26)
+            name_len, extra_len = struct.unpack("<HH", fh.read(4))
+            at = info.header_offset + 30 + name_len + extra_len + info.file_size // 2
+            fh.seek(at)
+            byte = fh.read(1)
+            fh.seek(at)
+            fh.write(bytes([byte[0] ^ 0xFF]))  # wrong checksum, same size
+        return path, originals
+
+    return _make
