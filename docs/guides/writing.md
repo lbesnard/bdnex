@@ -21,7 +21,8 @@ happen and changes nothing, `--force` never asks.
 `ComicInfo.xml` at the root of the CBZ, validated against the ComicInfo schema: title, series,
 volume (as both `Number`, which readers sort on, and `Volume`), writer, penciller, colorist, inker,
 letterer, cover artist, publisher, genre, year/month/day, summary, language, web page, community
-rating, the ISBN (in `Notes`) and the **real** page count. A one-shot uses its title as `Series`.
+rating, the **format**, the real page count, and in `Notes` the ISBN and the edition note of the source
+(e.g. *Noté "Première édition". Format 210 x 283 mm. Avec une carte…*). A one-shot uses its title as `Series`.
 
 After every write the file's checksum is recomputed and stored in the database.
 

@@ -270,3 +270,57 @@ def test_update_sitemaps_reports_progress(lib, web):
     messages = []
     Bedetheque(lib, fetch=web, sleep=lambda s: None).update_sitemaps(progress=messages.append)
     assert len(messages) == 27 and messages[0] == "  sitemap 1: albums_1_10000_map.xml"
+
+
+# ------------------------------------------- everything the desktop page says
+EDITION_PAGE = """
+<html><body><section class="bdt-ah"><h1><a href="https://www.bedetheque.com/serie-1-BD-S.html">Série S</a></h1>
+<div class="bdt-ah-by"><span itemprop="publisher">Dargaud</span></div></section>
+<article class="bdt-edition bdt-edition--detail"><div class="bdt-edition-body"><dl>
+<dt>Titre</dt><dd>Un titre</dd><dt>Traduction</dt><dd>Maubille, Geneviève</dd>
+<dt>Autres</dt><dd>Ferté, Ségolène</dd><dt>Format</dt><dd>Grand format</dd>
+<dt>Poids</dt><dd>670 g</dd><dt>Achevé impr.</dt><dd>10/2021</dd><dt>Autres infos</dt><dd></dd></dl>
+<div class="bdt-note"><div><b>Info édition</b>Noté "Première   édition".
+Couverture toilée.</div></div></div></article></body></html>"""
+
+
+def test_edition_table_note_and_credits_are_read():
+    fields, _ = parser.parse_album_page(EDITION_PAGE, "https://www.bedetheque.com/BD-S-1.html")
+    assert fields["edition_fields"]["Poids"] == "670 g" and "Autres infos" not in fields["edition_fields"]  # empty rows dropped
+    assert fields["Format"] == "Grand format"
+    assert fields["edition_info"] == 'Noté "Première édition". Couverture toilée.'  # label removed, spaces folded
+    info = parser.build_album_info(fields)
+    assert info.format == "Grand format"
+    assert info.credits["Translator"] == ["Maubille, Geneviève"] and info.credits["Other"] == ["Ferté, Ségolène"]
+    assert info.extra["edition_info"].startswith('Noté "Première édition"')
+
+
+def test_no_edition_section_is_fine():
+    fields, _ = parser.parse_album_page("<html><section class='bdt-ah'><h1>T</h1></section></html>", "https://x/BD-T-1.html")
+    assert "edition_fields" not in fields and "edition_info" not in fields
+    info = parser.build_album_info(fields)
+    assert info.format is None and info.credits == {}
+
+
+def test_real_oneshot_page_details():
+    html = open(ONESHOT_HTML, encoding="utf-8").read()
+    fields, _ = parser.parse_album_page(html, ONESHOT_URL)
+    info = parser.build_album_info(fields)
+    assert info.format == "Autre format" and info.extra["edition_fields"]["Poids"] == "1252 g"
+    assert "Pascal Buresi" in info.extra["edition_info"] and "210 x 283 mm" in info.extra["edition_info"]
+    assert info.extra["rating_votes"] == 90
+    assert info.extra["image_urls"] == {
+        "plates": ["https://www.bedetheque.com/media/Planches/PlancheA_433432.jpg"],
+        "versos": ["https://www.bedetheque.com/media/Versos/Verso_433432.jpg"]}
+    assert info.credits["Other"] == ["Ferté, Ségolène"] and info.credits["Writer"] == ["Lupano, Wilfrid"]
+
+
+def test_the_edition_note_reaches_comicinfo_notes():
+    from bdnex.organizer import comicinfo
+    fields, _ = parser.parse_album_page(EDITION_PAGE, "https://www.bedetheque.com/BD-S-1.html")
+    info = parser.build_album_info(fields)
+    album = {"title": "T", "series": None, "kind": "oneshot", "credits": {}, "genres": [], "isbn": "9782505078647",
+             "format": info.format, "extra": info.extra}
+    notes = comicinfo.album_to_fields(album)["Notes"]
+    assert notes.splitlines() == ["ISBN: 9782505078647", 'Édition: Noté "Première édition". Couverture toilée.']
+    assert comicinfo.build_xml(comicinfo.album_to_fields(album))  # still valid against the schema

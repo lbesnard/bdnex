@@ -54,3 +54,12 @@ def create_source(name: str, library, settings) -> MetadataSource:
     source = _load(spec)(library, settings)
     check_source(source, spec)
     return source
+
+
+class OfflineError(FileNotFoundError):
+    """A page was needed that is not in the library's cache, while working offline."""
+
+
+def offline_fetch(url: str) -> bytes:
+    """A fetcher that never touches the network: use it to work only from the stored pages."""
+    raise OfflineError(f"{url} is not stored in the library and the network is not used")

@@ -40,8 +40,13 @@ def album_to_fields(album: dict[str, Any], page_count: Optional[int] = None) -> 
         fields["Genre"] = ", ".join(album["genres"])
     if album.get("rating") is not None:
         fields["CommunityRating"] = f"{min(5.0, max(0.0, float(album['rating']))):.2f}"
+    notes = []
     if album.get("isbn"):
-        fields["Notes"] = f"ISBN: {album['isbn']}"
+        notes.append(f"ISBN: {album['isbn']}")
+    if (album.get("extra") or {}).get("edition_info"):
+        notes.append(f"Édition: {album['extra']['edition_info']}")
+    if notes:
+        fields["Notes"] = "\n".join(notes)
     pages = page_count if page_count is not None else album.get("pages")
     if pages:
         fields["PageCount"] = str(pages)

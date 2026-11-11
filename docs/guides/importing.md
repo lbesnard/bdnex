@@ -54,3 +54,23 @@ An argument that is not an existing file or folder is reported as you typed it.
 
 Defaults for thresholds and duplicate handling live in the
 [configuration](configuration.md) (`match:`, `duplicates:`, `import:`).
+
+## Re-reading what was stored: `bdnex reparse`
+
+Every album page bdnex fetches is stored in the library exactly as received, so the library is the
+permanent copy of what the source said. If bdnex later learns to read more of a page (or you want to
+re-check a record), no page needs to be fetched again:
+
+```bash
+bdnex reparse -n            # preview: what would change, album by album
+bdnex reparse               # update every album from its stored page
+bdnex reparse series:nains  # only some albums (same terms as `bdnex ls`)
+```
+
+- It works **offline by construction**: the source is built with a fetcher that cannot reach the network
+  (whatever `bedetheque.fetcher` says), and without the politeness delays.
+- It never erases. Values the page gives override the library's; values it does not give stay, and so
+  does a credit you typed at a prompt for a role the page does not list.
+- Albums recorded from the sitemap only (*partial*) have no stored page: they are reported, and
+  `import --retry-partial` is how to complete them.
+- It changes the library, not your files: run `bdnex write` afterwards to put new details into them.

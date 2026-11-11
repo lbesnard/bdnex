@@ -11,6 +11,7 @@ commands:
   ls       list and search the library
   write    write ComicInfo.xml into files (converts CBR/PDF to CBZ)
   move     write tags and rename files into the library tree (--copy keeps the originals)
+  reparse  re-read the pages stored in the library (offline) to fill in more details
   repair   rebuild damaged archives (wrong page checksums) as clean CBZ files
   config   show or edit the configuration
 
@@ -52,6 +53,10 @@ def main(argv=None):
     if argv and argv[0] in ("write", "move", "repair"):
         from bdnex.ui.write_cmd import run as run_write_move
         sys.exit(run_write_move(argv[0], argv[1:]))
+
+    if argv and argv[0] == "reparse":
+        from bdnex.ui.reparse_cmd import run as run_reparse
+        sys.exit(run_reparse(argv[1:]))
 
     if argv and argv[0] == "ls":
         from bdnex.ui.ls_cmd import run as run_ls

@@ -15,11 +15,21 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 | `people`, `album_credits` | authors with a role (`Writer`, `Penciller`, `Colorist`, `Inker`, `Letterer`, `CoverArtist`) |
 | `genres`, `album_genres` | many-to-many |
 | `publishers` | |
-| `source_cache` | raw pages and sitemaps by source, so a re-import never hits the website |
+| `source_cache` | every page and sitemap fetched, **stored as received**, by source: a re-import never hits the website, and `bdnex reparse` can rebuild the albums from it offline |
 | `import_log` | outcome and score of each import, used for resume and skip |
 
 The schema version is stored in `PRAGMA user_version`; migrations live in
 `bdnex/library/schema.py` and are append-only.
+
+## What is kept
+
+- The **raw pages** (`source_cache`): the complete record of what a source said, whether or not bdnex
+  understands all of it yet.
+- The **parsed albums**: columns for what is queried (`ls`), `album_credits` for every role the page
+  names (including `Translator` and `Other`, which ComicInfo has no element for), and `extra`
+  (JSON) for everything else: the whole edition table (`format`, `Poids`, `Achevé impr.`,
+  `Estimation`...), the edition note, the vote count, the image links.
+- Albums do not depend on files: removing or replacing a file never removes an album.
 
 ## Python API
 

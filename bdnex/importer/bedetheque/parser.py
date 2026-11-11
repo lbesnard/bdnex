@@ -17,6 +17,9 @@ SOURCE = "bedetheque"
 
 logger = logging.getLogger(__name__)
 
+# Credit labels that have no ComicInfo element: kept in the library under these roles
+OTHER_CREDIT_ROLES = {"Traduction": "Translator", "Autres": "Other"}
+
 # Bédéthèque label -> ComicInfo credit role
 CREDIT_LABELS = {
     "Scénario": "Writer",
@@ -110,7 +113,46 @@ def _parse_album_page_desktop(html: str, album_url: str) -> tuple[dict[str, Any]
     cover = header.select_one("a.bdt-img--couv[href]")
     if cover:
         fields["cover_url"] = cover["href"]
+
+    edition = _edition_table(soup)
+    if edition:
+        fields["edition_fields"] = edition  # everything the edition table says, as written
+        if edition.get("Format"):
+            fields["Format"] = edition["Format"]
+        for label in ("Traduction", "Autres"):
+            names = _split_names(edition.get(label, ""))
+            if names:
+                fields.setdefault("autres_credits", {}).setdefault(label, names)
+    note = soup.select_one("div.bdt-note > div")
+    if note is not None:
+        for label in note.find_all("b"):
+            label.extract()
+        text = " ".join(note.get_text(" ", strip=True).split())
+        if text:
+            fields["edition_info"] = text
+    votes = _meta(header, "ratingCount")
+    if votes and votes.isdigit():
+        fields["rating_votes"] = int(votes)
+    images = {kind: [a["href"] for a in soup.select(f"a.browse-{css}[href]")]
+              for kind, css in (("plates", "planches"), ("versos", "versos"))}
+    images = {kind: sorted(set(urls)) for kind, urls in images.items() if urls}
+    if images:
+        fields["image_urls"] = images
     return fields, series_href
+
+
+def _edition_table(soup) -> dict[str, str]:
+    """The label/value list of the album's edition (Format, Poids, Achevé impr., Traduction...)."""
+    table = soup.select_one("article.bdt-edition--detail dl")
+    if table is None:
+        return {}
+    rows = {}
+    for term in table.find_all("dt"):
+        value = term.find_next_sibling("dd")
+        text = " ".join(value.get_text(" ", strip=True).split()) if value is not None else ""
+        if text:
+            rows[term.get_text(" ", strip=True)] = text
+    return rows
 
 
 def _parse_album_page_mobile(html: str, album_url: str) -> tuple[dict[str, Any], Optional[str]]:
@@ -241,6 +283,12 @@ def build_album_info(fields: dict[str, Any], series_url: Optional[str] = None,
     for label, role in CREDIT_LABELS.items():
         if fields.get(label):
             credits.setdefault(role, []).extend(_split_names(fields[label]))
+
+    for label, names in (fields.get("autres_credits") or {}).items():
+        role = OTHER_CREDIT_ROLES.get(label, label)
+        for name in names:
+            if name not in credits.setdefault(role, []):
+                credits[role].append(name)
 
     source_id = fields.get("Identifiant") or re.search(r"-(\d+)\.html$", fields["album_url"]).group(1)
     note = fields.get("Note")
