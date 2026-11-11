@@ -25,6 +25,9 @@ PLACEHOLDER_DIRECTORY = "/path/to/comics/library"
 CONF_DIR = Path(__file__).resolve().parent / "conf"
 DEFAULTS_PATH = CONF_DIR / "bdnex.yaml"
 
+# Top-level options that existed once: key -> config_version that removed it.
+REMOVED_KEYS = {"bdnex": 2}
+
 # Sections whose content is free-form and never checked for unknown keys.
 FREE_FORM: set[tuple[str, ...]] = {("plugins",)}
 
@@ -212,12 +215,16 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
             warnings.append("ignored keys no longer used: " + ", ".join(unknown))
             user = _drop_keys(user, unknown)
         else:
-            errors.extend(f"{k}: unknown option (typo?)" for k in unknown)
+            for key in unknown:
+                removed_in = REMOVED_KEYS.get(key.split(".")[0])
+                errors.append(f"{key}: no longer used since config_version {removed_in}: delete it"
+                              if removed_in else f"{key}: unknown option (typo?)")
     if stale:
+        ignored = f" Delete the ignored keys listed below, then" if unknown else ""
         warnings.insert(0, (
-            f"your config is stale (config_version {version}, current {CONFIG_VERSION}): "
-            "review it with `bdnex config --defaults` and set `config_version: "
-            f"{CONFIG_VERSION}` once done"))
+            f"your config is stale (config_version {version}, current {CONFIG_VERSION}).{ignored} "
+            f"set `config_version: {CONFIG_VERSION}` once you have checked it against "
+            "`bdnex config --defaults`"))
 
     merged = deep_merge(defaults, user)
     merged["config_version"] = version

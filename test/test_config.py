@@ -252,3 +252,25 @@ def test_version_1_config_with_the_old_paths_block_is_stale_not_broken(conf_path
     assert loaded.settings.match.strong_threshold == 85 and loaded.settings.directory == "~/comics"
     assert any("stale" in w for w in loaded.warnings)
     assert any("ignored keys no longer used: bdnex" in w for w in loaded.warnings)
+
+
+def test_a_removed_option_at_the_current_version_says_to_delete_it(conf_path):
+    write(conf_path, {"config_version": 2, "bdnex": {"config_path": "x", "share_path": "y"}})
+    with pytest.raises(ConfigError) as err:
+        load_config()
+    message = str(err.value)
+    assert "bdnex: no longer used since config_version 2: delete it" in message
+    assert "typo" not in message and message.count("bdnex:") == 1  # said once, not once per sub-key
+
+
+def test_a_real_typo_still_says_typo(conf_path):
+    write(conf_path, {"config_version": 2, "imprt": {}})
+    with pytest.raises(ConfigError, match="imprt: unknown option \\(typo\\?\\)"):
+        load_config()
+
+
+def test_stale_warning_tells_you_to_delete_the_ignored_keys_first(conf_path):
+    write(conf_path, {"config_version": 1, "bdnex": {"share_path": "y"}, "directory": "~/c"})
+    first, second = load_config().warnings
+    assert "Delete the ignored keys" in first and "set `config_version: 2`" in first
+    assert second == "ignored keys no longer used: bdnex"
