@@ -131,7 +131,10 @@ class Organizer:
         steps += [f"convert {fmt} -> cbz"] if converted else []
         steps.append("write ComicInfo.xml" if xml != existing else "keep ComicInfo.xml")
         if not same_place:
-            steps.append(f"{'copy' if mode == COPY else 'move'} to {dest}")
+            if mode == WRITE:  # the converted file sits next to the original: nothing moves
+                steps.append(f"save as {os.path.basename(dest)} (same folder)")
+            else:
+                steps.append(f"{'copy' if mode == COPY else 'move'} to {dest}")
         if self.pretend:
             return FileResult(path, PRETEND, dest, "; ".join(steps))
 
