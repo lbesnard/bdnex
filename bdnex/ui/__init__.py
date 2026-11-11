@@ -1,54 +1,21 @@
 #!/usr/bin/env python3
-import os
-import logging
-import shutil
+"""bdnex command line entry point."""
+
 import sys
 
-from bdnex.lib.archive_tools import archive_get_front_cover
-from bdnex.lib.bdgest import BdGestParse
-from bdnex.lib.comicrack import comicInfo
-from bdnex.lib.cover import front_cover_similarity, get_bdgest_cover
-from bdnex.lib.utils import yesno, args, bdnex_config
-from pathlib import Path
-from termcolor import colored
+USAGE = """\
+usage: bdnex <command> [options]
 
+commands:
+  import   match comic files to Bédéthèque albums and record them in the library
+  ls       list and search the library
+  write    write ComicInfo.xml into files (converts CBR/PDF to CBZ)
+  move     write tags and rename files into the library tree (--copy keeps the originals)
+  config   show or edit the configuration
 
-def add_metadata_from_bdgest(filename):
-    bdnex_conf = bdnex_config()
-
-    logger = logging.getLogger(__name__)
-    start_separator = colored(f'~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~',
-                              'red', attrs=['bold'])
-
-    logger.info(start_separator)
-    logger.info(f"Processing {filename}")
-
-    album_name = os.path.splitext(os.path.basename(filename))[0]
-    bdgest_meta, comicrack_meta = BdGestParse().parse_album_metadata_mobile(album_name)
-
-    cover_archive_fp = archive_get_front_cover(filename)
-    cover_web_fp = get_bdgest_cover(bdgest_meta["cover_url"])
-
-    percentage_similarity = front_cover_similarity(cover_archive_fp, cover_web_fp)
-
-    if percentage_similarity > bdnex_conf['cover']['match_percentage']:
-        comicInfo(filename, comicrack_meta).append_comicinfo_to_archive()
-    else:
-        logger.warning("UserPrompt required")
-        ans = yesno("Cover matching confidence is low. Do you still want to append the metadata to the file?")
-        if ans:
-            comicInfo(filename, comicrack_meta).append_comicinfo_to_archive()
-        else:
-            logger.info(f"Looking manually for {colored(os.path.basename(filename), 'red', attrs=['bold'])}")
-            album_url = BdGestParse().search_album_from_sitemaps_interactive()
-
-            bdgest_meta, comicrack_meta = BdGestParse().parse_album_metadata_mobile(album_name, album_url=album_url)
-            comicInfo(filename, comicrack_meta).append_comicinfo_to_archive()
-
-    cover_path = Path(cover_archive_fp).parent.as_posix()
-    shutil.rmtree(cover_path)
-
-    logger.info(f"Processing album done")
+Run `bdnex <command> --help` for the options of a command.
+The former `bdnex -f FILE` / `-d DIR` still work and run `bdnex import -W`.
+"""
 
 
 def check_config():
@@ -81,6 +48,10 @@ def main(argv=None):
     if not check_config():
         sys.exit(1)
 
+    if argv and argv[0] in ("write", "move"):
+        from bdnex.ui.write_cmd import run as run_write_move
+        sys.exit(run_write_move(argv[0], argv[1:]))
+
     if argv and argv[0] == "ls":
         from bdnex.ui.ls_cmd import run as run_ls
         sys.exit(run_ls(argv[1:]))
@@ -89,31 +60,28 @@ def main(argv=None):
         from bdnex.ui.import_cmd import run as run_import
         sys.exit(run_import(argv[1:]))
 
+    if not argv or argv[0] in ("-h", "--help"):
+        print(USAGE)
+        sys.exit(0)
+
+    sys.exit(legacy(argv))
+
+
+def legacy(argv):
+    """The pre-library options: `-f FILE`, `-d DIR`, `-i` (kept as shortcuts for the new commands)."""
+    from bdnex.lib.utils import args
+    from bdnex.ui.import_cmd import run as run_import
+
+    sys.argv = ["bdnex", *argv]
     vargs = args()
-
+    paths = [p for p in (vargs.input_file, vargs.input_dir) if p]
     if vargs.init:
-        BdGestParse().download_sitemaps()
-
-    if vargs.input_dir:
-        dirpath = vargs.input_dir
-
-        files = []
-
-        for path in Path(dirpath).rglob('*.cbz'):
-            files.append(path.absolute().as_posix())
-
-        for path in Path(dirpath).rglob('*.cbr'):
-            files.append(path.absolute().as_posix())
-
-        for file in files:
-            try:
-                add_metadata_from_bdgest(file)
-            except:
-                logger = logging.getLogger(__name__)
-                logger.error(f"{file} couldn't be processed")
-
-    elif vargs.input_file:
-        file = vargs.input_file
-        add_metadata_from_bdgest(file)
-
-
+        print("note: `-i` is no longer needed: `bdnex import` downloads the sitemaps itself "
+              "(`--recache` refreshes them).", file=sys.stderr)
+    if paths:
+        print("note: `-f` / `-d` now run `bdnex import -W` (match, record in the library, write ComicInfo.xml).",
+              file=sys.stderr)
+        return run_import(["-W", *paths])
+    if not vargs.init:
+        print(USAGE)
+    return 0

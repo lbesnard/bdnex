@@ -57,10 +57,10 @@ def test_library_directory_placeholder_is_refused(conf_path):
 
 
 def test_user_overrides_are_deep_merged(conf_path):
-    write(conf_path, {"config_version": 1, "import": {"mode": "copy"}, "match": {"use_cover": False}})
+    write(conf_path, {"config_version": 1, "import": {"mode": "copy"}, "match": {"medium_threshold": 60}})
     s = load_config().settings
-    assert s.import_.mode == "copy" and s.import_.autotag is True  # sibling default kept
-    assert s.match.use_cover is False and s.match.strong_threshold == 90
+    assert s.import_.mode == "copy" and s.import_.resume is True  # sibling default kept
+    assert s.match.medium_threshold == 60 and s.match.strong_threshold == 90
 
 
 def test_unknown_key_is_an_error_naming_the_key(conf_path):
@@ -85,10 +85,10 @@ def test_invalid_values_report_key(conf_path, data, key):
 
 
 def test_all_problems_reported_together(conf_path):
-    write(conf_path, {"config_version": 1, "typo": 1, "match": {"use_cover": "maybe"}})
+    write(conf_path, {"config_version": 1, "typo": 1, "match": {"strong_threshold": "high"}})
     with pytest.raises(ConfigError) as err:
         load_config()
-    assert "typo" in str(err.value) and "match.use_cover" in str(err.value)
+    assert "typo" in str(err.value) and "match.strong_threshold" in str(err.value)
 
 
 def test_stale_config_warns_and_ignores_old_keys(conf_path):
@@ -237,4 +237,12 @@ def test_legacy_bdnex_config_merges_defaults(conf_path):
     write(conf_path, {"directory": "~/c"})  # old-style file lacking most keys
     conf = bdnex_config()
     assert conf["directory"] == "~/c"
-    assert conf["bdnex"]["share_path"] and conf["cover"]["match_percentage"] == 40
+    assert conf["bdnex"]["share_path"] and conf["match"]["strong_threshold"] == 90
+
+
+def test_options_that_did_nothing_are_gone(conf_path):
+    for removed in ({"match": {"use_cover": True}}, {"import": {"autotag": True}}, {"plugins": ["x"]},
+                    {"paths": {"default": "x"}}, {"write": {"format": "cbz"}}):
+        write(conf_path, {"config_version": 1, **removed})
+        with pytest.raises(ConfigError, match="unknown option"):
+            load_config()

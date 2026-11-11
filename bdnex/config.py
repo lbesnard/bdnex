@@ -57,33 +57,26 @@ class BdnexPaths(_Section):
     share_path: str
 
 
-class Cover(_Section):
-    match_percentage: float = Field(ge=0, le=100)
-
-
 class Match(_Section):
     strong_threshold: float = Field(ge=0, le=100)
     medium_threshold: float = Field(ge=0, le=100)
-    use_cover: bool
-    use_isbn: bool
 
 
 class Import(_Section):
     mode: Literal["in_place", "copy", "move"]
-    autotag: bool
     resume: bool
 
 
 class Duplicates(_Section):
-    keys: list[Literal["series", "volume", "title", "isbn", "md5"]] = Field(min_length=1)
+    keys: list[Literal["series", "volume", "title"]] = Field(min_length=1)
     action: Literal["ask", "skip", "keep_both", "replace"]
 
 
 class Write(_Section):
-    format: Literal["cbz"]
     cbr: Literal["convert", "skip"]
     pdf: Literal["convert", "skip"]
     pdf_mode: Literal["auto", "extract", "render"]
+    pdf_dpi: int = Field(ge=72, le=1200)
     delete_original: Literal["ask", "yes", "no"]
     conflict: Literal["ask", "file", "database"]
 
@@ -91,7 +84,6 @@ class Write(_Section):
 class Paths(_Section):
     oneshot: str
     series: str
-    default: str
     missing_field: Literal["ask", "placeholder", "skip"]
     placeholder: str
 
@@ -108,14 +100,12 @@ class Settings(_Section):
     bdnex: BdnexPaths
     directory: str
     library: str
-    cover: Cover
     match: Match
     # "import" is a Python keyword
     import_: Import = Field(alias="import")
     duplicates: Duplicates
     write: Write
     paths: Paths
-    plugins: list[str]
     bedetheque: Bedetheque
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)

@@ -22,40 +22,43 @@ uv run bdnex --help
 
 ## First run
 
-On first use bdnex creates `~/.config/bdnex/bdnex.yaml` and downloads the
-Bédéthèque sitemaps (47 files) into `~/.local/share/bdnex`. This only happens
-once.
+The first command creates `~/.config/bdnex/bdnex.yaml` and tells you to edit it. Set `directory`
+to your comics folder (`bdnex config --edit`); see [Configuration](configuration.md).
 
-## Tag your albums
+`.cbr` files need an `unrar` (or `7z` / `bsdtar`) program on your system to be read.
 
-Tag one file:
-
-```bash
-bdnex -f "Nains 1 - Redwin de la forge.cbz"
-```
-
-or a whole folder, recursively (`.cbz` and `.cbr`):
+## A first session
 
 ```bash
-bdnex -d /path/to/comics
+bdnex import ~/comics        # match every .cbz / .cbr / .pdf and record it in the library
+bdnex ls                     # what is in the library
+bdnex ls --files tagged:false   # files that found no album
+bdnex write                  # write ComicInfo.xml into the matched files
+bdnex move --copy            # or: copy them, renamed, into your library tree
 ```
 
-For each file bdnex:
+`bdnex import -W ~/comics` imports and writes in one go. Add `-n` to any command to see what
+it would do first.
 
-1. finds the most similar album name in the Bédéthèque sitemaps;
-2. downloads the album page (cached) and its cover;
-3. compares the online cover with the first page of your file;
-4. if they look alike, adds a `ComicInfo.xml`; otherwise it asks you, and lets
-   you search the album manually.
+## Album pages
 
-```{note}
-`.cbr` files are converted to `.cbz` when tags are added, because the RAR
-format cannot be written without proprietary tools.
-```
+Matching works offline from the Bédéthèque sitemaps, which bdnex downloads itself. The details of
+an album (authors, publisher, ISBN, summary, genres) come from its page, and **bedetheque.com
+blocks scripted page requests**. bdnex does not try to get around that. Without the page, an
+album is still imported from its sitemap URL (series, volume, title, series or one-shot) and shown
+as `partial`: `bdnex ls partial:true` lists them.
+
+To complete them, save the album page from your browser (Ctrl+S, "Web page, HTML only") into
+`~/.local/share/bdnex/pages/` (`bedetheque.pages_dir`) under any name that ends with the album id
+(`BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html`, or just `245127.html`), then run
+`bdnex import --force` on the file again. Pages are cached in the library: each is read once.
+
+You can also supply pages another way with your own function; see *Page fetching* in
+[Configuration](configuration.md).
 
 ## Next steps
 
 - [Import into the library](importing.md)
 - [Query your library](queries.md)
-- [Write tags and organise files](writing.md) *(planned)*
+- [Write tags and organise files](writing.md)
 - [Configuration](configuration.md)
