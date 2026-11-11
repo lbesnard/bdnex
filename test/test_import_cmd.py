@@ -110,3 +110,14 @@ def test_import_command_with_an_unknown_source(tmp_path, monkeypatch, capsys, ma
     assert import_cmd.run([make_cbz("a.cbz")], out=io.StringIO()) == 1
     err = capsys.readouterr().err
     assert "unknown source 'nope'" in err and "bedetheque" in err and "config --edit" in err
+
+
+def test_import_with_a_mistyped_fetcher_prints_a_message_not_a_traceback(tmp_path, monkeypatch, capsys, make_cbz):
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"), "bedetheque": {
+        "fetcher": "bdnex.importer.bedetheque.flaresolverr_fetch:flaresolverr_fetch"}}))
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    assert import_cmd.run([make_cbz("a.cbz")], out=io.StringIO()) == 1
+    err = capsys.readouterr().err
+    assert "Did you mean 'bdnex.importer.bedetheque:flaresolverr_fetch'?" in err
+    assert "bedetheque.fetcher" in err and "Traceback" not in err

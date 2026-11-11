@@ -7,6 +7,7 @@ import logging
 import sys
 
 from bdnex.config import ConfigError, load_config
+from bdnex.importer.bedetheque.fetchers import FetcherError
 from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.importer.session import ImportSession
 from bdnex.library import Library
@@ -45,8 +46,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
     with Library(settings.library_path) as library:
         try:
             source = create_source(settings.source, library, settings)
-        except (UnknownSource, TypeError) as err:
-            print(f"{err}\nCheck `source` in your configuration (`bdnex config --edit`).", file=sys.stderr)
+        except (UnknownSource, FetcherError, TypeError) as err:
+            print(f"{err}\nCheck `source` and `bedetheque.fetcher` in your configuration (`bdnex config --edit`).", file=sys.stderr)
             return 1
         session = ImportSession(library, source, settings, prompter=InquirerPrompter(),
                                 pretend=args.pretend, force=args.force, recache=args.recache,
