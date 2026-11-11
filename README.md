@@ -39,7 +39,7 @@ Further Feature(?):
 - SQLight database to keep record of already processed data
 - Interactive mode
 - catalog manager
-- renaming convention, based on user conf in ~/.local/bdnex/bdnex.ini
+- renaming convention, based on the paths templates in ~/.config/bdnex/bdnex.yaml
 - add more "API", fmor bdfuge ...
 - resume
 

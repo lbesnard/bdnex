@@ -2,6 +2,7 @@
 import os
 import logging
 import shutil
+import sys
 
 from bdnex.lib.archive_tools import archive_get_front_cover
 from bdnex.lib.bdgest import BdGestParse
@@ -50,7 +51,40 @@ def add_metadata_from_bdgest(filename):
     logger.info(f"Processing album done")
 
 
-def main():
+def check_config():
+    """Create/validate the config; tell the user on first run or when it is stale.
+
+    Returns True when bdnex may continue.
+    """
+    from bdnex.config import FIRST_RUN_MESSAGE, ConfigError, load_config
+
+    try:
+        loaded = load_config()
+    except ConfigError as err:
+        print(err, file=sys.stderr)
+        print("Fix it with `bdnex config --edit`.", file=sys.stderr)
+        return False
+    if loaded.first_run:
+        print(FIRST_RUN_MESSAGE.format(path=loaded.path), file=sys.stderr)
+    for warning in loaded.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    return True
+
+
+def main(argv=None):
+    argv = sys.argv[1:] if argv is None else list(argv)
+
+    if argv and argv[0] == "config":
+        from bdnex.ui.config_cmd import run
+        sys.exit(run(argv[1:]))
+
+    if not check_config():
+        sys.exit(1)
+
+    if argv and argv[0] == "import":
+        from bdnex.ui.import_cmd import run as run_import
+        sys.exit(run_import(argv[1:]))
+
     vargs = args()
 
     if vargs.init:

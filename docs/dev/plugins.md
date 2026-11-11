@@ -71,6 +71,5 @@ microdata) and the former mobile layout are parsed.
 `bdnex.importer.bedetheque.fetchers` provides:
 
 - `load_fetcher("package.module:function")` to resolve a callable from a config string;
-- `placeholder_fetch`, a stub that raises a clear `NotImplementedError`;
 - `DirectoryFetcher(folder)`, which serves pages you saved from your browser
   (`<id>.html` or the browser's own file name containing the album id).
