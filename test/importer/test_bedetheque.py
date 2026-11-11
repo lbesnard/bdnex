@@ -194,3 +194,25 @@ def test_multiple_authors_and_genres_split():
 def test_bad_date_ignored():
     info = parser.build_album_info(base_fields(**{"Dépot_légal": "n/a"}))
     assert info.year is None
+
+
+# ------------------------------------------------------------ anti-bot pages
+def test_challenge_page_detected():
+    from bdnex.importer.bedetheque.bedetheque import looks_blocked
+    page = b"<html><head><title>Just a moment...</title>challenges.cloudflare.com"
+    assert looks_blocked(403, page) and looks_blocked(200, page)
+    assert not looks_blocked(200, b"<html><title>Nains</title></html>")
+    assert not looks_blocked(404, b"not found")
+
+
+def test_blocked_response_raises_and_is_not_cached(lib):
+    import requests
+    from unittest.mock import patch, MagicMock
+    from bdnex.importer.bedetheque.bedetheque import BlockedError, http_fetch
+
+    resp = MagicMock(status_code=403, content=b"<title>Just a moment...</title>")
+    with patch.object(requests, "get", return_value=resp):
+        plugin = Bedetheque(lib, fetch=http_fetch, sleep=lambda s: None)
+        with pytest.raises(BlockedError):
+            plugin.album_info(ALBUM_URL)
+    assert lib.cache_get("bedetheque", "album", ALBUM_URL) is None

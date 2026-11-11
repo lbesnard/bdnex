@@ -24,8 +24,23 @@ USER_AGENT = "bdnex (+https://github.com/lbesnard/bdnex)"
 logger = logging.getLogger(__name__)
 
 
+class BlockedError(RuntimeError):
+    """The site answered with an anti-bot challenge instead of the page."""
+
+
+def looks_blocked(status_code: int, content: bytes) -> bool:
+    """Detect a Cloudflare-style challenge page (never cache one)."""
+    head = content[:4000]
+    return (status_code in (403, 429, 503)
+            and (b"Just a moment" in head or b"challenges.cloudflare.com" in head)) \
+        or (b"<title>Just a moment" in head)
+
+
 def http_fetch(url: str) -> bytes:
     response = requests.get(url, headers={"User-Agent": USER_AGENT}, timeout=30)
+    if looks_blocked(response.status_code, response.content):
+        raise BlockedError(
+            f"{url} is behind an anti-bot challenge; bdnex can not fetch it automatically")
     response.raise_for_status()
     return response.content
 
