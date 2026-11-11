@@ -292,3 +292,75 @@ def test_session_reports_progress(web, make_cbz, tmp_path):
     assert [m for m in messages if m.startswith("[")] == ["[1/2] Nains - T01 - Redwin de la forge.cbz",
                                                          "[2/2] zzzzzzzz qqqqqqqq.cbz"]
     env.lib.close()
+
+
+# ------------------------------------------------------------- --retry-partial
+def unavailable(url, recache=False):
+    raise FileNotFoundError("no saved page")
+
+
+def partial_env(web, make_cbz, **kw):
+    env = Env(web, make_settings(), FakePrompter(), **kw)
+    env.source.update_sitemaps()
+    env.source.album_info = unavailable
+    path = make_cbz(FILE)
+    first = env.session.import_file(path)
+    assert first.outcome == PARTIAL
+    return env, path, first
+
+
+def test_already_imported_partial_file_says_how_to_complete_it(web, make_cbz):
+    env, path, first = partial_env(web, make_cbz)
+    result = env.session.import_file(path)
+    assert result.outcome == SKIPPED and "--retry-partial" in result.note
+    env.lib.close()
+
+
+def test_retry_partial_fetches_the_page_without_matching_again(web, make_cbz):
+    env, path, first = partial_env(web, make_cbz)
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    matched = []
+    env.source.candidates = lambda *a, **k: matched.append(1) or []
+    env.session.retry_partial = True
+    result = env.session.import_file(path)
+    assert result.outcome == TAGGED and result.album_id == first.album_id and matched == []  # no new matching
+    assert env.lib.get_album(first.album_id)["credits"]["Writer"] == ["Jarry, Nicolas"]
+    assert env.session.prompter.asked == []
+    assert env.session.import_file(path).outcome == SKIPPED  # complete now: normal resume applies
+    env.lib.close()
+
+
+def test_retry_partial_stays_partial_when_the_page_is_still_missing(web, make_cbz):
+    env, path, first = partial_env(web, make_cbz)
+    env.session.retry_partial = True
+    result = env.session.import_file(path)
+    assert result.outcome == PARTIAL and result.album_id == first.album_id and "save the page" in result.note
+    env.lib.close()
+
+
+def test_retry_partial_leaves_complete_albums_alone(web, make_cbz):
+    env = Env(web, make_settings(), FakePrompter(), retry_partial=True)
+    env.source.update_sitemaps()
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    path = make_cbz(FILE)
+    assert env.session.import_file(path).outcome == TAGGED
+    calls = len(web.calls)
+    assert env.session.import_file(path).outcome == SKIPPED and len(web.calls) == calls
+    env.lib.close()
+
+
+def test_retry_partial_pretend_changes_nothing(web, make_cbz):
+    env, path, first = partial_env(web, make_cbz)
+    env.session.pretend, env.session.retry_partial = True, True
+    calls = len(web.calls)
+    result = env.session.import_file(path)
+    assert result.outcome == PRETEND and "www.bedetheque.com" in result.note and len(web.calls) == calls
+    env.lib.close()
+
+
+def test_force_still_redoes_everything(web, make_cbz):
+    env, path, first = partial_env(web, make_cbz)
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    env.session.force = True
+    assert env.session.import_file(path).outcome == TAGGED
+    env.lib.close()

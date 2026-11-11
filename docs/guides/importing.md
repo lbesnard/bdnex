@@ -13,7 +13,7 @@ bdnex import -n ~/comics         # --pretend: show matches, change nothing
 ## What happens, per file
 
 1. **Already imported?** A file linked to an album is skipped (`import.resume`),
-   unless you pass `--force`.
+   unless you pass `--force` (redo everything) or `--retry-partial` (only complete the partial ones).
 2. **Readable?** A corrupted archive is reported as `failed`; the rest of the batch continues.
 3. **Identical file?** Same checksum as a file already in the library: handled by the
    duplicate action (below).
@@ -40,6 +40,7 @@ Each run ends with a summary such as `3 file(s): 2 tagged, 1 partial`.
 |---|---|
 | `-n`, `--pretend` | match and report only; no database change, no page fetched |
 | `--force` | never ask; re-import known files |
+| `--retry-partial` | for files recorded from the sitemap only (*partial*), fetch the album page again without matching again; complete albums are left alone |
 | `--recache` | refetch the sitemaps and album pages instead of using the cache |
 
 Defaults for thresholds and duplicate handling live in the

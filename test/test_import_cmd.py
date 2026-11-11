@@ -110,3 +110,27 @@ def test_import_command_with_an_unknown_source(tmp_path, monkeypatch, capsys, ma
     assert import_cmd.run([make_cbz("a.cbz")], out=io.StringIO()) == 1
     err = capsys.readouterr().err
     assert "unknown source 'nope'" in err and "bedetheque" in err and "config --edit" in err
+
+
+def test_import_command_retry_partial_flag(setup, monkeypatch):
+    path, tmp_path = setup
+    original = Bedetheque.album_info
+
+    def blocked(self, url, recache=False):
+        raise FileNotFoundError("no page yet")
+
+    monkeypatch.setattr(Bedetheque, "album_info", blocked)
+    out = io.StringIO()
+    import_cmd.run([path], out=out)
+    assert "1 partial" in out.getvalue()
+    out = io.StringIO()
+    import_cmd.run([path], out=out)
+    assert "1 skipped" in out.getvalue() and "--retry-partial" in out.getvalue()
+
+    monkeypatch.setattr(Bedetheque, "album_info", lambda self, url, recache=False: original(self, ALBUM_URL, recache))
+    out = io.StringIO()
+    assert import_cmd.run(["--retry-partial", path], out=out) == 0
+    assert "1 tagged" in out.getvalue()
+    from bdnex.library import Library
+    with Library(tmp_path / "lib.sqlite") as lib:
+        assert lib.query(["partial:true"]) == []
