@@ -49,7 +49,8 @@ A word before a colon that is not a field name (as in `Tintin: Le Lotus`) is sea
 | `--files` | one line per file instead of per album |
 | `--format TEMPLATE` | custom line, e.g. `'$series T$vol - $title ($year)'` |
 | `-c`, `--count` | only the number of results |
-| `--json` | machine-readable output |
+| `-l`, `--long` | everything known about each result: credits by role, publisher, date, pages, genres, rating, ISBN, summary, source and URL, and the linked files. With `--files`: each file and its album |
+| `--json` | machine-readable output (with `--long`: the complete records, credits and files included) |
 
 Template variables: `$label` (`Series - T01 - Title`, or just the title for a one-shot), `$series`,
 `$vol`, `$volume`, `$title`, `$authors`, `$genres`, `$publisher`, `$year`, `$isbn`, `$pages`, `$rating`,

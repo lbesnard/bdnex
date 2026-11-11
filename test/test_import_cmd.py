@@ -110,3 +110,28 @@ def test_import_command_with_an_unknown_source(tmp_path, monkeypatch, capsys, ma
     assert import_cmd.run([make_cbz("a.cbz")], out=io.StringIO()) == 1
     err = capsys.readouterr().err
     assert "unknown source 'nope'" in err and "bedetheque" in err and "config --edit" in err
+
+
+def test_report_describes_what_was_recorded(setup):
+    path, _ = setup
+    out = io.StringIO()
+    import_cmd.run([path], out=out)
+    text = out.getvalue()
+    assert "tagged" in text and "-> Nains - T01 - Redwin de la Forge (series)" in text
+    assert "Jarry, Nicolas" in text and "Soleil Productions 2015" in text and "56 pages" in text
+    assert "complete" in text and "bdnex ls --long" in text
+
+
+def test_report_flags_partial_albums(setup, monkeypatch):
+    path, _ = setup
+    monkeypatch.setattr(Bedetheque, "album_info", lambda self, url, recache=False: (_ for _ in ()).throw(FileNotFoundError("x")))
+    out = io.StringIO()
+    import_cmd.run([path], out=out)
+    assert "PARTIAL" in out.getvalue() and "partial: save the page" in out.getvalue()
+
+
+def test_a_stray_character_argument_is_named_in_the_error(setup):
+    path, _ = setup
+    out = io.StringIO()
+    assert import_cmd.run(["\u2502"], out=out) == 1
+    assert "'\u2502' is not an existing file or folder" in out.getvalue()

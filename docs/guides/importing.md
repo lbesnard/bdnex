@@ -32,7 +32,16 @@ bdnex import -n ~/comics         # --pretend: show matches, change nothing
    (series, volume, title, one-shot or series) and reported as `partial` with the URL to
    save. A later import with the page available upgrades it in place.
 
-Each run ends with a summary such as `3 file(s): 2 tagged, 1 partial`.
+While it runs, bdnex prints what it is doing on stderr: the match and its score, then the album page fetch with the time it took (a request waits a few seconds on purpose, and a custom fetcher may take longer). Each file ends with a line describing what was recorded:
+
+```text
+tagged    100.0  /comics/La Bibliomule De Cordoue (Wilfrid Lupano) [2021].cbz
+             -> La bibliomule de Cordoue (oneshot) · Lupano, Wilfrid; Chemineau, Léonard · Dargaud 2021 · 251 pages · Satire · complete
+```
+
+`PARTIAL` instead of `complete` means only the sitemap data is known. `bdnex ls --long` shows
+everything that was recorded. Each run ends with a summary such as `3 file(s): 2 tagged, 1 partial`.
+An argument that is not an existing file or folder is reported as you typed it.
 
 ## Options
 

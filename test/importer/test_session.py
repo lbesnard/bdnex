@@ -278,7 +278,7 @@ def test_nothing_to_import_makes_no_network_access(env, tmp_path):
     (tmp_path / "notes.txt").write_text("x")
     report = env.session.run([str(tmp_path / "empty"), str(tmp_path / "missing.cbz")])
     assert env.web.calls == [] and env.lib.stats()["files"] == 0
-    assert [r.outcome for r in report.results] == [FAILED] and "no such file" in report.results[0].note
+    assert [r.outcome for r in report.results] == [FAILED] and "is not an existing file or folder" in report.results[0].note
 
 
 def test_session_reports_progress(web, make_cbz, tmp_path):
@@ -313,3 +313,36 @@ def test_a_title_with_author_and_year_in_its_file_name_is_now_a_strong_match():
     query = query_from_filename("/x/La Bibliomule De Cordoue (Wilfrid Lupano) [2021].cbz")
     slug = normalise_slug("https://www.bedetheque.com/BD-Bibliomule-de-Cordoue-433432.html")
     assert fuzz.ratio(remove_common_words(query), slug) == 100.0
+
+
+def test_progress_shows_the_match_and_the_page_fetch(web, make_cbz):
+    messages = []
+    env = Env(web, make_settings(), FakePrompter(), progress=messages.append)
+    env.source.update_sitemaps()
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    env.session.import_file(make_cbz(FILE))
+    text = "\n".join(messages)
+    assert "    match: BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html (score " in text
+    assert "fetching the album page (bedetheque;" in text and "page read in " in text
+    env.lib.close()
+
+
+def test_progress_says_when_the_page_is_unavailable(web, make_cbz):
+    messages = []
+    env = Env(web, make_settings(), FakePrompter(), progress=messages.append)
+    env.source.update_sitemaps()
+
+    def no_page(url, recache=False):
+        raise FileNotFoundError("no saved page")
+
+    env.source.album_info = no_page
+    env.session.import_file(make_cbz(FILE))
+    assert any(m.startswith("    page unavailable after ") and "no saved page" in m for m in messages)
+    env.lib.close()
+
+
+def test_a_missing_argument_is_reported_as_typed(env, tmp_path):
+    stray = "\u2502"  # the box-drawing character a terminal can paste by accident
+    report = env.session.run([stray])
+    assert report.results[0].path == stray and repr(stray) in report.results[0].note
+    assert env.web.calls == []

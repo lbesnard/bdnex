@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
@@ -70,7 +71,7 @@ class ImportSession:
         files = []
         for path in paths:
             if not os.path.exists(path):  # say so now, before any network access
-                report.results.append(ImportResult(os.path.abspath(path), FAILED, note="no such file or folder"))
+                report.results.append(ImportResult(path, FAILED, note=f"{path!r} is not an existing file or folder"))
             else:
                 files.extend(self._collect([path]))
         if not files:
@@ -122,6 +123,8 @@ class ImportSession:
             self._log(path, SKIPPED)
             return ImportResult(path, SKIPPED, note="no match")
 
+        shown = f"{score:.0f}" if score is not None else "chosen by you"
+        self.progress(f"    match: {candidate.url.rsplit('/', 1)[-1]} (score {shown})")
         if self.pretend:
             return ImportResult(path, PRETEND, score=score,
                                 note=f"would link to {candidate.url}")
@@ -209,11 +212,16 @@ class ImportSession:
         existing_full = (existing is not None
                          and not self.library.get_album(existing)["extra"].get("partial"))
         if existing_full and not self.recache:
+            self.progress("    album already complete in the library: nothing to fetch")
             return existing, False, "album already in library"
+        self.progress(f"    fetching the album page ({self.source.name}; the first request waits a few seconds)...")
+        started = time.monotonic()
         try:
             info = self.source.album_info(candidate.url, recache=self.recache)
             partial, note = False, ""
+            self.progress(f"    page read in {time.monotonic() - started:.1f}s")
         except self.source.fetch_errors as err:
+            self.progress(f"    page unavailable after {time.monotonic() - started:.1f}s: {err}")
             logger.warning(f"Page for {candidate.url} unavailable ({err}); using sitemap data only")
             if existing_full:
                 return existing, False, "kept earlier metadata"

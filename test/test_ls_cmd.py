@@ -93,3 +93,44 @@ def test_main_dispatches_ls(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exit_:
         ui.main(["ls", "series:nains"])
     assert seen["argv"] == ["series:nains"] and exit_.value.code == 0
+
+
+def test_long_view_shows_everything_known(setup):
+    code, text = run("--long", "series:nains")
+    assert code == 0
+    assert text.splitlines()[0] == "Nains - T01 - Redwin de la Forge   [series, complete]"
+    for expected in ("series       Nains", "volume       1", "writer       Jarry, Nicolas",
+                     "published    2015", "genres       Fantasy", "source       bedetheque #1", "file         "):
+        assert expected in text
+    assert "cbz, 3 pages" in text
+
+
+def test_long_view_marks_partial_and_damaged_files(setup):
+    code, text = run("--long", "partial:true")
+    assert "[oneshot, partial: sitemap data only]" in text and "bib.cbz" in text
+
+
+def test_long_json_has_the_complete_records(setup):
+    code, text = run("--long", "--json", "year:2015")
+    record = json.loads(text)[0]
+    assert record["credits"] == {"Writer": ["Jarry, Nicolas"]} and record["genres"] == ["Fantasy"]
+    assert record["file_records"][0]["path"].endswith("nains1.cbz") and record["extra"] == {}
+
+
+def test_long_files_view(setup):
+    code, text = run("--long", "--files")
+    assert "album: Nains - T01 - Redwin de la Forge" in text and "album: (not imported)" in text
+    assert "md5: " in text and "3 pages" in text
+
+
+def test_long_with_count(setup):
+    assert run("--long", "-c") == (0, "2\n")
+
+
+def test_long_view_columns_never_run_together(tmp_path, monkeypatch, make_cbz):
+    from bdnex.ui import describe
+    album = {"kind": "oneshot", "series": None, "volume": None, "alternate_number": None, "title": "T",
+             "credits": {"CoverArtist": ["Goux"], "Writer": ["W"]}, "genres": [], "source": "s", "source_id": "1",
+             "extra": {}}
+    text = describe.long(album, [])
+    assert "coverartist  Goux" in text  # the longest label still leaves a gap
