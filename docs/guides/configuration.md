@@ -1,24 +1,88 @@
 # Configuration
 
-The configuration file is `~/.config/bdnex/bdnex.yaml` (or
-`$XDG_CONFIG_HOME/bdnex/bdnex.yaml`), created on first run from the default
-shipped with bdnex.
+## The file
+
+bdnex reads `~/.config/bdnex/bdnex.yaml` (or `$XDG_CONFIG_HOME/bdnex/bdnex.yaml`,
+or the file named by `$BDNEX_CONFIG`).
+
+On the **first launch** bdnex creates a short, commented file there and tells you
+to edit it. The only required edit is `directory`, your comics folder:
 
 ```yaml
-bdnex:
-  config_path: ~/.config/bdnex
-  share_path: ~/.local/share/bdnex      # sitemaps, cached pages, covers
-
-directory: /path/to/comics/library     # root of the managed library
-library: ~/.local/share/bdnex/bdnex.sqlite
-
-cover:
-  match_percentage: 40                 # minimum cover similarity to trust a match
-
-paths:                                  # path templates (see Writing)
-  oneshot: '%language/oneShots/%title (%author) [%year]/%title (%author) [%year]'
-  series: '%language/series/%title (%author)/%title - %volume'
+config_version: 1
+directory: ~/comics
 ```
 
-Options for the planned `import` and `write` commands are documented on their
-own pages. The `library` entry is already used by the database layer.
+Your file only lists what you change. Every other option comes from the packaged
+defaults and is merged underneath, so options added in a new bdnex release work
+without touching your file.
+
+## Commands
+
+| Command | Effect |
+|---|---|
+| `bdnex config` | print the effective configuration (defaults + yours) |
+| `bdnex config --defaults` | print every option with its default |
+| `bdnex config --path` | print the config file path |
+| `bdnex config --edit` | open the file in `$VISUAL` / `$EDITOR` |
+
+## Validation and stale files
+
+The merged configuration is validated on every start. A mistake is reported by key
+name, all at once, and bdnex does not continue:
+
+```text
+~/.config/bdnex/bdnex.yaml: invalid bdnex config:
+  - imprt: unknown option (typo?)
+  - match.strong_threshold: Input should be less than or equal to 100
+```
+
+A file written by an older bdnex has no `config_version` (or a lower one). It is
+reported as **stale**: keys that no longer exist are ignored with a warning, the
+rest keeps working. Review it with `bdnex config --defaults`, then set
+`config_version` to the current value to silence the warning.
+
+## Main options
+
+```yaml
+directory: ~/comics                      # library root (required)
+library: ~/.local/share/bdnex/bdnex.sqlite
+
+match:
+  strong_threshold: 90                   # applied without asking
+  medium_threshold: 70                   # between medium and strong: ask
+  use_cover: true
+  use_isbn: true
+
+import:
+  mode: in_place                         # in_place | copy | move
+duplicates:
+  keys: [series, volume]
+  action: ask                            # ask | skip | keep_both | replace
+
+write:
+  cbr: convert                           # convert | skip
+  pdf: convert                           # convert | skip
+  pdf_mode: auto                         # auto | extract | render
+  conflict: ask                          # ask | file | database
+
+paths:
+  oneshot: 'OneShot/$language/$title - $authors/$title - $authors'
+  series: 'Series/$series/$series - T$volume:02 - $title'
+  missing_field: ask                     # ask | placeholder | skip
+```
+
+## Page fetching (Bédéthèque)
+
+By default bdnex reads album pages you saved from your browser into
+`bedetheque.pages_dir`. To supply pages another way, name a function that takes a
+URL and returns the page as bytes:
+
+```yaml
+bedetheque:
+  fetcher: "package.module:function"
+  fetcher_endpoint: "http://localhost:8191"   # free string, only your function reads it
+```
+
+bdnex does nothing with `fetcher_endpoint`. A fetcher can read it with
+`load_config().settings.bedetheque.fetcher_endpoint`.

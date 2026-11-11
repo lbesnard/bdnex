@@ -4,7 +4,7 @@ import types
 
 import pytest
 
-from bdnex.importer.bedetheque import Bedetheque, DirectoryFetcher, load_fetcher, placeholder_fetch
+from bdnex.importer.bedetheque import Bedetheque, DirectoryFetcher, load_fetcher, flaresolverr_fetch
 from bdnex.library import Library
 
 TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
@@ -33,9 +33,41 @@ def test_load_fetcher_rejects_non_callable(monkeypatch):
         load_fetcher("fake_fetcher_mod2:value")
 
 
-def test_placeholder_fails_clearly():
-    with pytest.raises(NotImplementedError, match="No page fetcher"):
-        placeholder_fetch(ONESHOT_URL)
+def _config_with_endpoint(monkeypatch, endpoint):
+    settings = types.SimpleNamespace(bedetheque=types.SimpleNamespace(fetcher_endpoint=endpoint))
+    monkeypatch.setattr("bdnex.importer.bedetheque.fetchers.load_config",
+                        lambda: types.SimpleNamespace(settings=settings))
+
+
+def test_flaresolverr_fetch_parses_response_without_network(monkeypatch):
+    calls = []
+
+    class Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"status": "ok", "solution": {"response": "<html>page</html>"}}
+
+    _config_with_endpoint(monkeypatch, "http://test.invalid/v1")
+    monkeypatch.setattr("requests.post", lambda *a, **k: calls.append((a, k)) or Resp())
+    assert flaresolverr_fetch(ONESHOT_URL, timeout=5) == b"<html>page</html>"
+    assert calls[0][0][0] == "http://test.invalid/v1"  # endpoint comes from the config
+    assert calls[0][1]["json"]["url"] == ONESHOT_URL
+
+
+def test_flaresolverr_fetch_error_status_raises(monkeypatch):
+    class Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"status": "error", "message": "boom"}
+
+    _config_with_endpoint(monkeypatch, "http://test.invalid/v1")
+    monkeypatch.setattr("requests.post", lambda *a, **k: Resp())
+    with pytest.raises(RuntimeError, match="boom"):
+        flaresolverr_fetch(ONESHOT_URL)
 
 
 def test_directory_fetcher_by_id(tmp_path):

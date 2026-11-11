@@ -101,37 +101,25 @@ def init_logging():
 
 
 def _init_config():
-    if UNIX_DIR_VAR in os.environ:
-        bdnex_user_path = os.path.join(os.environ[UNIX_DIR_VAR],
-                                       'bdnex')
-    else:
-        bdnex_user_path = os.path.join(os.path.expanduser(UNIX_DIR_FALLBACK),
-                                       'bdnex')
-    user_config_path = os.path.join(bdnex_user_path,
-                                   'bdnex.yaml')
+    """Path of the user config, creating the commented template on first use."""
+    from bdnex.config import ensure_user_config
 
-    if os.path.exists(bdnex_user_path):
-        if os.path.exists(user_config_path):
-            return user_config_path
-        else:
-            shutil.copy(DEFAULT_CONFIG_YAML, user_config_path)
-            return user_config_path
-    else:
-        os.makedirs(bdnex_user_path)
-        shutil.copy(DEFAULT_CONFIG_YAML, user_config_path)
-        return _init_config()
+    path, _ = ensure_user_config()
+    return str(path)
 
 
 def bdnex_config():
     """
-    Parse bdnex configuration
+    Parse bdnex configuration (defaults merged with the user file).
     Returns: dictionary containing configuration
 
     """
-    with open(_init_config(), encoding='utf-8') as f:
-        config = yaml.safe_load(f)
+    from bdnex.config import deep_merge, load_defaults
 
-    return config
+    with open(_init_config(), encoding='utf-8') as f:
+        user = yaml.safe_load(f) or {}
+
+    return deep_merge(load_defaults(), user)
 
 
 def args():

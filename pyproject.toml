@@ -27,6 +27,7 @@ dependencies = [
   "lxml",
   "opencv-contrib-python-headless",
   "pandas",
+  "pydantic>=2",
   "pymupdf",
   "patool",
   "python-dateutil",
