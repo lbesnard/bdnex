@@ -13,11 +13,8 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
 from bdnex.config import Settings
-from bdnex.importer.bedetheque import Bedetheque
-from bdnex.importer.bedetheque.bedetheque import BlockedError
-from bdnex.importer.bedetheque.sitemap import Candidate
-from bdnex.importer.matching import (Match, Recommendation, query_from_filename, recommend, rerank,
-                                     slug_album_info)
+from bdnex.importer.matching import Match, Recommendation, query_from_filename, recommend, rerank
+from bdnex.importer.source import Candidate, MetadataSource
 from bdnex.library import Library
 from bdnex.library.hashing import file_md5
 from bdnex.library.scan import inspect_file, iter_comic_files
@@ -26,9 +23,6 @@ logger = logging.getLogger(__name__)
 
 TAGGED, PARTIAL, SKIPPED, DUPLICATE, FAILED, PRETEND = (
     "tagged", "partial", "skipped", "duplicate", "failed", "pretend")
-
-# errors that mean "this page cannot be fetched now": fall back to the sitemap data
-FETCH_ERRORS = (BlockedError, FileNotFoundError, OSError)
 
 
 class Prompter(Protocol):
@@ -57,7 +51,7 @@ class ImportReport:
 
 
 class ImportSession:
-    def __init__(self, library: Library, source: Bedetheque, settings: Settings,
+    def __init__(self, library: Library, source: MetadataSource, settings: Settings,
                  prompter: Optional[Prompter] = None, pretend: bool = False,
                  force: bool = False, recache: bool = False,
                  progress: Optional[Callable[[str], None]] = None):
@@ -81,9 +75,9 @@ class ImportSession:
                 files.extend(self._collect([path]))
         if not files:
             return report
-        if self.source.sitemaps_cached() == 0 or self.recache:
-            self.progress("Downloading the Bédéthèque sitemaps (first run only, about a minute)...")
-            self.source.update_sitemaps(recache=self.recache, progress=self.progress)
+        if not self.source.is_ready() or self.recache:
+            self.progress(f"Preparing the {self.source.name} source (first run only, may take a minute)...")
+            self.source.prepare(recache=self.recache, progress=self.progress)
         for number, path in enumerate(files, start=1):
             self.progress(f"[{number}/{len(files)}] {os.path.basename(path)}")
             try:
@@ -174,7 +168,7 @@ class ImportSession:
     def _duplicate_album(self, path, candidate: Candidate) -> str:
         """Another file for the same album, or for an album with the same `duplicates.keys`
         (e.g. two editions of the same tome). Returns skip | keep_both | replace."""
-        info = slug_album_info(candidate)
+        info = self.source.partial_info(candidate)
         available = {"series": info.series.name if info.series else None, "volume": info.volume,
                      "title": info.title}
         keys = {k: available[k] for k in self.settings.duplicates.keys if available.get(k) is not None}
@@ -182,7 +176,7 @@ class ImportSession:
         if not info.series:
             keys = {k: v for k, v in keys.items() if k == "title"}
         others = [f["path"] for f in self.library.files_matching_album(
-            "bedetheque", candidate.source_id, keys, path)]
+            self.source.name, candidate.source_id, keys, path)]
         if not others:
             return "keep_both"
         return self._resolve_duplicate(path, others, "album already linked")
@@ -209,7 +203,7 @@ class ImportSession:
 
     def _album_for(self, candidate: Candidate) -> tuple[int, bool, str]:
         """Return (album_id, partial, note), storing the album when it is new or refreshed."""
-        existing = self.library.find_album("bedetheque", candidate.source_id)
+        existing = self.library.find_album(self.source.name, candidate.source_id)
         existing_full = (existing is not None
                          and not self.library.get_album(existing)["extra"].get("partial"))
         if existing_full and not self.recache:
@@ -217,11 +211,11 @@ class ImportSession:
         try:
             info = self.source.album_info(candidate.url, recache=self.recache)
             partial, note = False, ""
-        except FETCH_ERRORS as err:
+        except self.source.fetch_errors as err:
             logger.warning(f"Page for {candidate.url} unavailable ({err}); using sitemap data only")
             if existing_full:
                 return existing, False, "kept earlier metadata"
-            info = slug_album_info(candidate)
+            info = self.source.partial_info(candidate)
             partial, note = True, f"partial: save the page {candidate.url} to import full metadata"
         album_id = self.library.add_album(info)
         self.library.prune_orphan_series()

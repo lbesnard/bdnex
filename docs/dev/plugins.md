@@ -1,75 +1,144 @@
 # Metadata source plugins
 
-A plugin turns one website into the common format below. The first plugin,
-`bedetheque`, lives in `bdnex/importer/bedetheque/` and is written as a
-self-contained package so it can later move to its own project.
+A *source* turns one website or database into
+{py:class}`bdnex.library.AlbumInfo` objects. The importer does everything else: it asks the source for
+candidates, scores them, asks you when unsure, fetches the chosen album, stores it in the library and
+links the file. A source never writes to the library itself (except for its response cache).
 
-## Contract
+Bédéthèque is the built-in source. Anyone can add another one, in or outside this repository.
 
-A plugin is a class built on a {py:class}`bdnex.library.Library` (its cache) and
-provides:
+## Choosing a source
 
-1. `candidates(name, limit)`: ranked `(Candidate, score 0-100)` for a file name,
-   computed locally with no network access.
-2. `album_info(url, recache=False)`: fetch the album (and series) pages, cache
-   every response with `Library.cache_put(source, kind, url, content)` and
-   return an {py:class}`bdnex.library.AlbumInfo`. A second call reads the cache
-   and makes no request; `recache=True` refetches.
-3. `cover(info, recache=False)`: the cover image bytes (cached the same way).
+```yaml
+source: bedetheque                       # the default
+```
 
-The importer then calls `Library.add_album(info)`, which is the only write
-endpoint a plugin needs. The network and the sleeping are injectable, so tests
-never touch the website.
+`source` can be:
 
-## The Bédéthèque plugin
+| Value | Meaning |
+|---|---|
+| `bedetheque` | a built-in source |
+| a name | a plugin installed with an entry point in the `bdnex.sources` group |
+| `package.module:factory` | a factory found on the Python path, no installation needed |
 
-`bdnex.importer.bedetheque.Bedetheque`:
+Options of a third-party source go under `plugins:`, keyed by the source's name. They are free-form
+and bdnex does not interpret them:
 
-- `update_sitemaps(recache=False)` downloads sitemap files into the cache until the site serves an empty one (55 non-empty files in 2026, growing).
-- Matching normalises the slug of every album URL (drops the id and French
-  stopwords) and ranks them with `rapidfuzz`.
-- The sitemap slug already tells series from one-shot: `-Tome-N-` in the URL means volume N. An album is a **one-shot** when it has no `Tome` number; a numbered
-  `Tome`, or a special such as `Hors-série` or `INT 3` (stored as
-  `alternate_number`), makes it part of a series.
-- A random delay (default 3 to 10 s) is slept before each real request only.
+```yaml
+source: mysource
+plugins:
+  mysource:
+    api_key: "..."
+```
+
+## The contract
+
+A source is created by a **factory** called as `factory(library, settings)`, where `library` is the
+open {py:class}`bdnex.library.Library` and `settings` the validated configuration
+(`settings.plugins["mysource"]` holds its options). It returns an object with these members
+({py:class}`bdnex.importer.source.MetadataSource`):
+
+| Member | Role |
+|---|---|
+| `name` | short unique name; becomes `AlbumInfo.source`, so `(name, source_id)` identifies an album |
+| `fetch_errors` | tuple of exception types meaning "this page can't be fetched now" |
+| `is_ready()` | `True` when the local data used for matching exists (e.g. a downloaded index) |
+| `prepare(recache=False, progress=None)` | download or refresh that data; `progress(message)` shows a status line |
+| `candidates(query, limit=5)` | `[(Candidate, score 0-100)]` for a file name. **No network access** |
+| `album_info(url, recache=False)` | the full {py:class}`~bdnex.library.AlbumInfo`; raise one of `fetch_errors` if unavailable |
+| `partial_info(candidate)` | what the candidate alone tells (must set `extra={"partial": True}`) |
+
+A {py:class}`bdnex.importer.source.Candidate` is `(source_id, url, name, volume)`: `name` is the
+normalised text compared with the file name, and `volume` is `None` for one-shots and specials.
+
+How the importer uses them: if `is_ready()` is false (or with `--recache`) it calls `prepare`; for each
+file it takes `candidates`, re-ranks them with the volume found in the file name and applies the
+configured thresholds; for the chosen one it calls `album_info`. If that raises one of `fetch_errors`
+the album is stored from `partial_info` and reported as *partial*; a later import with the page
+available upgrades it in place.
+
+## What to put in `AlbumInfo`
+
+- Leave `series=None` for a one-shot; give a `SeriesInfo` for a numbered album.
+- Credits use the ComicInfo vocabulary (`Writer`, `Penciller`, `Inker`, `Colorist`, `Letterer`, `CoverArtist`).
+- Put fields you don't map in `extra`.
 
 ```{eval-rst}
 .. autoclass:: bdnex.library.AlbumInfo
    :members:
 .. autoclass:: bdnex.library.SeriesInfo
    :members:
+.. autoclass:: bdnex.importer.source.Candidate
+   :members:
 ```
 
-## Rules
+## The cache
 
-- `source` is the plugin name; `(source, source_id)` identifies the album.
-- Leave `series=None` for a one-shot.
-- Credits use the ComicInfo vocabulary (`Writer`, `Penciller`, ...).
-- Put source-specific fields you do not map in `extra`.
-- Be polite: delay between requests, honour `--recache` only when asked.
+Store what you download with `library.cache_put(source, kind, url, content)` and read it back with
+`cache_get`. Every later import then makes no request, and `--recache` calls `prepare`/`album_info`
+with `recache=True` so you know to refetch. A response that is not the page (an error or a
+challenge page) must never be cached.
 
-## Enabling a plugin *(planned)*
+## A minimal source
 
-```yaml
-plugins: [bedetheque]
-bedetheque:
-  delay: [3, 10]       # seconds between requests
+```python
+# mysource.py
+from bdnex.importer.source import Candidate
+from bdnex.library import AlbumInfo
+
+
+class MySource:
+    name = "mysource"
+    fetch_errors = (KeyError,)
+
+    def __init__(self, library, options):
+        self.library, self.options = library, options
+
+    def is_ready(self):
+        return True
+
+    def prepare(self, recache=False, progress=None):
+        pass
+
+    def candidates(self, query, limit=5):
+        return [(Candidate("1", "https://example.org/albums/1", "maus"), 90.0)]
+
+    def album_info(self, url, recache=False):
+        return AlbumInfo("mysource", "1", "Maus", credits={"Writer": ["Spiegelman, Art"]})
+
+    def partial_info(self, candidate):
+        return AlbumInfo("mysource", candidate.source_id, candidate.name, extra={"partial": True})
+
+
+def create_source(library, settings):
+    return MySource(library, settings.plugins.get("mysource", {}))
 ```
 
-## Anti-bot protection
+Try it without installing anything by putting `mysource.py` on the Python path and setting
+`source: "mysource:create_source"`.
 
-Sitemaps download normally, but album pages are served behind a Cloudflare
-challenge to scripted clients. bdnex does not try to bypass it: `http_fetch`
-raises `BlockedError` (and caches nothing). Pages can be saved from a browser
-and loaded with `Bedetheque.album_info_from_html(html, url)`, which stores them
-in the cache for later offline use. Both the current desktop layout (schema.org
-microdata) and the former mobile layout are parsed.
+## Distributing a plugin
 
-## Page fetchers
+Put the factory in your own package and declare it:
 
-`Bedetheque(library, fetch=...)` accepts any callable `url -> bytes`. The module
-`bdnex.importer.bedetheque.fetchers` provides:
+```toml
+[project.entry-points."bdnex.sources"]
+mysource = "mysource:create_source"
+```
 
-- `load_fetcher("package.module:function")` to resolve a callable from a config string;
-- `DirectoryFetcher(folder)`, which serves pages you saved from your browser
-  (`<id>.html` or the browser's own file name containing the album id).
+After `pip install`, `source: mysource` works. A built-in source with the same name always wins.
+
+## The Bédéthèque source
+
+`bdnex.importer.bedetheque`:
+
+- The sitemap files (55 or so, growing) are downloaded until the site serves an empty one, then matched
+  locally with `rapidfuzz`. The URL slug already tells series from one-shot (`-Tome-N-`).
+- Album pages come from a *page fetcher*: any callable `url -> bytes`, selected by
+  `bedetheque.fetcher`. The default reads pages you saved from your browser into `bedetheque.pages_dir`.
+- Sitemaps wait `bedetheque.sitemap_delay` between files; pages wait `bedetheque.delay`.
+- Both the current desktop page layout (schema.org microdata) and the former mobile layout are parsed.
+
+bedetheque.com answers scripted page requests with an anti-bot challenge. `http_fetch` raises
+`BlockedError` and caches nothing; bdnex does not try to bypass it. See *Album pages* in
+[Getting started](../guides/getting-started.md).

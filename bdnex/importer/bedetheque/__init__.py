@@ -1,7 +1,16 @@
 """Bédéthèque metadata source plugin."""
 
-from bdnex.importer.bedetheque.bedetheque import Bedetheque
+from bdnex.importer.bedetheque.bedetheque import Bedetheque, BlockedError, http_fetch
 from bdnex.importer.bedetheque.fetchers import DirectoryFetcher, build_fetcher, load_fetcher, flaresolverr_fetch
-from bdnex.importer.bedetheque.sitemap import Candidate
+from bdnex.importer.source import Candidate
 
-__all__ = ["Bedetheque", "Candidate", "DirectoryFetcher", "build_fetcher", "load_fetcher", "flaresolverr_fetch"]
+
+def create_source(library, settings):
+    """Factory used by the plugin registry (``source: bedetheque``)."""
+    section = settings.bedetheque
+    return Bedetheque(library, fetch=build_fetcher(settings), sitemap_fetch=http_fetch,
+                      delay=tuple(section.delay), sitemap_delay=tuple(section.sitemap_delay))
+
+
+__all__ = ["Bedetheque", "BlockedError", "Candidate", "DirectoryFetcher", "build_fetcher", "create_source",
+           "http_fetch", "load_fetcher", "flaresolverr_fetch"]

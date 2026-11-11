@@ -112,8 +112,9 @@ def import_env(tmp_path, monkeypatch, make_cbz):
 
     configure()
     web = FakeWeb()
-    monkeypatch.setattr(import_cmd, "http_fetch", web)
-    monkeypatch.setattr(import_cmd, "build_fetcher", lambda settings: web)
+    import bdnex.importer.bedetheque as bdt_plugin
+    monkeypatch.setattr(bdt_plugin, "http_fetch", web)
+    monkeypatch.setattr(bdt_plugin, "build_fetcher", lambda settings: web)
     original = Bedetheque.album_info
     monkeypatch.setattr(Bedetheque, "album_info", lambda self, url, recache=False: original(self, ALBUM_URL, recache))
     monkeypatch.setattr("bdnex.importer.bedetheque.bedetheque.uniform", lambda a, b: 0)

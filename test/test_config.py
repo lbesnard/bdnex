@@ -232,11 +232,16 @@ def test_config_edit_uses_editor(conf_path, monkeypatch):
 
 
 def test_options_that_did_nothing_are_gone(conf_path):
-    for removed in ({"match": {"use_cover": True}}, {"import": {"autotag": True}}, {"plugins": ["x"]},
-                    {"paths": {"default": "x"}}, {"write": {"format": "cbz"}}):
+    for removed in ({"match": {"use_cover": True}}, {"import": {"autotag": True}}, {"paths": {"default": "x"}}, {"write": {"format": "cbz"}}):
         write(conf_path, {"config_version": 2, **removed})
         with pytest.raises(ConfigError, match="unknown option"):
             load_config()
+
+
+def test_plugins_section_must_be_a_mapping(conf_path):
+    write(conf_path, {"config_version": 2, "plugins": ["x"]})
+    with pytest.raises(ConfigError, match="plugins"):
+        load_config()
 
 
 def test_version_1_config_with_the_old_paths_block_is_stale_not_broken(conf_path):

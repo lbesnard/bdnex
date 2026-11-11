@@ -42,6 +42,9 @@ docs = ["sphinx>=7", "furo", "myst-parser"]
 Homepage = "https://github.com/lbesnard/bdnex"
 Issues = "https://github.com/lbesnard/bdnex/issues"
 
+[project.entry-points."bdnex.sources"]
+bedetheque = "bdnex.importer.bedetheque:create_source"
+
 [project.scripts]
 bdnex = "bdnex.ui:main"
 

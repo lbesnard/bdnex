@@ -26,7 +26,7 @@ CONF_DIR = Path(__file__).resolve().parent / "conf"
 DEFAULTS_PATH = CONF_DIR / "bdnex.yaml"
 
 # Sections whose content is free-form and never checked for unknown keys.
-FREE_FORM = {("bedetheque", "fetcher_endpoint")}
+FREE_FORM: set[tuple[str, ...]] = {("plugins",)}
 
 USER_TEMPLATE = """\
 # bdnex configuration. Only list what you want to change: every other option
@@ -101,6 +101,8 @@ class Settings(_Section):
     duplicates: Duplicates
     write: Write
     paths: Paths
+    source: str = Field(min_length=1)
+    plugins: dict[str, dict[str, Any]] = Field(default_factory=dict)
     bedetheque: Bedetheque
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True)

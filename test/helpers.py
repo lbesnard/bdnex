@@ -44,3 +44,63 @@ class FakeWeb:
         return self.pages[url]
 
 
+
+
+# ------------------------------------------------------- a non-Bédéthèque source
+from rapidfuzz import fuzz  # noqa: E402
+
+from bdnex.importer.source import Candidate  # noqa: E402
+from bdnex.library.models import AlbumInfo, SeriesInfo  # noqa: E402
+
+FAKE_CATALOG = [
+    Candidate("100", "https://fake.example/albums/100", "tintin lotus bleu", 5),
+    Candidate("101", "https://fake.example/albums/101", "tintin crabe pinces or", 9),
+    Candidate("200", "https://fake.example/albums/200", "maus", None),
+]
+
+
+class FakeSource:
+    """A complete MetadataSource that has nothing to do with Bédéthèque."""
+
+    name = "fake"
+    fetch_errors = (KeyError,)
+
+    def __init__(self, library, options):
+        self.library = library
+        self.options = options
+        self.prepared = 0
+        self.fetched = []
+
+    def is_ready(self):
+        return self.prepared > 0
+
+    def prepare(self, recache=False, progress=None):
+        self.prepared += 1
+        if progress:
+            progress("  fake index loaded")
+
+    def candidates(self, query, limit=5):
+        scored = [(c, float(fuzz.ratio(query.lower(), c.name))) for c in FAKE_CATALOG]
+        return sorted(scored, key=lambda x: x[1], reverse=True)[:limit]
+
+    def album_info(self, url, recache=False):
+        self.fetched.append(url)
+        if url in self.options.get("unavailable", []):
+            raise KeyError(url)
+        if url.endswith("/200"):
+            return AlbumInfo("fake", "200", "Maus", credits={"Writer": ["Spiegelman, Art"]}, language="en")
+        number = {"100": 5, "101": 9}[url.rsplit("/", 1)[-1]]
+        return AlbumInfo("fake", url.rsplit("/", 1)[-1], f"Tintin {number}",
+                         series=SeriesInfo("fake", "tintin", "Tintin"), volume=number,
+                         credits={"Writer": ["Hergé"]}, language="fr")
+
+    def partial_info(self, candidate):
+        return AlbumInfo("fake", candidate.source_id, candidate.name, extra={"partial": True})
+
+
+def create_fake_source(library, settings):
+    return FakeSource(library, settings.plugins.get("fake", {}))
+
+
+def create_incomplete_source(library, settings):
+    return object()

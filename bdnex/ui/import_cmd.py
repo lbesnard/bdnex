@@ -7,8 +7,7 @@ import logging
 import sys
 
 from bdnex.config import ConfigError, load_config
-from bdnex.importer.bedetheque import Bedetheque, build_fetcher
-from bdnex.importer.bedetheque.bedetheque import http_fetch
+from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.importer.session import ImportSession
 from bdnex.library import Library
 from bdnex.ui.output import add_verbosity, progress, setup_logging
@@ -44,9 +43,11 @@ def run(argv: list[str], out=sys.stdout) -> int:
         return 1
 
     with Library(settings.library_path) as library:
-        source = Bedetheque(library, fetch=build_fetcher(settings), sitemap_fetch=http_fetch,
-                            delay=tuple(settings.bedetheque.delay),
-                            sitemap_delay=tuple(settings.bedetheque.sitemap_delay))
+        try:
+            source = create_source(settings.source, library, settings)
+        except (UnknownSource, TypeError) as err:
+            print(f"{err}\nCheck `source` in your configuration (`bdnex config --edit`).", file=sys.stderr)
+            return 1
         session = ImportSession(library, source, settings, prompter=InquirerPrompter(),
                                 pretend=args.pretend, force=args.force, recache=args.recache,
                                 progress=progress)

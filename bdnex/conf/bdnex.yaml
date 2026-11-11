@@ -30,6 +30,9 @@ paths:
   missing_field: ask                    # ask | placeholder | skip
   placeholder: Unknown
 
+source: bedetheque                      # metadata source: a built-in name, an installed plugin, or 'package.module:factory'
+plugins: {}                             # free-form options of third-party sources, by source name
+
 bedetheque:
   delay: [3, 10]                        # seconds slept before each real album/series page request
   sitemap_delay: [0.5, 1.5]             # seconds slept between sitemap files (about 55 plain XML files)

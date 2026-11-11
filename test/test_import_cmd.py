@@ -16,8 +16,9 @@ def setup(tmp_path, monkeypatch, make_cbz):
                                     "bedetheque": {"delay": [0, 0]}}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     web = FakeWeb()
-    monkeypatch.setattr(import_cmd, "http_fetch", web)
-    monkeypatch.setattr(import_cmd, "build_fetcher", lambda settings: web)
+    import bdnex.importer.bedetheque as bdt_plugin
+    monkeypatch.setattr(bdt_plugin, "http_fetch", web)
+    monkeypatch.setattr(bdt_plugin, "build_fetcher", lambda settings: web)
     original = Bedetheque.album_info
     monkeypatch.setattr(Bedetheque, "album_info",
                         lambda self, url, recache=False: original(self, ALBUM_URL, recache))
@@ -72,7 +73,7 @@ def test_import_command_shows_progress_on_stderr(setup, capsys):
     path, tmp_path = setup
     import_cmd.run([path], out=io.StringIO())
     err = capsys.readouterr().err
-    assert "Downloading the Bédéthèque sitemaps" in err and "[1/1] Nains - T01 - Redwin de la forge.cbz" in err
+    assert "Preparing the bedetheque source" in err and "[1/1] Nains - T01 - Redwin de la forge.cbz" in err
 
 
 def test_verbosity_levels():
@@ -87,3 +88,25 @@ def test_verbosity_levels():
 def test_import_accepts_verbose_flag(setup):
     path, tmp_path = setup
     assert import_cmd.run(["-vv", "-n", path], out=io.StringIO()) == 0
+
+
+def test_import_command_with_a_configured_foreign_source(tmp_path, monkeypatch, make_cbz):
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"),
+                                    "source": "helpers:create_fake_source"}))
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    out = io.StringIO()
+    assert import_cmd.run(["--force", make_cbz("Maus.cbz")], out=out) == 0
+    assert "1 file(s): 1 tagged" in out.getvalue()
+    from bdnex.library import Library
+    with Library(tmp_path / "lib.sqlite") as lib:
+        assert lib.get_album(lib.find_album("fake", "200"))["title"] == "Maus"
+
+
+def test_import_command_with_an_unknown_source(tmp_path, monkeypatch, capsys, make_cbz):
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"), "source": "nope"}))
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    assert import_cmd.run([make_cbz("a.cbz")], out=io.StringIO()) == 1
+    err = capsys.readouterr().err
+    assert "unknown source 'nope'" in err and "bedetheque" in err and "config --edit" in err

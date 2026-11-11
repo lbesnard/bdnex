@@ -55,6 +55,9 @@ class Bedetheque:
     :param sleep: replaced in tests
     """
 
+    name = SOURCE
+    fetch_errors = (BlockedError, FileNotFoundError, OSError)
+
     def __init__(self, library: Library, fetch: Callable[[str], bytes] = http_fetch,
                  delay: tuple[float, float] = (3, 10), sleep: Callable[[float], None] = time.sleep,
                  sitemap_fetch: Optional[Callable[[str], bytes]] = None,
@@ -101,6 +104,16 @@ class Bedetheque:
                 break
         self._index = None
         return fetched
+
+    # -- MetadataSource protocol
+    def is_ready(self) -> bool:
+        return self.sitemaps_cached() > 0
+
+    def prepare(self, recache: bool = False, progress: Optional[Callable[[str], None]] = None) -> None:
+        self.update_sitemaps(recache=recache, progress=progress)
+
+    def partial_info(self, candidate: Candidate) -> AlbumInfo:
+        return parser.partial_album_info(candidate)
 
     def sitemaps_cached(self) -> int:
         """Number of cached, non-empty sitemap files."""
