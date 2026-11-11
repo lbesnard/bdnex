@@ -440,3 +440,14 @@ def test_repair_command_reports_what_it_cannot_fix(lib, make_damaged_cbz, tmp_pa
     before = file_md5(path)
     result = Organizer(lib, settings_for(tmp_path)).repair(damaged_row(lib, path))
     assert result.outcome == FAILED and "p01.jpg" in result.note and file_md5(path) == before
+
+
+def test_preview_of_a_conversion_in_place_does_not_say_move(lib, tmp_path):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    result = Organizer(lib, settings_for(tmp_path), pretend=True).process(row, WRITE)
+    assert result.outcome == PRETEND and "save as old.cbz (same folder)" in result.note
+    assert "move" not in result.note and os.path.exists(src)
+    moved = Organizer(lib, settings_for(tmp_path), pretend=True).process(row, MOVE)
+    assert "move to " in moved.note  # a real move still says so
