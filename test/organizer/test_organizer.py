@@ -894,3 +894,17 @@ def test_a_preview_does_not_read_the_pictures(lib, make_image_pdf, tmp_path, mon
     row = registered(lib, scan, add_oneshot(lib))
     result = Organizer(lib, settings_for(tmp_path), pretend=True).process(row, WRITE)
     assert result.outcome == "pretend" and "convert pdf -> cbz" in result.note
+
+
+def test_path_rules_give_some_albums_another_template(lib, make_cbz, tmp_path):
+    from bdnex.config import PathRule
+    row = registered(lib, make_cbz("a.cbz"), add_series_album(lib))
+    settings = settings_for(tmp_path)
+    series = lib.get_album(row["album_id"])["series"]
+    plain = Organizer(lib, settings, pretend=True).process(row, MOVE)
+    settings.paths.rules = [PathRule(match=f"series:{series[:4]}", template="Collections/$series/$title"),
+                            PathRule(match=["series:zzz"], template="Never")]
+    ruled = Organizer(lib, settings, pretend=True).process(row, MOVE)
+    assert "/Collections/" in ruled.dest and "/Collections/" not in plain.dest
+    settings.paths.rules = [PathRule(match=["series:zzz"], template="Never")]
+    assert Organizer(lib, settings, pretend=True).process(row, MOVE).dest == plain.dest

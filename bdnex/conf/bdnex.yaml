@@ -54,6 +54,7 @@ write:
 paths:
   oneshot: 'OneShot/$language/$title - $authors/$title - $authors'
   series: 'Series/$series/$series - T$volume:02 - $title'
+  rules: []                             # other templates for some albums, first match wins (see the docs)
   missing_field: ask                    # ask | placeholder | skip
   placeholder: Unknown
 

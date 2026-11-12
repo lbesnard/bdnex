@@ -392,6 +392,10 @@ class Organizer:
         root = self.settings.require_library_directory()
         album = self.library.get_album(album_id)
         tpl = self.settings.paths.oneshot if album["kind"] == "oneshot" else self.settings.paths.series
+        for rule in self.settings.paths.rules:  # the first rule whose query matches this album wins
+            if self.library.album_matches(album_id, rule.match):
+                tpl = rule.template
+                break
         rendered = template.render(tpl, template.fields_for(album),
                                    lambda name: self._missing(name, album_id, album))
         if rendered.skipped_field:

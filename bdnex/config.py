@@ -115,9 +115,20 @@ class Api(_Section):
     token: Optional[str] = None
 
 
+class PathRule(_Section):
+    match: list[str] = Field(min_length=1)  # `bdnex ls` terms, all must match the album
+    template: str = Field(min_length=1)
+
+    @field_validator("match", mode="before")
+    @classmethod
+    def _one_or_many(cls, value):
+        return [value] if isinstance(value, str) else value
+
+
 class Paths(_Section):
     oneshot: str
     series: str
+    rules: list[PathRule]
     missing_field: Literal["ask", "placeholder", "skip"]
     placeholder: str
 
