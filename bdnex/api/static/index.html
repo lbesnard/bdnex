@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bdnex library</title>
+<style>
+  :root {
+    --bg: #f7f6f3; --panel: #ffffff; --text: #1d1d1b; --muted: #6b6a66; --line: #e3e1db;
+    --accent: #1f5fbf; --accent-text: #ffffff; --ok: #1b7f3b; --warn: #b4540a; --bad: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151515; --panel: #1f1f1e; --text: #ecebe7; --muted: #9a988f; --line: #33322f;
+      --accent: #6aa3ff; --accent-text: #0c1a33; --ok: #5cc27a; --warn: #f0a35e; --bad: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  header { padding: 14px 16px 0; max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; }
+  main { padding: 12px 16px 40px; max-width: 1100px; margin: 0 auto; }
+  nav { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
+  nav button, .go { font: inherit; border: 1px solid var(--line); background: var(--panel); color: var(--text);
+                    padding: 7px 14px; border-radius: 8px; cursor: pointer; }
+  nav button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .go { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  form { display: flex; gap: 8px; margin-bottom: 10px; }
+  input[type=search], input[type=text], input[type=password] {
+    flex: 1; min-width: 0; font: inherit; padding: 8px 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--text); }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 10px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
+  tr:last-child td { border-bottom: 0; }
+  tr.row { cursor: pointer; }
+  tr.row:hover td { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .num { white-space: nowrap; color: var(--muted); }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
+  .tag.ok { color: var(--ok); } .tag.warn { color: var(--warn); } .tag.bad { color: var(--bad); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; margin-bottom: 14px; }
+  .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .stat b { display: block; font-size: 22px; } .stat span { color: var(--muted); font-size: 13px; }
+  .detail { padding: 14px 16px; }
+  .detail h2 { margin: 0 0 2px; font-size: 18px; }
+  .detail dl { display: grid; grid-template-columns: 130px 1fr; gap: 4px 12px; margin: 10px 0; }
+  .detail dt { color: var(--muted); } .detail dd { margin: 0; overflow-wrap: anywhere; }
+  .more { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; color: var(--muted); }
+  a { color: var(--accent); }
+  .err { color: var(--bad); padding: 10px 12px; }
+  .scroll { overflow-x: auto; }
+  @media (max-width: 640px) { .detail dl { grid-template-columns: 1fr; } .hide-s { display: none; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>bdnex library</h1>
+  <div class="sub" id="sub">read-only</div>
+</header>
+<main>
+  <nav role="tablist" id="tabs"></nav>
+  <div id="view"></div>
+</main>
+
+<script>
+"use strict";
+const $ = (sel, root = document) => root.querySelector(sel);
+const el = (tag, attrs = {}, ...kids) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null) continue;
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else node.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) node.append(kid instanceof Node ? kid : document.createTextNode(kid ?? ""));
+  return node;
+};
+const LIMIT = 50;
+let token = "";
+try { token = sessionStorage.getItem("bdnex-token") || ""; } catch (e) { /* storage may be blocked */ }
+
+async function api(path, params = {}) {
+  const url = new URL(path, location.origin);
+  for (const [k, v] of Object.entries(params)) if (v !== "" && v !== false && v != null) url.searchParams.set(k, v);
+  const headers = token ? { Authorization: "Bearer " + token } : {};
+  const res = await fetch(url, { headers });
+  if (res.status === 401) { await askToken(); return api(path, params); }
+  if (!res.ok) {
+    let message = res.statusText;
+    try { message = (await res.json()).detail || message; } catch (e) { /* not JSON */ }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+function askToken() {
+  return new Promise(resolve => {
+    const input = el("input", { type: "password", placeholder: "access token", autofocus: "" });
+    const form = el("form", { onsubmit: e => {
+      e.preventDefault();
+      token = input.value;
+      try { sessionStorage.setItem("bdnex-token", token); } catch (err) { /* ignore */ }
+      resolve();
+    } }, input, el("button", { class: "go", type: "submit" }, "Unlock"));
+    view.replaceChildren(el("p", { class: "hint" }, "This server asks for an access token."), form);
+  });
+}
+
+const label = a => {
+  const vol = a.volume != null ? "T" + String(a.volume).padStart(2, "0") : (a.alternate_number || "");
+  const title = a.title && a.title !== a.series ? a.title : "";
+  return [a.series, vol, title].filter(Boolean).join(" - ") || a.title || "(untitled)";
+};
+const size = n => n == null ? "" : n > 1048576 ? (n / 1048576).toFixed(1) + " MiB" : Math.ceil(n / 1024) + " KiB";
+
+const view = $("#view");
+const tabs = { albums: "Albums", files: "Files", series: "Series", trash: "Trash", stats: "Overview" };
+let current = "albums";
+
+function drawTabs() {
+  $("#tabs").replaceChildren(...Object.entries(tabs).map(([id, name]) =>
+    el("button", { role: "tab", "aria-selected": String(id === current), onclick: () => show(id) }, name)));
+}
+
+async function show(id) {
+  current = id; drawTabs();
+  view.replaceChildren(el("p", { class: "hint" }, "Loading…"));
+  try { await views[id](); } catch (e) { view.replaceChildren(el("div", { class: "panel" }, el("div", { class: "err" }, e.message))); }
+}
+
+function searchBox(placeholder, value, onsubmit) {
+  const input = el("input", { type: "search", placeholder, value, "aria-label": "query" });
+  return el("form", { onsubmit: e => { e.preventDefault(); onsubmit(input.value.trim()); } },
+    input, el("button", { class: "go", type: "submit" }, "Search"));
+}
+
+function pager(data, q, reload) {
+  const from = data.count ? data.offset + 1 : 0, to = data.offset + data.items.length;
+  return el("div", { class: "more" }, el("span", {}, `${from}–${to} of ${data.count}`),
+    el("span", {},
+      el("button", { class: "go", disabled: data.offset === 0 ? "" : null, onclick: () => reload(q, Math.max(0, data.offset - LIMIT)) }, "‹ Prev"), " ",
+      el("button", { class: "go", disabled: to >= data.count ? "" : null, onclick: () => reload(q, to) }, "Next ›")));
+}
+
+const views = {
+  async albums(q = "", offset = 0) {
+    const data = await api("/api/albums", { q, limit: LIMIT, offset });
+    const rows = data.items.map(a => el("tr", { class: "row", onclick: () => albumDetail(a.id) },
+      el("td", {}, label(a)),
+      el("td", { class: "hide-s" }, a.year ?? ""),
+      el("td", { class: "hide-s" }, a.language ?? ""),
+      el("td", { class: "num" }, a.partial ? el("span", { class: "tag warn" }, "not fetched") : "")));
+    view.replaceChildren(
+      searchBox("series:nains year:2010..2015 ^genre:humour", q, v => views.albums(v, 0)),
+      el("p", { class: "hint" }, "Same terms as `bdnex ls`: field:value, ranges, ^ to exclude."),
+      el("div", { class: "panel scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", {}, "Album"), el("th", { class: "hide-s" }, "Year"), el("th", { class: "hide-s" }, "Lang"), el("th"))),
+        el("tbody", {}, rows)), data.items.length ? "" : el("div", { class: "more" }, "No album."), pager(data, q, views.albums)));
+  },
+  async files(q = "", offset = 0) {
+    const data = await api("/api/files", { q, limit: LIMIT, offset });
+    const rows = data.items.map(f => el("tr", {},
+      el("td", {}, f.path), el("td", { class: "num" }, f.format), el("td", { class: "num hide-s" }, size(f.size)),
+      el("td", {}, f.corrupted ? el("span", { class: "tag bad" }, "damaged") : "", f.spare ? el("span", { class: "tag" }, "spare") : "")));
+    view.replaceChildren(
+      searchBox("format:cbz corrupted:true", q, v => views.files(v, 0)),
+      el("div", { class: "panel scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", {}, "Path"), el("th", {}, "Format"), el("th", { class: "hide-s" }, "Size"), el("th"))),
+        el("tbody", {}, rows)), data.items.length ? "" : el("div", { class: "more" }, "No file."), pager(data, q, views.files)));
+  },
+  async series(name = "", missing = false) {
+    const data = await api("/api/series", { name, missing });
+    const box = el("input", { type: "checkbox", id: "missing" });
+    box.checked = missing;
+    const form = el("form", { onsubmit: e => { e.preventDefault(); views.series($("input[type=search]", form).value.trim(), box.checked); } },
+      el("input", { type: "search", placeholder: "words of the series name", value: name, "aria-label": "series name" }),
+      el("label", { class: "hint", style: "align-self:center;white-space:nowrap" }, box, " only incomplete"),
+      el("button", { class: "go", type: "submit" }, "Search"));
+    const rows = data.items.map(s => {
+      const state = s.known == null ? el("span", { class: "tag" }, "list unknown")
+        : s.missing.length ? el("span", { class: "tag warn" }, `missing ${s.missing.length}`) : el("span", { class: "tag ok" }, "complete");
+      const lines = (s.missing || []).slice(0, 12).map(m => el("div", {},
+        el("a", { href: m.url, target: "_blank", rel: "noopener" }, (m.volume != null ? "T" + String(m.volume).padStart(2, "0") + "  " : "") + m.title)));
+      return el("tr", {}, el("td", {}, el("strong", {}, s.name), lines.length ? el("div", { class: "sub" }, lines) : ""),
+        el("td", { class: "num" }, s.known == null ? `${s.owned}` : `${s.owned} / ${s.known}`), el("td", {}, state));
+    });
+    view.replaceChildren(form, el("div", { class: "panel scroll" }, el("table", {},
+      el("thead", {}, el("tr", {}, el("th", {}, "Series"), el("th", {}, "Owned"), el("th"))),
+      el("tbody", {}, rows)), data.items.length ? "" : el("div", { class: "more" }, "No series.")));
+  },
+  async trash() {
+    const data = await api("/api/trash");
+    const rows = data.items.map(t => el("tr", {}, el("td", {}, t.path), el("td", { class: "hide-s" }, t.reason),
+      el("td", { class: "num" }, size(t.size)), el("td", { class: "num hide-s" }, t.trashed)));
+    view.replaceChildren(el("p", { class: "hint" }, "Read-only. Use `bdnex trash --restore ID` or `--empty` on the command line."),
+      el("div", { class: "panel scroll" }, el("table", {},
+        el("thead", {}, el("tr", {}, el("th", {}, "Was at"), el("th", { class: "hide-s" }, "Why"), el("th", {}, "Size"), el("th", { class: "hide-s" }, "Trashed"))),
+        el("tbody", {}, rows)), data.items.length ? "" : el("div", { class: "more" }, "The trash is empty.")));
+  },
+  async stats() {
+    const s = await api("/api/stats");
+    view.replaceChildren(el("div", { class: "stats" }, Object.entries(s).map(([k, v]) =>
+      el("div", { class: "stat" }, el("b", {}, String(v)), el("span", {}, k)))));
+  },
+};
+
+async function albumDetail(id) {
+  const a = await api("/api/albums/" + id);
+  const credits = Object.entries(a.credits || {}).map(([role, names]) => [role, names.join(", ")]);
+  const rows = [["Series", a.series], ["Year", a.year], ["Language", a.language], ["Publisher", a.publisher],
+    ["ISBN", a.isbn], ["Genres", (a.genres || []).join(", ")], ...credits];
+  view.replaceChildren(
+    el("p", {}, el("button", { class: "go", onclick: () => show(current) }, "‹ Back")),
+    el("div", { class: "panel detail" },
+      el("h2", {}, label(a)),
+      a.url ? el("a", { href: a.url, target: "_blank", rel: "noopener" }, "Open the album page") : "",
+      el("dl", {}, rows.filter(r => r[1]).flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, String(v))])),
+      a.summary ? el("p", {}, a.summary) : "",
+      el("h3", {}, `Files (${a.files.length})`),
+      ...a.files.map(f => el("div", {}, f.path, " ", el("span", { class: "tag" }, f.format), " ", size(f.size)))));
+}
+
+(async () => {
+  drawTabs();
+  try {
+    const h = await api("/api/health");
+    $("#sub").textContent = `read-only · bdnex ${h.version}` + (h.token_required ? " · token required" : "");
+  } catch (e) { /* the view shows the error */ }
+  show("albums");
+})();
+</script>
+</body>
+</html>

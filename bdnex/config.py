@@ -21,6 +21,7 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 CONFIG_VERSION = 2
+LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")  # `api.host` values that do not leave this machine
 PLACEHOLDER_DIRECTORY = "/path/to/comics/library"
 CONF_DIR = Path(__file__).resolve().parent / "conf"
 DEFAULTS_PATH = CONF_DIR / "bdnex.yaml"
@@ -112,6 +113,12 @@ class Write(_Section):
         return value
 
 
+class Api(_Section):
+    host: str = Field(min_length=1)
+    port: int = Field(ge=1, le=65535)
+    token: Optional[str] = None
+
+
 class Paths(_Section):
     oneshot: str
     series: str
@@ -137,6 +144,7 @@ class Settings(_Section):
     duplicates: Duplicates
     trash: Trash
     cover: Cover
+    api: Api
     write: Write
     paths: Paths
     source: str = Field(min_length=1)

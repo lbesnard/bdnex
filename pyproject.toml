@@ -35,8 +35,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ipdb", "opencv-python-headless>=4.8"]
+dev = ["pytest", "pytest-cov", "ipdb", "opencv-python-headless>=4.8", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
 docs = ["sphinx>=7", "furo", "myst-parser"]
+api = ["fastapi>=0.110", "uvicorn>=0.29"]  # `bdnex serve`: read-only HTTP API and web page
 cover = ["opencv-python-headless>=4.8"]  # `cover.check`: compare a file's cover with the album's
 
 [project.urls]
@@ -55,6 +56,7 @@ include = ["bdnex*"]
 
 [tool.setuptools.package-data]
 "bdnex.conf" = ["*.json", "*.ini", "*.yaml", "*.xsd", "*.conf"]
+"bdnex.api" = ["static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["test"]

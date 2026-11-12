@@ -10,6 +10,7 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 - `bdnex/importer/`: `matching.py` (fuzzy), `folders.py` (series/versions/unclear), `pipeline.py` (background matching),
   `session.py` (the import loop, Journal/undo), `covers.py`, `bedetheque/` (source plugin).
 - `bdnex/library/`: `database.py`, `schema.py` (migrations), `query.py`, `scan.py`.
+- `bdnex/api/`: `bdnex serve`, a read-only FastAPI app plus one static page (`static/index.html`); extra `bdnex[api]`.
 - `bdnex/config.py` + `bdnex/conf/bdnex.yaml` (every option and its default).
 
 ## Rules that are easy to forget

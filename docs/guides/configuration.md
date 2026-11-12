@@ -75,6 +75,11 @@ cover:
   check: false                           # compare each file's cover with its album's (bdnex[cover])
   match_percentage: 40                   # similarity (0-100) from which a cover is trusted
 
+api:
+  host: 127.0.0.1                        # `bdnex serve` listens here; anything but this machine needs a token
+  port: 8765
+  token: null                            # when set, requests must send `Authorization: Bearer <token>`
+
 write:
   format_preferred: cbz                  # cbz | none: convert other formats to CBZ (per cbr / pdf below), or never convert
   cbr: convert                           # convert | skip
