@@ -56,6 +56,24 @@ def read_entries(path: str, fmt: str, pdf_mode: str = "auto", pdf_dpi: int = 200
     raise ArchiveError(f"unsupported format {fmt!r}")
 
 
+def peek(path: str, fmt: str) -> tuple[Optional[bytes], Optional[int]]:
+    """(existing ComicInfo.xml, number of pages) of a CBZ without reading its pictures: what a preview needs.
+
+    CBR and PDF are always converted, so a preview has nothing to ask of them: ``(None, None)``."""
+    if fmt != "cbz":
+        return None, None
+    info, pages = None, 0
+    with zipfile.ZipFile(path) as zf:
+        for item in zf.infolist():
+            if item.is_dir():
+                continue
+            if _is_comicinfo(item.filename):
+                info = info or zf.read(item)
+            elif item.filename.lower().endswith(IMAGE_EXTS):
+                pages += 1
+    return info, pages
+
+
 def _read_zip(path):
     entries, info = [], None
     with zipfile.ZipFile(path) as zf:
