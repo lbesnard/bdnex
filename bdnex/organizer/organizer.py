@@ -63,6 +63,10 @@ class Prompter(Protocol):
         """The new archive is much bigger or smaller than the original: ``accept`` it or ``refuse`` it."""
 
 
+class WriteAborted(RuntimeError):
+    """The user chose to stop the run: what is done stays done, the remaining files are not touched."""
+
+
 class SizeChanged(archive.ArchiveError):
     """The new archive does not have about the size of the original."""
 
@@ -123,6 +127,7 @@ class Organizer:
         self.library = library
         self.settings = settings
         self.prompter = prompter
+        self.aborted_at: Optional[str] = None  # the file being handled when the user aborted
         self.pretend = pretend
         self.force = force
 
@@ -134,6 +139,9 @@ class Organizer:
                 progress(f"[{number}/{len(rows)}] {os.path.basename(row['path'])}")
             try:
                 results.append(self.process(row, mode))
+            except WriteAborted:
+                self.aborted_at = row["path"]
+                break
             except Exception as err:  # one file must not stop the batch
                 logger.exception(f"{row['path']} failed")
                 results.append(FileResult(row["path"], FAILED, note=str(err)))

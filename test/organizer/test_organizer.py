@@ -770,3 +770,51 @@ def test_a_disk_that_fills_up_midway_leaves_the_original_and_no_debris(lib, make
     result = Organizer(lib, settings_for(tmp_path)).process(row, WRITE)
     assert result.outcome == FAILED and "disk is full" in result.note
     assert open(path, "rb").read() == original and not os.path.exists(path + ".bdnex-tmp")
+
+
+# ----------------------------------------------------------------------------- abort
+def test_aborting_stops_the_run_and_leaves_the_other_files_alone(lib, make_cbz, tmp_path):
+    from bdnex.organizer.organizer import WriteAborted
+
+    class Aborting(FakePrompter):
+        def conflict(self, path, diff_lines):
+            raise WriteAborted()
+
+    first = registered(lib, make_cbz("a.cbz", pages=2), add_series_album(lib))
+    clash = existing_xml_cbz(make_cbz, tmp_path)
+    second = registered(lib, clash, add_series_album(lib, source_id="2", volume=2))
+    third_path = make_cbz("z.cbz", pages=2)
+    third = registered(lib, third_path, add_series_album(lib, source_id="3", volume=3))
+    original = open(third_path, "rb").read()
+    organizer = Organizer(lib, settings_for(tmp_path), Aborting())
+    results = organizer.run([first, second, third], WRITE)
+    assert [r.outcome for r in results] == [WRITTEN]  # the first was done, the second aborted, the third untouched
+    assert organizer.aborted_at == clash and open(third_path, "rb").read() == original
+
+
+def test_the_abort_key_of_a_real_question_raises_it(monkeypatch):
+    import InquirerPy.inquirer as inquirer
+    from bdnex.organizer.organizer import WriteAborted
+    from bdnex.ui.prompts import InquirerPrompter
+
+    seen = {}
+
+    class Answer:
+        def __init__(self, **kw):
+            seen.update(kw)
+
+        def register_kb(self, *keys):
+            return lambda handler: handler
+
+        def execute(self):
+            return InquirerPrompter.ABORT
+
+    monkeypatch.setattr(inquirer, "select", lambda **kw: Answer(**kw))
+    with pytest.raises(WriteAborted):
+        InquirerPrompter().size_action("/x/a.cbr", 10, 99, 20)
+    assert seen["choices"][-1]["name"].startswith("[A]bort the run")
+
+
+def test_the_report_says_where_it_stopped_and_how_to_continue():
+    from bdnex.ui.write_cmd import aborted_message
+    assert "Aborted at /x/a.cbz" in aborted_message("/x/a.cbz") and "bdnex write" in aborted_message("/x/a.cbz")
