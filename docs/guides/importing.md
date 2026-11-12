@@ -77,8 +77,9 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    to `_versions/`) and asks about it again, so a wrong key press is not final; press it again to go further
    back. It does not cross the question *is this folder one series?*, which is asked once per folder.
    **A thumbnail of the file's first page** is drawn on the far right of the question when the terminal can show
-   images (kitty, Ghostty, WezTerm, iTerm2) and is at least 100 columns wide, to help the choice. Over SSH or
-   inside tmux the terminal cannot be detected: set `import.thumbnails` (`kitty`, `iterm2`, `never`) or the
+   images (kitty, Ghostty, WezTerm, iTerm2) and is at least 100 columns wide, to help the choice. Inside tmux it is drawn when
+   `set -g allow-passthrough on` is set and the terminal around it is Ghostty or kitty (tmux support is best effort).
+   Over SSH the terminal cannot be detected: set `import.thumbnails` (`kitty`, `iterm2`, `never`) or the
    `BDNEX_THUMBNAILS` variable, which wins over the setting. Any failure drawing it is silent.
    **The right album is not in the list?** Choose *Enter a search in the album list...*: with
    [`fzf`](https://github.com/junegunn/fzf) installed, it opens over the whole album list (about 370,000),

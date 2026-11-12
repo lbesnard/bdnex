@@ -147,7 +147,7 @@ class Tty(io.StringIO):
     ({"TERM_PROGRAM": "WezTerm", "TERM": "xterm-256color"}, thumbnail.ITERM2),
     ({"LC_TERMINAL": "iTerm2", "TERM": "xterm-256color"}, thumbnail.ITERM2),
     ({"TERM": "xterm-256color"}, None),  # an ordinary terminal: no picture
-    ({"KITTY_WINDOW_ID": "3", "TMUX": "/tmp/tmux-1/default,1,0"}, None),  # a multiplexer swallows the sequences
+    ({"KITTY_WINDOW_ID": "3", "STY": "123.pts"}, None),  # GNU screen swallows the sequences
     ({"TERM": "screen-256color", "TERM_PROGRAM": "iTerm.app"}, None),
     ({"TERM": "dumb", "KITTY_WINDOW_ID": "3"}, None),
 ])
@@ -254,3 +254,22 @@ def test_a_failing_picture_never_stops_the_question(tmp_path, monkeypatch):
     monkeypatch.setattr(prompts.thumbnail, "show", broken)
     InquirerPrompter(None)._thumbnail(cbz(tmp_path))  # no exception
     InquirerPrompter(None)._thumbnail(str(tmp_path / "missing.cbz"))  # nor for a file that cannot be read
+
+
+def test_inside_tmux_it_needs_passthrough_and_a_terminal_that_can_be_told_apart(monkeypatch):
+    env = {"TMUX": "/tmp/tmux-1/default,1,0", "TERM": "tmux-256color", "TERM_PROGRAM": "tmux",
+           "GHOSTTY_RESOURCES_DIR": "/usr/share/ghostty"}
+    monkeypatch.setattr(thumbnail, "passthrough", lambda env=None: False)
+    assert thumbnail.protocol("auto", env, Tty()) is None
+    monkeypatch.setattr(thumbnail, "passthrough", lambda env=None: True)
+    assert thumbnail.protocol("auto", env, Tty()) == thumbnail.KITTY
+    assert thumbnail.protocol("auto", {**env, "GHOSTTY_RESOURCES_DIR": ""}, Tty()) is None  # unknown terminal around it
+
+
+def test_through_tmux_doubles_the_escapes_inside_a_passthrough_envelope():
+    assert thumbnail.through_tmux("\x1b_Gx\x1b\\") == "\x1bPtmux;\x1b\x1b_Gx\x1b\x1b\\\x1b\\"
+
+
+def test_only_the_picture_goes_through_tmux():
+    placed = thumbnail.place(b"x", thumbnail.KITTY, 14, 10, 120, tmux=True)
+    assert placed.startswith("\n" * 10 + "\x1b[10A\x1b7\x1b[107G\x1bPtmux;") and placed.endswith("\x1b\\\x1b8")
