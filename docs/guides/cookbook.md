@@ -62,7 +62,8 @@ bdnex import --fetch                     # later, as long as you like; Ctrl-C an
 
 ## …import again? Redo a file?
 
-Running `bdnex import ~/comics` again is cheap: files already done are only counted ("83 already"),
+Running `bdnex import ~/comics` again is cheap (and plain `bdnex import` does the same on the library folder of
+your configuration, `directory`, to pick up the files you added to it): files already done are only counted ("83 already"),
 new files are matched, and albums whose pages were not read yet get them. A file you skipped is
 remembered and not asked about again.
 

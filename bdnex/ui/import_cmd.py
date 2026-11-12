@@ -23,8 +23,8 @@ def build_parser() -> argparse.ArgumentParser:
         prog="bdnex import", description=__doc__,
         epilog="With neither --match nor --fetch, both steps run. A step that is already done for a file "
                "is skipped (the report says so); --force redoes it.")
-    parser.add_argument("paths", nargs="*", help="comic files or folders (with --fetch alone: optional, "
-                                                 "default everything in the library)")
+    parser.add_argument("paths", nargs="*", help="comic files or folders (default: your library folder, `directory` in the "
+                                                 "configuration; with --fetch alone: everything in the library)")
     steps = parser.add_argument_group("steps (default: both)")
     steps.add_argument("-m", "--match", action="store_true",
                        help="find the album of each file, from the album list (offline; run `bdnex init` first)")
@@ -107,14 +107,20 @@ def run(argv: list[str], out=sys.stdout) -> int:
     steps, notes = resolve_steps(args)
     for note in notes:
         print(note, file=sys.stderr)
-    if "match" in steps and not args.paths:
-        print("Give the files or folders to match, e.g. `bdnex import ~/comics`.", file=sys.stderr)
-        return 2
     try:
         settings = load_config().settings
     except ConfigError as err:
         print(err, file=sys.stderr)
         return 1
+    if "match" in steps and not args.paths:  # no folder given: look at the library folder of the configuration
+        try:
+            args.paths = [str(settings.require_library_directory())]
+        except ConfigError:
+            print("Give the files or folders to match, e.g. `bdnex import ~/comics`\n"
+                  "(without one, bdnex looks at `directory` from your configuration, which is not set:\n"
+                  "`bdnex config --edit`).", file=sys.stderr)
+            return 2
+        print(f"No folder given: importing your library folder, {args.paths[0]}", file=sys.stderr)
 
     with Library.for_settings(settings) as library:
         try:

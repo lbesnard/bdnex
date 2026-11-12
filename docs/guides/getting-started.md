@@ -40,7 +40,7 @@ See [Configuration](configuration.md).
 ```bash
 bdnex init                   # 1. download the album list, once (about a minute, 70 MB)
 bdnex import -n ~/comics     # 2. preview: what would be matched (nothing is changed)
-bdnex import ~/comics        # 3. import: you confirm each match
+bdnex import ~/comics        # 3. import: you confirm each match (no folder: your `directory`)
 bdnex ls                     # 4. what is in the library
 bdnex ls --unmatched         #    ... and which files found no album
 bdnex write -n               # 5. preview the tags that would be written
