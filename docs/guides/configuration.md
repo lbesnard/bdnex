@@ -58,11 +58,13 @@ import:
   workers: 0                             # background matching processes; 0 = CPU cores - 1, 1 = none
   lookahead: 100                         # files matched ahead of the one you are reviewing
   outside: ask                           # files from outside `directory`: ask | move | copy | leave
+  resume: true                           # a file already linked to an album is not matched again (`--force` redoes it)
+
 duplicates:
-  prefer: [cbz, cbr, pdf]                 # the format suggested first when two files are the same book
-  versions_dir: _versions                # spare versions of an album, inside `directory`
-  keys: [series, volume]
+  keys: [series, volume]                 # what makes two albums the same edition: series | volume | title
   action: ask                            # ask | skip | keep_both | replace
+  prefer: [cbz, cbr, pdf]                # the format suggested first when two files are the same book
+  versions_dir: _versions                # spare versions of an album, inside `directory`
 
 trash:
   dir: .bdnex-trash                      # replaced files wait here, inside `directory`
@@ -74,13 +76,22 @@ cover:
 write:
   cbr: convert                           # convert | skip
   pdf: convert                           # convert | skip
-  pdf_mode: auto                         # auto | extract | render
-  conflict: ask                          # ask | file | database
+  pdf_mode: auto                         # auto | extract | render (extract keeps the scanned images untouched)
+  pdf_dpi: 200                           # resolution when PDF pages have to be rendered
+  delete_original: ask                   # after a CBR / PDF was converted: ask | yes | no
+  conflict: ask                          # a ComicInfo.xml that differs from the database: ask | file | database
+  corrupted: ask                         # a damaged archive that can not be repaired: ask | leave | move
 
 paths:
   oneshot: 'OneShot/$language/$title - $authors/$title - $authors'
   series: 'Series/$series/$series - T$volume:02 - $title'
-  missing_field: ask                     # ask | placeholder | skip
+  missing_field: ask                     # an empty value in a template: ask | placeholder | skip
+  placeholder: Unknown                   # what `placeholder` writes
+
+bedetheque:
+  delay: [3, 10]                         # seconds waited before each album / series page request
+  sitemap_delay: [0.5, 1.5]              # seconds waited between sitemap files
+  pages_dir: ~/.local/share/bdnex/pages  # where album pages saved from your browser are looked up
 ```
 
 ## Metadata source
