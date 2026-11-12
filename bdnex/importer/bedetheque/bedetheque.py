@@ -7,6 +7,7 @@ once an album is cached no further request is made unless ``recache`` is set.
 from __future__ import annotations
 
 import logging
+import re
 import time
 from random import uniform
 from typing import Callable, Optional
@@ -162,6 +163,19 @@ class Bedetheque:
     def catalogue(self) -> list[Candidate]:
         """Every album of the cached album list (for searching it by hand). No network access."""
         return self._load_index()
+
+    ALBUM_PAGE = re.compile(r"^https?://(?:www\.|m\.)?bedetheque\.com/BD-[^/\s]+-\d+\.html$", re.I)
+
+    def candidate_from_url(self, url: str) -> Optional[Candidate]:
+        """The album a typed-in page address stands for (``None`` if it is not an album page of the site)."""
+        url = (url or "").strip().split("#")[0].split("?")[0]
+        if not self.ALBUM_PAGE.match(url):
+            return None
+        url = re.sub(r"^https?://(?:www\.|m\.)?", "https://www.", url, flags=re.I)
+        source_id = sitemap.source_id_from_url(url)
+        if source_id is None:
+            return None
+        return Candidate(source_id, url, sitemap.normalise_slug(url), sitemap.volume_from_url(url))
 
     def album_count(self) -> int:
         """Albums in the cached sitemaps (0 when there are none)."""

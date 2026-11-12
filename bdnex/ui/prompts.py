@@ -29,6 +29,7 @@ def display_name(candidate: Candidate) -> str:
 FUZZY_POOL = 2000  # albums offered to the Python fuzzy prompt: its engine is too slow for the whole list
 OPEN_HINT = "Ctrl-O opens the highlighted album's page in your browser"
 MATCH_HINT = "Enter or a highlighted key chooses; O opens the highlighted album's page"
+CONFIRM_HINT = "Enter or a highlighted key chooses; O opens the album's page to check it"
 KEY_STYLE = "bold underline"  # the letter of a shortcut, in the colour of its line
 
 
@@ -136,6 +137,8 @@ class InquirerPrompter:
     PREVIOUS = "__previous__"
     ABORT = "__abort__"
     SEARCH = "__search__"
+    URL = "__url__"
+    NO = "__no__"
 
     def __init__(self, source=None, thumbnails: str = "auto"):
         """``source``: the metadata source, when the user may search its album list by hand;
@@ -149,7 +152,7 @@ class InquirerPrompter:
         from InquirerPy import inquirer
 
         prompt = inquirer.select(message=message, choices=choices,
-                                 instruction=f"({MATCH_HINT if shortcuts else OPEN_HINT})")
+                                 instruction=f"({MATCH_HINT if shortcuts and 'a' in shortcuts else CONFIRM_HINT if shortcuts else OPEN_HINT})")
         if shortcuts and getattr(self, "_picture", None) is not None:
             follow_resize(prompt, self._picture)
         bind_open(prompt, ("c-o", "o", "O") if shortcuts else ("c-o",))
@@ -197,6 +200,9 @@ class InquirerPrompter:
                                                  ("", f"  {slug}")], str(number))
         if self.source is not None:
             add("[E]nter a search in the album list...", self.SEARCH, shortcut("E", "nter a search in the album list...", "fg:ansicyan"), "e")
+        if hasattr(self.source, "candidate_from_url"):
+            add("Type the album's [U]RL...", self.URL,
+                [("fg:ansicyan", "Type the album's ")] + shortcut("U", "RL...", "fg:ansicyan"), "u")
         add("[S]kip this file", self.SKIP, shortcut("S", "kip this file", "fg:ansiyellow"), "s")
         add("[B]ack to the previous file", self.PREVIOUS, shortcut("B", "ack to the previous file", "fg:ansiblue"), "b")
         add("[A]bort the import (what is decided is kept; run it again to continue)", self.ABORT,
@@ -219,10 +225,35 @@ class InquirerPrompter:
                 return None
             if answer == self.SEARCH:
                 found = self.search(path)
+                if found is not None and self.confirm_found(found):
+                    return found
+                continue  # nothing picked, or not the right one: back to the list
+            if answer == self.URL:
+                found = self.ask_url()
                 if found is not None:
                     return found
-                continue  # nothing picked: back to the list
+                continue
             return answer
+
+    def confirm_found(self, candidate: Candidate) -> bool:
+        """The album picked in the search: check it (O opens its page) before it is used."""
+        answer = self._select(
+            f"Use {display_name(candidate)}?",
+            [{"name": "[Y]es, use this album", "value": candidate},
+             {"name": "[N]o, back to the list", "value": self.NO}],
+            None, {"y": candidate, "n": self.NO})
+        return answer != self.NO
+
+    def ask_url(self) -> Optional[Candidate]:
+        """Type the address of the album's page; empty goes back."""
+        while True:
+            text = self._text("Address of the album's page (empty to go back):").strip()
+            if not text:
+                return None
+            candidate = self.source.candidate_from_url(text)
+            if candidate is not None:
+                return candidate
+            print("That is not the address of an album page (https://www.bedetheque.com/BD-...-<number>.html).")
 
     def _thumbnail(self, path: str) -> None:
         """A small picture of the file's first page on the right of the question, on a terminal that can show it."""
