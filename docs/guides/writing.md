@@ -13,6 +13,23 @@ The library database holds the metadata. Two commands push it into your files:
 matched to an album are processed (`bdnex import` first). Options: `-n/--pretend` shows what would
 happen and changes nothing, `--force` never asks.
 
+## Previewing: `-n`
+
+`bdnex write -n`, `move -n` and `repair -n` change nothing: no file is written, converted, moved or deleted, the
+library is opened read-only, no question is asked, and the report ends with `Preview only`. Each file gets its
+line:
+
+```text
+pretend   /comics/inbox/some file.cbz
+          -> /comics/Series/Nains/Nains - T01 - Redwin.cbz
+          would: write ComicInfo.xml; move to /comics/Series/Nains/Nains - T01 - Redwin.cbz
+```
+
+The `->` line is where the file would end up. A file that already sits where it belongs says
+`(stays where it is)`, and `bdnex write -n` always does, because `write` never renames (a CBR or PDF would
+become a `.cbz` beside it). Files that need nothing come out as `unchanged`. To judge a conversion the
+preview does read each file (a PDF page by page), which can take a while but writes nothing.
+
 `bdnex import` can do it in one go: `-W/--write`, `--move` or `--copy`, or set `import.mode`
 (`in_place`, `copy`, `move`) in the configuration.
 

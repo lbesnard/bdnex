@@ -209,7 +209,8 @@ class Organizer:
             else:
                 steps.append(f"{'copy' if mode == COPY else 'move'} to {dest}")
         if self.pretend:
-            return FileResult(path, PRETEND, dest, "; ".join(steps))
+            where = "" if not same_place else "; stays where it is"
+            return FileResult(path, PRETEND, dest, "would: " + "; ".join(steps) + where)
 
         if not same_place and os.path.exists(dest):
             dest, became_spare = self._resolve_collision(dest, path, mode, spare)

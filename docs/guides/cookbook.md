@@ -132,7 +132,7 @@ erased from the file. `--force` lets the database win without asking. See
 ## …rename and organise my files into a tree?
 
 ```bash
-bdnex move -n                # preview the new names
+bdnex move -n                # preview: each file's new path on the `->` line, nothing is touched
 bdnex move                   # write the tags, then rename into `directory` following `paths`
 bdnex move --copy            # leave the originals alone; the copy is what the library tracks
 ```

@@ -236,3 +236,40 @@ def test_main_dispatches_repair(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         ui.main(["repair"])
     assert seen == ["repair"]
+
+
+# ---------------------------------------------------------------------------------- the preview
+def tree(root):
+    return sorted((str(p), p.stat().st_mtime_ns, p.stat().st_size) for p in root.rglob("*") if p.is_file())
+
+
+@pytest.mark.parametrize("command", ["write", "move"])
+def test_a_preview_changes_no_file_and_not_the_library(env, command):
+    tmp, files = env
+    before = tree(tmp)
+    code, text = run(command, "-n")
+    assert code == 0 and "2 pretend" in text and "Preview only: nothing was changed" in text
+    assert tree(tmp) == before  # no file written, moved, created or touched; the database file included
+
+
+def test_a_move_preview_shows_where_each_file_would_go(env):
+    tmp, files = env
+    code, text = run("move", "-n")
+    assert "-> " + str(tmp / "comics" / "Series" / "Nains" / "Nains - T01 - Redwin de la Forge.cbz") in text
+    assert text.count("would: ") == 2 and "move to " in text
+    assert os.path.exists(files["a"])  # still where it was
+
+
+def test_a_write_preview_says_the_file_stays_where_it_is(env):
+    tmp, files = env
+    code, text = run("write", "-n")
+    assert text.count("(stays where it is)") == 2 and "would: write ComicInfo.xml" in text
+
+
+def test_the_library_is_opened_read_only_for_a_preview(env, monkeypatch):
+    seen = []
+    real = Library.for_settings.__func__
+    monkeypatch.setattr(Library, "for_settings", classmethod(lambda cls, s, readonly=False: (seen.append(readonly), real(cls, s, readonly))[1]))
+    run("move", "-n")
+    run("move", "--force")
+    assert seen == [True, False]
