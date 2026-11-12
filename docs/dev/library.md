@@ -11,7 +11,7 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 |---|---|
 | `files` | one row per comic file: path (relative to `directory` when under it, absolute otherwise; the `Library` API always takes and returns absolute paths), md5, size, format, page count, `corrupted`, `has_metadata`, link to an album, `spare` (an extra version of its album), `cover_hash` (64-bit hash of the first page), `cover_score` (similarity with the album cover) |
 | `albums` | `kind` is `series` or `oneshot`; a series album has a `series_id`, a one-shot has none (enforced by a `CHECK`) |
-| `series` | name, summary, source id |
+| `series` | name, summary, address, source id, and `extra` (JSON): the albums the series page lists, whatever else is parsed from it |
 | `people`, `album_credits` | authors with a role (`Writer`, `Penciller`, `Colorist`, `Inker`, `Letterer`, `CoverArtist`) |
 | `genres`, `album_genres` | many-to-many |
 | `publishers` | |

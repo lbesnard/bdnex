@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import collections
 import logging
 import re
 from datetime import datetime
@@ -214,6 +215,44 @@ def parse_series_page(html: str) -> Optional[str]:
     return node.get_text(" ", strip=True) if node is not None else None
 
 
+ALBUM_LINK = re.compile(r"/BD-(?P<slug>.+)-(?P<id>\d+)\.html$")
+
+
+def parse_series_details(html: str) -> dict[str, Any]:
+    """What a series page says: its ``summary`` and the ``albums`` it lists.
+
+    The albums are read from the links, which follow the same ``BD-<series>-Tome-<n>-<title>-<id>.html``
+    scheme in every layout: the series is the slug most links share before ``-Tome-``, and only its albums
+    are kept (not the "similar series" links of the page). Each album has ``source_id``, ``url`` (on the
+    ``www`` site), ``volume`` (``None`` for a special) and a ``title`` taken from the address.
+    """
+    details: dict[str, Any] = {}
+    summary = parse_series_page(html)
+    if summary:
+        details["summary"] = summary
+    soup = BeautifulSoup(html, "lxml")
+    links = []
+    for anchor in soup.find_all("a", href=True):
+        match = ALBUM_LINK.search(anchor["href"])
+        if match:
+            links.append((match["slug"], match["id"], anchor["href"]))
+    series_slug = collections.Counter(slug.split("-Tome-")[0] for slug, _, _ in links if "-Tome-" in slug)
+    if not series_slug:
+        return details
+    prefix = series_slug.most_common(1)[0][0]
+    albums, seen = [], set()
+    for slug, ident, href in links:
+        if ident in seen or not (slug == prefix or slug.startswith(prefix + "-")):
+            continue
+        seen.add(ident)
+        tome = re.match(re.escape(prefix) + r"-Tome-(\d+)(?:-(.*))?$", slug)
+        title = (tome.group(2) if tome else slug[len(prefix) + 1:]) or ""
+        albums.append({"source_id": ident, "url": re.sub(r"://m\.", "://www.", href),
+                       "volume": int(tome.group(1)) if tome else None, "title": title.replace("-", " ")})
+    details["albums"] = albums
+    return details
+
+
 def series_id_from_url(url: str) -> Optional[str]:
     match = re.search(r"serie-(\d+)", url or "")
     return match.group(1) if match else None
@@ -248,7 +287,7 @@ def _int(value: Any) -> Optional[int]:
 
 
 def build_album_info(fields: dict[str, Any], series_url: Optional[str] = None,
-                     series_abstract: Optional[str] = None) -> AlbumInfo:
+                     series_abstract: Optional[str] = None, series_extra: Optional[dict[str, Any]] = None) -> AlbumInfo:
     """Convert raw page fields to an :class:`AlbumInfo`.
 
     An album is a one-shot when it has no ``Tome`` number and is not a numbered-less
@@ -269,7 +308,8 @@ def build_album_info(fields: dict[str, Any], series_url: Optional[str] = None,
     series_name = fields.get("Série")
     if series_name and (volume is not None or alternate is not None):
         sid = series_id_from_url(series_url) or series_name
-        series = SeriesInfo(SOURCE, str(sid), series_name, summary=series_abstract, url=series_url)
+        series = SeriesInfo(SOURCE, str(sid), series_name, summary=series_abstract, url=series_url,
+                            extra=dict(series_extra or {}))
 
     published = _parse_date(fields.get("Dépot_légal"))
 

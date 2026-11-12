@@ -131,6 +131,16 @@ bdnex write series:nains                      # then put the change into the fil
 Your edits are kept when an album is re-imported or re-read. See
 [Editing](maintaining.md#editing-an-album-or-a-series).
 
+## …see which volumes of a series I am missing?
+
+```bash
+bdnex series --missing           # "Nains  3 of 26 albums  ·  missing 23"
+bdnex series nains --long        # which ones, with their address
+```
+
+The list of a series' albums comes from its page, read the first time one of its albums is fetched
+(`bdnex import --fetch`). See [Maintaining](maintaining.md#series-what-you-have-and-what-is-missing).
+
 ## …find the files that did not match?
 
 ```bash

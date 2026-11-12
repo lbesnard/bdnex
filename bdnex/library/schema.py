@@ -148,4 +148,9 @@ MIGRATIONS = [
         staged  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     """,
+    # --- version 4 -------------------------------------------------------
+    # What a series page says beyond its name and summary (its albums, and whatever else is parsed from it).
+    """
+    ALTER TABLE series ADD COLUMN extra TEXT NOT NULL DEFAULT '{}';
+    """,
 ]
