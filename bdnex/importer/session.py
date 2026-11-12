@@ -9,6 +9,7 @@ interrupted fetch loses nothing (``import --fetch`` resumes).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -35,6 +36,10 @@ OUTCOME_LABELS = {TAGGED: "complete", PARTIAL: "matched"}
 STEPS = ("match", "fetch")
 
 
+class ImportAborted(RuntimeError):
+    """The user chose to stop the import: what was decided so far stays, nothing else is started."""
+
+
 class NeedsTerminal(RuntimeError):
     """A question has to be asked but there is nobody to ask: the import stops instead of failing file by file."""
 
@@ -59,6 +64,8 @@ class ImportResult:
 @dataclass
 class ImportReport:
     results: list[ImportResult] = field(default_factory=list)
+    aborted_at: Optional[str] = None  # the file being decided when the user aborted
+    total: int = 0  # files the run had to look at (only set when it was aborted)
 
     def count(self, outcome: str) -> int:
         return sum(1 for r in self.results if r.outcome == outcome)
@@ -124,6 +131,7 @@ class ImportSession:
         if "match" in self.steps and not self.source.is_ready():
             self.progress(f"Preparing the {self.source.name} source (first run only, may take a minute)...")
             self.source.prepare(progress=self.progress)
+        self._announce_resume()
         kinds = {path: self._classify(path) for path in files}
         todo = [path for path in files if kinds[path][0] == "match"]
         stream = match_ahead(self.source, todo, workers=self.workers,
@@ -140,6 +148,9 @@ class ImportSession:
                     if isinstance(matches, Exception):
                         raise matches
                 result = self.import_file(path, matches=matches, defer_fetch=True)
+            except ImportAborted:
+                report.aborted_at, report.total = path, len(files)
+                break  # this file stays undecided: it is asked about again next time
             except NeedsTerminal:
                 raise  # not this file's fault: the decisions made so far are saved, the run stops
             except Exception as err:  # one bad file must not stop the batch
@@ -148,8 +159,36 @@ class ImportSession:
                 if not self.pretend:
                     self.library.log_import(path, FAILED)
             report.results.append(result)
+        stream.close()  # stops the background matching
+        if report.aborted_at:
+            self._pending = []  # the pages are fetched by the next run (the albums are "matched")
+            self._remember_abort(report, paths)
+            return report
         self._fetch_pending()
         return report
+
+    # ------------------------------------------------------------ aborting and resuming
+    ABORT_KEY = "import_aborted"
+
+    def _remember_abort(self, report: ImportReport, paths: list[str]) -> None:
+        """Keep, in the library, where the user stopped. The decisions themselves were saved one by one."""
+        if self.pretend:
+            return
+        self.library.set_meta(self.ABORT_KEY, json.dumps({
+            "file": report.aborted_at, "done": len(report.results), "total": report.total, "paths": list(paths)}))
+
+    def _announce_resume(self) -> None:
+        """Say that this run continues an aborted one, then forget the record."""
+        raw = self.library.get_meta(self.ABORT_KEY)
+        if not raw or self.pretend:
+            return
+        try:
+            state = json.loads(raw)
+            self.progress(f"Resuming: the last import was aborted at {os.path.basename(state['file'])} "
+                          f"({state['done']} of {state['total']} files looked at). Files already decided are not asked again.")
+        except (ValueError, KeyError, TypeError):
+            pass
+        self.library.delete_meta(self.ABORT_KEY)
 
     # ----------------------------------------------------- what to do with a file
     def _classify(self, path: str) -> tuple[str, Optional[dict]]:
