@@ -121,6 +121,9 @@ def album_id_of(row: dict[str, Any]) -> Optional[int]:
     return row["id"] if "file_id" in row else row.get("album_id")
 
 
+JUNK_FILES = {".DS_Store", "Thumbs.db", "thumbs.db", "desktop.ini", "Desktop.ini", ".directory"}
+
+
 class Organizer:
     def __init__(self, library: Library, settings: Settings, prompter: Optional[Prompter] = None,
                  pretend: bool = False, force: bool = False):
@@ -263,6 +266,8 @@ class Organizer:
             self._send_to_trash(path, old_row, f"converted to {os.path.basename(dest)}")
         if spare and not row.get("spare"):
             self.library.set_file_fields(dest, spare=1)
+        if removed and mode == MOVE:
+            self._prune_empty_dirs(path)
         outcome = {WRITE: WRITTEN, MOVE: MOVED, COPY: COPIED}[mode]
         if removed == "trash":
             steps.append("original moved to the trash")
@@ -381,6 +386,8 @@ class Organizer:
         elif os.path.abspath(dest) != os.path.abspath(path):
             shutil.move(path, dest)
         self._update_library(path, dest)
+        if mode == MOVE:
+            self._prune_empty_dirs(path)
         return FileResult(path, COPIED if mode == COPY else MOVED, dest,
                           note + " (moved as it is: no tags written)")
 
@@ -529,6 +536,31 @@ class Organizer:
                 return "trash"  # moved once the library knows the new path
         os.remove(src)
         return True
+
+    def _prune_empty_dirs(self, old_path: str) -> None:
+        """Remove the folder a file left when nothing but system leftovers (.DS_Store...) remain in it, and the
+        parents that this empties. Inside the library folder this goes up to (never including) the library root;
+        elsewhere (an inbox) only the file's own folder goes, so a download folder is never climbed out of."""
+        folder = os.path.dirname(os.path.abspath(old_path))
+        try:
+            root = os.path.abspath(os.path.expanduser(self.settings.require_library_directory()))
+        except Exception:
+            root = None
+        inside = root is not None and folder.startswith(root + os.sep)
+        while folder and folder != root and os.path.dirname(folder) != folder:
+            try:
+                names = os.listdir(folder)
+                if any(name not in JUNK_FILES and not name.startswith("._") for name in names):
+                    return
+                for name in names:
+                    os.remove(os.path.join(folder, name))
+                os.rmdir(folder)
+            except OSError:
+                return  # not empty after all, a folder inside, or no right to: leave it
+            logger.debug(f"removed the empty folder {folder}")
+            if not inside:
+                return
+            folder = os.path.dirname(folder)
 
     def _confirm(self, message: str) -> bool:
         return bool(self.prompter and not self.force and self.prompter.confirm(message))
