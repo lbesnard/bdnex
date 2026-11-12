@@ -24,6 +24,7 @@ class SeriesInfo:
     name: str
     summary: Optional[str] = None
     url: Optional[str] = None
+    extra: dict[str, Any] = field(default_factory=dict)  # e.g. ``albums``: every album the source lists for it
 
 
 @dataclass

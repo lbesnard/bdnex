@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import collections
+import json
 import logging
 import re
 from datetime import datetime
@@ -214,6 +216,155 @@ def parse_series_page(html: str) -> Optional[str]:
     return node.get_text(" ", strip=True) if node is not None else None
 
 
+META_KEYS = ("description", "keywords", "author", "category")
+MAX_VALUE = 600  # a label's value longer than this is prose, not a field
+STATUS_LABELS = ("statut", "etat", "etat de la serie", "status")
+SPLIT_NAMES = re.compile(r"\s*[,/;]\s*")
+
+
+def _clean(text: Optional[str]) -> str:
+    return re.sub(r"\s+", " ", text or "").strip()
+
+
+def harvest(soup) -> dict[str, Any]:
+    """Everything a page says about itself, without knowing its layout.
+
+    * ``meta``: the Open Graph / Twitter / description tags;
+    * ``microdata``: the schema.org ``itemprop`` values (``genre``, ``publisher``, ``aggregateRating``...);
+    * ``jsonld``: any JSON-LD block;
+    * ``fields``: ``label : value`` rows, from definition lists, table rows and ``<li><label>`` lines.
+
+    Only what the page has appears; nothing is invented.
+    """
+    out: dict[str, Any] = {}
+    meta = {}
+    for tag in soup.find_all("meta"):
+        key, content = tag.get("property") or tag.get("name"), _clean(tag.get("content"))
+        if key and content and (key.startswith(("og:", "twitter:")) or key in META_KEYS):
+            meta[key] = content
+    if meta:
+        out["meta"] = meta
+
+    micro: dict[str, list[str]] = {}
+    for tag in soup.find_all(attrs={"itemprop": True}):
+        value = _clean(tag.get("content") or tag.get("href") or tag.get("src") or tag.get_text(" "))
+        if value and len(value) <= MAX_VALUE and value not in micro.setdefault(tag["itemprop"], []):
+            micro[tag["itemprop"]].append(value)
+    micro = {k: v for k, v in micro.items() if v}
+    if micro:
+        out["microdata"] = micro
+
+    blocks = []
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            blocks.append(json.loads(script.string or ""))
+        except ValueError:
+            continue
+    if blocks:
+        out["jsonld"] = blocks
+
+    pairs: dict[str, str] = {}
+
+    def add(label: str, value: str) -> None:
+        label, value = _clean(label).rstrip(":").strip(), _clean(value)
+        if label and value and len(label) <= 40 and len(value) <= MAX_VALUE and re.search(r"[^\W\d_]", label) \
+                and not re.fullmatch(r"[\d\s/.\-:]+", label):  # '251' or '11/2021' is a value, not a label
+            pairs[label] = f"{pairs[label]} | {value}" if label in pairs and value not in pairs[label] else pairs.get(label, value)
+
+    for term in soup.find_all("dt"):
+        definition = term.find_next_sibling("dd")
+        if definition is not None:
+            add(term.get_text(" "), definition.get_text(" "))
+    for row in soup.find_all("tr"):
+        head, cell = row.find("th"), row.find("td")
+        if head is not None and cell is not None:
+            add(head.get_text(" "), cell.get_text(" "))
+    for item in soup.find_all("li"):
+        label = item.find(["label", "strong", "b"])
+        if label is not None:
+            text = _clean(item.get_text(" "))
+            name = _clean(label.get_text(" "))
+            if text.startswith(name):
+                add(name, text[len(name):].lstrip(" :"))
+    if pairs:
+        out["fields"] = pairs
+    return out
+
+
+def _normalised(harvested: dict[str, Any]) -> dict[str, Any]:
+    """The few things worth having under a stable name, taken from the harvest when it is there."""
+    micro, fields, meta = (harvested.get(k, {}) for k in ("microdata", "fields", "meta"))
+    by_label = {fold_label(k): v for k, v in fields.items()}
+    result: dict[str, Any] = {}
+    genre = micro.get("genre") or ([by_label["genre"]] if "genre" in by_label else [by_label["style"]] if "style" in by_label else [])
+    names = [name for value in genre for name in SPLIT_NAMES.split(value) if name]
+    if names:
+        result["genres"] = list(dict.fromkeys(names))
+    for key, labels in (("status", STATUS_LABELS), ("origin", ("origine",)), ("language", ("langue",))):
+        found = next((by_label[label] for label in labels if label in by_label), None)
+        if key == "language" and not found and micro.get("inLanguage"):
+            found = micro["inLanguage"][0]
+        if found:
+            result[key] = found
+    if micro.get("ratingValue"):
+        result["rating"] = micro["ratingValue"][0]
+        if micro.get("ratingCount"):
+            result["rating_count"] = micro["ratingCount"][0]
+    if meta.get("og:image"):
+        result["image"] = meta["og:image"]
+    return result
+
+
+def fold_label(text: str) -> str:
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(c)).strip()
+
+
+ALBUM_LINK = re.compile(r"/BD-(?P<slug>.+)-(?P<id>\d+)\.html$")
+
+
+def parse_series_details(html: str) -> dict[str, Any]:
+    """What a series page says: its ``summary``, the ``albums`` it lists, and everything else it carries.
+
+    The rest is harvested without knowing the layout (see :func:`harvest`): ``meta``, ``microdata``,
+    ``jsonld`` and ``fields``, plus a few normalised keys when found (``genres``, ``status``, ``origin``,
+    ``language``, ``rating``, ``rating_count``, ``image``).
+
+    The albums are read from the links, which follow the same ``BD-<series>-Tome-<n>-<title>-<id>.html``
+    scheme in every layout: the series is the slug most links share before ``-Tome-``, and only its albums
+    are kept (not the "similar series" links of the page). Each album has ``source_id``, ``url`` (on the
+    ``www`` site), ``volume`` (``None`` for a special) and a ``title`` taken from the address.
+    """
+    details: dict[str, Any] = {}
+    summary = parse_series_page(html)
+    if summary:
+        details["summary"] = summary
+    soup = BeautifulSoup(html, "lxml")
+    harvested = harvest(soup)
+    details.update(harvested)
+    details.update(_normalised(harvested))
+    links = []
+    for anchor in soup.find_all("a", href=True):
+        match = ALBUM_LINK.search(anchor["href"])
+        if match:
+            links.append((match["slug"], match["id"], anchor["href"]))
+    series_slug = collections.Counter(slug.split("-Tome-")[0] for slug, _, _ in links if "-Tome-" in slug)
+    if not series_slug:
+        return details
+    prefix = series_slug.most_common(1)[0][0]
+    albums, seen = [], set()
+    for slug, ident, href in links:
+        if ident in seen or not (slug == prefix or slug.startswith(prefix + "-")):
+            continue
+        seen.add(ident)
+        tome = re.match(re.escape(prefix) + r"-Tome-(\d+)(?:-(.*))?$", slug)
+        title = (tome.group(2) if tome else slug[len(prefix) + 1:]) or ""
+        albums.append({"source_id": ident, "url": re.sub(r"://m\.", "://www.", href),
+                       "volume": int(tome.group(1)) if tome else None, "title": title.replace("-", " ")})
+    details["albums"] = albums
+    return details
+
+
 def series_id_from_url(url: str) -> Optional[str]:
     match = re.search(r"serie-(\d+)", url or "")
     return match.group(1) if match else None
@@ -248,7 +399,7 @@ def _int(value: Any) -> Optional[int]:
 
 
 def build_album_info(fields: dict[str, Any], series_url: Optional[str] = None,
-                     series_abstract: Optional[str] = None) -> AlbumInfo:
+                     series_abstract: Optional[str] = None, series_extra: Optional[dict[str, Any]] = None) -> AlbumInfo:
     """Convert raw page fields to an :class:`AlbumInfo`.
 
     An album is a one-shot when it has no ``Tome`` number and is not a numbered-less
@@ -269,7 +420,8 @@ def build_album_info(fields: dict[str, Any], series_url: Optional[str] = None,
     series_name = fields.get("Série")
     if series_name and (volume is not None or alternate is not None):
         sid = series_id_from_url(series_url) or series_name
-        series = SeriesInfo(SOURCE, str(sid), series_name, summary=series_abstract, url=series_url)
+        series = SeriesInfo(SOURCE, str(sid), series_name, summary=series_abstract, url=series_url,
+                            extra=dict(series_extra or {}))
 
     published = _parse_date(fields.get("Dépot_légal"))
 

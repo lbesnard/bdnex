@@ -14,7 +14,7 @@ from bdnex.config import load_defaults
 from bdnex.library import Library
 from bdnex.library.query import ALL_FIELDS
 
-COMMANDS = "init import ls write move repair reparse edit relocate reset trash config".split()
+COMMANDS = "init import ls write move repair reparse edit relocate reset trash series config".split()
 ROOT = __file__.rsplit("/test/", 1)[0]
 
 

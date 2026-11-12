@@ -232,14 +232,16 @@ class Bedetheque:
         html = self._get("album", url, recache).decode("utf-8", errors="replace")
         fields, series_href = parser.parse_album_page(html, url)
 
-        abstract = None
+        abstract, series_extra = None, {}
         if series_href and fields.get("Tome") is not None:
             try:
                 series_html = self._get("series", series_href, recache).decode("utf-8", errors="replace")
-                abstract = parser.parse_series_page(series_html)
+                details = parser.parse_series_details(series_html)
+                abstract = details.pop("summary", None)
+                series_extra = details  # the albums the series page lists
             except Exception as err:  # a missing series page must not lose the album
                 logger.warning(f"Series page {series_href} unavailable: {err}")
-        return parser.build_album_info(fields, series_href, abstract)
+        return parser.build_album_info(fields, series_href, abstract, series_extra)
 
     def album_info_from_html(self, html: str, url: str) -> AlbumInfo:
         """Use a page saved from a browser (the site blocks scripted page requests).

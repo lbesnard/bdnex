@@ -142,15 +142,48 @@ class Library:
 
     # ---------------------------------------------------------------- series
     def add_series(self, info: SeriesInfo) -> int:
+        """Insert or update a series. What it already holds in ``extra`` and the new values are merged, and
+        a summary or address is not erased by a record that lacks one."""
         with self.conn:
+            row = self.conn.execute("SELECT extra, summary, url FROM series WHERE source = ? AND source_id = ?",
+                                    (info.source, info.source_id)).fetchone()
+            extra = {**json.loads(row["extra"]), **info.extra} if row else dict(info.extra)
             self.conn.execute(
-                """INSERT INTO series(source, source_id, name, summary, url)
-                   VALUES (?, ?, ?, ?, ?)
+                """INSERT INTO series(source, source_id, name, summary, url, extra)
+                   VALUES (?, ?, ?, ?, ?, ?)
                    ON CONFLICT(source, source_id) DO UPDATE SET
-                     name = excluded.name, summary = excluded.summary, url = excluded.url""",
-                (info.source, info.source_id, info.name, info.summary, info.url))
+                     name = excluded.name, extra = excluded.extra,
+                     summary = COALESCE(excluded.summary, series.summary),
+                     url = COALESCE(excluded.url, series.url)""",
+                (info.source, info.source_id, info.name, info.summary, info.url,
+                 json.dumps(extra, ensure_ascii=False, default=str, sort_keys=True)))
         return self.conn.execute("SELECT id FROM series WHERE source = ? AND source_id = ?",
                                  (info.source, info.source_id)).fetchone()["id"]
+
+    def series_overview(self, terms: Iterable[str] = ()) -> list[dict[str, Any]]:
+        """Every series with what you have of it and, when its page was read, what is missing.
+
+        Rows have ``id``, ``name``, ``url``, ``owned`` (albums with a file), ``known`` (albums the source
+        lists, ``None`` when no series page was read), ``missing`` (those you have no file for) and ``extra``
+        (what else the series page said).
+        ``terms`` must all appear in the name (case and accents ignored).
+        """
+        wanted = [fold(t) for t in terms]
+        rows = []
+        for series in self.conn.execute("SELECT * FROM series ORDER BY name"):
+            if not all(t in fold(series["name"]) for t in wanted):
+                continue
+            owned = {r["source_id"] for r in self.conn.execute(
+                """SELECT DISTINCT a.source_id FROM albums a JOIN files f ON f.album_id = a.id
+                   WHERE a.series_id = ?""", (series["id"],))}
+            if not owned and not self.conn.execute("SELECT 1 FROM albums WHERE series_id = ?", (series["id"],)).fetchone():
+                continue  # a series nothing is linked to
+            known = json.loads(series["extra"]).get("albums")
+            missing = None if known is None else [a for a in known if str(a["source_id"]) not in owned]
+            rows.append({"id": series["id"], "name": series["name"], "url": series["url"], "owned": len(owned),
+                         "known": None if known is None else len(known), "missing": missing,
+                         "extra": {k: v for k, v in json.loads(series["extra"]).items() if k != "albums"}})
+        return rows
 
     # ---------------------------------------------------------------- albums
     def add_album(self, info: AlbumInfo) -> int:

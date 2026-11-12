@@ -14,6 +14,29 @@ Each file is linked to the album as the album list describes it (series, volume,
 albums are *matched*, not yet *complete*: `bdnex import --fetch` reads their pages later, slowly
 and politely, and can be interrupted and resumed. See [Importing](importing.md).
 
+## Series: what you have, and what is missing
+
+A series page lists every album of the series. bdnex reads that list when it reads one of the series' albums
+(`bdnex import --fetch`; the series page was already fetched for its summary, so there is no extra request) and keeps
+it in the library, next to the albums you own:
+
+```bash
+bdnex series                    # every series: "Nains  3 of 26 albums  ·  missing 23"
+bdnex series --missing          # only the series that lack albums
+bdnex series nains --long       # the missing albums, with their address
+bdnex series --json
+```
+
+With `--long`, `bdnex series` also shows what the series page said: genres, status, origin, language, rating.
+bdnex does not know the layout of the page in advance: it **harvests everything the page carries**, whatever its
+layout (the Open Graph / description tags, the schema.org values such as genre, rating and language, any
+`label : value` row of a list or table, any JSON-LD block), and keeps it in the library with the series. A few
+values get a stable name (`genres`, `status`, `origin`, `language`, `rating`, `image`); nothing is invented when
+the page lacks it.
+
+A series whose page was not read yet only shows what you own, until `bdnex import --fetch` reads it. The list comes
+from the links of the page, which follow the same scheme in every layout, so it does not depend on how the page looks.
+
 ## Files without an album
 
 ```bash
