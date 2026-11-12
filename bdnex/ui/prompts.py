@@ -423,9 +423,34 @@ class InquirerPrompter:
         return inquirer.select(
             message="Which one wins?",
             choices=[{"name": "Database (overwrite the file's values)", "value": "database"},
-                     {"name": "File (keep its ComicInfo.xml as it is)", "value": "file"},
+                     {"name": "File (keep its ComicInfo.xml as it is; the library takes its values)", "value": "file"},
+                     {"name": "Field by field (choose, or type your own value)", "value": "fields"},
                      {"name": "Skip this file", "value": "skip"}],
         ).execute()
+
+    def resolve_fields(self, path: str, changes: list, file_fields: dict, db_fields: dict) -> Optional[dict]:
+        """For each difference: the database's value, the file's, or one typed by hand (default: the database's)."""
+        from InquirerPy import inquirer
+
+        from bdnex.organizer.comicinfo import excerpts
+
+        chosen = {}
+        for number, change in enumerate(changes, start=1):
+            mine, theirs = db_fields.get(change.field), file_fields.get(change.field)
+            short_db, short_file, _ = excerpts(mine, theirs)
+            choices = [{"name": f"Database: {short_db}", "value": "db"}]
+            if theirs is not None:
+                choices.append({"name": f"File:     {short_file}", "value": "file"})
+            choices.append({"name": "Type a value...", "value": "edit"})
+            choices.append({"name": "Skip this file", "value": "skip"})
+            answer = inquirer.select(message=f"[{number}/{len(changes)}] {change.field}", choices=choices).execute()
+            if answer == "skip":
+                return None
+            if answer == "edit":
+                chosen[change.field] = inquirer.text(message=f"{change.field}:", default=mine or theirs or "").execute()
+            else:
+                chosen[change.field] = mine if answer == "db" else theirs
+        return chosen
 
     def confirm(self, message: str, default: bool = False) -> bool:
         from InquirerPy import inquirer

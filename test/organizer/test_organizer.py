@@ -39,6 +39,10 @@ class FakePrompter:
         self.asked.append(("corrupted", problems, can_move))
         return getattr(self, "corrupted_answer", "leave")
 
+    def resolve_fields(self, path, changes, file_fields, db_fields):
+        self.asked.append(("fields", [c.field for c in changes]))
+        return getattr(self, "fields_answer", {})
+
     def size_action(self, path, before, after, tolerance):
         self.asked.append(("size", before, after))
         return getattr(self, "size_answer", "refuse")
@@ -162,7 +166,7 @@ def test_conflict_skip_and_config_file_and_force(lib, make_cbz, tmp_path):
     assert file_md5(path) == original
     forced = FakePrompter()
     assert Organizer(lib, settings_for(tmp_path), forced, force=True).process(row, WRITE).outcome == WRITTEN
-    assert forced.asked == [] and comicinfo_of(path)["Title"] == "Redwin de la Forge"
+    assert forced.asked == [] and comicinfo_of(path)["Title"] == "Old title"  # the file's value was kept in the library
 
 
 def test_unreadable_existing_xml_is_replaced(lib, make_cbz, tmp_path):
@@ -542,6 +546,58 @@ def test_nothing_to_decide_means_no_question_and_no_rewrite(lib, make_cbz, tmp_p
     result = Organizer(lib, settings_for(tmp_path), prompter).process(row, WRITE)
     assert result.outcome == UNCHANGED and prompter.asked == []
     assert file_md5(path) == before and comicinfo_of(path)["Format"] == "One Shot"
+
+
+# ----------------------------------------------------- what is chosen goes into the library
+def conflicted(lib, make_cbz, tmp_path):
+    path = make_cbz("a.cbz", pages=2, comicinfo=True)  # its ComicInfo.xml names another title
+    album_id = add_series_album(lib)
+    return path, registered(lib, path, album_id), album_id
+
+
+def test_field_by_field_takes_the_typed_value_and_keeps_it_in_the_library(lib, make_cbz, tmp_path):
+    path, row, album_id = conflicted(lib, make_cbz, tmp_path)
+    prompter = FakePrompter(conflict="fields")
+    prompter.fields_answer = {"Title": "My own title"}
+    result = Organizer(lib, settings_for(tmp_path), prompter).process(row, WRITE)
+    assert result.outcome == WRITTEN and comicinfo_of(path)["Title"] == "My own title"
+    album = lib.get_album(album_id)
+    assert album["title"] == "My own title" and album["extra"]["edits"]["title"] == "My own title"
+    assert album["series"] == "Nains"  # the rest is the fetched data, untouched
+
+
+def test_choosing_the_file_makes_the_library_take_its_values(lib, make_cbz, tmp_path):
+    path, row, album_id = conflicted(lib, make_cbz, tmp_path)
+    title_in_file = comicinfo_of(path)["Title"]
+    Organizer(lib, settings_for(tmp_path), FakePrompter(conflict="file")).process(row, WRITE)
+    assert comicinfo_of(path)["Title"] == title_in_file
+    assert lib.get_album(album_id)["title"] == title_in_file
+
+
+def test_choosing_the_database_changes_nothing_in_the_library(lib, make_cbz, tmp_path):
+    path, row, album_id = conflicted(lib, make_cbz, tmp_path)
+    Organizer(lib, settings_for(tmp_path), FakePrompter(conflict="database")).process(row, WRITE)
+    assert "edits" not in lib.get_album(album_id)["extra"] and lib.get_album(album_id)["title"] == "Redwin de la Forge"
+
+
+def test_a_preview_stores_nothing(lib, make_cbz, tmp_path):
+    path, row, album_id = conflicted(lib, make_cbz, tmp_path)
+    Organizer(lib, settings_for(tmp_path), FakePrompter(conflict="file"), pretend=True).process(row, WRITE)
+    assert "edits" not in lib.get_album(album_id)["extra"]
+
+
+def test_skipping_in_the_field_by_field_dialog_skips_the_file(lib, make_cbz, tmp_path):
+    path, row, album_id = conflicted(lib, make_cbz, tmp_path)
+    prompter = FakePrompter(conflict="fields")
+    prompter.fields_answer = None
+    assert Organizer(lib, settings_for(tmp_path), prompter).process(row, WRITE).outcome == SKIPPED
+
+
+def test_fields_to_changes():
+    changes = comicinfo.fields_to_changes({"Title": "T", "Year": "2020", "Number": "4", "Writer": "A, B",
+                                           "Genre": "Fantasy, Humour", "Series": "X", "PageCount": "9"})
+    assert changes == {"title": "T", "year": 2020, "volume": 4, "credits": {"Writer": ["A", "B"]},
+                       "genres": ["Fantasy", "Humour"]}
 
 
 # ------------------------------------------------------------------- the size check

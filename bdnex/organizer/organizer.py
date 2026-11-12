@@ -53,6 +53,10 @@ class Prompter(Protocol):
     def corrupted_action(self, path: str, problems: list[str], can_move: bool) -> str:
         """A damaged archive could not be repaired: ``leave`` it as it is, or ``move`` it as is."""
 
+    def resolve_fields(self, path: str, changes: list, file_fields: dict[str, str],
+                       db_fields: dict[str, str]) -> Optional[dict[str, str]]:
+        """Decide field by field: ``{field: final value}`` for the differing fields, ``None`` to skip the file."""
+
     def size_action(self, path: str, before: int, after: int, tolerance: float) -> str:
         """The new archive is much bigger or smaller than the original: ``accept`` it or ``refuse`` it."""
 
@@ -142,7 +146,7 @@ class Organizer:
         else:
             entries, existing = archive.read_entries(path, fmt, write.pdf_mode, write.pdf_dpi)
         new_fields = comicinfo.album_to_fields(album, archive.page_count(entries))
-        xml = self._resolve_xml(path, existing, new_fields)
+        xml = self._resolve_xml(path, existing, new_fields, album_id)
         if isinstance(xml, FileResult):
             return xml
 
@@ -319,7 +323,7 @@ class Organizer:
         elif field in CREDIT_ROLES:
             self.library.add_credit(album_id, CREDIT_ROLES[field], value)
 
-    def _resolve_xml(self, path: str, existing: Optional[bytes], new_fields: dict[str, str]):
+    def _resolve_xml(self, path: str, existing: Optional[bytes], new_fields: dict[str, str], album_id: int):
         """Bytes of the ComicInfo.xml to write, or a FileResult when the file is to be skipped."""
         if existing is None:
             return comicinfo.build_xml(new_fields)
@@ -340,11 +344,35 @@ class Organizer:
                 choice = "file"
             else:
                 choice = self.prompter.conflict(path, diff)
+        if choice == "fields":
+            decide = getattr(self.prompter, "resolve_fields", None)
+            chosen = decide(path, diff, old_fields, new_fields) if decide else new_fields
+            if chosen is None:
+                choice = "skip"
+            else:
+                final = {**old_fields, **new_fields, **chosen}
+                self._keep_in_library(album_id, {c.field: final[c.field] for c in diff if c.field in final}, new_fields)
+                return comicinfo.build_xml(final)
         if choice == "skip":
             return FileResult(path, SKIPPED, note="ComicInfo.xml conflict: skipped")
         if choice == "file":
+            self._keep_in_library(album_id, {c.field: old_fields[c.field] for c in diff if c.field in old_fields},
+                                  new_fields)
             return existing
         return comicinfo.build_xml(comicinfo.merge_with_existing(old_fields, new_fields))
+
+    def _keep_in_library(self, album_id: int, values: dict[str, str], database: dict[str, str]) -> None:
+        """What was chosen over the database's value becomes the library's: a hand edit (so it survives a
+        re-import), with the fetched page still stored untouched. Not done for a preview."""
+        if self.pretend:
+            return
+        differing = {field: value for field, value in values.items() if database.get(field) != value}
+        changes = comicinfo.fields_to_changes(differing)
+        if changes:
+            try:
+                self.library.edit_album(album_id, changes)
+            except Exception as err:  # the file is still written: the library edit is the lesser matter
+                logger.warning(f"could not keep the chosen values in the library: {err}")
 
     def _versions_path(self, dest: str) -> str:
         """Where the spare version of the file that belongs at ``dest`` goes."""
