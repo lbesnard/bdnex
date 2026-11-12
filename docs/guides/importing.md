@@ -7,6 +7,7 @@ you ask for it with `-W`, `--move` or `--copy`.
 
 ```bash
 bdnex init                       # once: download the album list the names are matched against
+bdnex import                     # your library folder (`directory` in the configuration)
 bdnex import ~/comics            # a folder, recursively
 bdnex import album.cbz other.cbz
 bdnex import -n ~/comics         # --pretend: show what would happen, change nothing

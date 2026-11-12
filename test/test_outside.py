@@ -166,3 +166,31 @@ def test_no_move_cannot_be_combined_with_move(world, capsys):
     root, downloads, comic, _ = world
     with pytest.raises(SystemExit):
         import_cmd.build_parser().parse_args(["--move", "--no-move", comic])
+
+
+def test_without_a_path_the_library_folder_of_the_configuration_is_imported(world, tmp_path, capsys):
+    root, downloads, comic, _ = world
+    inside = root / "mine" / NAME
+    inside.parent.mkdir()
+    shutil.move(comic, inside)
+    code, text = do()
+    assert code == 0 and f"No folder given: importing your library folder, {root}" in capsys.readouterr().err
+    assert "1 complete" in text
+    with library(tmp_path) as lib:
+        assert lib.get_file(str(inside))["album_id"] is not None
+
+
+def test_a_download_folder_is_never_looked_at_unless_it_is_named(world, tmp_path):
+    root, downloads, comic, _ = world  # the comic sits in the download folder, not in the library folder
+    code, text = do()
+    assert code == 0 and "0 file(s): nothing to do" in text
+    with library(tmp_path) as lib:
+        assert lib.get_file(comic) is None and os.path.exists(comic)
+
+
+def test_fetch_alone_without_a_path_still_means_the_whole_library(world, tmp_path, capsys):
+    root, downloads, comic, _ = world
+    do("--match", "--auto=all", str(downloads))
+    capsys.readouterr()
+    code, text = do("--fetch")
+    assert code == 0 and "No folder given" not in capsys.readouterr().err and "1 complete" in text
