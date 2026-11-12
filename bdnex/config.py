@@ -33,18 +33,13 @@ REMOVED_KEYS = {"bdnex": 2}
 FREE_FORM: set[tuple[str, ...]] = {("plugins",)}
 
 USER_TEMPLATE = """\
-# bdnex configuration. Only list what you want to change: every other option
-# takes its default. Run `bdnex config --defaults` to see them all.
+# bdnex configuration. Only the options you change need to be active: every other option takes its default.
+# They are all listed below, commented out (`bdnex config --update` adds the ones new versions bring).
+# To change one, remove its leading `# ` (and the `# ` of its section line, such as `# write:`).
 config_version: {version}
 
 # REQUIRED before `bdnex import`: the folder that holds (or will hold) your comics.
 directory: {placeholder}
-
-# library: ~/.local/share/bdnex/bdnex.sqlite
-# import:
-#   mode: in_place        # in_place | copy | move
-# paths:
-#   series: 'Series/$series/$series - T$volume:02 - $title'
 """
 
 
@@ -185,6 +180,7 @@ class LoadedConfig:
     first_run: bool = False
     warnings: list[str] = field(default_factory=list)
     raw: dict[str, Any] = field(default_factory=dict)  # merged dict, for legacy callers
+    new_options: list[str] = field(default_factory=list)  # options the file does not list yet (see `bdnex config --update`)
 
 
 def user_config_path() -> Path:
@@ -250,6 +246,8 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
     if not isinstance(user, dict):
         raise ConfigError("the config file must contain a YAML mapping (key: value)")
     defaults = load_defaults()
+    # a section whose options are all commented out is an empty YAML value, not a mistake
+    user = {k: v for k, v in user.items() if not (v is None and isinstance(defaults.get(k), dict))}
     warnings: list[str] = []
     errors: list[str] = []
 
@@ -298,8 +296,10 @@ def ensure_user_config(path: Optional[Path] = None) -> tuple[Path, bool]:
     if path.exists():
         return path, False
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(USER_TEMPLATE.format(version=CONFIG_VERSION, placeholder=PLACEHOLDER_DIRECTORY),
-                    encoding="utf-8")
+    from bdnex.config_template import complete
+
+    text, _ = complete(USER_TEMPLATE.format(version=CONFIG_VERSION, placeholder=PLACEHOLDER_DIRECTORY))
+    path.write_text(text, encoding="utf-8")
     return path, True
 
 
@@ -315,7 +315,14 @@ def load_config(path: Optional[Path] = None) -> LoadedConfig:
         settings, warnings, merged = build_settings(user)
     except ConfigError as err:
         raise ConfigError(f"{path}: {err}") from err
-    return LoadedConfig(settings=settings, path=path, first_run=created, warnings=warnings, raw=merged)
+    from bdnex.config_template import missing
+
+    try:
+        new_options = missing(path.read_text(encoding="utf-8"))
+    except Exception:
+        new_options = []
+    return LoadedConfig(settings=settings, path=path, first_run=created, warnings=warnings, raw=merged,
+                        new_options=new_options)
 
 
 FIRST_RUN_MESSAGE = (

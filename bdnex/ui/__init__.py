@@ -45,6 +45,10 @@ def check_config():
         print(FIRST_RUN_MESSAGE.format(path=loaded.path), file=sys.stderr)
     for warning in loaded.warnings:
         print(f"warning: {warning}", file=sys.stderr)
+    if loaded.new_options and not loaded.first_run:
+        shown = ", ".join(loaded.new_options[:4]) + ("..." if len(loaded.new_options) > 4 else "")
+        print(f"note: {len(loaded.new_options)} option(s) are not in your config file yet ({shown}): "
+              "`bdnex config --update` adds them, commented out.", file=sys.stderr)
     return True
 
 

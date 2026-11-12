@@ -5,17 +5,27 @@
 bdnex reads `~/.config/bdnex/bdnex.yaml` (or `$XDG_CONFIG_HOME/bdnex/bdnex.yaml`,
 or the file named by `$BDNEX_CONFIG`).
 
-On the **first launch** bdnex creates a short, commented file there and tells you
-to edit it. The only required edit is `directory`, your comics folder:
+On the **first launch** bdnex creates the file there and tells you to edit it. The only
+required edit is `directory`, your comics folder. Every other option is listed below it,
+**commented out**, with its default and what it does:
 
 ```yaml
 config_version: 2
 directory: ~/comics
+
+# match:
+  # strong_threshold: 90      # title score (0-100): applied without asking
+  # medium_threshold: 70
 ```
 
-Your file only lists what you change. Every other option comes from the packaged
-defaults and is merged underneath, so options added in a new bdnex release work
-without touching your file.
+To change an option, remove its leading `# ` (and the `# ` of its section line, here `# match:`).
+Only what is active counts: every other option comes from the packaged defaults and is merged
+underneath, so options added in a new bdnex release work without touching your file.
+
+**Keeping the file complete.** When a new version brings options your file does not list, bdnex
+says so once per run (`note: 3 option(s) are not in your config file yet`). `bdnex config --update`
+adds them, commented out, in the right section; nothing you wrote is changed, an option you already
+have (active or commented) is never repeated, and the previous file is kept as `bdnex.yaml.bak`.
 
 ## Commands
 
@@ -23,6 +33,7 @@ without touching your file.
 |---|---|
 | `bdnex config` | print the effective configuration (defaults + yours) |
 | `bdnex config --defaults` | print every option with its default |
+| `bdnex config --update` | add the options your file does not list yet, commented out |
 | `bdnex config --path` | print the config file path |
 | `bdnex config --edit` | open the file in `$VISUAL` / `$EDITOR` |
 
