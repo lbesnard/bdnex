@@ -109,9 +109,15 @@ which the library does not take from a file. Nothing is stored in a preview (`--
   A CBR target (`cbr`) is not offered: writing RAR needs the proprietary `rar` program.
 - `.cbr` cannot be written (RAR is proprietary): it is converted to CBZ (`write.cbr: convert`), or
   left alone (`skip`).
-- `.pdf`: `write.pdf_mode: auto` extracts the embedded page images **unchanged** when every page is a
-  single plain image (no re-encoding, no quality loss: the pages are the PDF's own images, one per page); otherwise pages are rendered to PNG at
-  `write.pdf_dpi`. `extract` refuses anything that is not extractable, `render` always renders.
+- `.pdf`: pages are taken **one by one**. A page that is a single picture (or one picture plus tiny ones such as a
+  logo, under 2% of the page) is extracted untouched: no re-encoding, no quality loss, about the PDF's own size.
+  Only the pages that are something else (text, several large pictures, transparency, a picture format viewers
+  do not open) are drawn at `write.pdf_dpi`, as PNG or JPEG (`write.pdf_render_format: auto` uses JPEG for
+  pages made of JPEG pictures, which keeps them close to their original size, and PNG otherwise).
+  `write.pdf_mode: extract` refuses a PDF with such pages and names them, `render` draws every page.
+  `bdnex write --pretend` tells you beforehand: `all 120 pages extracted untouched`, or
+  `3 of 120 page(s) had to be drawn (page 4, 57, 58)`. A PDF that comes out many times bigger than it went in
+  was drawn in PNG: check that line, and the size check below catches it.
 - Conversion is automatic with `bdnex write` and `bdnex move`: set `write.cbr` and `write.pdf` to `convert`
   (the default) or `skip`. The other direction, CBZ to CBR, is not offered: RAR can not be written.
 - `write.delete_original: ask | yes | no` decides what happens to the CBR/PDF after conversion. `yes` deletes it

@@ -75,8 +75,8 @@ def test_pdf_extract_mode_refuses_when_not_possible(make_pdf):
 
 def test_pdf_render_mode_forces_rendering_and_dpi(make_image_pdf):
     path, _ = make_image_pdf(pages=1)
-    low, _ = archive.read_entries(path, "pdf", "render", 72)
-    high, _ = archive.read_entries(path, "pdf", "render", 144)
+    low, _ = archive.read_entries(path, "pdf", "render", 72, "png")
+    high, _ = archive.read_entries(path, "pdf", "render", 144, "png")
     assert low[0].name.endswith(".png") and len(high[0].data) > len(low[0].data)
 
 
@@ -137,3 +137,78 @@ def test_entries_from_other_formats_still_use_the_extension_rule(tmp_path):
     with zipfile.ZipFile(out) as zf:
         assert zf.getinfo("p.jpg").compress_type == zipfile.ZIP_STORED
         assert zf.getinfo("n.txt").compress_type == zipfile.ZIP_DEFLATED
+
+
+# ----------------------------------------------------------- page by page
+def mixed_pdf(tmp_path, build):
+    import pymupdf
+    from conftest import make_jpeg_bytes
+
+    doc = pymupdf.open()
+    build(doc, make_jpeg_bytes)
+    path = str(tmp_path / "mixed.pdf")
+    doc.save(path)
+    doc.close()
+    return path
+
+
+def test_one_odd_page_no_longer_forces_every_page_to_be_drawn(tmp_path):
+    def build(doc, jpeg):
+        for color in ((200, 20, 20), (20, 200, 20)):
+            page = doc.new_page(width=200, height=300)
+            page.insert_image(page.rect, stream=jpeg(color=color))
+        doc.new_page(width=200, height=300).insert_text((20, 50), "a page of text")
+    entries, _ = archive.read_entries(mixed_pdf(tmp_path, build), "pdf", "auto", 72)
+    assert [e.rendered for e in entries] == [False, False, True]
+    assert entries[0].name.endswith(".jpg") and entries[0].data[:2] == b"\xff\xd8"  # a page taken out untouched
+    assert entries[2].name.endswith(".png")  # text: PNG
+
+
+def test_extract_mode_names_the_pages_it_cannot_take(tmp_path):
+    def build(doc, jpeg):
+        doc.new_page(width=200, height=300).insert_image(fitz_rect(), stream=jpeg())
+        doc.new_page(width=200, height=300).insert_text((20, 50), "text")
+        doc.new_page(width=200, height=300).insert_text((20, 50), "text")
+
+    def fitz_rect():
+        import pymupdf
+        return pymupdf.Rect(0, 0, 200, 300)
+    with pytest.raises(ArchiveError, match=r"page\(s\) 2, 3"):
+        archive.read_entries(mixed_pdf(tmp_path, build), "pdf", "extract")
+
+
+def test_a_small_logo_beside_the_page_image_does_not_stop_the_extraction(tmp_path):
+    import pymupdf
+
+    def build(doc, jpeg):
+        page = doc.new_page(width=200, height=300)
+        page.insert_image(page.rect, stream=jpeg(color=(10, 10, 200)))
+        page.insert_image(pymupdf.Rect(5, 5, 15, 15), stream=jpeg(color=(250, 250, 0), size=(11, 13)))
+    entries, _ = archive.read_entries(mixed_pdf(tmp_path, build), "pdf", "auto", 72)
+    assert [e.rendered for e in entries] == [False]
+
+
+def test_two_big_pictures_on_a_page_are_drawn(tmp_path):
+    import pymupdf
+
+    def build(doc, jpeg):
+        page = doc.new_page(width=200, height=300)
+        page.insert_image(pymupdf.Rect(0, 0, 200, 150), stream=jpeg(color=(10, 10, 200)))
+        page.insert_image(pymupdf.Rect(0, 150, 200, 300), stream=jpeg(color=(200, 10, 10)))
+    entries, _ = archive.read_entries(mixed_pdf(tmp_path, build), "pdf", "auto", 72)
+    assert [e.rendered for e in entries] == [True]
+
+
+def test_drawn_pages_of_jpeg_pictures_are_drawn_as_jpeg_in_auto(tmp_path):
+    import pymupdf
+
+    def build(doc, jpeg):
+        page = doc.new_page(width=200, height=300)
+        page.insert_image(pymupdf.Rect(0, 0, 200, 150), stream=jpeg(color=(10, 10, 200)))
+        page.insert_image(pymupdf.Rect(0, 150, 200, 300), stream=jpeg(color=(200, 10, 10)))
+    path = mixed_pdf(tmp_path, build)
+    auto, _ = archive.read_entries(path, "pdf", "auto", 150)
+    png, _ = archive.read_entries(path, "pdf", "auto", 150, "png")
+    jpg, _ = archive.read_entries(path, "pdf", "auto", 150, "jpeg")
+    assert auto[0].name.endswith(".jpg") and png[0].name.endswith(".png") and jpg[0].name.endswith(".jpg")
+    assert auto[0].data[:2] == b"\xff\xd8" and png[0].data.startswith(b"\x89PNG")
