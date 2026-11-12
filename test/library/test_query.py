@@ -158,3 +158,12 @@ def test_invalid_queries_raise(lib, terms):
 def test_files_count_not_allowed_in_files_mode(lib):
     with pytest.raises(QueryError):
         lib.query(["files:0"], files=True)
+
+
+def test_any_and_slash_regex_search_everywhere(lib):
+    from bdnex.library.query import compile_query, run_query
+    for terms in (["any:bibliomule"], ["any::^la bibliomule"], ["/^la .*cordoue$/"], ["::bibliomule"],
+                  ["title:/BIBLIOMULE/"]):
+        assert any("bibliomule" in (r["title"] or "").lower() for r in lib.query(terms)), terms
+    assert lib.query(["any:zzzzzzzz"]) == []
+    assert lib.query(["^any:bibliomule"]) != lib.query([])

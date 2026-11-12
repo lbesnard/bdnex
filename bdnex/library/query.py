@@ -5,7 +5,9 @@ Each argument is one term; all terms must match (AND)::
     astérix                  free text: title, series, authors or file name
     series:nains             case- and accent-insensitive substring
     series:=Nains            exact (case/accent-insensitive)
-    title::^Les.*Nains       regular expression
+    title::^Les.*Nains       regular expression (also  title:/^Les.*Nains/ )
+    any:soleil               any text field at once: title, series, publisher, credits, genres, summary, file name...
+    ::^13m                   a regular expression on any text field (also  /^13m/ )
     year:2010..2015          numeric range (open ends allowed: 2010.. / ..2015)
     volume:3   rating:4..
     author:uderzo            any credit;  writer: penciller: colorist: ...
@@ -37,8 +39,16 @@ def fold(value: Any) -> str:
     return "".join(c for c in text if not unicodedata.combining(c)).casefold()
 
 
+def strip_accents(text: str) -> str:
+    text = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in text if not unicodedata.combining(c))
+
+
 def regexp(pattern: str, value: Any) -> bool:
-    return value is not None and re.search(pattern, fold(value)) is not None
+    """Case- and accent-insensitive search. The pattern keeps its escapes (``\\D`` stays ``\\D``)."""
+    if value is None:
+        return False
+    return re.search(strip_accents(pattern), strip_accents(str(value)), re.IGNORECASE) is not None
 
 
 def register_functions(conn) -> None:
@@ -49,7 +59,8 @@ def register_functions(conn) -> None:
 
 # field -> SQL expression (album mode and file mode share the same joins: a, s, pub, f)
 TEXT_FIELDS = {"title": "a.title", "series": "s.name", "publisher": "pub.name", "isbn": "a.isbn",
-               "language": "a.language", "summary": "a.summary", "kind": "a.kind"}
+               "language": "a.language", "summary": "a.summary", "kind": "a.kind",
+               "url": "a.url", "source": "a.source"}
 FILE_TEXT_FIELDS = {"path": "f.path", "filename": "basename(f.path)", "format": "f.format", "md5": "f.md5"}
 NUMERIC_FIELDS = {"year": "a.year", "volume": "a.volume", "pages": "a.pages", "rating": "a.rating"}
 FILE_NUMERIC_FIELDS = {"size": "f.size", "filepages": "f.page_count", "cover": "f.cover_score"}
@@ -60,7 +71,11 @@ FILE_BOOL_FIELDS = {"corrupted": "f.corrupted", "tagged": "(f.album_id IS NOT NU
                     "staged": "EXISTS (SELECT 1 FROM staged_files sf WHERE sf.file_id = f.id)"}
 
 ALL_FIELDS = sorted({*TEXT_FIELDS, *FILE_TEXT_FIELDS, *NUMERIC_FIELDS, *FILE_NUMERIC_FIELDS, *BOOL_FIELDS,
-                     *FILE_BOOL_FIELDS, *ROLES, "author", "genre", "files"})
+                     *FILE_BOOL_FIELDS, *ROLES, "author", "genre", "files", "any"})
+
+# what `any:` looks in (everything text-like; credits and genres included)
+ANY_FIELDS = ("title", "series", "publisher", "isbn", "language", "summary", "kind", "url", "source", "author",
+              "genre", "filename", "path", "format")
 
 
 @dataclass
@@ -111,7 +126,7 @@ def _text(expr: str, mode: str, value: str) -> tuple[str, list[Any]]:
             re.compile(value)
         except re.error as err:
             raise QueryError(f"bad regular expression {value!r}: {err}") from None
-        return f"regexp(?, {expr})", [value.casefold()]
+        return f"regexp(?, {expr})", [value]
     if mode == "exact":
         return f"fold({expr}) = ?", [fold(value)]
     return f"fold({expr}) LIKE ? ESCAPE '\\'", [_like(value)]
@@ -122,6 +137,10 @@ def _split(term: str) -> tuple[bool, str | None, str, str]:
     negated = term.startswith("^")
     if negated:
         term = term[1:]
+    if term.startswith("::"):  # a bare regular expression: look everywhere
+        return negated, "any", "regex", term[2:]
+    if len(term) > 2 and term.startswith("/") and term.endswith("/"):
+        return negated, "any", "regex", term[1:-1]
     field_name, sep, rest = term.partition(":")
     if not sep or field_name.lower() not in ALL_FIELDS:
         return negated, None, "substring", term  # free text (may legitimately contain ':')
@@ -130,6 +149,8 @@ def _split(term: str) -> tuple[bool, str | None, str, str]:
         mode, rest = "regex", rest[1:]
     elif rest.startswith("="):
         mode, rest = "exact", rest[1:]
+    if mode == "substring" and len(rest) > 2 and rest.startswith("/") and rest.endswith("/"):
+        mode, rest = "regex", rest[1:-1]  # field:/regex/, the same as field::regex
     return negated, field_name.lower(), mode, rest
 
 
@@ -145,7 +166,12 @@ def compile_term(term: str, files_mode: bool) -> Compiled:
         return f"EXISTS (SELECT 1 FROM files f WHERE f.album_id = a.id AND {cond})"
 
     sql, params = "", []
-    if name is None:  # free text
+    if name == "any":
+        prefix = {"regex": ":", "exact": "="}.get(mode, "")
+        parts = [compile_term(f"{field}:{prefix}{value}", files_mode) for field in ANY_FIELDS]
+        sql = "(" + " OR ".join(p.where for p in parts) + ")"
+        params = [x for p in parts for x in p.params]
+    elif name is None:  # free text
         like = _like(value)
         credit = "EXISTS (SELECT 1 FROM album_credits c JOIN people p ON p.id = c.person_id " \
                  "WHERE c.album_id = a.id AND fold(p.name) LIKE ? ESCAPE '\\')"

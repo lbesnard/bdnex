@@ -12,6 +12,9 @@ bdnex ls author:uderzo                # any credit
 bdnex ls penciller:chemineau          # a given role
 bdnex ls genre:fantasy year:2010..2015
 bdnex ls kind:oneshot
+bdnex ls any:soleil                   # anywhere: title, series, publisher, credits, summary...
+bdnex ls '/^13m[0-9]+$/'              # a regular expression, on any text field
+bdnex ls 'title:/^les .*nains$/'
 bdnex ls '^genre:humour'              # a leading ^ negates a term
 bdnex ls complete:false               # matched, but the album page was not read yet
 bdnex ls --files corrupted:true       # damaged files
@@ -25,17 +28,23 @@ bdnex ls --files tagged:false         # registered files not yet matched to an a
 | `text` | free text on title, series, authors and file name |
 | `field:value` | case/accent-insensitive substring |
 | `field:=value` | exact match |
-| `field::regex` | regular expression (matched on the lowercase, accent-free text) |
+| `field::regex` or `field:/regex/` | regular expression, ignoring case and accents (`title:/^les .*nains$/`) |
+| `any:text`, `any::regex` | the text in **any** text field: title, series, publisher, ISBN, summary, URL, credits, genres, file name and path |
+| `::regex` or `/regex/` | a regular expression on any text field |
 | `field:2010..2015` | numeric range; `2010..` and `..2015` are open ended |
 | `field:true` / `false` | yes/no fields |
 | `^term` | negation |
+
+Write the pattern in quotes in your shell if it has `^`, `$`, `*` or spaces. Add `-l` or `--json -l` to see
+everything known about the results.
 
 A word before a colon that is not a field name (as in `Tintin: Le Lotus`) is searched as plain text.
 
 ## Fields
 
+- **Everywhere:** `any` (see above).
 - **Text:** `title`, `series`, `publisher`, `isbn`, `language`, `summary`, `kind` (`series` or `oneshot`),
-  `genre`, `author` (any credit), `writer`, `penciller`, `inker`, `colorist`, `letterer`, `coverartist`.
+  `url`, `source`, `genre`, `author` (any credit), `writer`, `penciller`, `inker`, `colorist`, `letterer`, `coverartist`.
 - **Numbers:** `year`, `volume`, `pages`, `rating`, `files` (files per album; `files:0` finds albums without a file).
 - **Yes/no:** `complete` (the album page was read; `partial` is its opposite).
 - **File fields:** `path`, `filename`, `format` (`cbz`, `cbr`, `pdf`), `md5`, `size`, `filepages` (pages of the file),
