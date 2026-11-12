@@ -39,6 +39,10 @@ class FakePrompter:
         self.asked.append(("corrupted", problems, can_move))
         return getattr(self, "corrupted_answer", "leave")
 
+    def size_action(self, path, before, after, tolerance):
+        self.asked.append(("size", before, after))
+        return getattr(self, "size_answer", "refuse")
+
 
 def settings_for(tmp_path, **overrides):
     user = {"config_version": 2, "directory": str(tmp_path / "library"), **overrides}
@@ -538,3 +542,54 @@ def test_nothing_to_decide_means_no_question_and_no_rewrite(lib, make_cbz, tmp_p
     result = Organizer(lib, settings_for(tmp_path), prompter).process(row, WRITE)
     assert result.outcome == UNCHANGED and prompter.asked == []
     assert file_md5(path) == before and comicinfo_of(path)["Format"] == "One Shot"
+
+
+# ------------------------------------------------------------------- the size check
+@pytest.fixture
+def strict_size(monkeypatch):
+    """Any size difference counts (the files of the tests are tiny)."""
+    monkeypatch.setattr("bdnex.organizer.organizer.MIN_SIZE_CHANGE", 0)
+
+
+def test_small_differences_are_never_a_problem(lib, make_cbz, tmp_path):
+    path = make_cbz(pages=3)  # tags add a few hundred bytes to a tiny file: far under the 1 MiB floor
+    row = registered(lib, path, add_series_album(lib))
+    assert Organizer(lib, settings_for(tmp_path)).process(row, WRITE).outcome == WRITTEN
+
+
+def test_a_size_off_by_more_than_the_tolerance_refuses_and_leaves_the_original(lib, make_cbz, tmp_path, strict_size):
+    path = make_cbz(pages=3)
+    original = open(path, "rb").read()
+    row = registered(lib, path, add_series_album(lib))
+    result = Organizer(lib, settings_for(tmp_path, write={"size_tolerance": 0.001, "size_change": "refuse"})
+                       ).process(row, WRITE)
+    assert result.outcome == SKIPPED and "size" in result.note and "untouched" in result.note
+    assert open(path, "rb").read() == original and not os.path.exists(path + ".bdnex-tmp")
+
+
+def test_accept_goes_on_and_a_tolerance_of_zero_turns_the_check_off(lib, make_cbz, tmp_path, strict_size):
+    path = make_cbz("a.cbz", pages=3)
+    row = registered(lib, path, add_series_album(lib))
+    accepted = Organizer(lib, settings_for(tmp_path, write={"size_tolerance": 0.001, "size_change": "accept"}))
+    result = accepted.process(row, WRITE)
+    assert result.outcome == WRITTEN and "accepted" in result.note
+    other = make_cbz("b.cbz", pages=3)
+    row = registered(lib, other, add_series_album(lib, source_id="2", volume=2))
+    assert Organizer(lib, settings_for(tmp_path, write={"size_tolerance": 0})).process(row, WRITE).outcome == WRITTEN
+
+
+def test_ask_puts_the_question_and_follows_the_answer(lib, make_cbz, tmp_path, strict_size):
+    settings = settings_for(tmp_path, write={"size_tolerance": 0.001})
+    path = make_cbz("a.cbz", pages=3)
+    row = registered(lib, path, add_series_album(lib))
+    refusing = FakePrompter()
+    assert Organizer(lib, settings, refusing).process(row, WRITE).outcome == SKIPPED
+    assert refusing.asked and refusing.asked[0][0] == "size"
+    accepting = FakePrompter()
+    accepting.size_answer = "accept"
+    assert Organizer(lib, settings, accepting).process(row, WRITE).outcome == WRITTEN
+    # nobody to ask, or --force: the safe answer without a prompter, the stated one with --force
+    other = make_cbz("c.cbz", pages=3)
+    row = registered(lib, other, add_series_album(lib, source_id="3", volume=3))
+    assert Organizer(lib, settings).process(row, WRITE).outcome == SKIPPED
+    assert Organizer(lib, settings, force=True).process(row, WRITE).outcome == WRITTEN

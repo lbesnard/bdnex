@@ -83,6 +83,8 @@ write:
   delete_original: ask                   # after a CBR / PDF was converted: ask | yes | no
   conflict: ask                          # a ComicInfo.xml that differs from the database: ask | file | database
   corrupted: ask                         # a damaged archive that can not be repaired: ask | leave | move
+  size_tolerance: 20                     # % the new archive may differ in size from the original (0 = no check)
+  size_change: ask                       # when it differs more than that: ask | accept | refuse
 
 paths:
   oneshot: 'OneShot/$language/$title - $authors/$title - $authors'

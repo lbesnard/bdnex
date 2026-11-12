@@ -31,6 +31,12 @@ After every write the file's checksum is recomputed and stored in the database.
 - The new archive is built in a temporary file next to its destination and **verified** (same pages,
   byte for byte, ComicInfo present) before it replaces or sits next to anything.
 - If verification fails, the original is left untouched and no temporary file remains.
+- **Size check.** The new archive must also have about the size of the original: more than
+  `write.size_tolerance` percent apart (default 20, and never for a difference under 1 MiB) means something
+  unexpected happened, for instance a PDF whose pages had to be rendered to PNG. `write.size_change` then
+  decides: `ask` (default; shows both sizes and lets you refuse or accept), `accept` or `refuse`. Refusing
+  leaves the original untouched. Without a terminal to ask on, `ask` refuses; `--force` accepts.
+  `write.size_tolerance: 0` turns the check off. A converted file's report line gives both sizes.
 - One failing file never stops the batch.
 
 ## Damaged archives
@@ -77,8 +83,10 @@ once, or use `--force` (the database wins where it has a value).
 - `.cbr` cannot be written (RAR is proprietary): it is converted to CBZ (`write.cbr: convert`), or
   left alone (`skip`).
 - `.pdf`: `write.pdf_mode: auto` extracts the embedded page images **unchanged** when every page is a
-  single plain image (no re-encoding, no quality loss); otherwise pages are rendered to PNG at
+  single plain image (no re-encoding, no quality loss: the pages are the PDF's own images, one per page); otherwise pages are rendered to PNG at
   `write.pdf_dpi`. `extract` refuses anything that is not extractable, `render` always renders.
+- Conversion is automatic with `bdnex write` and `bdnex move`: set `write.cbr` and `write.pdf` to `convert`
+  (the default) or `skip`. The other direction, CBZ to CBR, is not offered: RAR can not be written.
 - `write.delete_original: ask | yes | no` decides what happens to the CBR/PDF after conversion.
 
 ## Path templates
