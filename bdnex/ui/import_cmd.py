@@ -270,6 +270,10 @@ def _place(args, settings, library, report, prompter=None):
     results = []
     for chosen, mode in plan:
         results += organizer.run(chosen, mode, progress=progress)
+        if organizer.aborted_at:
+            from bdnex.ui.write_cmd import aborted_message
+            notes.append(aborted_message(organizer.aborted_at, "move"))
+            break
     for row in leave:
         library.stage_file(row["path"])
     if leave:

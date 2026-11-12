@@ -60,6 +60,13 @@ bdnex asks what to do: **leave** the file as it is, or **move it anyway**, as it
 tags (`move` and `--copy` only). `write.corrupted: ask | leave | move` decides in advance; `--force`
 and `--pretend` never ask (`--force` leaves it, `--pretend` says you would be asked).
 
+## Stopping a run
+
+Every question of `bdnex write`, `move` and `repair` ends with **[A]bort the run** (press `A`). What was
+already done stays done, the file being asked about and the ones after it are not touched, and the report
+ends with `Aborted at <file>`. Run the same command again to continue: finished files come out as `unchanged`.
+Ctrl-C works too.
+
 ## Conflicts
 
 If the file already has a `ComicInfo.xml` that differs from the database, bdnex shows the
