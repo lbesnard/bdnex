@@ -11,6 +11,9 @@ match:
 import:
   mode: in_place                        # in_place | copy | move
   resume: true
+  auto: false                           # false: you check every file; true: matches >= strong_threshold are applied unasked
+  workers: 0                            # processes that match file names in the background; 0 = CPU cores - 1, 1 = none
+  lookahead: 100                        # files matched ahead of the one you are reviewing
 
 duplicates:
   keys: [series, volume]                # what makes two albums the same: series | volume | title

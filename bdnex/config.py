@@ -63,6 +63,9 @@ class Match(_Section):
 class Import(_Section):
     mode: Literal["in_place", "copy", "move"]
     resume: bool
+    auto: bool
+    workers: int = Field(ge=0)
+    lookahead: int = Field(ge=1)
 
 
 class Duplicates(_Section):

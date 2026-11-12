@@ -18,6 +18,15 @@ def make_image_bytes(color=(200, 30, 30), size=(8, 8)):
     return _solid(color, size, "png")
 
 
+@pytest.fixture(autouse=True)
+def isolated_home(tmp_path_factory, monkeypatch):
+    """No test may read or write the real home folder: `~` (library, pages, trash...) is a temporary one."""
+    home = tmp_path_factory.mktemp("home")
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(home / ".config"))
+    monkeypatch.delenv("BDNEX_CONFIG", raising=False)
+
+
 @pytest.fixture
 def make_cbz(tmp_path):
     """Factory creating a fake CBZ with N pages (and optional ComicInfo.xml)."""

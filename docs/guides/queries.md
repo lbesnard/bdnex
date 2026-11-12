@@ -13,9 +13,9 @@ bdnex ls penciller:chemineau          # a given role
 bdnex ls genre:fantasy year:2010..2015
 bdnex ls kind:oneshot
 bdnex ls '^genre:humour'              # a leading ^ negates a term
-bdnex ls partial:true                 # imported from the sitemap only, page still missing
+bdnex ls complete:false               # matched, but the album page was not read yet
 bdnex ls --files corrupted:true       # damaged files
-bdnex ls --files tagged:false         # files not yet matched to an album
+bdnex ls --files tagged:false         # registered files not yet matched to an album (`bdnex ls --unmatched` also lists skipped and failed ones)
 ```
 
 ## Term syntax
@@ -37,7 +37,7 @@ A word before a colon that is not a field name (as in `Tintin: Le Lotus`) is sea
 - **Text:** `title`, `series`, `publisher`, `isbn`, `language`, `summary`, `kind` (`series` or `oneshot`),
   `genre`, `author` (any credit), `writer`, `penciller`, `inker`, `colorist`, `letterer`, `coverartist`.
 - **Numbers:** `year`, `volume`, `pages`, `rating`, `files` (files per album; `files:0` finds albums without a file).
-- **Yes/no:** `partial`.
+- **Yes/no:** `complete` (the album page was read; `partial` is its opposite).
 - **File fields:** `path`, `filename`, `format` (`cbz`, `cbr`, `pdf`), `md5`, `size`, `corrupted`,
   `metadata` (file already has a `ComicInfo.xml`), `tagged` (only with `--files`).
   Without `--files`, a file field selects the albums that have a matching file.

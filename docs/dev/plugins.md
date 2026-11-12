@@ -51,10 +51,10 @@ open {py:class}`bdnex.library.Library` and `settings` the validated configuratio
 A {py:class}`bdnex.importer.source.Candidate` is `(source_id, url, name, volume)`: `name` is the
 normalised text compared with the file name, and `volume` is `None` for one-shots and specials.
 
-How the importer uses them: if `is_ready()` is false (or with `--recache`) it calls `prepare`; for each
+How the importer uses them: `bdnex init` calls `prepare(recache=True)` (and `import` offers to when `is_ready()` is false); for each
 file it takes `candidates`, re-ranks them with the volume found in the file name and applies the
 configured thresholds; for the chosen one it calls `album_info`. If that raises one of `fetch_errors`
-the album is stored from `partial_info` and reported as *partial*; a later import with the page
+the album is stored from `partial_info` and reported as *matched*; a later import with the page
 available upgrades it in place.
 
 ## What to put in `AlbumInfo`
@@ -75,7 +75,7 @@ available upgrades it in place.
 ## The cache
 
 Store what you download with `library.cache_put(source, kind, url, content)` and read it back with
-`cache_get`. Every later import then makes no request, and `--recache` calls `prepare`/`album_info`
+`cache_get`. Every later import then makes no request, and `--fetch --force` calls `album_info`
 with `recache=True` so you know to refetch. A response that is not the page (an error or a
 challenge page) must never be cached.
 
@@ -142,3 +142,18 @@ After `pip install`, `source: mysource` works. A built-in source with the same n
 bedetheque.com answers scripted page requests with an anti-bot challenge. `http_fetch` raises
 `BlockedError` and caches nothing; bdnex does not try to bypass it. See *Album pages* in
 [Getting started](../guides/getting-started.md).
+
+
+## Optional: `warm()`
+
+The importer matches file names in worker processes forked from the main one. If your source
+has a slow local index to build, add a `warm(self) -> None` method that builds it: the importer
+calls it once before forking, and the workers share the result instead of each building their
+own. `candidates` is called from those workers, so it must not use the network or the database.
+
+## Optional: `album_count()`
+
+`bdnex init` shows a progress bar while `prepare` runs and then reports how many albums the list
+holds and how many are new. If your source has such a list, add `album_count(self) -> int` (the
+albums known locally, 0 when none) and, for the bar, `sitemaps_cached(self) -> int` (how many files
+a refresh will go through). Both are optional; without them `init` still works, with a rough bar.

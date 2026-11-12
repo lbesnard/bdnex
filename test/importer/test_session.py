@@ -8,7 +8,7 @@ from bdnex.importer.bedetheque.bedetheque import BlockedError
 from bdnex.importer.bedetheque.parser import partial_album_info as slug_album_info
 from bdnex.importer.matching import Recommendation, query_from_filename, recommend, rerank, volumes_in
 from bdnex.importer.source import Candidate
-from bdnex.importer.session import DUPLICATE, FAILED, PARTIAL, PRETEND, SKIPPED, TAGGED, ImportSession
+from bdnex.importer.session import ALREADY, DUPLICATE, FAILED, PARTIAL, PRETEND, SKIPPED, TAGGED, ImportSession
 from bdnex.library import Library
 from helpers import ALBUM_URL, FakeWeb
 
@@ -33,7 +33,7 @@ class FakePrompter:
 
 
 def make_settings(**overrides):
-    user = {"config_version": 2, **overrides}
+    user = {"config_version": 2, "import": {"auto": True}, **overrides}
     return build_settings(user)[0]
 
 
@@ -118,7 +118,7 @@ def test_already_imported_is_skipped_unless_forced(env, make_cbz):
     env.source.update_sitemaps()
     env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
     env.session.import_file(path)
-    assert env.session.import_file(path).outcome == SKIPPED
+    assert env.session.import_file(path).outcome == ALREADY
     env.session.force = True
     assert env.session.import_file(path).outcome == TAGGED
 
@@ -154,7 +154,7 @@ def test_partial_album_is_upgraded_when_page_becomes_available(env, make_cbz):
 
 def test_weak_match_asks_the_prompter(web, make_cbz):
     env = Env(web, make_settings(match={"strong_threshold": 100}), FakePrompter("first"))
-    path = make_cbz("Nains Redwin forge.cbz")
+    path = make_cbz("Nains Redwin.cbz")
     env.source.update_sitemaps()
     env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
     result = env.session.import_file(path)
@@ -164,14 +164,14 @@ def test_weak_match_asks_the_prompter(web, make_cbz):
 
 def test_user_can_skip_a_match(web, make_cbz):
     env = Env(web, make_settings(match={"strong_threshold": 100}), FakePrompter(choice=None))
-    path = make_cbz("Nains Redwin forge.cbz")
+    path = make_cbz("Nains Redwin.cbz")
     env.source.update_sitemaps()
     assert env.session.import_file(path).outcome == SKIPPED
     assert env.lib.get_file(path) is None
 
 
 def test_force_applies_medium_but_skips_no_match(web, make_cbz):
-    env = Env(web, make_settings(match={"strong_threshold": 100}), prompter=None, force=True)
+    env = Env(web, make_settings(match={"strong_threshold": 100}), prompter=None, auto="all")
     env.source.update_sitemaps()
     env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
     assert env.session.import_file(make_cbz("Nains Redwin forge.cbz")).outcome == TAGGED
@@ -289,7 +289,7 @@ def test_session_reports_progress(web, make_cbz, tmp_path):
     env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
     env.session.run([str(tmp_path)])
     assert messages[0].startswith("Preparing the bedetheque source")
-    assert [m for m in messages if m.startswith("[")] == ["[1/2] Nains - T01 - Redwin de la forge.cbz",
+    assert [m for m in messages if m.startswith("[") and not m.startswith("[page")] == ["[1/2] Nains - T01 - Redwin de la forge.cbz",
                                                          "[2/2] zzzzzzzz qqqqqqqq.cbz"]
     env.lib.close()
 
@@ -309,49 +309,49 @@ def partial_env(web, make_cbz, **kw):
     return env, path, first
 
 
-def test_already_imported_partial_file_says_how_to_complete_it(web, make_cbz):
+def test_matched_only_file_says_how_to_complete_it_when_fetching_is_not_asked(web, make_cbz):
     env, path, first = partial_env(web, make_cbz)
+    env.session.steps = frozenset(["match"])
     result = env.session.import_file(path)
-    assert result.outcome == SKIPPED and "--retry-partial" in result.note
+    assert result.outcome == ALREADY and "--fetch" in result.note
     env.lib.close()
 
 
-def test_retry_partial_fetches_the_page_without_matching_again(web, make_cbz):
+def test_importing_again_fetches_the_missing_page_without_matching_again(web, make_cbz):
     env, path, first = partial_env(web, make_cbz)
     env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
     matched = []
     env.source.candidates = lambda *a, **k: matched.append(1) or []
-    env.session.retry_partial = True
     result = env.session.import_file(path)
     assert result.outcome == TAGGED and result.album_id == first.album_id and matched == []  # no new matching
     assert env.lib.get_album(first.album_id)["credits"]["Writer"] == ["Jarry, Nicolas"]
     assert env.session.prompter.asked == []
-    assert env.session.import_file(path).outcome == SKIPPED  # complete now: normal resume applies
+    assert env.session.import_file(path).outcome == ALREADY  # complete now: nothing left to do
     env.lib.close()
 
 
-def test_retry_partial_stays_partial_when_the_page_is_still_missing(web, make_cbz):
+def test_missing_page_stays_matched_when_it_is_still_unavailable(web, make_cbz):
     env, path, first = partial_env(web, make_cbz)
-    env.session.retry_partial = True
     result = env.session.import_file(path)
     assert result.outcome == PARTIAL and result.album_id == first.album_id and "save the page" in result.note
     env.lib.close()
 
 
-def test_retry_partial_leaves_complete_albums_alone(web, make_cbz):
-    env = Env(web, make_settings(), FakePrompter(), retry_partial=True)
+def test_fetching_leaves_complete_albums_alone(web, make_cbz):
+    env = Env(web, make_settings(), FakePrompter())
     env.source.update_sitemaps()
     env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
     path = make_cbz(FILE)
     assert env.session.import_file(path).outcome == TAGGED
+    env.session.steps = frozenset(['fetch'])
     calls = len(web.calls)
-    assert env.session.import_file(path).outcome == SKIPPED and len(web.calls) == calls
+    assert env.session.import_file(path).outcome == ALREADY and len(web.calls) == calls
     env.lib.close()
 
 
-def test_retry_partial_pretend_changes_nothing(web, make_cbz):
+def test_fetch_pretend_changes_nothing(web, make_cbz):
     env, path, first = partial_env(web, make_cbz)
-    env.session.pretend, env.session.retry_partial = True, True
+    env.session.pretend = True
     calls = len(web.calls)
     result = env.session.import_file(path)
     assert result.outcome == PRETEND and "www.bedetheque.com" in result.note and len(web.calls) == calls

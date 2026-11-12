@@ -68,7 +68,7 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
         print(f"No library yet ({settings.library_path}): run `bdnex import <folder>` first.", file=sys.stderr)
         return 1
 
-    with Library(settings.library_path) as library:
+    with Library.for_settings(settings) as library:
         try:
             rows = library.query([*args.query, "corrupted:true"] if command == "repair"
                                  else [*args.query, "tagged:true"], files=True)

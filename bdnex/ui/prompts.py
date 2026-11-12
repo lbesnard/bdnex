@@ -4,16 +4,26 @@ from __future__ import annotations
 
 from typing import Optional
 
-from bdnex.importer.source import Candidate
+import sys
+
 from bdnex.importer.matching import Match
+from bdnex.importer.session import NeedsTerminal
+from bdnex.importer.source import Candidate
 
 
 class InquirerPrompter:
     SKIP = "__skip__"
 
+    @staticmethod
+    def _need_terminal() -> None:
+        if not sys.stdin.isatty():
+            raise NeedsTerminal("a question has to be asked, but bdnex is not running in a terminal")
+
     # -- import
     def choose_match(self, path: str, matches: list[Match]) -> Optional[Candidate]:
         from InquirerPy import inquirer
+
+        self._need_terminal()
 
         choices = [{"name": f"{m.score:5.1f}  {m.candidate.url.rsplit('/', 1)[-1]}", "value": m.candidate}
                    for m in matches]
@@ -23,6 +33,8 @@ class InquirerPrompter:
 
     def duplicate_action(self, path: str, others: list[str], what: str) -> str:
         from InquirerPy import inquirer
+
+        self._need_terminal()
 
         return inquirer.select(
             message=f"{what}: {path}\n  already: {', '.join(others)}",
@@ -46,10 +58,10 @@ class InquirerPrompter:
                      {"name": "Skip this file", "value": "skip"}],
         ).execute()
 
-    def confirm(self, message: str) -> bool:
+    def confirm(self, message: str, default: bool = False) -> bool:
         from InquirerPy import inquirer
 
-        return bool(inquirer.confirm(message=message, default=False).execute())
+        return bool(inquirer.confirm(message=message, default=default).execute())
 
     def ask_value(self, field: str, label: str) -> Optional[str]:
         from InquirerPy import inquirer

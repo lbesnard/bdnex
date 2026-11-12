@@ -7,10 +7,14 @@ USAGE = """\
 usage: bdnex <command> [options]
 
 commands:
+  init     download or refresh the album list that file names are matched against
   import   match comic files to Bédéthèque albums and record them in the library
   ls       list and search the library
   write    write ComicInfo.xml into files (converts CBR/PDF to CBZ)
   move     write tags and rename files into the library tree (--copy keeps the originals)
+  edit     change the metadata of albums or series by hand (kept across re-imports)
+  reset    empty the library (albums, files, edits), keep the downloaded sitemaps and pages
+  relocate tell the library that your comics folder moved
   reparse  re-read the pages stored in the library (offline) to fill in more details
   repair   rebuild damaged archives (wrong page checksums) as clean CBZ files
   config   show or edit the configuration
@@ -41,7 +45,17 @@ def check_config():
 
 
 def main(argv=None):
-    argv = sys.argv[1:] if argv is None else list(argv)
+    """Run a command; problems with the library folder are explained, not dumped as a traceback."""
+    from bdnex.library import LibraryRootError
+
+    try:
+        _main(sys.argv[1:] if argv is None else list(argv))
+    except LibraryRootError as err:
+        print(err, file=sys.stderr)
+        sys.exit(1)
+
+
+def _main(argv):
 
     if argv and argv[0] == "config":
         from bdnex.ui.config_cmd import run
@@ -54,6 +68,18 @@ def main(argv=None):
         from bdnex.ui.write_cmd import run as run_write_move
         sys.exit(run_write_move(argv[0], argv[1:]))
 
+    if argv and argv[0] == "init":
+        from bdnex.ui.init_cmd import run as run_init
+        sys.exit(run_init(argv[1:]))
+    if argv and argv[0] == "edit":
+        from bdnex.ui.edit_cmd import run as run_edit
+        sys.exit(run_edit(argv[1:]))
+    if argv and argv[0] == "reset":
+        from bdnex.ui.reset_cmd import run as run_reset
+        sys.exit(run_reset(argv[1:]))
+    if argv and argv[0] == "relocate":
+        from bdnex.ui.relocate_cmd import run as run_relocate
+        sys.exit(run_relocate(argv[1:]))
     if argv and argv[0] == "reparse":
         from bdnex.ui.reparse_cmd import run as run_reparse
         sys.exit(run_reparse(argv[1:]))

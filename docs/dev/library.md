@@ -9,7 +9,7 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 
 | Table | Purpose |
 |---|---|
-| `files` | one row per comic file: path, md5, size, format, page count, `corrupted`, `has_metadata`, link to an album |
+| `files` | one row per comic file: path (relative to `directory` when under it, absolute otherwise; the `Library` API always takes and returns absolute paths), md5, size, format, page count, `corrupted`, `has_metadata`, link to an album |
 | `albums` | `kind` is `series` or `oneshot`; a series album has a `series_id`, a one-shot has none (enforced by a `CHECK`) |
 | `series` | name, summary, source id |
 | `people`, `album_credits` | authors with a role (`Writer`, `Penciller`, `Colorist`, `Inker`, `Letterer`, `CoverArtist`) |

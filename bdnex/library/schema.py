@@ -112,4 +112,14 @@ MIGRATIONS = [
     );
     CREATE INDEX idx_import_log_path ON import_log(path);
     """,
+    # --- version 2 -------------------------------------------------------
+    # File paths under the library root are stored relative to it (`meta.paths = relative`). An
+    # older bdnex would read them as relative to the current folder, so it must refuse this file.
+    """
+    CREATE TABLE meta (
+        key   TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+    );
+    INSERT INTO meta(key, value) VALUES ('paths', 'relative');
+    """,
 ]

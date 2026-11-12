@@ -22,7 +22,7 @@ def credits_line(album: dict[str, Any]) -> str:
 
 
 def completeness(album: dict[str, Any]) -> str:
-    return "partial: sitemap data only" if (album.get("extra") or {}).get("partial") else "complete"
+    return "matched, details not fetched (`bdnex import --fetch`)" if (album.get("extra") or {}).get("partial") else "complete"
 
 
 def short(album: dict[str, Any]) -> str:
