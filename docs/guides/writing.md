@@ -25,6 +25,9 @@ pretend   /comics/inbox/some file.cbz
           would: write ComicInfo.xml; move to /comics/Series/Nains/Nains - T01 - Redwin.cbz
 ```
 
+A preview is quick because it does not read the pictures: it only looks at the CBZ's `ComicInfo.xml` and the
+library. For a PDF it cannot say how many pages would be drawn; the real run reports that.
+
 The `->` line is where the file would end up. A file that already sits where it belongs says
 `(stays where it is)`, and `bdnex write -n` always does, because `write` never renames (a CBR or PDF would
 become a `.cbz` beside it). Files that need nothing come out as `unchanged`. To judge a conversion the

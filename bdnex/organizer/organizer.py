@@ -180,9 +180,14 @@ class Organizer:
 
         if recovered is not None:
             entries, existing = recovered.entries, recovered.comicinfo
+            pages = archive.page_count(entries)
+        elif self.pretend:  # a preview does not read the pictures: that is what makes it instant
+            entries = None
+            existing, pages = archive.peek(path, fmt)
         else:
             entries, existing = archive.read_entries(path, fmt, write.pdf_mode, write.pdf_dpi, write.pdf_render_format)
-        new_fields = comicinfo.album_to_fields(album, archive.page_count(entries))
+            pages = archive.page_count(entries)
+        new_fields = comicinfo.album_to_fields(album, pages or 0)
         xml = self._resolve_xml(path, existing, new_fields, album_id)
         if isinstance(xml, FileResult):
             return xml
@@ -194,8 +199,11 @@ class Organizer:
 
         steps = [f"repair {len(repaired_pages)} page(s) with a wrong checksum"] if repaired_pages else []
         steps += [f"convert {fmt} -> cbz"] if converted else []
-        drawn = [number for number, entry in enumerate(entries, start=1) if entry.rendered]
-        if drawn:
+        drawn = [number for number, entry in enumerate(entries or [], start=1) if entry.rendered]
+        if entries is None:
+            if fmt == "pdf":
+                steps.append("pages are checked on the real run (extracted untouched when possible)")
+        elif drawn:
             steps.append(f"{len(drawn)} of {len(entries)} page(s) had to be drawn, not extracted "
                          f"(page {', '.join(map(str, drawn[:8]))}{'...' if len(drawn) > 8 else ''})")
         elif fmt == "pdf":
