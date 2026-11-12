@@ -94,7 +94,12 @@ which the library does not take from a file. Nothing is stored in a preview (`--
 
 ## Formats
 
-- `.cbz` is the only format bdnex writes.
+- `.cbz` is the only format bdnex writes. `write.format_preferred` says what to do with the others:
+  - `cbz` (default): CBR and PDF files are converted to CBZ, each one only if its own switch allows it
+    (`write.cbr`, `write.pdf`: `convert` or `skip`), so you can convert CBRs and keep PDFs, or the reverse.
+  - `none`: nothing is ever converted. A CBR or a PDF cannot be tagged as it is, so `write`, `move` and `repair`
+    leave it alone and say so; CBZ files are tagged and moved as usual.
+  A CBR target (`cbr`) is not offered: writing RAR needs the proprietary `rar` program.
 - `.cbr` cannot be written (RAR is proprietary): it is converted to CBZ (`write.cbr: convert`), or
   left alone (`skip`).
 - `.pdf`: `write.pdf_mode: auto` extracts the embedded page images **unchanged** when every page is a
