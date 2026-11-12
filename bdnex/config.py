@@ -66,11 +66,18 @@ class Import(_Section):
     auto: bool
     workers: int = Field(ge=0)
     lookahead: int = Field(ge=1)
+    outside: Literal["ask", "move", "copy", "leave"]
 
 
 class Duplicates(_Section):
     keys: list[Literal["series", "volume", "title"]] = Field(min_length=1)
     action: Literal["ask", "skip", "keep_both", "replace"]
+    prefer: list[Literal["cbz", "cbr", "pdf"]] = Field(min_length=1)
+    versions_dir: str = Field(min_length=1)
+
+
+class Trash(_Section):
+    dir: str = Field(min_length=1)
 
 
 class Write(_Section):
@@ -106,6 +113,7 @@ class Settings(_Section):
     # "import" is a Python keyword
     import_: Import = Field(alias="import")
     duplicates: Duplicates
+    trash: Trash
     write: Write
     paths: Paths
     source: str = Field(min_length=1)
@@ -121,6 +129,13 @@ class Settings(_Section):
     @property
     def pages_dir(self) -> Path:
         return Path(os.path.expanduser(self.bedetheque.pages_dir))
+
+    @property
+    def trash_path(self) -> Path:
+        """Where replaced files go: ``trash.dir`` in the library folder (beside the database without one)."""
+        if self.directory and self.directory != PLACEHOLDER_DIRECTORY:
+            return Path(os.path.expanduser(self.directory)) / self.trash.dir
+        return self.library_path.parent / "trash"
 
     def require_library_directory(self) -> Path:
         """The managed library root; refuses the untouched placeholder."""

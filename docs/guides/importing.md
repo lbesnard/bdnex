@@ -73,6 +73,25 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    album stays matched, with the URL to save. Ctrl-C stops here and loses nothing: run
    `bdnex import --fetch` to continue.
 
+### Files from outside your library folder
+
+You can import from any folder, such as `~/Downloads`. A file under `directory` is left where it is
+(`bdnex move` can still tidy its name). A file **outside** it follows `import.outside`:
+
+| `import.outside` | What happens |
+|---|---|
+| `ask` (default) | one question per run: move them, copy them, or leave them |
+| `move` | tags are written, the file is renamed from your templates and moved into the library |
+| `copy` | the same, and the original stays where it was |
+| `leave` | nothing is touched |
+
+`--move` and `--copy` apply to every imported file; `--no-move` leaves the outside ones where they are for
+this run. Files that were left are **staged**: the library remembers the full path they came from, and
+`bdnex move staged:true` places them whenever you like (`bdnex ls --files staged:true` lists them).
+Without a terminal to ask on, `ask` leaves them. With `import.mode: copy|move` everything is placed and
+nothing is asked. Before a file is moved in, it is compared with the files the album already has: see
+[Duplicates, versions and the trash](versions.md).
+
 ### The album list: `bdnex init`
 
 Matching works from the Bédéthèque sitemaps: about 55 files, 70 MB, downloaded once and kept in
@@ -131,6 +150,7 @@ reported as you typed it.
 | `--auto` / `--auto=all` / `--no-auto` | apply strong matches without asking / never ask / check every file (overrides `import.auto`) |
 | `-n`, `--pretend` | show what would happen; no database change, no page fetched, no question asked |
 | `-W`, `--move`, `--copy` | afterwards write the tags / move into the library tree / copy there |
+| `--no-move` | leave files from outside your library folder where they are (`import.outside`) |
 | `--workers N` | background matching processes (overrides `import.workers`) |
 | `-v` | list the `already` files too, and more detail |
 

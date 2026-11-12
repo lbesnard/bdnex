@@ -16,11 +16,14 @@ import logging
 import os
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Optional, Protocol
 
+from bdnex import trash
 from bdnex.config import Settings
 from bdnex.library import Library
 from bdnex.organizer import archive, comicinfo, template
+from bdnex.versions import compare, facts_of
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +111,8 @@ class Organizer:
                 return self._unrepairable(row, album_id, fmt, mode, recovered)
             repaired_pages = recovered.repaired
 
-        dest = self._destination(path, fmt, album_id, mode)
+        spare = bool(row.get("spare"))
+        dest = self._destination(path, fmt, album_id, mode, spare)
         if isinstance(dest, FileResult):
             return dest
         album = self.library.get_album(album_id)  # reload: a prompt may have completed it
@@ -139,14 +143,19 @@ class Organizer:
             return FileResult(path, PRETEND, dest, "; ".join(steps))
 
         if not same_place and os.path.exists(dest):
-            dest = self._resolve_collision(dest)
+            dest, became_spare = self._resolve_collision(dest, path, mode, spare)
             if dest is None:
                 return FileResult(path, SKIPPED, note="destination exists")
+            if became_spare:
+                spare = True
+                steps.append(f"kept as a spare version in {self.settings.duplicates.versions_dir}")
 
         self._build(dest, entries, xml)
 
         removed = self._dispose_source(path, dest, mode, converted)
         self._update_library(path, dest)
+        if spare and not row.get("spare"):
+            self.library.set_file_fields(dest, spare=1)
         outcome = {WRITE: WRITTEN, MOVE: MOVED, COPY: COPIED}[mode]
         return FileResult(path, outcome, dest, "; ".join(steps) + ("" if removed or same_place else " (original kept)"))
 
@@ -220,7 +229,7 @@ class Organizer:
                           note + " (moved as it is: no tags written)")
 
     # -------------------------------------------------------------- helpers
-    def _destination(self, path: str, fmt: str, album_id: int, mode: str):
+    def _destination(self, path: str, fmt: str, album_id: int, mode: str, spare: bool = False):
         if mode == WRITE:
             return path if fmt == "cbz" else os.path.splitext(path)[0] + ".cbz"
 
@@ -234,6 +243,8 @@ class Organizer:
         if not rendered.parts:
             return FileResult(path, SKIPPED, note="the path template is empty")
         *folders, name = rendered.parts
+        if spare:  # an extra version of the album: same name, in the spare versions folder
+            return str(root.joinpath(self.settings.duplicates.versions_dir, *folders, name + ".cbz"))
         return str(root.joinpath(*folders, name + ".cbz"))
 
     def _missing(self, field: str, album_id: int, album: dict) -> Optional[str]:
@@ -284,23 +295,39 @@ class Organizer:
             return existing
         return comicinfo.build_xml(comicinfo.merge_with_existing(old_fields, new_fields))
 
-    def _resolve_collision(self, dest: str) -> Optional[str]:
+    def _versions_path(self, dest: str) -> str:
+        """Where the spare version of the file that belongs at ``dest`` goes."""
+        root = self.settings.require_library_directory()
+        try:
+            relative = Path(dest).relative_to(root)
+        except ValueError:
+            return dest
+        return str(root / self.settings.duplicates.versions_dir / relative)
+
+    def _resolve_collision(self, dest: str, src: str, mode: str, spare: bool) -> tuple[Optional[str], bool]:
+        """The name ``dest`` is taken. Returns (the path to write, whether the file becomes a spare
+        version); ``None`` to leave the file alone."""
+        if spare:  # spare versions are numbered, never asked about
+            return str(trash.unique(Path(dest))), False
         if self.force:
             action = "keep_both"
-        elif self.prompter is None:
+        elif self.prompter is None or self.pretend:
             action = "skip"
         else:
-            action = self.prompter.collision(dest)
+            chooser = getattr(self.prompter, "resolve_collision", None)
+            if chooser is None:
+                action = self.prompter.collision(dest)
+            else:
+                existing, new = facts_of(self.library, dest), facts_of(self.library, src)
+                action = chooser(compare([existing], new, self.settings.duplicates.prefer), self.library.root)
         if action == "skip":
-            return None
+            return None, False
         if action == "replace":
-            self.library.remove_file(dest)
-            return dest
-        base, ext = os.path.splitext(dest)
-        n = 2
-        while os.path.exists(f"{base} ({n}){ext}"):
-            n += 1
-        return f"{base} ({n}){ext}"
+            trash.move_to_trash(self.library, self.settings, dest, f"replaced by {src}")
+            return dest, False
+        if mode == WRITE:  # tags only: nothing leaves the folder, the new name just gets a number
+            return str(trash.unique(Path(dest))), False
+        return str(trash.unique(Path(self._versions_path(dest)))), True
 
     def _dispose_source(self, src: str, dest: str, mode: str, converted: bool) -> bool:
         """Remove the original when appropriate. Returns True if it was removed."""

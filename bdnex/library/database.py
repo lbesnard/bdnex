@@ -476,6 +476,8 @@ class Library:
         if cur.rowcount == 0:
             raise KeyError(f"{old_path} is not in the library")
         self.refresh_file(new_path)
+        if self.root and new_path.startswith(self.root + os.sep):
+            self.unstage_file(new_path)  # it is in the library now: nothing is waiting to be moved
 
     def set_file_album(self, path, album_id: Optional[int]) -> None:
         with self.conn:
@@ -612,6 +614,71 @@ class Library:
                 for log_id, target in logged:
                     self.conn.execute("UPDATE import_log SET path = ? WHERE id = ?", (self._store(target), log_id))
         return result
+
+    # ---------------------------------------------------- spare versions, staging
+    FILE_FIELDS = frozenset({"spare", "cover_hash", "cover_score"})
+
+    def set_file_fields(self, path, **fields: Any) -> None:
+        """Set ``spare`` (an extra version of its album), ``cover_hash`` or ``cover_score``."""
+        unknown = set(fields) - self.FILE_FIELDS
+        if unknown:
+            raise ValueError(f"can not set: {', '.join(sorted(unknown))}")
+        if not fields:
+            return
+        with self.conn:
+            cur = self.conn.execute("UPDATE files SET " + ", ".join(f"{c} = ?" for c in fields) + " WHERE path = ?",
+                                    [*fields.values(), self._store(path)])
+        if cur.rowcount == 0:
+            raise KeyError(f"{path} is not in the library")
+
+    def stage_file(self, path, origin: Optional[str] = None) -> None:
+        """Remember that a registered file was imported where it is and still has to be moved in."""
+        row = self.get_file(path)
+        if row is None:
+            raise KeyError(f"{path} is not in the library")
+        with self.conn:
+            self.conn.execute("INSERT OR REPLACE INTO staged_files(file_id, origin) VALUES (?, ?)",
+                              (row["id"], os.path.abspath(origin or path)))
+
+    def unstage_file(self, path) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM staged_files WHERE file_id = (SELECT id FROM files WHERE path = ?)",
+                              (self._store(path),))
+
+    def staged_files(self) -> list[dict[str, Any]]:
+        """Files imported without being moved into the library, with the path they came from."""
+        rows = self.conn.execute(
+            "SELECT f.*, s.origin, s.staged FROM staged_files s JOIN files f ON f.id = s.file_id")
+        return sorted((self._file_row(r) for r in rows), key=lambda r: r["path"])
+
+    # ------------------------------------------------------------------ trash
+    def add_trash(self, path, trash_path, reason: str, album_id: Optional[int] = None, md5: Optional[str] = None,
+                  size: Optional[int] = None, fmt: Optional[str] = None) -> int:
+        """Record a file that was moved to the trash (``trash_path`` is where it is now)."""
+        with self.conn:
+            return self.conn.execute(
+                "INSERT INTO trash(path, trash_path, album_id, md5, size, format, reason) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (self._store(path), self._store(trash_path), album_id, md5, size, fmt, reason)).lastrowid
+
+    def trash_entries(self, older_than_days: Optional[int] = None) -> list[dict[str, Any]]:
+        sql, params = "SELECT * FROM trash", []
+        if older_than_days is not None:
+            sql += " WHERE trashed <= datetime('now', ?)"
+            params.append(f"-{int(older_than_days)} days")
+        rows = self.conn.execute(sql + " ORDER BY id", params)
+        entries = []
+        for row in rows:
+            entry = dict(row)
+            entry["path"], entry["trash_path"] = self._resolve(entry["path"]), self._resolve(entry["trash_path"])
+            entries.append(entry)
+        return entries
+
+    def get_trash(self, trash_id: int) -> Optional[dict[str, Any]]:
+        return next((e for e in self.trash_entries() if e["id"] == trash_id), None)
+
+    def delete_trash(self, trash_id: int) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM trash WHERE id = ?", (trash_id,))
 
     # ------------------------------------------------------------------- meta
     def get_meta(self, key: str) -> Optional[str]:

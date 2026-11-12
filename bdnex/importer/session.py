@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
+from bdnex import trash
 from bdnex.config import Settings
 from bdnex.importer.matching import Match, Recommendation, find_matches, recommend
 from bdnex.importer.pipeline import match_ahead, resolve_workers
@@ -22,6 +23,7 @@ from bdnex.importer.source import Candidate, MetadataSource
 from bdnex.library import Library
 from bdnex.library.hashing import file_md5
 from bdnex.library.scan import inspect_file, iter_comic_files
+from bdnex.versions import compare, facts_of
 
 logger = logging.getLogger(__name__)
 
@@ -265,18 +267,21 @@ class ImportSession:
             return ImportResult(path, PRETEND, score=score,
                                 note=f"would link to {candidate.url}")
 
-        album_action = self._duplicate_album(path, candidate)
+        album_action, others = self._duplicate_album(path, candidate)
         if album_action == "skip":
             self._log(path, DUPLICATE, score)
             return ImportResult(path, DUPLICATE, score=score, note="album already in library")
 
         album_id, partial, note = self._album_for(candidate, fetch=not defer_fetch and 'fetch' in self.steps)
         note = "; ".join(n for n in (note, damaged) if n)
-        if album_action == "replace":
-            for other in self.library.files_for_album(album_id):
-                if other["path"] != os.path.abspath(path):
-                    self.library.set_file_album(other["path"], None)
+        if album_action == "replace" and others:
+            self._trash_others(others, path)
+            note = "; ".join(n for n in (note, f"{len(others)} replaced file(s) are in the trash (`bdnex trash`)") if n)
         self.library.add_file(path, album_id)
+        if album_action == "keep_both" and any(
+                f["path"] != os.path.abspath(path) and not f["spare"] for f in self.library.files_for_album(album_id)):
+            self.library.set_file_fields(path, spare=1)  # another file is the main one: this is a spare version
+            note = "; ".join(n for n in (note, "kept as a spare version") if n)
         outcome = PARTIAL if partial else TAGGED
         self._log(path, outcome, score, album_id)
         if partial and "fetch" not in self.steps:
@@ -292,12 +297,25 @@ class ImportSession:
             self.library.log_import(path, outcome, score, album_id)
 
     def _resolve_duplicate(self, path, others, what) -> str:
+        """``skip`` (keep the existing files), ``keep_both`` or ``replace`` (the existing files go to the trash)."""
         action = self.settings.duplicates.action
         if action != "ask":
             return action
         if self.auto == "all" or self.prompter is None or self.pretend:
             return "skip"  # never silently create/replace duplicates; a preview does not ask
-        return self.prompter.duplicate_action(path, others, what)
+        chooser = getattr(self.prompter, "resolve_duplicate", None)
+        if chooser is None:
+            return self.prompter.duplicate_action(path, others, what)
+        existing = [facts_of(self.library, other) for other in others]
+        comparison = compare(existing, facts_of(self.library, path), self.settings.duplicates.prefer)
+        return chooser(comparison, what, self.library.root)
+
+    def _trash_others(self, others, new_path) -> None:
+        for other in others:
+            if os.path.exists(other):
+                trash.move_to_trash(self.library, self.settings, other, f"replaced by {new_path}")
+            else:
+                self.library.remove_file(other)  # already gone from the disk: only the record is left
 
     def _duplicate_file(self, path) -> Optional[ImportResult]:
         """Same bytes already registered under another path."""
@@ -308,12 +326,15 @@ class ImportSession:
         action = self._resolve_duplicate(path, same, "identical file")
         if action == "keep_both":
             return None
+        if action == "replace":
+            self._trash_others(same, path)
+            return None
         self._log(path, DUPLICATE)
         return ImportResult(path, DUPLICATE, note=f"identical to {same[0]}")
 
-    def _duplicate_album(self, path, candidate: Candidate) -> str:
+    def _duplicate_album(self, path, candidate: Candidate) -> tuple[str, list[str]]:
         """Another file for the same album, or for an album with the same `duplicates.keys`
-        (e.g. two editions of the same tome). Returns skip | keep_both | replace."""
+        (e.g. two editions of the same tome). Returns (skip | keep_both | replace | none, those files)."""
         info = self.source.partial_info(candidate)
         available = {"series": info.series.name if info.series else None, "volume": info.volume,
                      "title": info.title}
@@ -324,8 +345,8 @@ class ImportSession:
         others = [f["path"] for f in self.library.files_matching_album(
             self.source.name, candidate.source_id, keys, path)]
         if not others:
-            return "keep_both"
-        return self._resolve_duplicate(path, others, "album already linked")
+            return "none", []
+        return self._resolve_duplicate(path, others, "album already linked"), others
 
     def _matches(self, path) -> list[Match]:
         return find_matches(self.source, path)

@@ -57,9 +57,15 @@ import:
   auto: false                            # false: you check every file; true: strong matches are unasked
   workers: 0                             # background matching processes; 0 = CPU cores - 1, 1 = none
   lookahead: 100                         # files matched ahead of the one you are reviewing
+  outside: ask                           # files from outside `directory`: ask | move | copy | leave
 duplicates:
+  prefer: [cbz, cbr, pdf]                 # the format suggested first when two files are the same book
+  versions_dir: _versions                # spare versions of an album, inside `directory`
   keys: [series, volume]
   action: ask                            # ask | skip | keep_both | replace
+
+trash:
+  dir: .bdnex-trash                      # replaced files wait here, inside `directory`
 
 write:
   cbr: convert                           # convert | skip

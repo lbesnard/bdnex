@@ -43,6 +43,51 @@ class InquirerPrompter:
                      {"name": "Replace (the new file becomes the album's file)", "value": "replace"}],
         ).execute()
 
+    def resolve_duplicate(self, comparison, what: str, root=None) -> str:
+        """Which file(s) to keep when an album already has one: ``skip`` | ``replace`` | ``keep_both``."""
+        from InquirerPy import inquirer
+
+        from bdnex.versions import KEEP_EXISTING, table
+
+        self._need_terminal()
+        intro = ("An identical file is already in the library." if what == "identical file"
+                 else "This album already has a file in the library.")
+        print(f"\n{comparison.new.name}\n{intro}\n{table(comparison, root)}")
+        choices = [{"name": "Keep the existing file (the new one is not imported)", "value": "skip"},
+                   {"name": "Keep the new file (the existing one goes to the trash)", "value": "replace"},
+                   {"name": "Keep both (the new one becomes a spare version)", "value": "keep_both"}]
+        suggested = "skip" if comparison.suggestion == KEEP_EXISTING else "replace"
+        choices.sort(key=lambda choice: choice["value"] != suggested)
+        choices[0]["name"] += "  <- suggested"
+        return inquirer.select(message="Which one do you keep?", choices=choices).execute()
+
+    def resolve_collision(self, comparison, root=None) -> str:
+        """The destination name is taken: ``skip`` | ``replace`` | ``keep_both`` (as a spare version)."""
+        from InquirerPy import inquirer
+
+        from bdnex.versions import KEEP_EXISTING, table
+
+        self._need_terminal()
+        print(f"\n{comparison.new.name}\nThe destination is already taken by another file.\n{table(comparison, root)}")
+        choices = [{"name": "Keep the existing file (the new one is left where it is)", "value": "skip"},
+                   {"name": "Keep the new file (the existing one goes to the trash)", "value": "replace"},
+                   {"name": "Keep both (the new one goes to the spare versions)", "value": "keep_both"}]
+        suggested = "skip" if comparison.suggestion == KEEP_EXISTING else "replace"
+        choices.sort(key=lambda choice: choice["value"] != suggested)
+        choices[0]["name"] += "  <- suggested"
+        return inquirer.select(message="Which one do you keep?", choices=choices).execute()
+
+    def choose_placement(self, count: int, directory: str) -> str:
+        """What to do with files imported from outside the library folder: ``move`` | ``copy`` | ``leave``."""
+        from InquirerPy import inquirer
+
+        return inquirer.select(
+            message=f"{count} imported file(s) are outside your library folder ({directory}). What now?",
+            choices=[{"name": "Move them into the library (tags are written, names follow your templates)", "value": "move"},
+                     {"name": "Copy them into the library (the originals stay where they are)", "value": "copy"},
+                     {"name": "Leave them where they are (`bdnex move staged:true` places them later)", "value": "leave"}],
+        ).execute()
+
     # -- write / move
     def conflict(self, path: str, diff_lines: list[str]) -> str:
         from InquirerPy import inquirer

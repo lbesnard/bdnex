@@ -14,10 +14,16 @@ import:
   auto: false                           # false: you check every file; true: matches >= strong_threshold are applied unasked
   workers: 0                            # processes that match file names in the background; 0 = CPU cores - 1, 1 = none
   lookahead: 100                        # files matched ahead of the one you are reviewing
+  outside: ask                          # files imported from outside `directory`: ask | move | copy | leave
 
 duplicates:
   keys: [series, volume]                # what makes two albums the same: series | volume | title
   action: ask                           # ask | skip | keep_both | replace
+  prefer: [cbz, cbr, pdf]               # when two files are the same book, the format suggested first
+  versions_dir: _versions               # spare versions of an album go here, inside `directory`
+
+trash:
+  dir: .bdnex-trash                     # replaced files wait here, inside `directory` (see `bdnex trash`)
 
 write:
   cbr: convert                          # convert | skip
