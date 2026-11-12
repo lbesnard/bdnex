@@ -470,6 +470,9 @@ def partial_album_info(candidate) -> AlbumInfo:
     slug = re.sub(r"^BD-", "", re.sub(r"\.html$", "", slug))
     slug = re.sub(r"-\d+$", "", slug)  # album id
     match = re.match(r"(?P<series>.+?)-Tome-(?P<vol>\d+)(?:-(?P<title>.*))?$", slug)
+    if match and int(match["vol"]) == 0 and not match["title"]:
+        slug = match["series"]
+        match = None  # "Tome 0" with nothing else is how some one-shots are listed: it is no series
     if match:
         series_name = match["series"].replace("-", " ")
         title = (match["title"] or "").replace("-", " ") or series_name

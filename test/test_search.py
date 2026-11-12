@@ -266,3 +266,4 @@ def test_ctrl_o_is_bound_in_both_kinds_of_prompt(monkeypatch):
         monkeypatch.setattr(prompts.webbrowser, "open", lambda url: opened.append(url) or True)
         bound[(Keys.ControlO,)](types.SimpleNamespace())  # what pressing the key does
         assert opened == [ABEILLES.url]  # the first (highlighted) choice
+
