@@ -52,8 +52,38 @@ based on metadata and not an obscure filename.
 
 Inspired by the [beets](https://github.com/beetbox/beets) music manager.
 
-Bédéthèque serves album pages only to browsers, so full metadata needs the pages to be saved
-from a browser (or fetched by your own function). See the documentation, *Getting started*.
+## Album pages: read this first
+
+Bédéthèque protects its album pages against scripted requests, and bdnex itself does not try to get around
+that protection. This decides what works out of the box:
+
+| | Needs the album pages? |
+|---|---|
+| `bdnex init`, matching files to albums, duplicates, `ls`, `edit` | **No**: it works offline from the album list (the sitemaps) |
+| authors, publisher, ISBN, summary, genres, the cover link, and so the `ComicInfo.xml` tags | **Yes** |
+
+Without a page an album is still linked from the list (series, volume, title) and shows as `[not fetched]`
+in `bdnex ls`. Renaming and moving files works too, from what is known; a path template that uses a field
+that comes from the page (`$authors` in the default one-shot template) asks for it or uses a placeholder
+(`paths.missing_field`). To get the complete metadata **you supply the pages**, in one of two ways:
+
+1. **Save them from your browser** (Ctrl+S, "Web page, HTML only") into `bedetheque.pages_dir`
+   (`~/.local/share/bdnex/pages` by default), under any name that ends with the album id
+   (`BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html`, or just `245127.html`), then run `bdnex import --fetch`.
+2. **Point bdnex at your own function**, which takes a URL and returns the page as bytes, and keep its address
+   (or whatever it needs) in the configuration:
+
+   ```yaml
+   bedetheque:
+     fetcher: "package.module:function"        # your function: url -> page bytes
+     fetcher_endpoint: "http://localhost:8191" # a free string; only your function reads it
+   ```
+
+   How that function obtains a page is up to you, and so is respecting the site's terms of use.
+
+Each page is stored in the library when it is read, so it is fetched once, and `bdnex reparse` can rebuild the
+albums from the stored pages later without any network. See the documentation, *Getting started* and
+*Configuration*.
 
 ## Installation
 
