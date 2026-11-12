@@ -88,6 +88,40 @@ def open_page(value) -> bool:
     return bool(url) and webbrowser.open(url)
 
 
+def follow_resize(prompt, picture) -> None:
+    """Draw ``picture`` again when the terminal changes size (the terminal drops it when it re-flows the screen)."""
+    app = prompt.application
+
+    def after_render(_app) -> None:
+        try:
+            size = app.output.get_size()
+            if size.columns == picture.terminal_columns:
+                return
+            picture.terminal_columns = size.columns
+            thumbnail.clear(picture.kind, _OutputStream(app.output))
+            if size.columns >= thumbnail.MIN_TERMINAL_COLUMNS:
+                up = app.renderer._cursor_pos.y  # rows between the question's first line and the cursor
+                _OutputStream(app.output).write(thumbnail.redraw(picture, size.columns, up, thumbnail.in_tmux()))
+        except Exception as err:  # a picture is a help: never the reason the question breaks
+            import logging
+            logging.getLogger(__name__).debug(f"no thumbnail redraw: {err}")
+
+    app.after_render += after_render
+
+
+class _OutputStream:
+    """A prompt_toolkit output seen as a stream, so the picture is written in order with the screen updates."""
+
+    def __init__(self, output):
+        self.output = output
+
+    def write(self, text: str) -> None:
+        self.output.write_raw(text)
+
+    def flush(self) -> None:
+        self.output.flush()
+
+
 def bind_open(prompt, keys: tuple = ("c-o",)) -> None:
     """Make Ctrl-O open the page of the highlighted choice, in a select / fuzzy prompt."""
     def _open(event):
@@ -116,6 +150,8 @@ class InquirerPrompter:
 
         prompt = inquirer.select(message=message, choices=choices,
                                  instruction=f"({MATCH_HINT if shortcuts else OPEN_HINT})")
+        if shortcuts and getattr(self, "_picture", None) is not None:
+            follow_resize(prompt, self._picture)
         bind_open(prompt, ("c-o", "o", "O") if shortcuts else ("c-o",))
         if shortcuts:
             bind_shortcuts(prompt, shortcuts)
@@ -200,12 +236,16 @@ class InquirerPrompter:
 
             image = covers.front_cover(path, os.path.splitext(path)[1].lstrip(".").lower())
             if image:
-                thumbnail.show(image, kind)
+                picture = thumbnail.prepare(image, kind, shutil.get_terminal_size((80, 24)).columns)
+                if picture is not None:
+                    thumbnail.draw(picture)
+                    self._picture = picture
         except Exception as err:  # a picture is a help: never the reason the question can not be asked
             import logging
             logging.getLogger(__name__).debug(f"no thumbnail for {path}: {err}")
 
     def _clear_thumbnail(self) -> None:
+        self._picture = None
         kind, self._drawn = getattr(self, "_drawn", None), None
         if kind:
             try:

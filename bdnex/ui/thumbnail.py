@@ -13,6 +13,7 @@ import base64
 import logging
 import os
 import sys
+from dataclasses import dataclass
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -127,6 +128,49 @@ def place(png: bytes, kind: str, columns: int, rows: int, terminal_columns: int,
     if tmux:
         picture = through_tmux(picture)  # the cursor moves stay tmux's own: only the picture goes through
     return f"{chr(10) * rows}\x1b[{rows}A\x1b7\x1b[{column}G{picture}\x1b8"
+
+
+@dataclass
+class Picture:
+    """A picture ready to draw: the PNG, its protocol, its size in cells, and the terminal width it was placed for."""
+    png: bytes
+    kind: str
+    columns: int
+    rows: int
+    terminal_columns: int
+
+
+def prepare(image: bytes, kind: str, terminal_columns: int) -> Optional[Picture]:
+    """A :class:`Picture` for this terminal width, or ``None`` when it is too narrow or the image can not be read."""
+    if terminal_columns < MIN_TERMINAL_COLUMNS:
+        return None
+    thumbnail = small_png(image)
+    if thumbnail is None:
+        return None
+    png, width, height = thumbnail
+    columns, rows = cells(width, height)
+    return Picture(png, kind, columns, rows, terminal_columns)
+
+
+def redraw(picture: Picture, terminal_columns: int, up: int, tmux: bool = False) -> str:
+    """After a resize: delete the old picture and draw it again at the right edge, ``up`` rows above the cursor.
+
+    ``up`` is how far the cursor is below the first line of the question (the picture's top row).
+    """
+    drawn = escape(picture.png, picture.kind, picture.columns, picture.rows)
+    if tmux:
+        drawn = through_tmux(drawn)
+    column = terminal_columns - picture.columns + 1
+    rise = f"\x1b[{up}A" if up > 0 else ""
+    return f"\x1b7{rise}\x1b[{column}G{drawn}\x1b8"
+
+
+def draw(picture: Picture, stream=None) -> None:
+    """Make room and draw ``picture`` at the right edge, beside the lines that follow."""
+    stream = sys.stdout if stream is None else stream
+    stream.write(place(picture.png, picture.kind, picture.columns, picture.rows, picture.terminal_columns,
+                       tmux=in_tmux()))
+    stream.flush()
 
 
 def show(image: bytes, kind: str, stream=None, terminal_columns: Optional[int] = None) -> int:
