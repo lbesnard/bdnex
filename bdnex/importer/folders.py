@@ -43,7 +43,14 @@ def title_and_volume(path: str) -> tuple[list[str], Optional[int]]:
     volume = None
     if numbers:
         volume = numbers[1][1] if numbers[0][0] == 0 and len(numbers) > 1 else numbers[0][1]
-    return [token for token in tokens if not token.isdigit() and number(token) is None], volume
+    title_numbers = 0
+    positions = [position for position, _ in numbers]
+    if positions[:3] == [0, 1, 2]:
+        # ``14-18 - T01``: the title is made of numbers, and the volume is the last one
+        title_numbers, volume = 2, numbers[2][1]
+    words = [token for position, token in enumerate(tokens)
+             if position < title_numbers or (not token.isdigit() and number(token) is None)]
+    return words, volume
 
 
 def _shared_prefix(lists: list[list[str]]) -> list[str]:

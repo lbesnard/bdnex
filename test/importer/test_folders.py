@@ -130,3 +130,10 @@ def test_solid_means_most_files_found_their_album(source):
 
 def test_folder_name():
     assert folders.folder_name(FILES) == "100 Bullets"
+
+
+def test_a_series_whose_title_is_made_of_numbers_is_a_series():
+    paths = [f"/lib/Series/14-18/14-18 - T0{i}.pdf" for i in range(1, 9)] + ["/lib/Series/14-18/14-18 - T09.cbz"]
+    assert folders.title_and_volume(paths[0]) == (["14", "18"], 1)
+    assert folders.title_and_volume(paths[8]) == (["14", "18"], 9)
+    assert folders.classify(paths) == folders.SERIES
