@@ -255,15 +255,15 @@ def test_a_preview_changes_no_file_and_not_the_library(env, command):
 def test_a_move_preview_shows_where_each_file_would_go(env):
     tmp, files = env
     code, text = run("move", "-n")
-    assert "-> " + str(tmp / "comics" / "Series" / "Nains" / "Nains - T01 - Redwin de la Forge.cbz") in text
-    assert text.count("would: ") == 2 and "move to " in text
+    assert "to    " in text and "Series/Nains/Nains - T01 - Redwin de la Forge.cbz" in text
+    assert "from  " in text and text.count("would do") == 2
     assert os.path.exists(files["a"])  # still where it was
 
 
 def test_a_write_preview_says_the_file_stays_where_it_is(env):
     tmp, files = env
     code, text = run("write", "-n")
-    assert text.count("(stays where it is)") == 2 and "would: write ComicInfo.xml" in text
+    assert text.count("stays where it is") == 2 and "write ComicInfo.xml" in text
 
 
 def test_the_library_is_opened_read_only_for_a_preview(env, monkeypatch):
