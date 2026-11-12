@@ -95,6 +95,8 @@ class Write(_Section):
     delete_original: Literal["ask", "yes", "no"]
     conflict: Literal["ask", "file", "database"]
     corrupted: Literal["ask", "leave", "move"]
+    size_tolerance: float = Field(ge=0, le=1000)
+    size_change: Literal["ask", "accept", "refuse"]
 
 
 class Paths(_Section):
