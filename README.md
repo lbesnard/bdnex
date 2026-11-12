@@ -1,7 +1,17 @@
 ![BDneX](https://github.com/lbesnard/bdnex/actions/workflows/ci.yml/badge.svg)
 [![codecov](https://codecov.io/gh/lbesnard/bdnex/branch/main/graph/badge.svg?token=V9WJWRCTK5)](https://codecov.io/gh/lbesnard/bdnex)
 
-BDneX french comics tagger and library manager (POF at this stage)
+BDneX is a French comics tagger and library manager.
+
+> [!WARNING]
+> **bdnex is under active development (pre-1.0).** The commands, the configuration file and the library
+> database change often, **with breaking changes at any time and no deprecation period**. Some upgrades
+> convert the database in place, after which an older bdnex refuses to open it.
+>
+> Until there is a 1.0 release: **back up your library database before upgrading** (`bdnex config --defaults`
+> shows where it is), pin the version you install, and read the release notes. bdnex only changes your comic
+> files when you ask it to (`write`, `move`, `repair`, or an import that places files); keep a backup of your
+> collection as well.
 
 ### Motivation
 Contrary to music tagging, there is no agreed standard vocabulary for comics
@@ -29,6 +39,10 @@ based on metadata and not an obscure filename.
   album pages (*fetch*) and records everything in a SQLite library (series, one-shots, authors,
   genres, checksums). You confirm each match, or `--auto`; matching runs in the background on all cores
 - duplicate handling, resume, remembered skips, `--match` / `--fetch` to run one step, `--force` to redo
+- duplicates are shown side by side and you keep one, the other, or both: spare versions go to `_versions/`,
+  replaced files to a restorable trash (`bdnex trash`)
+- files imported from outside your library folder (a download folder) are moved or copied in, or left and placed later
+- optional cover check (`pip install 'bdnex[cover]'`): the file's cover against the album's, with SIFT
 - `bdnex edit`, `reparse`, `reset`, `relocate`: fix, rebuild offline, start over, move your collection
 - `bdnex ls`: search the library (`series:nains author:uderzo year:2010..2015 ^genre:humour`)
 - `bdnex write` / `bdnex move`: write `ComicInfo.xml`, convert CBR and PDF to CBZ losslessly
