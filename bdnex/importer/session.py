@@ -40,6 +40,10 @@ class ImportAborted(RuntimeError):
     """The user chose to stop the import: what was decided so far stays, nothing else is started."""
 
 
+class GoBack(RuntimeError):
+    """The user wants to take the previous decision back and make it again."""
+
+
 class NeedsTerminal(RuntimeError):
     """A question has to be asked but there is nobody to ask: the import stops instead of failing file by file."""
 
@@ -53,12 +57,24 @@ class Prompter(Protocol):
 
 
 @dataclass
+class Journal:
+    """What matching one file recorded, to be able to take it back."""
+
+    logged: bool = False  # an import-log row
+    linked: bool = False  # the file was linked to an album
+    new_file: bool = False  # ... and its row in the library did not exist before
+    created_album: Optional[int] = None  # an album that was added for it
+    trashed: list[int] = field(default_factory=list)  # files it replaced (trash ids)
+
+
+@dataclass
 class ImportResult:
     path: str
     outcome: str
     score: Optional[float] = None
     album_id: Optional[int] = None
     note: str = ""
+    journal: Optional[Journal] = field(default=None, repr=False, compare=False)
 
 
 @dataclass
@@ -106,6 +122,8 @@ class ImportSession:
         self.auto = "all" if wanted == "all" else "strong" if wanted in (True, "strong") else None
         self.workers = resolve_workers(settings.import_.workers if workers is None else workers)
         self._pending: list[tuple[ImportResult, Candidate, str]] = []
+        self._journal: Optional[Journal] = None  # what the file being matched has recorded so far
+        self._asked = False  # the user was asked about the file being matched
         self.series_mode = settings.import_.series if series is None else series  # ask | always | never
         self._covers: list[ImportResult] = []  # complete albums whose file's cover was never compared
         self.cover_check = settings.cover.check if cover_check is None else cover_check
@@ -145,10 +163,15 @@ class ImportSession:
             groups.setdefault(os.path.dirname(path), []).append(path)
         decided: set[str] = set()
         self._pending = []
-        for number, path in enumerate(files, start=1):
+        base = len(report.results)  # results of the files before this loop (paths that do not exist)
+        history: list[int] = []  # positions of the files the user was asked about, to go back to them
+        position = 0
+        while position < len(files):
+            path = files[position]
             kind = kinds[path][0]
             if kind in ("match", "fetch", "cover"):
-                self.progress(f"[{number}/{len(files)}] {os.path.basename(path)}")
+                self.progress(f"[{position + 1}/{len(files)}] {os.path.basename(path)}")
+            self._asked = False
             try:
                 matches = None
                 if kind == "match":
@@ -161,6 +184,17 @@ class ImportSession:
                     if isinstance(matches, Exception):
                         raise matches
                 result = self.import_file(path, matches=matches, defer_fetch=True, chosen=chosen.get(path))
+            except GoBack:
+                if not history:
+                    self.progress("There is nothing before this file to go back to.")
+                    continue  # ask about this file again
+                position = history.pop()
+                for undone in reversed(report.results[base + position:]):
+                    self._undo(undone)
+                del report.results[base + position:]
+                chosen.pop(files[position], None)  # a file the folder had decided is asked about on its own
+                self.progress(f"Back to {os.path.basename(files[position])}: what was decided from there is taken back.")
+                continue
             except ImportAborted:
                 report.aborted_at, report.total = path, len(files)
                 break  # this file stays undecided: it is asked about again next time
@@ -171,7 +205,11 @@ class ImportSession:
                 result = ImportResult(path, FAILED, note=str(err))
                 if not self.pretend:
                     self.library.log_import(path, FAILED)
+                    result.journal = Journal(logged=True)
             report.results.append(result)
+            if self._asked:
+                history.append(position)
+            position += 1
         stream.close()  # stops the background matching
         if report.aborted_at:
             self._pending = []  # the pages are fetched by the next run (the albums are "matched")
@@ -411,7 +449,19 @@ class ImportSession:
         kind, album = self._classify(path)
         if kind != "match":
             return self._without_matching(path, kind, album, defer_fetch)
+        self._journal = Journal()
+        try:
+            result = self._import_matched(path, matches, defer_fetch, chosen)
+        except (GoBack, ImportAborted):
+            self._undo_journal(self._journal, path)  # the question was not answered: leave nothing behind
+            raise
+        finally:
+            journal, self._journal = self._journal, None
+        result.journal = journal
+        return result
 
+    def _import_matched(self, path: str, matches: Optional[list[Match]], defer_fetch: bool,
+                        chosen: Optional[tuple]) -> ImportResult:
         info = inspect_file(path)
         if not info.readable:
             self._log(path, FAILED)
@@ -443,12 +493,17 @@ class ImportSession:
             self._log(path, DUPLICATE, score)
             return ImportResult(path, DUPLICATE, score=score, note="album already in library")
 
+        existed = self.library.find_album(self.source.name, candidate.source_id) is not None
         album_id, partial, note = self._album_for(candidate, fetch=not defer_fetch and 'fetch' in self.steps)
+        if not existed and not self.pretend:
+            self._journal.created_album = album_id
         note = "; ".join(n for n in (note, damaged) if n)
         if album_action == "replace" and others:
             self._trash_others(others, path)
             note = "; ".join(n for n in (note, f"{len(others)} replaced file(s) are in the trash (`bdnex trash`)") if n)
+        self._journal.new_file = self.library.get_file(path) is None
         self.library.add_file(path, album_id)
+        self._journal.linked = True
         if album_action == "keep_both" and any(
                 f["path"] != os.path.abspath(path) and not f["spare"] for f in self.library.files_for_album(album_id)):
             self.library.set_file_fields(path, spare=1)  # another file is the main one: this is a spare version
@@ -466,6 +521,28 @@ class ImportSession:
     def _log(self, path, outcome, score=None, album_id=None):
         if not self.pretend:
             self.library.log_import(path, outcome, score, album_id)
+            if self._journal is not None:
+                self._journal.logged = True
+
+    def _undo(self, result: ImportResult) -> None:
+        """Take back what matching this file recorded (nothing for files that were only fetched or skipped over)."""
+        self._pending = [item for item in self._pending if item[0] is not result]
+        self._undo_journal(result.journal, result.path)
+
+    def _undo_journal(self, journal: Optional[Journal], path: str) -> None:
+        if journal is None or self.pretend:
+            return
+        if journal.linked:
+            if journal.new_file:
+                self.library.remove_file(path)
+            else:
+                self.library.set_file_album(path, None)
+        if journal.logged:
+            self.library.forget_last_import(path)
+        if journal.created_album is not None and self.library.delete_album_if_unused(journal.created_album):
+            self.library.prune_orphan_series()
+        for entry in reversed(journal.trashed):  # files this one replaced come back
+            trash.restore(self.library, entry)
 
     def _resolve_duplicate(self, path, others, what) -> str:
         """``skip`` (keep the existing files), ``keep_both`` or ``replace`` (the existing files go to the trash)."""
@@ -484,7 +561,9 @@ class ImportSession:
     def _trash_others(self, others, new_path) -> None:
         for other in others:
             if os.path.exists(other):
-                trash.move_to_trash(self.library, self.settings, other, f"replaced by {new_path}")
+                entry = trash.move_to_trash(self.library, self.settings, other, f"replaced by {new_path}")
+                if self._journal is not None:
+                    self._journal.trashed.append(entry)
             else:
                 self.library.remove_file(other)  # already gone from the disk: only the record is left
 
@@ -533,6 +612,7 @@ class ImportSession:
             return (best.candidate, best.score) if rec is Recommendation.MEDIUM else (None, None)
         if self.prompter is None:
             return None, None
+        self._asked = True
         chosen = self.prompter.choose_match(path, matches)
         if chosen is None:
             return None, None

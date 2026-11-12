@@ -105,7 +105,7 @@ def test_the_match_question_offers_to_abort_and_aborting_raises(monkeypatch):
         def _need_terminal(self):
             pass
 
-        def _select(self, message, choices, fragments=None):
+        def _select(self, message, choices, fragments=None, shortcuts=None):
             self.choices = choices
             return InquirerPrompter.ABORT
 
@@ -113,4 +113,4 @@ def test_the_match_question_offers_to_abort_and_aborting_raises(monkeypatch):
     with pytest.raises(ImportAborted):
         prompter.choose_match("/c/a.cbz", [])
     names = [c["name"] for c in prompter.choices]
-    assert names[-2] == "Skip this file" and names[-1].startswith("Abort the import")
+    assert names[-3] == "[S]kip this file" and names[-1].startswith("[A]bort the import")

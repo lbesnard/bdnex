@@ -12,10 +12,10 @@ import webbrowser
 from typing import Optional
 
 from bdnex.importer.matching import Match, query_from_filename
-from bdnex.importer.session import ImportAborted, NeedsTerminal
+from bdnex.importer.session import GoBack, ImportAborted, NeedsTerminal
 from bdnex.importer.source import Candidate
 from bdnex.library.query import fold
-from bdnex.ui import color
+from bdnex.ui import color, thumbnail
 
 
 def display_name(candidate: Candidate) -> str:
@@ -28,6 +28,25 @@ def display_name(candidate: Candidate) -> str:
 
 FUZZY_POOL = 2000  # albums offered to the Python fuzzy prompt: its engine is too slow for the whole list
 OPEN_HINT = "Ctrl-O opens the highlighted album's page in your browser"
+MATCH_HINT = "Enter or a highlighted key chooses; O opens the highlighted album's page"
+KEY_STYLE = "bold underline"  # the letter of a shortcut, in the colour of its line
+
+
+def shortcut(letter: str, text: str, tone: str) -> list:
+    """``[S]kip``: the brackets and the text in ``tone``, the letter underlined and bold (as beets does)."""
+    return [(tone, "["), (f"{tone} {KEY_STYLE}".strip(), letter), (tone, "]" + text)]
+
+
+def bind_shortcuts(prompt, keys: dict) -> None:
+    """Let a key answer the question as Enter would: ``{key: value}`` (lower and upper case are both bound)."""
+    for key, value in keys.items():
+        def answer(event, value=value):
+            prompt.status["answered"] = True
+            prompt.status["result"] = next((c["name"] for c in prompt.content_control.choices if c["value"] is value), str(value))
+            event.app.exit(result=value)
+
+        for variant in {key, key.upper()}:
+            prompt.register_kb(variant)(answer)
 
 
 Fragments = list  # of (prompt_toolkit style, text)
@@ -69,30 +88,37 @@ def open_page(value) -> bool:
     return bool(url) and webbrowser.open(url)
 
 
-def bind_open(prompt) -> None:
+def bind_open(prompt, keys: tuple = ("c-o",)) -> None:
     """Make Ctrl-O open the page of the highlighted choice, in a select / fuzzy prompt."""
-    @prompt.register_kb("c-o")
     def _open(event):
         open_page(prompt.result_value)
+
+    for key in keys:
+        prompt.register_kb(key)(_open)
 
 
 class InquirerPrompter:
     SKIP = "__skip__"
+    PREVIOUS = "__previous__"
     ABORT = "__abort__"
     SEARCH = "__search__"
-    AGAIN = "__again__"
-    BACK = "__back__"
 
-    def __init__(self, source=None):
-        """``source``: the metadata source, when the user may search its album list by hand."""
+    def __init__(self, source=None, thumbnails: str = "auto"):
+        """``source``: the metadata source, when the user may search its album list by hand;
+        ``thumbnails``: ``import.thumbnails``."""
         self.source = source
+        self.thumbnails = thumbnails
 
     # -- thin wrappers over InquirerPy, so the logic around them can be tested
-    def _select(self, message: str, choices: list, fragments: Optional[list] = None):
+    def _select(self, message: str, choices: list, fragments: Optional[list] = None,
+                shortcuts: Optional[dict] = None):
         from InquirerPy import inquirer
 
-        prompt = inquirer.select(message=message, choices=choices, instruction=f"({OPEN_HINT})")
-        bind_open(prompt)
+        prompt = inquirer.select(message=message, choices=choices,
+                                 instruction=f"({MATCH_HINT if shortcuts else OPEN_HINT})")
+        bind_open(prompt, ("c-o", "o", "O") if shortcuts else ("c-o",))
+        if shortcuts:
+            bind_shortcuts(prompt, shortcuts)
         if fragments:
             colorize_choices(prompt, fragments)
         return prompt.execute()
@@ -119,28 +145,34 @@ class InquirerPrompter:
     # -- import
     def choose_match(self, path: str, matches: list[Match]) -> Optional[Candidate]:
         self._need_terminal()
-
         on = color.enabled()
-        choices, fragments = [], []
+        choices, fragments, keys = [], [], {}
 
-        def add(name, value, pieces):
+        def add(name, value, pieces, key=None):
             choices.append({"name": name, "value": value})
             fragments.append(pieces if on else None)  # no colour: the plain name is drawn
+            if key:
+                keys[key] = value
 
-        for m in matches:
+        for number, m in enumerate(matches[:9], start=1):
             slug = m.candidate.url.rsplit("/", 1)[-1]
-            add(f"{m.score:5.1f}  {slug}", m.candidate,
-                [(f"fg:{color.score_hex(m.score)} bold", f"{m.score:5.1f}"), ("", f"  {slug}")])
+            add(f"[{number}] {m.score:5.1f}  {slug}", m.candidate,
+                shortcut(str(number), "", "") + [("", " "), (f"fg:{color.score_hex(m.score)} bold", f"{m.score:5.1f}"),
+                                                 ("", f"  {slug}")], str(number))
         if self.source is not None:
-            add("Search the album list by hand...", self.SEARCH, [("fg:ansicyan", "Search the album list by hand...")])
-        add("Skip this file", self.SKIP, [("fg:ansiyellow", "Skip this file")])
-        add("Abort the import (what is decided is kept; run it again to continue)", self.ABORT,
-            [("fg:ansired", "Abort the import (what is decided is kept; run it again to continue)")])
+            add("[E]nter a search in the album list...", self.SEARCH, shortcut("E", "nter a search in the album list...", "fg:ansicyan"), "e")
+        add("[S]kip this file", self.SKIP, shortcut("S", "kip this file", "fg:ansiyellow"), "s")
+        add("[B]ack to the previous file", self.PREVIOUS, shortcut("B", "ack to the previous file", "fg:ansiblue"), "b")
+        add("[A]bort the import (what is decided is kept; run it again to continue)", self.ABORT,
+            shortcut("A", "bort the import (what is decided is kept; run it again to continue)", "fg:ansired"), "a")
         print(match_header(path, on))
+        self._thumbnail(path)
         while True:
-            answer = self._select("Which album?", choices, fragments)
+            answer = self._select("Which album?", choices, fragments, keys)
             if answer == self.ABORT:
                 raise ImportAborted(path)
+            if answer == self.PREVIOUS:
+                raise GoBack(path)
             if answer == self.SKIP:
                 return None
             if answer == self.SEARCH:
@@ -149,6 +181,21 @@ class InquirerPrompter:
                     return found
                 continue  # nothing picked: back to the list
             return answer
+
+    def _thumbnail(self, path: str) -> None:
+        """A small picture of the file's first page on the right of the question, on a terminal that can show it."""
+        kind = thumbnail.protocol(self.thumbnails)
+        if kind is None:
+            return
+        try:
+            from bdnex.importer import covers
+
+            image = covers.front_cover(path, os.path.splitext(path)[1].lstrip(".").lower())
+            if image:
+                thumbnail.show(image, kind)
+        except Exception as err:  # a picture is a help: never the reason the question can not be asked
+            import logging
+            logging.getLogger(__name__).debug(f"no thumbnail for {path}: {err}")
 
     def confirm_series(self, folder: str, paths: list[str], proposal) -> str:
         """Several files in one folder: are they one series? ``series`` or ``each`` (match them one by one)."""
