@@ -167,3 +167,14 @@ def test_without_opencv_the_error_says_how_to_install_it(monkeypatch):
     monkeypatch.setitem(sys.modules, "cv2", None)
     with pytest.raises(covers.CoverUnavailable, match="bdnex\\[cover\\]"):
         covers.sift_similarity(b"x", b"y")
+
+
+def test_a_cover_is_found_whatever_the_extension_says(tmp_path):
+    import shutil
+    import zipfile
+    zipped = tmp_path / "really-a-zip.cbr"
+    with zipfile.ZipFile(zipped, "w") as archive:
+        archive.writestr("01.JPG", png(2))
+    assert covers.front_cover(str(zipped), "cbr") == png(2)
+    shutil.copy(zipped, tmp_path / "x.pdf")
+    assert covers.front_cover(str(tmp_path / "x.pdf"), "pdf") == png(2)
