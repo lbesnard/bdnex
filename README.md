@@ -1,7 +1,8 @@
 ![BDneX](https://github.com/lbesnard/bdnex/actions/workflows/ci.yml/badge.svg)
 [![codecov](https://codecov.io/gh/lbesnard/bdnex/branch/main/graph/badge.svg?token=V9WJWRCTK5)](https://codecov.io/gh/lbesnard/bdnex)
+[![Documentation Status](https://readthedocs.org/projects/bdnex/badge/?version=latest)](https://bdnex.readthedocs.io/en/latest/)
 
-BDneX is a French comics tagger and library manager.
+BDneX is a French comics tagger and library manager. **Documentation: <https://bdnex.readthedocs.io/en/latest/>**
 
 > [!WARNING]
 > **bdnex is under active development (pre-1.0).** The commands, the configuration file and the library
@@ -98,7 +99,9 @@ the wheel and publishes a GitHub release.
 
 ## Documentation
 
-Build locally with `uv sync --extra docs && uv run sphinx-build -b html docs docs/_build/html`, then open `docs/_build/html/index.html`.
+The documentation is at <https://bdnex.readthedocs.io/en/latest/> (how to get started, a "How do I...?" page for the common tasks, the configuration and query references).
+
+To build it locally: `uv sync --extra docs && uv run sphinx-build -b html docs docs/_build/html`, then open `docs/_build/html/index.html`.
 
 ## Examples
 
@@ -110,4 +113,4 @@ bdnex write                      # write ComicInfo.xml into matched files
 bdnex move --copy                # copy into the library tree defined in the config
 ```
 
-Full documentation: `docs/` (build with the command above).
+Full documentation: <https://bdnex.readthedocs.io/en/latest/>
