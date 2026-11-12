@@ -473,6 +473,17 @@ class InquirerPrompter:
                      {"name": "Replace", "value": "replace"}],
         ).execute()
 
+    def size_action(self, path: str, before: int, after: int, tolerance: float) -> str:
+        from InquirerPy import inquirer
+
+        from bdnex.organizer.organizer import human_size
+
+        print(f"\n{path}\nThe new archive is {human_size(after)}, the original {human_size(before)} "
+              f"(more than {tolerance:g}% apart). Every page is in it, byte for byte.")
+        return inquirer.select(message="What now?", choices=[
+            {"name": "Refuse it: keep the original untouched", "value": "refuse"},
+            {"name": "Accept the new archive", "value": "accept"}]).execute()
+
     def corrupted_action(self, path: str, problems: list[str], can_move: bool) -> str:
         from InquirerPy import inquirer
 

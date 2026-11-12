@@ -31,6 +31,7 @@ WRITE, MOVE, COPY = "write", "move", "copy"
 WRITTEN, MOVED, COPIED, UNCHANGED, SKIPPED, FAILED, PRETEND, REPAIRED = (
     "written", "moved", "copied", "unchanged", "skipped", "failed", "pretend", "repaired")
 TMP_SUFFIX = ".bdnex-tmp"
+MIN_SIZE_CHANGE = 1024 * 1024  # a difference under 1 MiB is never worth a question (tags on a tiny file)
 
 # template fields that can be saved back to the database when typed at a prompt
 ALBUM_COLUMNS = {"title", "year", "language", "isbn", "publisher"}
@@ -55,6 +56,25 @@ class Prompter(Protocol):
     def resolve_fields(self, path: str, changes: list, file_fields: dict[str, str],
                        db_fields: dict[str, str]) -> Optional[dict[str, str]]:
         """Decide field by field: ``{field: final value}`` for the differing fields, ``None`` to skip the file."""
+
+    def size_action(self, path: str, before: int, after: int, tolerance: float) -> str:
+        """The new archive is much bigger or smaller than the original: ``accept`` it or ``refuse`` it."""
+
+
+class SizeChanged(archive.ArchiveError):
+    """The new archive does not have about the size of the original."""
+
+    def __init__(self, before: int, after: int):
+        super().__init__(f"{human_size(before)} became {human_size(after)}")
+        self.before, self.after = before, after
+
+
+def human_size(size: int) -> str:
+    for unit in ("B", "KiB", "MiB", "GiB"):
+        if size < 1024 or unit == "GiB":
+            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
+        size /= 1024
+    return f"{size} B"
 
 
 @dataclass
@@ -154,7 +174,17 @@ class Organizer:
                 spare = True
                 steps.append(f"kept as a spare version in {self.settings.duplicates.versions_dir}")
 
-        self._build(dest, entries, xml)
+        try:
+            self._build(dest, entries, xml, compare_to=path)
+        except SizeChanged as change:
+            refused = self._size_decision(path, change)
+            if refused is not None:
+                return refused
+            self._build(dest, entries, xml)  # accepted: no second comparison
+            steps.append(f"size {change}, accepted")
+        else:
+            if converted:
+                steps.append(f"size {human_size(os.path.getsize(path))} -> {human_size(os.path.getsize(dest))}")
 
         removed = self._dispose_source(path, dest, mode, converted)
         self._update_library(path, dest)
@@ -187,12 +217,33 @@ class Organizer:
         self._update_library(path, dest)
         return FileResult(path, REPAIRED, dest, note)
 
-    def _build(self, dest: str, entries, xml: Optional[bytes]) -> None:
-        """Write ``dest`` through a verified temporary file."""
+    def _size_decision(self, path: str, change: SizeChanged) -> Optional[FileResult]:
+        """``None`` to go on with the new archive, else the result that leaves the original alone."""
+        policy = self.settings.write.size_change
+        if policy == "ask":
+            if self.force:
+                policy = "accept"
+            elif self.prompter is None:
+                policy = "refuse"
+            else:
+                policy = self.prompter.size_action(path, change.before, change.after,
+                                                   self.settings.write.size_tolerance)
+        if policy == "accept":
+            return None
+        return FileResult(path, SKIPPED, note=f"the new archive's size is off ({change}; write.size_tolerance is "
+                                              f"{self.settings.write.size_tolerance:g}%): the original is untouched")
+
+    def _build(self, dest: str, entries, xml: Optional[bytes], compare_to: Optional[str] = None) -> None:
+        """Write ``dest`` through a verified temporary file; with ``compare_to``, its size must be about that file's."""
         tmp = dest + TMP_SUFFIX
         try:
             archive.write_cbz(tmp, entries, xml)
             archive.verify_cbz(tmp, entries, xml)
+            tolerance = self.settings.write.size_tolerance
+            if compare_to is not None and tolerance > 0 and os.path.exists(compare_to):
+                before, after = os.path.getsize(compare_to), os.path.getsize(tmp)
+                if abs(after - before) > max(before * tolerance / 100, MIN_SIZE_CHANGE):
+                    raise SizeChanged(before, after)
         except Exception:
             if os.path.exists(tmp):
                 os.remove(tmp)
