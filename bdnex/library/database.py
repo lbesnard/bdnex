@@ -533,6 +533,10 @@ class Library:
             (source, kind, url)).fetchone()
         return row["content"] if row else None
 
+    def cache_delete(self, source: str, kind: str, url: str) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM source_cache WHERE source = ? AND kind = ? AND url = ?", (source, kind, url))
+
     def cache_clear(self, source: str, kind: Optional[str] = None) -> int:
         """Drop cached entries (the ``--recache`` option). Returns rows removed."""
         sql, params = "DELETE FROM source_cache WHERE source = ?", [source]

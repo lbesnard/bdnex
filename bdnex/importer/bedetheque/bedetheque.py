@@ -28,12 +28,19 @@ class BlockedError(RuntimeError):
     """The site answered with an anti-bot challenge instead of the page."""
 
 
+CHALLENGE_MARKERS = (b"<title>Just a moment", b"window._cf_chl_opt", b"/cdn-cgi/challenge-platform/")
+
+
 def looks_blocked(status_code: int, content: bytes) -> bool:
-    """Detect a Cloudflare-style challenge page (never cache one)."""
-    head = content[:4000]
+    """Detect a Cloudflare-style challenge page (never cache one).
+
+    The page itself is recognised whatever the status code, because a fetcher that solved or timed out
+    may hand back the challenge with a 200.
+    """
+    head = content[:20000]
     return (status_code in (403, 429, 503)
             and (b"Just a moment" in head or b"challenges.cloudflare.com" in head)) \
-        or (b"<title>Just a moment" in head)
+        or any(marker in head for marker in CHALLENGE_MARKERS)
 
 
 def http_fetch(url: str) -> bytes:
@@ -79,11 +86,18 @@ class Bedetheque:
     def _get(self, kind: str, url: str, recache: bool = False) -> bytes:
         if not recache:
             cached = self.library.cache_get(SOURCE, kind, url)
+            if cached is not None and kind != "sitemap" and looks_blocked(200, cached):
+                logger.warning(f"The stored {kind} for {url} is an anti-bot challenge page: dropped")
+                self.library.cache_delete(SOURCE, kind, url)
+                cached = None
             if cached is not None:
                 return cached
         self._sleep(uniform(*(self.sitemap_delay if kind == "sitemap" else self.delay)))
         logger.debug(f"Fetching {url}")
         content = (self._sitemap_fetch if kind == "sitemap" else self._fetch)(url)
+        if kind != "sitemap" and looks_blocked(200, content):  # whichever fetcher it came from
+            raise BlockedError(f"{url}: the fetcher returned an anti-bot challenge page, not the page. "
+                               "Nothing was stored.")
         self.library.cache_put(SOURCE, kind, url, content)
         return content
 
@@ -243,6 +257,8 @@ class Bedetheque:
         The page is stored in the cache, so later ``album_info(url)`` calls work
         offline.
         """
+        if looks_blocked(200, html.encode("utf-8", errors="replace")):
+            raise BlockedError(f"{url}: the saved page is an anti-bot challenge page, not the album page")
         self.library.cache_put(SOURCE, "album", url, html)
         return self.album_info(url)
 
