@@ -97,9 +97,54 @@ def test_the_search_choice_is_offered_only_when_there_is_something_to_search():
 
 
 def test_a_manual_pick_is_the_answer():
-    prompter = Scripted(Source(), selects=[InquirerPrompter.SEARCH])
+    prompter = Scripted(Source(), selects=[InquirerPrompter.SEARCH, SABLES])  # the second answer: "yes, use it"
     prompter.search = lambda path: SABLES
     assert prompter.choose_match(FILE, matches()) is SABLES
+    assert prompter.shown[1][0].startswith("Use ")  # it was checked before being taken
+
+
+def test_a_picked_album_can_be_refused_after_checking_it_and_the_list_comes_back():
+    prompter = Scripted(Source(), selects=[InquirerPrompter.SEARCH, InquirerPrompter.NO, OMBRES])
+    prompter.search = lambda path: SABLES
+    assert prompter.choose_match(FILE, matches()) is OMBRES and len(prompter.shown) == 3
+
+
+def test_an_address_typed_by_hand_is_an_answer():
+    class WithUrl(Source):
+        def candidate_from_url(self, url):
+            return SABLES if "BD-" in url else None
+
+    prompter = Scripted(WithUrl(), selects=[InquirerPrompter.URL])
+    prompter._text = lambda message, default="": next(texts)
+    texts = iter(["nonsense", "https://www.bedetheque.com/BD-Sables-1.html"])
+    assert prompter.choose_match(FILE, matches()) is SABLES
+    labels = [c["name"] for c in prompter.shown[0][1]]
+    assert "Type the album's [U]RL..." in labels
+
+
+def test_an_empty_address_goes_back_to_the_list():
+    class WithUrl(Source):
+        def candidate_from_url(self, url):
+            return None
+
+    prompter = Scripted(WithUrl(), selects=[InquirerPrompter.URL, OMBRES])
+    prompter._text = lambda message, default="": ""
+    assert prompter.choose_match(FILE, matches()) is OMBRES
+
+
+@pytest.mark.parametrize("typed, expected", [
+    ("https://www.bedetheque.com/BD-Loup-Noir-Taupinambour-Tome-5-116343.html", ("116343", 5)),
+    ("  http://m.bedetheque.com/BD-Drain-Tome-2-Chatiment-79365.html?x=1#top ", ("79365", 2)),
+    ("https://www.bedetheque.com/BD-Un-seul-album-12.html", ("12", None)),
+    ("https://www.bedetheque.com/serie-1-BD-Loup-Noir.html", None),
+    ("https://example.com/BD-X-1.html", None),
+    ("", None),
+])
+def test_a_typed_address_becomes_a_candidate(tmp_path, typed, expected):
+    found = Bedetheque(Library(tmp_path / "l.sqlite")).candidate_from_url(typed)
+    assert (found and (found.source_id, found.volume)) == (expected or None)
+    if found:
+        assert found.url.startswith("https://www.bedetheque.com/BD-") and "?" not in found.url
 
 
 def test_backing_out_of_the_search_returns_to_the_list():

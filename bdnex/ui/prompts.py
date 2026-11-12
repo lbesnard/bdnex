@@ -29,6 +29,7 @@ def display_name(candidate: Candidate) -> str:
 FUZZY_POOL = 2000  # albums offered to the Python fuzzy prompt: its engine is too slow for the whole list
 OPEN_HINT = "Ctrl-O opens the highlighted album's page in your browser"
 MATCH_HINT = "Enter or a highlighted key chooses; O opens the highlighted album's page"
+CONFIRM_HINT = "Enter or a highlighted key chooses; O opens the album's page to check it"
 KEY_STYLE = "bold underline"  # the letter of a shortcut, in the colour of its line
 
 
@@ -88,6 +89,40 @@ def open_page(value) -> bool:
     return bool(url) and webbrowser.open(url)
 
 
+def follow_resize(prompt, picture) -> None:
+    """Draw ``picture`` again when the terminal changes size (the terminal drops it when it re-flows the screen)."""
+    app = prompt.application
+
+    def after_render(_app) -> None:
+        try:
+            size = app.output.get_size()
+            if size.columns == picture.terminal_columns:
+                return
+            picture.terminal_columns = size.columns
+            thumbnail.clear(picture.kind, _OutputStream(app.output))
+            if size.columns >= thumbnail.MIN_TERMINAL_COLUMNS:
+                up = app.renderer._cursor_pos.y  # rows between the question's first line and the cursor
+                _OutputStream(app.output).write(thumbnail.redraw(picture, size.columns, up, thumbnail.in_tmux()))
+        except Exception as err:  # a picture is a help: never the reason the question breaks
+            import logging
+            logging.getLogger(__name__).debug(f"no thumbnail redraw: {err}")
+
+    app.after_render += after_render
+
+
+class _OutputStream:
+    """A prompt_toolkit output seen as a stream, so the picture is written in order with the screen updates."""
+
+    def __init__(self, output):
+        self.output = output
+
+    def write(self, text: str) -> None:
+        self.output.write_raw(text)
+
+    def flush(self) -> None:
+        self.output.flush()
+
+
 def bind_open(prompt, keys: tuple = ("c-o",)) -> None:
     """Make Ctrl-O open the page of the highlighted choice, in a select / fuzzy prompt."""
     def _open(event):
@@ -102,6 +137,8 @@ class InquirerPrompter:
     PREVIOUS = "__previous__"
     ABORT = "__abort__"
     SEARCH = "__search__"
+    URL = "__url__"
+    NO = "__no__"
 
     def __init__(self, source=None, thumbnails: str = "auto"):
         """``source``: the metadata source, when the user may search its album list by hand;
@@ -115,7 +152,9 @@ class InquirerPrompter:
         from InquirerPy import inquirer
 
         prompt = inquirer.select(message=message, choices=choices,
-                                 instruction=f"({MATCH_HINT if shortcuts else OPEN_HINT})")
+                                 instruction=f"({MATCH_HINT if shortcuts and 'a' in shortcuts else CONFIRM_HINT if shortcuts else OPEN_HINT})")
+        if shortcuts and getattr(self, "_picture", None) is not None:
+            follow_resize(prompt, self._picture)
         bind_open(prompt, ("c-o", "o", "O") if shortcuts else ("c-o",))
         if shortcuts:
             bind_shortcuts(prompt, shortcuts)
@@ -161,12 +200,21 @@ class InquirerPrompter:
                                                  ("", f"  {slug}")], str(number))
         if self.source is not None:
             add("[E]nter a search in the album list...", self.SEARCH, shortcut("E", "nter a search in the album list...", "fg:ansicyan"), "e")
+        if hasattr(self.source, "candidate_from_url"):
+            add("Type the album's [U]RL...", self.URL,
+                [("fg:ansicyan", "Type the album's ")] + shortcut("U", "RL...", "fg:ansicyan"), "u")
         add("[S]kip this file", self.SKIP, shortcut("S", "kip this file", "fg:ansiyellow"), "s")
         add("[B]ack to the previous file", self.PREVIOUS, shortcut("B", "ack to the previous file", "fg:ansiblue"), "b")
         add("[A]bort the import (what is decided is kept; run it again to continue)", self.ABORT,
             shortcut("A", "bort the import (what is decided is kept; run it again to continue)", "fg:ansired"), "a")
         print(match_header(path, on))
         self._thumbnail(path)
+        try:
+            return self._ask_match(path, choices, fragments, keys)
+        finally:
+            self._clear_thumbnail()
+
+    def _ask_match(self, path, choices, fragments, keys):
         while True:
             answer = self._select("Which album?", choices, fragments, keys)
             if answer == self.ABORT:
@@ -177,10 +225,35 @@ class InquirerPrompter:
                 return None
             if answer == self.SEARCH:
                 found = self.search(path)
+                if found is not None and self.confirm_found(found):
+                    return found
+                continue  # nothing picked, or not the right one: back to the list
+            if answer == self.URL:
+                found = self.ask_url()
                 if found is not None:
                     return found
-                continue  # nothing picked: back to the list
+                continue
             return answer
+
+    def confirm_found(self, candidate: Candidate) -> bool:
+        """The album picked in the search: check it (O opens its page) before it is used."""
+        answer = self._select(
+            f"Use {display_name(candidate)}?",
+            [{"name": "[Y]es, use this album", "value": candidate},
+             {"name": "[N]o, back to the list", "value": self.NO}],
+            None, {"y": candidate, "n": self.NO})
+        return answer != self.NO
+
+    def ask_url(self) -> Optional[Candidate]:
+        """Type the address of the album's page; empty goes back."""
+        while True:
+            text = self._text("Address of the album's page (empty to go back):").strip()
+            if not text:
+                return None
+            candidate = self.source.candidate_from_url(text)
+            if candidate is not None:
+                return candidate
+            print("That is not the address of an album page (https://www.bedetheque.com/BD-...-<number>.html).")
 
     def _thumbnail(self, path: str) -> None:
         """A small picture of the file's first page on the right of the question, on a terminal that can show it."""
@@ -188,14 +261,28 @@ class InquirerPrompter:
         if kind is None:
             return
         try:
+            thumbnail.clear(kind)  # the previous album's picture, which would show through
+            self._drawn = kind
             from bdnex.importer import covers
 
             image = covers.front_cover(path, os.path.splitext(path)[1].lstrip(".").lower())
             if image:
-                thumbnail.show(image, kind)
+                picture = thumbnail.prepare(image, kind, shutil.get_terminal_size((80, 24)).columns)
+                if picture is not None:
+                    thumbnail.draw(picture)
+                    self._picture = picture
         except Exception as err:  # a picture is a help: never the reason the question can not be asked
             import logging
             logging.getLogger(__name__).debug(f"no thumbnail for {path}: {err}")
+
+    def _clear_thumbnail(self) -> None:
+        self._picture = None
+        kind, self._drawn = getattr(self, "_drawn", None), None
+        if kind:
+            try:
+                thumbnail.clear(kind)
+            except Exception:  # a picture is a help
+                pass
 
     def confirm_series(self, folder: str, paths: list[str], proposal) -> str:
         """Several files in one folder: are they one series? ``series`` or ``each`` (match them one by one)."""

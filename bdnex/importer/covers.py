@@ -52,9 +52,26 @@ def _is_page(name: str) -> bool:
             and "__macosx" not in name.lower().split("/"))
 
 
+def _sniff(path: str) -> Optional[str]:
+    """``cbz``, ``cbr`` or ``pdf`` from the first bytes of the file; ``None`` if they say nothing."""
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(8)
+    except OSError:
+        return None
+    if head.startswith(b"PK"):
+        return "cbz"
+    if head.startswith(b"Rar!"):
+        return "cbr"
+    if head.startswith(b"%PDF"):
+        return "pdf"
+    return None
+
+
 def front_cover(path: str, fmt: str) -> Optional[bytes]:
     """The bytes of the first page image of a CBZ, CBR or PDF; ``None`` if there is none or the file is unreadable."""
     try:
+        fmt = _sniff(path) or fmt  # a ".cbr" that is really a zip is common: trust the content, not the name
         if fmt == "cbz":
             with zipfile.ZipFile(path) as archive:
                 names = sorted((i.filename for i in archive.infolist() if not i.is_dir() and _is_page(i.filename)),

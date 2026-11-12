@@ -70,7 +70,7 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    terminal only: `NO_COLOR=1` turns it off, `FORCE_COLOR=1` forces it. The report at the end of the run uses the same
    colours for scores and outcomes.
    **Keys, as in beets.** Every line shows its key in brackets, highlighted: `[1]`..`[9]` pick a candidate,
-   **E** enters a search, **S** skips the file, **B** goes back to the previous file, **A** aborts the import.
+   **E** enters a search, **U** types the address of the album's page, **S** skips the file, **B** goes back to the previous file, **A** aborts the import.
    Upper or lower case, no Enter needed; the arrows and Enter work as usual. **O** (or Ctrl-O) opens the page of
    the highlighted album in your browser.
    **Back** undoes what was decided for the previous file (its link in the library, a file moved to the trash or
@@ -81,8 +81,10 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    `set -g allow-passthrough on` is set and the terminal around it is Ghostty or kitty (tmux support is best effort).
    Over SSH the terminal cannot be detected: set `import.thumbnails` (`kitty`, `iterm2`, `never`) or the
    `BDNEX_THUMBNAILS` variable, which wins over the setting. Any failure drawing it is silent.
-   **The right album is not in the list?** Choose *Enter a search in the album list...*: with
-   [`fzf`](https://github.com/junegunn/fzf) installed, it opens over the whole album list (about 370,000),
+   **The right album is not in the list?** Choose *Enter a search in the album list...* (the album you pick there is
+   shown again for you to check, with **O** to open its page, before it is used; **N** returns to the list), or
+   *Type the album's URL...* and paste the address of its page (`https://www.bedetheque.com/BD-...-<number>.html`).
+   The search: with [`fzf`](https://github.com/junegunn/fzf) installed, it opens over the whole album list (about 370,000),
    started from the file's name and case-insensitive; otherwise you type a few words and filter their best
    2,000 hits in a Python fuzzy prompt. Esc / Ctrl-C goes back to the list. **Ctrl-O** opens the page of the
    highlighted album in your browser, in the list and in both searches, to check before you choose.

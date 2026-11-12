@@ -172,8 +172,8 @@ def test_a_picture_is_scaled_and_keeps_its_shape():
     result = thumbnail.small_png(png(1, size=(300, 450)))
     assert result is not None
     data, width, height = result
-    assert data.startswith(b"\x89PNG") and (width, height) == (180, 270)
-    assert thumbnail.cells(width, height) == (14, 10)  # two thirds as tall as wide, cells twice as tall as wide
+    assert data.startswith(b"\x89PNG") and (width, height) == (360, 540)
+    assert thumbnail.cells(width, height) == (24, 18)  # two thirds as tall as wide, cells twice as tall as wide
 
 
 def test_something_that_is_not_an_image_gives_no_picture():
@@ -213,7 +213,7 @@ def test_a_narrow_terminal_gets_no_picture_rather_than_one_on_top_of_the_list():
 def test_a_wide_terminal_gets_it_and_the_rows_are_reported():
     out = io.StringIO()
     rows = thumbnail.show(png(1, size=(300, 450)), thumbnail.ITERM2, out, terminal_columns=140)
-    assert rows == 10 and out.getvalue().startswith("\n" * 10) and "1337;File" in out.getvalue()
+    assert rows == 18 and out.getvalue().startswith("\n" * 18) and "1337;File" in out.getvalue()
 
 
 def test_an_unreadable_cover_draws_nothing():
@@ -232,15 +232,18 @@ def cbz(tmp_path, name="Foo - T01.cbz"):
 def test_the_first_page_of_the_file_is_what_is_shown(tmp_path, monkeypatch):
     shown = []
     monkeypatch.setattr(prompts.thumbnail, "protocol", lambda setting="auto", *a, **k: thumbnail.KITTY)
-    monkeypatch.setattr(prompts.thumbnail, "show", lambda image, kind, *a, **k: shown.append((image, kind)))
-    InquirerPrompter(None)._thumbnail(cbz(tmp_path))
-    assert shown == [(png(3, size=(300, 450)), thumbnail.KITTY)]
+    monkeypatch.setattr(prompts.shutil, "get_terminal_size", lambda fallback=(80, 24): types.SimpleNamespace(columns=200))
+    monkeypatch.setattr(prompts.thumbnail, "draw", lambda picture, *a, **k: shown.append(picture))
+    prompter = InquirerPrompter(None)
+    prompter._thumbnail(cbz(tmp_path))
+    assert len(shown) == 1 and shown[0].kind == thumbnail.KITTY and shown[0].terminal_columns == 200
+    assert prompter._picture is shown[0]
 
 
 def test_the_setting_is_passed_on_and_no_protocol_means_nothing_is_read(tmp_path, monkeypatch):
     settings = []
     monkeypatch.setattr(prompts.thumbnail, "protocol", lambda setting="auto", *a, **k: settings.append(setting))
-    monkeypatch.setattr(prompts.thumbnail, "show", lambda *a, **k: pytest.fail("a picture was drawn"))
+    monkeypatch.setattr(prompts.thumbnail, "draw", lambda *a, **k: pytest.fail("a picture was drawn"))
     InquirerPrompter(None, thumbnails="never")._thumbnail(cbz(tmp_path))
     assert settings == ["never"]
 
@@ -251,7 +254,7 @@ def test_a_failing_picture_never_stops_the_question(tmp_path, monkeypatch):
     def broken(*a, **k):
         raise RuntimeError("the terminal said no")
 
-    monkeypatch.setattr(prompts.thumbnail, "show", broken)
+    monkeypatch.setattr(prompts.thumbnail, "draw", broken)
     InquirerPrompter(None)._thumbnail(cbz(tmp_path))  # no exception
     InquirerPrompter(None)._thumbnail(str(tmp_path / "missing.cbz"))  # nor for a file that cannot be read
 
@@ -273,3 +276,81 @@ def test_through_tmux_doubles_the_escapes_inside_a_passthrough_envelope():
 def test_only_the_picture_goes_through_tmux():
     placed = thumbnail.place(b"x", thumbnail.KITTY, 14, 10, 120, tmux=True)
     assert placed.startswith("\n" * 10 + "\x1b[10A\x1b7\x1b[107G\x1bPtmux;") and placed.endswith("\x1b\\\x1b8")
+
+
+def test_clearing_deletes_every_placement_and_only_for_kitty(monkeypatch):
+    monkeypatch.delenv("TMUX", raising=False)
+    out = io.StringIO()
+    thumbnail.clear(thumbnail.KITTY, out)
+    assert out.getvalue() == "\x1b_Ga=d,d=A,q=2\x1b\\"
+    other = io.StringIO()
+    thumbnail.clear(thumbnail.ITERM2, other)
+    assert other.getvalue() == ""
+
+
+# ------------------------------------------------------------------ after a resize
+def picture(columns=200):
+    return thumbnail.prepare(png(1, size=(300, 450)), thumbnail.KITTY, columns)
+
+
+def test_a_narrow_terminal_gives_no_picture_to_prepare():
+    assert picture(80) is None and picture(200).rows == 18
+
+
+def test_redraw_goes_up_to_the_first_line_of_the_question_and_back(monkeypatch):
+    monkeypatch.delenv("TMUX", raising=False)
+    pic = picture()
+    out = thumbnail.redraw(pic, 150, 7)
+    assert out.startswith("\x1b7\x1b[7A\x1b[127G\x1b_G") and out.endswith("\x1b\\\x1b8")  # 150 - 24 + 1
+    assert "A" not in thumbnail.redraw(pic, 150, 0).split("\x1b_G")[0].replace("\x1b7", "")  # no move at the top
+
+
+class FakeApp:
+    def __init__(self, columns, up):
+        self.columns, self.log = columns, []
+        self.output = types.SimpleNamespace(get_size=lambda: types.SimpleNamespace(columns=self.columns),
+                                            write_raw=self.log.append, flush=lambda: None)
+        self.renderer = types.SimpleNamespace(_cursor_pos=types.SimpleNamespace(y=up))
+        self.after_render = []
+
+        class Hooks(list):
+            def __iadd__(hooks, fn):
+                hooks.append(fn)
+                return hooks
+        self.after_render = Hooks()
+
+    def render(self):
+        for hook in self.after_render:
+            hook(self)
+
+
+def test_the_picture_follows_a_resize_and_only_then(monkeypatch):
+    monkeypatch.delenv("TMUX", raising=False)
+    app = FakeApp(200, up=9)
+    pic = picture(200)
+    prompts.follow_resize(types.SimpleNamespace(application=app), pic)
+    app.render()
+    assert app.log == []  # same size: nothing to do
+    app.columns = 160
+    app.render()
+    text = "".join(app.log)
+    assert text.startswith("\x1b_Ga=d") and "\x1b[9A\x1b[137G" in text and pic.terminal_columns == 160
+    app.log.clear()
+    app.render()
+    assert app.log == []
+
+
+def test_too_narrow_after_a_resize_the_picture_is_only_removed(monkeypatch):
+    monkeypatch.delenv("TMUX", raising=False)
+    app = FakeApp(200, up=9)
+    prompts.follow_resize(types.SimpleNamespace(application=app), picture(200))
+    app.columns = 90
+    app.render()
+    assert "".join(app.log) == "\x1b_Ga=d,d=A,q=2\x1b\\"
+
+
+def test_a_failure_while_following_a_resize_is_silent():
+    app = FakeApp(200, up=9)
+    prompts.follow_resize(types.SimpleNamespace(application=app), picture(200))
+    app.output.get_size = lambda: 1 / 0
+    app.render()  # no exception
