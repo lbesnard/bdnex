@@ -908,3 +908,32 @@ def test_path_rules_give_some_albums_another_template(lib, make_cbz, tmp_path):
     assert "/Collections/" in ruled.dest and "/Collections/" not in plain.dest
     settings.paths.rules = [PathRule(match=["series:zzz"], template="Never")]
     assert Organizer(lib, settings, pretend=True).process(row, MOVE).dest == plain.dest
+
+
+def test_a_move_removes_the_folder_it_empties_even_with_junk_left(lib, make_cbz, tmp_path):
+    settings = settings_for(tmp_path)
+    root = settings.require_library_directory()
+    old = root / "Old" / "Deep"
+    old.mkdir(parents=True)
+    src = make_cbz("a.cbz")
+    moved = old / "a.cbz"
+    shutil.move(str(src), moved)
+    (old / ".DS_Store").write_bytes(b"x")
+    (old / "._a.cbz").write_bytes(b"x")
+    row = registered(lib, str(moved), add_series_album(lib))
+    result = Organizer(lib, settings).process(row, MOVE)
+    assert result.outcome == "moved"
+    assert not (root / "Old").exists() and root.exists()  # both folders gone, the library root stays
+
+
+def test_a_move_keeps_a_folder_that_still_holds_something(lib, make_cbz, tmp_path):
+    settings = settings_for(tmp_path)
+    root = settings.require_library_directory()
+    old = root / "Old"
+    old.mkdir(parents=True)
+    moved = old / "a.cbz"
+    shutil.move(str(make_cbz("a.cbz")), moved)
+    (old / "notes.txt").write_text("keep")
+    row = registered(lib, str(moved), add_series_album(lib))
+    Organizer(lib, settings).process(row, MOVE)
+    assert (old / "notes.txt").exists()

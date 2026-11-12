@@ -37,6 +37,14 @@ A file that already sits where it belongs says `stays where it is`, and `bdnex w
 `bdnex import` can do it in one go: `-W/--write`, `--move` or `--copy`, or set `import.mode`
 (`in_place`, `copy`, `move`) in the configuration.
 
+## Folders left behind
+
+After `move` (or `import --move`) the folder a file left is removed when only system leftovers (`.DS_Store`,
+`Thumbs.db`, `desktop.ini`, `._*` files) remain in it, and so are the parents that this empties. Inside the
+library folder that goes up to, never including, the library root. For a file taken from outside the library
+(an inbox) only its own folder is removed, so a download folder is never climbed out of. A folder that still holds
+anything else is left alone.
+
 ## What is written
 
 `ComicInfo.xml` at the root of the CBZ, validated against the ComicInfo schema: title, series,
