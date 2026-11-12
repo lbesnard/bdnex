@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 CONFIG_VERSION = 2
 PLACEHOLDER_DIRECTORY = "/path/to/comics/library"
@@ -99,6 +99,16 @@ class Write(_Section):
     corrupted: Literal["ask", "leave", "move"]
     size_tolerance: float = Field(ge=0, le=1000)
     size_change: Literal["ask", "accept", "refuse"]
+
+    @field_validator("delete_original", mode="before")
+    @classmethod
+    def _yaml_yes_no(cls, value):
+        """YAML reads an unquoted ``yes`` / ``no`` as true / false: accept them as the words they were."""
+        if value is True:
+            return "yes"
+        if value is False:
+            return "no"
+        return value
 
 
 class Paths(_Section):

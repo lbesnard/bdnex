@@ -124,3 +124,8 @@ bedetheque:
 bedetheque's sitemap files wait `bedetheque.sitemap_delay` (default 0.5 to 1.5 s) between downloads;
 album pages wait `bedetheque.delay` (3 to 10 s). bdnex does nothing with `fetcher_endpoint`. A fetcher can read it with
 `load_config().settings.bedetheque.fetcher_endpoint`.
+
+## `yes` and `no` in YAML
+
+YAML reads an unquoted `yes` or `no` as true or false. For `write.delete_original: yes | no` bdnex accepts both
+spellings, quoted or not. (Other options take words such as `ask`, `skip` or `always`, which are not affected.)
