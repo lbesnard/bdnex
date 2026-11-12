@@ -184,6 +184,47 @@ This forgets your albums, files, edits and import history, and **keeps the downl
 album pages**. The next `bdnex import` needs no network for what was already fetched. Your comic
 files are untouched. See [Maintaining](maintaining.md#starting-from-scratch).
 
+## …add comics I just downloaded to my collection?
+
+```bash
+bdnex import ~/Downloads        # match, read the pages, then ONE question about where the files go
+```
+
+Files outside your library folder (`directory`) are asked about once per run: **move** them in (tags
+written, names from your templates, CBR and PDF converted to CBZ), **copy** them, or **leave** them. Decide
+once with `import.outside: move`, or per run with `--move`, `--copy` or `--no-move`. Files you leave are
+remembered ("staged") with the path they came from:
+
+```bash
+bdnex ls --files staged:true    # what is waiting
+bdnex move staged:true          # place them whenever you like
+```
+
+If the album already has a file, you are shown both before anything moves: see the next entry.
+
+## …keep two versions of a book, or replace one?
+
+When an album already has a file, bdnex shows the two side by side (format, pages, size, whether the
+cover matches) and suggests one: **keep the existing**, **keep the new** (the existing goes to the trash) or
+**keep both**. A second file kept this way is a *spare version*, placed in `_versions/` in your library
+with a number if there are several, so readers like Komga see one book.
+
+```bash
+bdnex ls --files spare:true     # the spare versions
+```
+
+See [Duplicates, versions and the trash](versions.md).
+
+## …get back a file I replaced?
+
+Nothing replaced is deleted: it waits in `.bdnex-trash` in your library folder.
+
+```bash
+bdnex trash                     # list
+bdnex trash --restore 3         # put it back and register it again
+bdnex trash --empty             # delete for good (asks first; --older-than 30 for old ones only)
+```
+
 ## …move my whole collection to another disk?
 
 ```bash
@@ -211,6 +252,7 @@ downloaded again.
 | `directory is not set` | set `directory` in the configuration; the library stores paths relative to it |
 | `bdnex: command not found` after installing | run it with `uv run bdnex …` from a clone, or reinstall with the install script; an old install does not know the new commands |
 | albums stay *matched* (`[not fetched]` in `bdnex ls`) | the page could not be fetched: see "when Bédéthèque blocks my requests", then `bdnex import --fetch` |
+| `The destination is already taken by another file` | two files for one album: choose keep existing / new / both (see [Duplicates](versions.md)) |
 | `This import has to ask you about a file, and there is no terminal` | run it in a terminal, or add `--auto` / `--auto=all` / `-n` |
 | `There is no album list yet` | run `bdnex init` |
 | a `.cbr` cannot be read | install `unrar` (or `7z` / `bsdtar`) |

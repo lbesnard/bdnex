@@ -13,6 +13,7 @@ commands:
   write    write ComicInfo.xml into files (converts CBR/PDF to CBZ)
   move     write tags and rename files into the library tree (--copy keeps the originals)
   edit     change the metadata of albums or series by hand (kept across re-imports)
+  trash    list, restore or empty the files that were replaced
   reset    empty the library (albums, files, edits), keep the downloaded sitemaps and pages
   relocate tell the library that your comics folder moved
   reparse  re-read the pages stored in the library (offline) to fill in more details
@@ -74,6 +75,9 @@ def _main(argv):
     if argv and argv[0] == "edit":
         from bdnex.ui.edit_cmd import run as run_edit
         sys.exit(run_edit(argv[1:]))
+    if argv and argv[0] == "trash":
+        from bdnex.ui.trash_cmd import run as run_trash
+        sys.exit(run_trash(argv[1:]))
     if argv and argv[0] == "reset":
         from bdnex.ui.reset_cmd import run as run_reset
         sys.exit(run_reset(argv[1:]))

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 
 from bdnex.config import ConfigError, load_config
@@ -40,10 +41,14 @@ def build_parser() -> argparse.ArgumentParser:
                         help="show what would be done; change nothing")
     parser.add_argument("-W", "--write", action="store_true",
                         help="afterwards, write ComicInfo.xml into the imported files (in place)")
-    parser.add_argument("--move", action="store_true",
-                        help="afterwards, write tags and move the files into the library tree")
-    parser.add_argument("--copy", action="store_true",
-                        help="afterwards, copy the files into the library tree (originals untouched)")
+    where = parser.add_mutually_exclusive_group()
+    where.add_argument("--move", action="store_true",
+                       help="afterwards, write tags and move the files into the library tree")
+    where.add_argument("--copy", action="store_true",
+                       help="afterwards, copy the files into the library tree (originals untouched)")
+    where.add_argument("--no-move", action="store_true",
+                       help="leave files from outside your library folder where they are (`import.outside`); "
+                            "`bdnex move staged:true` places them later")
     parser.add_argument("--workers", type=int, metavar="N",
                         help="processes matching file names in the background (0 = CPU cores - 1, 1 = none; "
                              "default: `import.workers`)")
@@ -127,10 +132,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
                   "--auto=all (never ask), or -n (preview). What was decided so far is saved.", file=sys.stderr)
             return 2
         try:
-            organize_results = _organize(args, settings, library, report) if not args.pretend else []
+            organize_results, placement_notes = (_place(args, settings, library, report) if not args.pretend else ([], []))
         except ConfigError as err:
             print(f"The import was recorded, but the files were not touched: {err}", file=sys.stderr)
-            organize_results = []
+            organize_results, placement_notes = [], []
             organize_failed = True
         else:
             organize_failed = False
@@ -162,23 +167,70 @@ def run(argv: list[str], out=sys.stdout) -> int:
         from bdnex.ui.write_cmd import report as organizer_report
         print("\nFiles:", file=out)
         organizer_report(organize_results, out)
+    for note in placement_notes:
+        print(note, file=out)
     return 1 if organize_failed or report.count(FAILED) or any(r.outcome == "failed" for r in organize_results) else 0
 
 
-def _organize(args, settings, library, report):
-    """File operations after the import: flags win over the `import.mode` setting."""
+def _outside(rows, root) -> tuple[list, list]:
+    """Split file rows into (outside the library folder, inside it)."""
+    if not root:
+        return [], list(rows)
+    inside_prefix = root + os.sep
+    outside = [r for r in rows if not r["path"].startswith(inside_prefix)]
+    return outside, [r for r in rows if r["path"].startswith(inside_prefix)]
+
+
+def _ask_outside(count: int, directory: str, prompter) -> str:
+    """One question for the whole run: what to do with the files that came from elsewhere."""
+    if not sys.stdin.isatty():
+        return "leave"
+    return prompter.choose_placement(count, directory)
+
+
+def _place(args, settings, library, report, prompter=None):
+    """File operations after the import. Returns (results, notes).
+
+    Flags win over the configuration: ``--move`` / ``--copy`` apply to every imported file, ``--no-move``
+    leaves the ones from outside the library folder where they are, ``-W`` writes tags in place. Without a
+    flag, ``import.mode: copy|move`` applies to everything, and otherwise the files imported from outside
+    the library folder follow ``import.outside`` (asked once per run).
+    """
     from bdnex.organizer.organizer import COPY, MOVE, WRITE, Organizer
 
-    if args.move:
-        mode = MOVE
-    elif args.copy:
-        mode = COPY
+    rows = [row for row in (library.get_file(r.path) for r in report.results if r.outcome in ("tagged", "partial")) if row]
+    outside, inside = _outside(rows, library.root)
+    plan, leave, notes = [], [], []
+    configured = {"copy": COPY, "move": MOVE}.get(settings.import_.mode)
+    if args.move or args.copy or (configured and not args.no_move):
+        plan.append((rows, MOVE if args.move else COPY if args.copy else configured))
     else:
-        mode = {"copy": COPY, "move": MOVE}.get(settings.import_.mode, WRITE if args.write else None)
-    if mode is None:
-        return []
-    if mode != WRITE:
+        if args.write:
+            plan.append((inside, WRITE))
+        if outside:
+            choice = "leave" if args.no_move else settings.import_.outside
+            if choice == "ask":
+                prompter = prompter or InquirerPrompter()
+                choice = _ask_outside(len(outside), str(library.root), prompter)
+                if choice == "leave" and not sys.stdin.isatty():
+                    notes.append("(No terminal to ask on: the files from outside your library folder were left "
+                                 "where they are. `import.outside` or `--move` / `--copy` decides in advance.)")
+            if choice in ("move", "copy"):
+                plan.append((outside, MOVE if choice == "move" else COPY))
+            else:
+                leave = outside
+                if args.write:
+                    plan.append((outside, WRITE))
+    if any(mode != WRITE for _, mode in plan):
         settings.require_library_directory()
-    rows = [library.get_file(r.path) for r in report.results if r.outcome in ("tagged", "partial")]
-    organizer = Organizer(library, settings, prompter=None if args.auto == "all" else InquirerPrompter(), force=args.auto == "all")
-    return organizer.run([r for r in rows if r], mode, progress=progress)
+    never_ask = args.auto == "all"
+    organizer = Organizer(library, settings, prompter=None if never_ask else InquirerPrompter(), force=never_ask)
+    results = []
+    for chosen, mode in plan:
+        results += organizer.run(chosen, mode, progress=progress)
+    for row in leave:
+        library.stage_file(row["path"])
+    if leave:
+        notes.append(f"{len(leave)} file(s) from outside {library.root} were left where they are. "
+                     "`bdnex move staged:true` moves them into the library whenever you like.")
+    return results, notes

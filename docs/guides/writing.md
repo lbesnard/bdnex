@@ -94,7 +94,7 @@ paths:
 - Fields: `kind series title volume language year publisher isbn genre authors writer penciller colorist`.
 - Every value is made safe for file names (`/ \ : * ? " < > |` become `_`), so a value can never
   create a folder. The extension `.cbz` is added for you.
-- If a name already exists, bdnex asks (skip, keep both with a number, or replace); `--force` keeps both.
+- If a name already exists, bdnex shows both files and asks which to keep: the existing one, the new one (the existing goes to the [trash](versions.md#the-trash)), or both (the new one becomes a spare version in `_versions/`, numbered if there are several). `--force` keeps both.
 
 ### Missing values
 

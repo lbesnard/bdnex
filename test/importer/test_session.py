@@ -221,11 +221,14 @@ def test_same_album_other_file_duplicate_actions(web, make_cbz):
         r1 = env.session.import_file(first)
         r2 = env.session.import_file(second)
         assert r1.outcome == TAGGED and r2.outcome == expected, action
-        if action == "replace":
-            assert env.lib.get_file(first)["album_id"] is None
-            assert env.lib.get_file(second)["album_id"] == r2.album_id
-        if action == "keep_both":
+        if action == "replace":  # the old file goes to the trash: gone from the library and from its place
+            assert env.lib.get_file(first) is None and not os.path.exists(first)
+            (entry,) = env.lib.trash_entries()
+            assert entry["path"] == first and entry["album_id"] == r2.album_id and os.path.exists(entry["trash_path"])
+            assert env.lib.get_file(second)["album_id"] == r2.album_id and "trash" in r2.note
+        if action == "keep_both":  # the new file is a spare version of the album
             assert len(env.lib.files_for_album(r2.album_id)) == 2
+            assert env.lib.get_file(first)["spare"] == 0 and env.lib.get_file(second)["spare"] == 1
         env.lib.close()
 
 

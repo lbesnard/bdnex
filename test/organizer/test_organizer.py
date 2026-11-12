@@ -257,18 +257,70 @@ def test_destination_collision(lib, make_cbz, tmp_path, answer, expect):
     assert second.outcome == expect
     if answer == "skip":
         assert os.path.exists(b["path"]) and lib.get_file(first.dest) is not None
-    if answer == "keep_both":
-        assert second.dest.endswith("(2).cbz") and os.path.exists(first.dest)
-    if answer == "replace":
+    if answer == "keep_both":  # the second file is a spare version, in the spare versions folder
+        assert os.sep + "_versions" + os.sep in second.dest and os.path.exists(first.dest)
+        assert lib.get_file(second.dest)["spare"] == 1 and lib.get_file(first.dest)["spare"] == 0
+    if answer == "replace":  # the first file goes to the trash, with a record
         assert second.dest == first.dest and lib.get_file(first.dest)["id"] == b["id"]
         assert lib.stats()["files"] == 1  # the replaced file's row is gone, not duplicated
+        (entry,) = lib.trash_entries()
+        assert entry["path"] == first.dest and os.path.exists(entry["trash_path"]) and "replaced by" in entry["reason"]
 
 
-def test_force_numbers_clashes_instead_of_asking(lib, make_cbz, tmp_path):
+def test_force_keeps_both_as_spare_versions_instead_of_asking(lib, make_cbz, tmp_path):
     org = Organizer(lib, settings_for(tmp_path), FakePrompter(), force=True)
     org.process(registered(lib, make_cbz("a.cbz", pages=3), add_series_album(lib)), MOVE)
     result = org.process(registered(lib, make_cbz("b.cbz", pages=5), add_series_album(lib, source_id="2")), MOVE)
-    assert result.dest.endswith("(2).cbz") and org.prompter.asked == []
+    assert os.sep + "_versions" + os.sep in result.dest and org.prompter.asked == []
+
+
+def test_more_spare_versions_get_a_number(lib, make_cbz, tmp_path):
+    org = Organizer(lib, settings_for(tmp_path), FakePrompter(collision="keep_both"))
+    dests = []
+    for number in range(4):
+        row = registered(lib, make_cbz(f"v{number}.cbz", pages=3 + number), add_series_album(lib, source_id=str(number)))
+        dests.append(org.process(row, MOVE).dest)
+    names = [os.path.basename(d) for d in dests]
+    assert names[0] == "Nains - T01 - Redwin de la Forge.cbz" and os.sep + "_versions" + os.sep not in dests[0]
+    assert names[1] == names[0] and names[2].endswith("(2).cbz") and names[3].endswith("(3).cbz")
+    assert [lib.get_file(d)["spare"] for d in dests] == [0, 1, 1, 1]
+
+
+def test_a_spare_version_keeps_going_to_the_spare_folder_when_moved_again(lib, make_cbz, tmp_path):
+    org = Organizer(lib, settings_for(tmp_path), FakePrompter(collision="keep_both"))
+    org.process(registered(lib, make_cbz("a.cbz", pages=3), add_series_album(lib)), MOVE)
+    spare = org.process(registered(lib, make_cbz("b.cbz", pages=5), add_series_album(lib, source_id="2")), MOVE)
+    again = org.process(lib.get_file(spare.dest), MOVE)  # moved again: same place, nothing asked a second time
+    assert again.outcome in (UNCHANGED, MOVED) and lib.get_file(spare.dest)["spare"] == 1
+
+
+def test_the_collision_dialog_gets_the_comparison_and_its_suggestion(lib, make_cbz, tmp_path):
+    seen = []
+
+    class Chooser(FakePrompter):
+        def resolve_collision(self, comparison, root=None):
+            seen.append((comparison, root))
+            return "skip"
+
+    org = Organizer(lib, settings_for(tmp_path), Chooser())
+    org.process(registered(lib, make_cbz("a.cbz", pages=3), add_series_album(lib)), MOVE)
+    result = org.process(registered(lib, make_cbz("b.cbz", pages=9), add_series_album(lib, source_id="2")), MOVE)
+    (comparison, root), = seen
+    assert result.outcome == SKIPPED and comparison.suggestion == "keep_new" and "9 pages against 3" in comparison.reason
+    assert comparison.new.pages == 9 and comparison.existing[0].pages == 3 and root == lib.root
+
+
+def test_in_place_writing_keeps_both_by_numbering_beside_the_original(lib, make_cbz, tmp_path):
+    folder = tmp_path / "dl"
+    folder.mkdir()
+    a = make_cbz("x.cbz", pages=3)
+    shutil.copy(a, folder / "same.cbz")
+    shutil.copy(BD_CBR, folder / "same.cbr")
+    one = registered(lib, str(folder / "same.cbz"), add_series_album(lib))
+    two = registered(lib, str(folder / "same.cbr"), add_series_album(lib, source_id="2"))
+    org = Organizer(lib, settings_for(tmp_path), FakePrompter(collision="keep_both", confirm=False))
+    result = org.process(two, WRITE)  # same.cbr -> same.cbz, which exists
+    assert result.dest == str(folder / "same (2).cbz") and lib.get_file(result.dest)["spare"] == 0
 
 
 # ---------------------------------------------------------------- missing fields

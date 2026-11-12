@@ -47,11 +47,16 @@ def detect_format(path) -> Optional[str]:
 
 
 def iter_comic_files(root) -> Iterator[str]:
-    """Yield absolute paths of comic files below ``root``, sorted."""
+    """Yield absolute paths of comic files below ``root``, sorted.
+
+    Hidden folders (``.bdnex-trash``...) are not searched: what is in them is not part of the collection.
+    """
+    root = Path(root)
     paths = [
         p.absolute().as_posix()
-        for p in Path(root).rglob("*")
+        for p in root.rglob("*")
         if p.is_file() and p.suffix.lower() in COMIC_EXTENSIONS
+        and not any(part.startswith(".") for part in p.relative_to(root).parts[:-1])
     ]
     yield from sorted(paths)
 

@@ -18,6 +18,7 @@ tasks; [Getting started](guides/getting-started.md) is the walk-through.
 guides/getting-started
 guides/cookbook
 guides/importing
+guides/versions
 guides/queries
 guides/writing
 guides/maintaining

@@ -123,7 +123,8 @@ bdnex reset            # asks, copies the database aside, then empties the libra
 Bédéthèque sitemaps and every album / series page and cover already fetched. Importing again
 therefore needs no network for them, and matching starts at once.
 
-Your comic files are not touched, and neither is the `ComicInfo.xml` inside them.
+Your comic files are not touched, and neither is the `ComicInfo.xml` inside them. The [trash](versions.md#the-trash)
+and its records are left alone too; `bdnex trash --empty` deletes them.
 
 Before deleting, `reset` copies the whole database next to it as
 `<library>.before-reset-<date>` (`--no-backup` skips this; the copy includes the downloaded data,

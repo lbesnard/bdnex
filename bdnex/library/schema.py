@@ -122,4 +122,30 @@ MIGRATIONS = [
     );
     INSERT INTO meta(key, value) VALUES ('paths', 'relative');
     """,
+    # --- version 3 -------------------------------------------------------
+    # spare versions of an album, the trash, files imported but not yet moved into the library,
+    # and what is known of a file's cover.
+    """
+    ALTER TABLE files ADD COLUMN spare INTEGER NOT NULL DEFAULT 0;      -- 1: an extra version of its album
+    ALTER TABLE files ADD COLUMN cover_hash TEXT;                       -- 64-bit dHash of the first page, hex
+    ALTER TABLE files ADD COLUMN cover_score REAL;                      -- 0-100 similarity with the album cover
+
+    CREATE TABLE trash (
+        id         INTEGER PRIMARY KEY,
+        path       TEXT NOT NULL,        -- where the file was (as stored in `files.path`)
+        trash_path TEXT NOT NULL,        -- where it is now, relative to the library folder
+        album_id   INTEGER REFERENCES albums(id) ON DELETE SET NULL,
+        md5        TEXT,
+        size       INTEGER,
+        format     TEXT,
+        reason     TEXT NOT NULL,
+        trashed    TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE staged_files (
+        file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+        origin  TEXT NOT NULL,           -- the full path it was imported from
+        staged  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    """,
 ]
