@@ -151,6 +151,12 @@ has a slow local index to build, add a `warm(self) -> None` method that builds i
 calls it once before forking, and the workers share the result instead of each building their
 own. `candidates` is called from those workers, so it must not use the network or the database.
 
+## Optional: `catalogue()`
+
+`catalogue(self) -> list[Candidate]` returns every album the source knows locally (no network). When it
+exists, the user can search the whole list by hand from the match question, with `fzf` if it is installed.
+Without it the search is limited to the best hits of `candidates` for the words typed.
+
 ## Optional: `album_count()`
 
 `bdnex init` shows a progress bar while `prepare` runs and then reports how many albums the list

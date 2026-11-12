@@ -145,6 +145,10 @@ class Bedetheque:
         return self._index
 
     # --------------------------------------------------------------- matching
+    def catalogue(self) -> list[Candidate]:
+        """Every album of the cached album list (for searching it by hand). No network access."""
+        return self._load_index()
+
     def album_count(self) -> int:
         """Albums in the cached sitemaps (0 when there are none)."""
         try:

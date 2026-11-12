@@ -50,6 +50,26 @@ bdnex import -n ~/comics         # preview, change nothing
 Details and the settings (`import.auto`, `import.workers`, `import.lookahead`) are in
 [Importing](importing.md). Ctrl-C is safe at any time: every decision is already saved.
 
+## …pick the album myself when the right one is not offered?
+
+In the match question, choose **Search the album list by hand...** (just above *Skip this file*). With `fzf`
+installed (any recent version), it searches all ~370,000 albums as you type, ignoring case, starting from the
+file's name. Without `fzf` you type a few words and filter their best hits. **Ctrl-O** opens the highlighted
+album's page in your browser so you can check it before choosing. Esc goes back to the list.
+
+## …import a folder that holds a series?
+
+Nothing to do for the usual case: a folder whose files are `T01`, `T02`, `T03`... is taken for a series and every
+file is matched by volume number inside it. When the names do not make it obvious, bdnex lists the files and asks
+*Is this one series?*. `bdnex import --series` assumes yes for every such folder; `--no-series` never groups. See
+[Importing](importing.md#folders-with-several-files).
+
+## …stop an import half way and continue later?
+
+Choose **Abort the import** in the match question (or press Ctrl-C while pages are being fetched). What you
+decided is kept; run the same command again and it resumes from the file where you stopped. Files you
+*skipped* stay skipped; the file you aborted on is asked about again.
+
 ## …import a very large collection quickly?
 
 Importing is two steps, **match** (file to album, offline, seconds) and **fetch** (read the album

@@ -58,6 +58,7 @@ import:
   workers: 0                             # background matching processes; 0 = CPU cores - 1, 1 = none
   lookahead: 100                         # files matched ahead of the one you are reviewing
   outside: ask                           # files from outside `directory`: ask | move | copy | leave
+  series: ask                            # several files in a folder: ask | always (assume a series) | never (match each file alone)
   resume: true                           # a file already linked to an album is not matched again (`--force` redoes it)
 
 duplicates:

@@ -55,6 +55,7 @@ class MetadataSource(Protocol):
 
 
 # Optional: ``cover_image(url, recache=False) -> bytes | None`` returns an album's cover (``cover.check``).
+# Optional: ``catalogue() -> list[Candidate]`` is every album known locally, so the user can search it by hand.
 # Optional: ``warm() -> None`` loads the local matching data before the importer forks its worker
 # processes (they then share it instead of loading it each).
 REQUIRED = ("name", "fetch_errors", "is_ready", "prepare", "candidates", "album_info", "partial_info")

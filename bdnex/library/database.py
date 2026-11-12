@@ -725,6 +725,10 @@ class Library:
                 "INSERT INTO meta(key, value) VALUES (?, COALESCE(?, CURRENT_TIMESTAMP)) "
                 "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
 
+    def delete_meta(self, key: str) -> None:
+        with self.conn:
+            self.conn.execute("DELETE FROM meta WHERE key = ?", (key,))
+
     # ------------------------------------------------------------------ reset
     def reset(self, apply: bool = True) -> dict[str, int]:
         """Forget everything about your collection, keep what was downloaded.

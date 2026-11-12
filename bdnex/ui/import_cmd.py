@@ -52,6 +52,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cover-check", action=argparse.BooleanOptionalAction, default=None,
                         help="compare each file's cover with its album's (one request per album; needs "
                              "`pip install 'bdnex[cover]'`); default: `cover.check`")
+    series = parser.add_mutually_exclusive_group()
+    series.add_argument("--series", dest="series", action="store_const", const="always", default=None,
+                        help="assume the files of a folder are the volumes of one series, without asking "
+                             "(default: asked when the names do not make it obvious; `import.series`)")
+    series.add_argument("--no-series", dest="series", action="store_const", const="never",
+                        help="match every file by itself, never as a folder")
     parser.add_argument("--workers", type=int, metavar="N",
                         help="processes matching file names in the background (0 = CPU cores - 1, 1 = none; "
                              "default: `import.workers`)")
@@ -130,9 +136,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
             return 1
         if "match" in steps and not ensure_album_list(source, library, settings, out):
             return 1
-        session = ImportSession(library, source, settings, prompter=InquirerPrompter(),
+        session = ImportSession(library, source, settings, prompter=InquirerPrompter(source=source),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps,
-                                workers=args.workers, cover_check=args.cover_check, progress=progress, bar=lambda total, label: Bar(total, label))
+                                workers=args.workers, cover_check=args.cover_check, series=args.series, progress=progress, bar=lambda total, label: Bar(total, label))
         try:
             report = session.run(args.paths)
         except NeedsTerminal:
@@ -141,7 +147,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
                   "--auto=all (never ask), or -n (preview). What was decided so far is saved.", file=sys.stderr)
             return 2
         try:
-            organize_results, placement_notes = (_place(args, settings, library, report) if not args.pretend else ([], []))
+            if report.aborted_at:
+                organize_results, placement_notes = [], _after_abort(library, report)
+            else:
+                organize_results, placement_notes = (_place(args, settings, library, report) if not args.pretend else ([], []))
         except ConfigError as err:
             print(f"The import was recorded, but the files were not touched: {err}", file=sys.stderr)
             organize_results, placement_notes = [], []
@@ -178,6 +187,11 @@ def run(argv: list[str], out=sys.stdout) -> int:
         organizer_report(organize_results, out)
     for note in placement_notes:
         print(note, file=out)
+    if report.aborted_at:
+        print(f"\nAborted at {os.path.basename(report.aborted_at)} ({len(report.results)} of {report.total} files looked at). "
+              "Everything decided so far is saved and no album page was fetched: run the same command again to continue "
+              "from there.", file=out)
+        return 1
     return 1 if organize_failed or report.count(FAILED) or any(r.outcome == "failed" for r in organize_results) else 0
 
 
@@ -195,6 +209,19 @@ def _ask_outside(count: int, directory: str, prompter) -> str:
     if not sys.stdin.isatty():
         return "leave"
     return prompter.choose_placement(count, directory)
+
+
+def _after_abort(library, report) -> list[str]:
+    """Nothing is moved after an abort. Files imported from elsewhere are noted as staged, so that
+    `bdnex move staged:true` can still place them."""
+    rows = [row for row in (library.get_file(r.path) for r in report.results if r.outcome in ("tagged", "partial")) if row]
+    outside, _ = _outside(rows, library.root)
+    for row in outside:
+        library.stage_file(row["path"])
+    if not outside:
+        return []
+    return [f"{len(outside)} file(s) imported from outside {library.root} were left where they are. "
+            "`bdnex move staged:true` moves them into the library whenever you like."]
 
 
 def _place(args, settings, library, report, prompter=None):

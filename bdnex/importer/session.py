@@ -9,6 +9,7 @@ interrupted fetch loses nothing (``import --fetch`` resumes).
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -17,7 +18,7 @@ from typing import Callable, Optional, Protocol
 
 from bdnex import trash
 from bdnex.config import Settings
-from bdnex.importer import covers
+from bdnex.importer import covers, folders
 from bdnex.importer.matching import Match, Recommendation, find_matches, recommend
 from bdnex.importer.pipeline import match_ahead, resolve_workers
 from bdnex.importer.source import Candidate, MetadataSource
@@ -33,6 +34,10 @@ TAGGED, PARTIAL, SKIPPED, DUPLICATE, FAILED, PRETEND, ALREADY = (
 # What a user reads for the outcomes that were named after the database (stored values do not change).
 OUTCOME_LABELS = {TAGGED: "complete", PARTIAL: "matched"}
 STEPS = ("match", "fetch")
+
+
+class ImportAborted(RuntimeError):
+    """The user chose to stop the import: what was decided so far stays, nothing else is started."""
 
 
 class NeedsTerminal(RuntimeError):
@@ -59,6 +64,8 @@ class ImportResult:
 @dataclass
 class ImportReport:
     results: list[ImportResult] = field(default_factory=list)
+    aborted_at: Optional[str] = None  # the file being decided when the user aborted
+    total: int = 0  # files the run had to look at (only set when it was aborted)
 
     def count(self, outcome: str) -> int:
         return sum(1 for r in self.results if r.outcome == outcome)
@@ -85,7 +92,7 @@ class ImportSession:
                  prompter: Optional[Prompter] = None, pretend: bool = False, force: bool = False,
                  auto=None, steps=STEPS, progress: Optional[Callable[[str], None]] = None,
                  workers: Optional[int] = None, bar: Optional[Callable] = None,
-                 cover_check: Optional[bool] = None):
+                 cover_check: Optional[bool] = None, series: Optional[str] = None):
         self.library = library
         self.source = source
         self.settings = settings
@@ -99,6 +106,7 @@ class ImportSession:
         self.auto = "all" if wanted == "all" else "strong" if wanted in (True, "strong") else None
         self.workers = resolve_workers(settings.import_.workers if workers is None else workers)
         self._pending: list[tuple[ImportResult, Candidate, str]] = []
+        self.series_mode = settings.import_.series if series is None else series  # ask | always | never
         self._covers: list[ImportResult] = []  # complete albums whose file's cover was never compared
         self.cover_check = settings.cover.check if cover_check is None else cover_check
         self._cover_off = False  # set when the check turns out to be impossible (no OpenCV)
@@ -124,10 +132,18 @@ class ImportSession:
         if "match" in self.steps and not self.source.is_ready():
             self.progress(f"Preparing the {self.source.name} source (first run only, may take a minute)...")
             self.source.prepare(progress=self.progress)
+        self._announce_resume()
+        files.sort(key=lambda path: (os.path.dirname(path), path))  # the files of a folder together
         kinds = {path: self._classify(path) for path in files}
         todo = [path for path in files if kinds[path][0] == "match"]
         stream = match_ahead(self.source, todo, workers=self.workers,
                              lookahead=self.settings.import_.lookahead)
+        ready: dict[str, object] = {}  # matches read from the stream, waiting for their file
+        chosen: dict[str, tuple] = {}  # file -> (album, score, why) decided for a whole folder
+        groups: dict[str, list[str]] = {}
+        for path in todo:
+            groups.setdefault(os.path.dirname(path), []).append(path)
+        decided: set[str] = set()
         self._pending = []
         for number, path in enumerate(files, start=1):
             kind = kinds[path][0]
@@ -136,10 +152,18 @@ class ImportSession:
             try:
                 matches = None
                 if kind == "match":
-                    _, matches = next(stream)
+                    group = groups[os.path.dirname(path)]
+                    if len(group) > 1 and self.series_mode != "never" and os.path.dirname(path) not in decided:
+                        decided.add(os.path.dirname(path))
+                        self._read(stream, ready, group)  # the whole folder's matches, to decide for it
+                        chosen.update(self._folder_decision(group, ready))
+                    matches = self._read(stream, ready, [path])[path]
                     if isinstance(matches, Exception):
                         raise matches
-                result = self.import_file(path, matches=matches, defer_fetch=True)
+                result = self.import_file(path, matches=matches, defer_fetch=True, chosen=chosen.get(path))
+            except ImportAborted:
+                report.aborted_at, report.total = path, len(files)
+                break  # this file stays undecided: it is asked about again next time
             except NeedsTerminal:
                 raise  # not this file's fault: the decisions made so far are saved, the run stops
             except Exception as err:  # one bad file must not stop the batch
@@ -148,8 +172,79 @@ class ImportSession:
                 if not self.pretend:
                     self.library.log_import(path, FAILED)
             report.results.append(result)
+        stream.close()  # stops the background matching
+        if report.aborted_at:
+            self._pending = []  # the pages are fetched by the next run (the albums are "matched")
+            self._remember_abort(report, paths)
+            return report
         self._fetch_pending()
         return report
+
+    # ------------------------------------------------------------ aborting and resuming
+    ABORT_KEY = "import_aborted"
+
+    def _remember_abort(self, report: ImportReport, paths: list[str]) -> None:
+        """Keep, in the library, where the user stopped. The decisions themselves were saved one by one."""
+        if self.pretend:
+            return
+        self.library.set_meta(self.ABORT_KEY, json.dumps({
+            "file": report.aborted_at, "done": len(report.results), "total": report.total, "paths": list(paths)}))
+
+    def _announce_resume(self) -> None:
+        """Say that this run continues an aborted one, then forget the record."""
+        raw = self.library.get_meta(self.ABORT_KEY)
+        if not raw or self.pretend:
+            return
+        try:
+            state = json.loads(raw)
+            self.progress(f"Resuming: the last import was aborted at {os.path.basename(state['file'])} "
+                          f"({state['done']} of {state['total']} files looked at). Files already decided are not asked again.")
+        except (ValueError, KeyError, TypeError):
+            pass
+        self.library.delete_meta(self.ABORT_KEY)
+
+    # ------------------------------------------------------- folders are series
+    @staticmethod
+    def _read(stream, ready: dict, wanted: list[str]) -> dict:
+        """Take matches from the stream (in file order) until every wanted file has its own."""
+        while any(path not in ready for path in wanted):
+            path, found = next(stream)
+            ready[path] = found
+        return ready
+
+    def _folder_decision(self, group: list[str], ready: dict) -> dict[str, tuple]:
+        """For a folder with several files: ``{file: (album, score, why)}`` when they are one series, else ``{}``.
+
+        A folder whose names make it obvious (every file has its own volume number and they start alike) is
+        taken for a series; otherwise the user is asked, unless ``import.series: always``. The series is
+        found by letting the files vote (see :mod:`bdnex.importer.folders`).
+        """
+        paths = [path for path in group if not isinstance(ready[path], Exception)]
+        kind = folders.classify(paths)
+        if kind in (None, folders.VERSIONS):  # versions of one album are the duplicate dialog's business
+            return {}
+        proposal = folders.propose_series(self.source, paths, {path: ready[path] for path in paths})
+        if proposal is None:
+            return {}
+        if not (kind == folders.SERIES and proposal.solid) and self.series_mode != "always":
+            if self._ask_series(paths, proposal) != "series":
+                return {}
+        else:
+            self.progress(f"Series folder {folders.folder_name(paths)}: {len(paths)} files, "
+                          f"{proposal.covered} found by volume in \"{proposal.name}\"")
+        why = f"series \"{proposal.name}\""
+        return {path: (candidate, next((m.score for m in ready[path] if m.candidate == candidate), None), why)
+                for path, candidate in proposal.mapping.items()}
+
+    def _ask_series(self, paths: list[str], proposal) -> str:
+        """``series`` or ``each``. Nobody to ask (preview, ``--auto=all``, no prompter, no terminal): ``each``."""
+        ask = getattr(self.prompter, "confirm_series", None)
+        if ask is None or self.pretend or self.auto == "all":
+            return "each"
+        try:
+            return ask(folders.folder_name(paths), paths, proposal)
+        except NeedsTerminal:
+            return "each"
 
     # ----------------------------------------------------- what to do with a file
     def _classify(self, path: str) -> tuple[str, Optional[dict]]:
@@ -310,7 +405,7 @@ class ImportSession:
 
     # ------------------------------------------------------------ one file
     def import_file(self, path: str, matches: Optional[list[Match]] = None,
-                    defer_fetch: bool = False) -> ImportResult:
+                    defer_fetch: bool = False, chosen: Optional[tuple] = None) -> ImportResult:
         """Import one file. ``matches`` come from ``pipeline.match_ahead`` (computed here when absent);
         with ``defer_fetch`` the album page is left for :meth:`_fetch_pending`."""
         kind, album = self._classify(path)
@@ -328,13 +423,17 @@ class ImportSession:
             return dup
 
         matches = matches if matches is not None else self._matches(path)
-        candidate, score = self._select(path, matches)
+        via = ""
+        if chosen is not None:  # decided for the whole folder
+            candidate, score, via = chosen
+        else:
+            candidate, score = self._select(path, matches)
         if candidate is None:
             self._log(path, SKIPPED, matches[0].score if matches else None)  # how close the best guess was
             return ImportResult(path, SKIPPED, note="no match")
 
-        shown = f"{score:.0f}" if score is not None else "chosen by you"
-        self.progress(f"    match: {candidate.url.rsplit('/', 1)[-1]} (score {shown})")
+        shown = via or (f"score {score:.0f}" if score is not None else "chosen by you")
+        self.progress(f"    match: {candidate.url.rsplit('/', 1)[-1]} ({shown})")
         if self.pretend:
             return ImportResult(path, PRETEND, score=score,
                                 note=f"would link to {candidate.url}")

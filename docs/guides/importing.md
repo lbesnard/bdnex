@@ -64,6 +64,16 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    `medium_threshold` and `strong_threshold` you choose among the candidates; below, you
    can still pick one or skip. `--auto=all` never asks: strong and medium matches are
    applied, the rest skipped. Without a terminal to ask on, the import stops once and says so.
+   **The right album is not in the list?** Choose *Search the album list by hand...* at the bottom: with
+   [`fzf`](https://github.com/junegunn/fzf) installed, it opens over the whole album list (about 370,000),
+   started from the file's name and case-insensitive; otherwise you type a few words and filter their best
+   2,000 hits in a Python fuzzy prompt. Esc / Ctrl-C goes back to the list. **Ctrl-O** opens the page of the
+   highlighted album in your browser, in the list and in both searches, to check before you choose.
+   **Abort the import** (below *Skip this file*) stops the run on the spot. Every decision made so far is
+   already saved, the file you were looking at stays undecided (it is asked about again, unlike a skipped one),
+   no album page is fetched, and files imported from outside your library folder are left where they are and
+   noted as *staged*. The library remembers where you stopped: run the same command again and bdnex says
+   `Resuming: the last import was aborted at ...`, does not ask about the decided files again, and goes on.
 6. **Same album, other file?** `duplicates.action` decides: `ask`, `skip`,
    `keep_both` or `replace` (the new file becomes the album's file; the old file stays
    on disk, unlinked).
@@ -73,6 +83,28 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    `bedetheque.delay`), with a progress bar and the time left. If a page cannot be fetched the
    album stays matched, with the URL to save. Ctrl-C stops here and loses nothing: run
    `bdnex import --fetch` to continue.
+
+### Folders with several files
+
+A folder with several comics is, most of the time, a series whose files are its volumes, and bdnex matches
+the folder as a whole (as beets does with an album folder). It looks at the file names:
+
+| The folder holds | What bdnex does |
+|---|---|
+| files that each have **their own volume number** and start with the same title (`Aâma - T01 - ...`, `T02`, `T03`) | takes it for a series **without asking** |
+| the **same book** in several files (`X.cbr` and `X.pdf`, or the same volume twice with a near-identical name) | not a series: these are versions, handled by the [duplicate question](versions.md) |
+| anything else (some files without a volume, unrelated titles...) | **asks**, listing the files: *Is this one series?* |
+
+For a series, the files **vote**: each file votes for the series that has an album with its volume among its own best
+matches, and the series with most votes wins when at least half of the files agree. Every file is then given
+the album of that series with its volume number, which also pulls in files whose own best match was another
+series (`100 Bullets` T01 matching `Stray Bullets`). A series that shares no word with the folder or file names is
+never suggested. Files with no volume (specials) are matched one by one as usual, and answering *No* matches every
+file by itself.
+
+`--series` (or `import.series: always`) assumes a series for every multi-file folder without asking;
+`--no-series` (`import.series: never`) matches every file alone. A preview, `--auto=all` and a run without a
+terminal never ask: they match file by file.
 
 ### Files from outside your library folder
 
@@ -163,6 +195,7 @@ reported as you typed it.
 | `--auto` / `--auto=all` / `--no-auto` | apply strong matches without asking / never ask / check every file (overrides `import.auto`) |
 | `-n`, `--pretend` | show what would happen; no database change, no page fetched, no question asked |
 | `-W`, `--move`, `--copy` | afterwards write the tags / move into the library tree / copy there |
+| `--series` / `--no-series` | assume every folder with several files is a series without asking / never group files by folder (overrides `import.series`) |
 | `--no-move` | leave files from outside your library folder where they are (`import.outside`) |
 | `--cover-check` / `--no-cover-check` | compare each cover with the album's (overrides `cover.check`) |
 | `--workers N` | background matching processes (overrides `import.workers`) |
