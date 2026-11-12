@@ -106,8 +106,8 @@ class Seen(InquirerPrompter):
     def _need_terminal(self):
         pass
 
-    def _select(self, message, choices, fragments=None):
-        self.message, self.choices, self.fragments = message, choices, fragments
+    def _select(self, message, choices, fragments=None, shortcuts=None):
+        self.message, self.choices, self.fragments, self.shortcuts = message, choices, fragments, shortcuts
         return InquirerPrompter.SKIP
 
 
@@ -122,10 +122,12 @@ def ask(monkeypatch, on, source=object()):
 
 def test_each_score_has_its_own_colour_and_the_other_entries_theirs(monkeypatch):
     prompter, _ = ask(monkeypatch, on=True)
-    hexes = [pieces[0][0] for pieces in prompter.fragments[:2]]
-    assert hexes == [f"fg:{color.score_hex(91.0)} bold", f"fg:{color.score_hex(28.0)} bold"] and hexes[0] != hexes[1]
-    assert [p[0][0] for p in prompter.fragments[2:]] == ["fg:ansicyan", "fg:ansiyellow", "fg:ansired"]  # search, skip, abort
-    assert prompter.choices[0]["name"] == " 91.0  BD-Bibliomule-de-Cordoue-1.html"
+    score_style = lambda pieces: next(style for style, _ in pieces if style.startswith("fg:#"))  # noqa: E731
+    styles = [score_style(pieces) for pieces in prompter.fragments[:2]]
+    assert styles == [f"fg:{color.score_hex(91.0)} bold", f"fg:{color.score_hex(28.0)} bold"] and styles[0] != styles[1]
+    # search, skip, back, abort: cyan, yellow, blue, red
+    assert [p[0][0] for p in prompter.fragments[2:]] == ["fg:ansicyan", "fg:ansiyellow", "fg:ansiblue", "fg:ansired"]
+    assert prompter.choices[0]["name"] == "[1]  91.0  BD-Bibliomule-de-Cordoue-1.html"
 
 
 def test_without_colour_the_plain_names_are_drawn(monkeypatch):

@@ -69,12 +69,23 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    green**, 60 yellow, 40 orange, **20 and below red**, so a doubtful match stands out at a glance. Colour is used on a
    terminal only: `NO_COLOR=1` turns it off, `FORCE_COLOR=1` forces it. The report at the end of the run uses the same
    colours for scores and outcomes.
-   **The right album is not in the list?** Choose *Search the album list by hand...* at the bottom: with
+   **Keys, as in beets.** Every line shows its key in brackets, highlighted: `[1]`..`[9]` pick a candidate,
+   **E** enters a search, **S** skips the file, **B** goes back to the previous file, **A** aborts the import.
+   Upper or lower case, no Enter needed; the arrows and Enter work as usual. **O** (or Ctrl-O) opens the page of
+   the highlighted album in your browser.
+   **Back** undoes what was decided for the previous file (its link in the library, a file moved to the trash or
+   to `_versions/`) and asks about it again, so a wrong key press is not final; press it again to go further
+   back. It does not cross the question *is this folder one series?*, which is asked once per folder.
+   **A thumbnail of the file's first page** is drawn on the far right of the question when the terminal can show
+   images (kitty, Ghostty, WezTerm, iTerm2) and is at least 100 columns wide, to help the choice. Over SSH or
+   inside tmux the terminal cannot be detected: set `import.thumbnails` (`kitty`, `iterm2`, `never`) or the
+   `BDNEX_THUMBNAILS` variable, which wins over the setting. Any failure drawing it is silent.
+   **The right album is not in the list?** Choose *Enter a search in the album list...*: with
    [`fzf`](https://github.com/junegunn/fzf) installed, it opens over the whole album list (about 370,000),
    started from the file's name and case-insensitive; otherwise you type a few words and filter their best
    2,000 hits in a Python fuzzy prompt. Esc / Ctrl-C goes back to the list. **Ctrl-O** opens the page of the
    highlighted album in your browser, in the list and in both searches, to check before you choose.
-   **Abort the import** (below *Skip this file*) stops the run on the spot. Every decision made so far is
+   **Abort the import** (last line of the question) stops the run on the spot. Every decision made so far is
    already saved, the file you were looking at stays undecided (it is asked about again, unlike a skipped one),
    no album page is fetched, and files imported from outside your library folder are left where they are and
    noted as *staged*. The library remembers where you stopped: run the same command again and bdnex says

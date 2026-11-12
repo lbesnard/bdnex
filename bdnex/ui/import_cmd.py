@@ -140,7 +140,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
             return 1
         if "match" in steps and not ensure_album_list(source, library, settings, out):
             return 1
-        session = ImportSession(library, source, settings, prompter=InquirerPrompter(source=source),
+        session = ImportSession(library, source, settings, prompter=InquirerPrompter(source=source, thumbnails=settings.import_.thumbnails),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps,
                                 workers=args.workers, cover_check=args.cover_check, series=args.series, progress=progress, bar=lambda total, label: Bar(total, label))
         try:

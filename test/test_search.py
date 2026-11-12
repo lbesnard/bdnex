@@ -47,8 +47,8 @@ class Scripted(InquirerPrompter):
     def _need_terminal(self):
         pass
 
-    def _select(self, message, choices, fragments=None):
-        self.fragments = fragments
+    def _select(self, message, choices, fragments=None, shortcuts=None):
+        self.fragments, self.shortcuts = fragments, shortcuts
         self.shown.append((message, choices))
         answer = self.selects.pop(0)
         return answer(choices) if callable(answer) else answer
@@ -88,11 +88,12 @@ def test_the_source_lists_its_albums_for_searching(tmp_path):
 def test_the_search_choice_is_offered_only_when_there_is_something_to_search():
     plain = Scripted(None, selects=[lambda ch: ch[0]["value"]])
     assert plain.choose_match(FILE, matches()) == ABEILLES
-    assert [c["value"] for c in plain.shown[0][1]] == [ABEILLES, OMBRES, InquirerPrompter.SKIP, InquirerPrompter.ABORT]
+    assert [c["value"] for c in plain.shown[0][1]] == [ABEILLES, OMBRES, InquirerPrompter.SKIP, InquirerPrompter.PREVIOUS, InquirerPrompter.ABORT]
     with_source = Scripted(Source(), selects=[InquirerPrompter.SKIP])
     with_source.choose_match(FILE, matches())
     labels = [c["name"] for c in with_source.shown[0][1]]
-    assert labels[-3:-1] == ["Search the album list by hand...", "Skip this file"] and labels[-1].startswith("Abort the import")
+    assert labels[-4:-1] == ["[E]nter a search in the album list...", "[S]kip this file", "[B]ack to the previous file"]
+    assert labels[-1].startswith("[A]bort the import")
 
 
 def test_a_manual_pick_is_the_answer():

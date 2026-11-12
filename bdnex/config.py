@@ -68,6 +68,7 @@ class Import(_Section):
     lookahead: int = Field(ge=1)
     outside: Literal["ask", "move", "copy", "leave"]
     series: Literal["ask", "always", "never"]
+    thumbnails: Literal["auto", "kitty", "iterm2", "never"]
 
 
 class Duplicates(_Section):

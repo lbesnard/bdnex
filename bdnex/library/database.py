@@ -586,6 +586,19 @@ class Library:
                 "INSERT INTO import_log(path, outcome, score, album_id) VALUES (?, ?, ?, ?)",
                 (self._store(path), outcome, score, album_id))
 
+    def forget_last_import(self, path) -> None:
+        """Delete the newest import-log row of a file (used to take a decision back)."""
+        with self.conn:
+            self.conn.execute("DELETE FROM import_log WHERE id = (SELECT MAX(id) FROM import_log WHERE path = ?)",
+                              (self._store(path),))
+
+    def delete_album_if_unused(self, album_id: int) -> bool:
+        """Delete an album no file is linked to. Returns whether it was deleted."""
+        with self.conn:
+            if self.conn.execute("SELECT 1 FROM files WHERE album_id = ?", (album_id,)).fetchone():
+                return False
+            return self.conn.execute("DELETE FROM albums WHERE id = ?", (album_id,)).rowcount > 0
+
     def last_import(self, path) -> Optional[dict[str, Any]]:
         row = self.conn.execute(
             "SELECT * FROM import_log WHERE path = ? ORDER BY id DESC LIMIT 1",

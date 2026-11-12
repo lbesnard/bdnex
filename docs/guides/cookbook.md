@@ -52,10 +52,10 @@ Details and the settings (`import.auto`, `import.workers`, `import.lookahead`) a
 
 ## …pick the album myself when the right one is not offered?
 
-In the match question, choose **Search the album list by hand...** (just above *Skip this file*). With `fzf`
+In the match question, press **E** (*Enter a search in the album list...*). With `fzf`
 installed (any recent version), it searches all ~370,000 albums as you type, ignoring case, starting from the
-file's name. Without `fzf` you type a few words and filter their best hits. **Ctrl-O** opens the highlighted
-album's page in your browser so you can check it before choosing. Esc goes back to the list.
+file's name. Without `fzf` you type a few words and filter their best hits. **O** (or Ctrl-O) opens the highlighted
+album's page in your browser so you can check it before choosing. Esc goes back to the list. Pressed a wrong key? **B** goes back to the previous file and undoes what was decided for it.
 
 ## …import a folder that holds a series?
 
