@@ -2,18 +2,78 @@
 
 from __future__ import annotations
 
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
+import webbrowser
 from typing import Optional
 
-import os
-import sys
-
-from bdnex.importer.matching import Match
-from bdnex.importer.session import NeedsTerminal
+from bdnex.importer.matching import Match, query_from_filename
+from bdnex.importer.session import ImportAborted, NeedsTerminal
 from bdnex.importer.source import Candidate
+from bdnex.library.query import fold
+
+
+def display_name(candidate: Candidate) -> str:
+    """A readable title for a candidate: the words of its page address, or its normalised name."""
+    slug = candidate.url.rsplit("/", 1)[-1]
+    if slug.startswith("BD-") and slug.endswith(".html"):
+        return re.sub(r"-\d+$", "", slug[3:-5]).replace("-", " ")
+    return candidate.name
+
+
+FUZZY_POOL = 2000  # albums offered to the Python fuzzy prompt: its engine is too slow for the whole list
+OPEN_HINT = "Ctrl-O opens the highlighted album's page in your browser"
+
+
+def open_page(value) -> bool:
+    """Open the page of a candidate in the default browser. Anything else (Skip, Search...) is ignored."""
+    url = getattr(value, "url", None)
+    return bool(url) and webbrowser.open(url)
+
+
+def bind_open(prompt) -> None:
+    """Make Ctrl-O open the page of the highlighted choice, in a select / fuzzy prompt."""
+    @prompt.register_kb("c-o")
+    def _open(event):
+        open_page(prompt.result_value)
 
 
 class InquirerPrompter:
     SKIP = "__skip__"
+    ABORT = "__abort__"
+    SEARCH = "__search__"
+    AGAIN = "__again__"
+    BACK = "__back__"
+
+    def __init__(self, source=None):
+        """``source``: the metadata source, when the user may search its album list by hand."""
+        self.source = source
+
+    # -- thin wrappers over InquirerPy, so the logic around them can be tested
+    def _select(self, message: str, choices: list):
+        from InquirerPy import inquirer
+
+        prompt = inquirer.select(message=message, choices=choices, instruction=f"({OPEN_HINT})")
+        bind_open(prompt)
+        return prompt.execute()
+
+    def _fuzzy(self, message: str, choices: list):
+        """Type to filter the choices (case-insensitive); Ctrl-C gives ``None``."""
+        from InquirerPy import inquirer
+
+        prompt = inquirer.fuzzy(message=message, choices=choices, instruction=f"({OPEN_HINT}; Ctrl-C goes back)",
+                                raise_keyboard_interrupt=False, mandatory=False, max_height="70%")
+        bind_open(prompt)
+        return prompt.execute()
+
+    def _text(self, message: str, default: str = "") -> str:
+        from InquirerPy import inquirer
+
+        return inquirer.text(message=message, default=default).execute()
 
     @staticmethod
     def _need_terminal() -> None:
@@ -22,15 +82,66 @@ class InquirerPrompter:
 
     # -- import
     def choose_match(self, path: str, matches: list[Match]) -> Optional[Candidate]:
-        from InquirerPy import inquirer
-
         self._need_terminal()
 
         choices = [{"name": f"{m.score:5.1f}  {m.candidate.url.rsplit('/', 1)[-1]}", "value": m.candidate}
                    for m in matches]
+        if self.source is not None:
+            choices.append({"name": "Search the album list by hand...", "value": self.SEARCH})
         choices.append({"name": "Skip this file", "value": self.SKIP})
-        answer = inquirer.select(message=f"Match for {path}", choices=choices).execute()
-        return None if answer == self.SKIP else answer
+        choices.append({"name": "Abort the import (what is decided is kept; run it again to continue)", "value": self.ABORT})
+        while True:
+            answer = self._select(f"Match for {path}", choices)
+            if answer == self.ABORT:
+                raise ImportAborted(path)
+            if answer == self.SKIP:
+                return None
+            if answer == self.SEARCH:
+                found = self.search(path)
+                if found is not None:
+                    return found
+                continue  # nothing picked: back to the list
+            return answer
+
+    # -- searching the whole album list
+    def search(self, path: str) -> Optional[Candidate]:
+        """Let the user find the album by hand: ``fzf`` over the whole list when it is installed, else a
+        search prompt. Case and accents never matter. ``None`` when nothing was picked."""
+        start = fold(query_from_filename(path))
+        if shutil.which("fzf") and hasattr(self.source, "catalogue"):
+            return self._search_with_fzf(path, start)
+        return self._search_by_prompt(start)
+
+    def _search_with_fzf(self, path: str, start: str) -> Optional[Candidate]:
+        catalogue = {str(c.source_id): c for c in self.source.catalogue()}
+        lines = "\n".join(f"{display_name(c)}\t{c.source_id}\t{c.url}" for c in catalogue.values())
+        # Ctrl-O opens the third field (the page address) with the default browser
+        opener = f"{shlex.quote(sys.executable)} -m webbrowser {{3}}"
+        header = f"{os.path.basename(path)}   (Enter picks the album, Ctrl-O opens its page, Esc goes back)"
+        result = subprocess.run(
+            ["fzf", "-i", "--query", start, "--delimiter", "\t", "--with-nth", "1", "--prompt", "album> ",
+             "--header", header, "--bind", f"ctrl-o:execute-silent({opener})", "--layout=reverse", "--height=70%"],
+            input=lines, stdout=subprocess.PIPE, text=True)
+        if result.returncode != 0 or not result.stdout.strip():
+            return None  # no match, or Esc / Ctrl-C
+        return catalogue.get(result.stdout.rstrip("\n").split("\t")[1])
+
+    def _search_by_prompt(self, start: str) -> Optional[Candidate]:
+        """Without ``fzf``: say which words to look for, then filter the best hits as you type."""
+        text = start
+        while True:
+            text = self._text("Words to look for in the album list (case and accents do not matter; "
+                              "empty to go back):", text).strip()
+            if not text:
+                return None
+            hits = [c for c, _ in self.source.candidates(text, limit=FUZZY_POOL)]
+            if not hits:
+                print(f"Nothing in the album list looks like {text!r}.")
+                continue
+            answer = self._fuzzy(f"{len(hits)} albums for {text!r}: type to filter, Enter picks",
+                                 [{"name": display_name(c), "value": c} for c in hits])
+            if answer is not None:
+                return answer  # None (Ctrl-C): back to the words
 
     def duplicate_action(self, path: str, others: list[str], what: str) -> str:
         from InquirerPy import inquirer
