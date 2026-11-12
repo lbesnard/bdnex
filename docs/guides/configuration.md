@@ -109,6 +109,7 @@ write:
 paths:
   oneshot: 'OneShot/$language/$title - $authors/$title - $authors'
   series: 'Series/$series/$series - T$volume:02 - $title'
+  rules: []                              # other templates for some albums, first match wins (see below)
   missing_field: ask                     # an empty value in a template: ask | placeholder | skip
   placeholder: Unknown                   # what `placeholder` writes
 
@@ -117,6 +118,24 @@ bedetheque:
   sitemap_delay: [0.5, 1.5]              # seconds waited between sitemap files
   pages_dir: ~/.local/share/bdnex/pages  # where album pages saved from your browser are looked up
 ```
+
+## Other templates for some albums: `paths.rules`
+
+`paths.series` and `paths.oneshot` are the defaults. To place some albums elsewhere (a collection, an author),
+list rules. To match one of several values, use a regular expression. Each rule has a `match` (the same terms as [`bdnex ls`](queries.md), all must match) and a
+`template`. The first rule that matches the album wins; an album that matches none uses the default.
+
+```yaml
+paths:
+  rules:
+    - match: ['series:/^(antares|bételgeuse|centaure)$/']   # a regex: one of these series
+      template: 'Collections/Aire Libre/$series/$series - T$volume:02 - $title'
+    - match: author:uderzo
+      template: 'Uderzo/$series/$series - T$volume:02 - $title'
+```
+
+`match` may be one string. Anything the query language knows works: `publisher:`, `genre:`, `language:`, `year:`,
+`kind:oneshot`, `any:`... Check the result with `bdnex move -n`.
 
 ## Metadata source
 

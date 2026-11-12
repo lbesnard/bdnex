@@ -10,7 +10,7 @@ import sqlite3
 from typing import Any, Iterable, Optional
 
 from bdnex.library.hashing import file_md5
-from bdnex.library.query import fold, register_functions, run_query
+from bdnex.library.query import FROM_JOINS, compile_query, fold, register_functions, run_query
 from bdnex.library.models import AlbumInfo, SeriesInfo
 from bdnex.library.scan import inspect_file, iter_comic_files
 from bdnex.library.schema import MIGRATIONS
@@ -562,6 +562,12 @@ class Library:
         if not files:
             return rows
         return sorted((self._file_row(r) for r in rows), key=lambda r: r["path"])  # stored paths do not sort like real ones
+
+    def album_matches(self, album_id: int, terms: list[str]) -> bool:
+        """Does this album satisfy all the query ``terms`` (same syntax as ``bdnex ls``)?"""
+        compiled = compile_query(terms)
+        sql = (f"SELECT 1 FROM albums a {FROM_JOINS} WHERE a.id = ? AND ({compiled.where})")
+        return self.conn.execute(sql, [album_id, *compiled.params]).fetchone() is not None
 
     # ----------------------------------------------------------- source cache
     def cache_put(self, source: str, kind: str, url: str, content: bytes | str) -> None:
