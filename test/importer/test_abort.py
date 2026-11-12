@@ -105,7 +105,7 @@ def test_the_match_question_offers_to_abort_and_aborting_raises(monkeypatch):
         def _need_terminal(self):
             pass
 
-        def _select(self, message, choices):
+        def _select(self, message, choices, fragments=None):
             self.choices = choices
             return InquirerPrompter.ABORT
 

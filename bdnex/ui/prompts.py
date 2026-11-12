@@ -15,6 +15,7 @@ from bdnex.importer.matching import Match, query_from_filename
 from bdnex.importer.session import ImportAborted, NeedsTerminal
 from bdnex.importer.source import Candidate
 from bdnex.library.query import fold
+from bdnex.ui import color
 
 
 def display_name(candidate: Candidate) -> str:
@@ -27,6 +28,39 @@ def display_name(candidate: Candidate) -> str:
 
 FUZZY_POOL = 2000  # albums offered to the Python fuzzy prompt: its engine is too slow for the whole list
 OPEN_HINT = "Ctrl-O opens the highlighted album's page in your browser"
+
+
+Fragments = list  # of (prompt_toolkit style, text)
+
+
+def colorize_choices(prompt, fragments: list) -> None:
+    """Draw the name of each choice in pieces of different colours.
+
+    InquirerPy paints a whole choice in one colour, and turns a custom label back into a plain string,
+    so the pieces are kept aside, in the order of the choices (``None`` leaves a choice as it is), and
+    drawn by the two methods that build the rows. The pointer and the marker are still InquirerPy's.
+    """
+    control = prompt.content_control
+    plain_hover, plain_normal = control._get_hover_text, control._get_normal_text
+
+    def row(choice, plain, hovered):
+        index = next((i for i, c in enumerate(control.choices) if c is choice), None)
+        pieces = fragments[index] if index is not None and index < len(fragments) else None
+        parts = plain(choice)
+        if not pieces:
+            return parts
+        emphasised = lambda style: style if "bold" in style else f"bold {style}".strip()  # noqa: E731
+        return parts[:-1] + [(emphasised(style) if hovered else style, text) for style, text in pieces]
+
+    control._get_hover_text = lambda choice: row(choice, plain_hover, True)
+    control._get_normal_text = lambda choice: row(choice, plain_normal, False)
+
+
+def match_header(path: str, on: bool) -> str:
+    """A rule, then the file to match as ``folder/name``: the folder it sits in, not the whole path."""
+    folder, name = os.path.basename(os.path.dirname(path)), os.path.basename(path)
+    shown = (color.paint(folder + "/", "cyan", on) if folder else "") + color.paint(name, "bold", on)
+    return f"\n{color.paint(color.rule(), 'dim', on)}\n{shown}"
 
 
 def open_page(value) -> bool:
@@ -54,11 +88,13 @@ class InquirerPrompter:
         self.source = source
 
     # -- thin wrappers over InquirerPy, so the logic around them can be tested
-    def _select(self, message: str, choices: list):
+    def _select(self, message: str, choices: list, fragments: Optional[list] = None):
         from InquirerPy import inquirer
 
         prompt = inquirer.select(message=message, choices=choices, instruction=f"({OPEN_HINT})")
         bind_open(prompt)
+        if fragments:
+            colorize_choices(prompt, fragments)
         return prompt.execute()
 
     def _fuzzy(self, message: str, choices: list):
@@ -84,14 +120,25 @@ class InquirerPrompter:
     def choose_match(self, path: str, matches: list[Match]) -> Optional[Candidate]:
         self._need_terminal()
 
-        choices = [{"name": f"{m.score:5.1f}  {m.candidate.url.rsplit('/', 1)[-1]}", "value": m.candidate}
-                   for m in matches]
+        on = color.enabled()
+        choices, fragments = [], []
+
+        def add(name, value, pieces):
+            choices.append({"name": name, "value": value})
+            fragments.append(pieces if on else None)  # no colour: the plain name is drawn
+
+        for m in matches:
+            slug = m.candidate.url.rsplit("/", 1)[-1]
+            add(f"{m.score:5.1f}  {slug}", m.candidate,
+                [(f"fg:{color.score_hex(m.score)} bold", f"{m.score:5.1f}"), ("", f"  {slug}")])
         if self.source is not None:
-            choices.append({"name": "Search the album list by hand...", "value": self.SEARCH})
-        choices.append({"name": "Skip this file", "value": self.SKIP})
-        choices.append({"name": "Abort the import (what is decided is kept; run it again to continue)", "value": self.ABORT})
+            add("Search the album list by hand...", self.SEARCH, [("fg:ansicyan", "Search the album list by hand...")])
+        add("Skip this file", self.SKIP, [("fg:ansiyellow", "Skip this file")])
+        add("Abort the import (what is decided is kept; run it again to continue)", self.ABORT,
+            [("fg:ansired", "Abort the import (what is decided is kept; run it again to continue)")])
+        print(match_header(path, on))
         while True:
-            answer = self._select(f"Match for {path}", choices)
+            answer = self._select("Which album?", choices, fragments)
             if answer == self.ABORT:
                 raise ImportAborted(path)
             if answer == self.SKIP:
@@ -106,13 +153,13 @@ class InquirerPrompter:
     def confirm_series(self, folder: str, paths: list[str], proposal) -> str:
         """Several files in one folder: are they one series? ``series`` or ``each`` (match them one by one)."""
         self._need_terminal()
-        shown = 25
-        print(f"\n{folder} ({len(paths)} files)")
+        shown, on = 25, color.enabled()
+        print(f"\n{color.paint(color.rule(), 'dim', on)}\n{color.paint(folder + '/', 'cyan', on)} ({len(paths)} files)")
         for path in paths[:shown]:
-            print(f"  {os.path.basename(path)}")
+            print(f"  {color.paint(os.path.basename(path), 'bold', on)}")
         if len(paths) > shown:
             print(f"  ... and {len(paths) - shown} more")
-        print(f"These files look like one series: \"{proposal.name}\" "
+        print(f"These files look like one series: {color.paint(chr(34) + proposal.name + chr(34), 'cyan_bold', on)} "
               f"({proposal.covered} of {len(paths)} files have their volume in it).")
         answer = self._select("Is this one series?", [
             {"name": f"Yes: match them by volume number in \"{proposal.name}\"", "value": "series"},

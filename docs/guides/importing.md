@@ -64,6 +64,11 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    `medium_threshold` and `strong_threshold` you choose among the candidates; below, you
    can still pick one or skip. `--auto=all` never asks: strong and medium matches are
    applied, the rest skipped. Without a terminal to ask on, the import stops once and says so.
+   Each question starts with a rule, so the files are told apart, and names the file as `folder/name` (the folder
+   it sits in, in cyan, then the file in bold; not the whole path). The scores are coloured on a gradient: **80 to 100
+   green**, 60 yellow, 40 orange, **20 and below red**, so a doubtful match stands out at a glance. Colour is used on a
+   terminal only: `NO_COLOR=1` turns it off, `FORCE_COLOR=1` forces it. The report at the end of the run uses the same
+   colours for scores and outcomes.
    **The right album is not in the list?** Choose *Search the album list by hand...* at the bottom: with
    [`fzf`](https://github.com/junegunn/fzf) installed, it opens over the whole album list (about 370,000),
    started from the file's name and case-insensitive; otherwise you type a few words and filter their best
