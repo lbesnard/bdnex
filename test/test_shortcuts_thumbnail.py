@@ -172,8 +172,8 @@ def test_a_picture_is_scaled_and_keeps_its_shape():
     result = thumbnail.small_png(png(1, size=(300, 450)))
     assert result is not None
     data, width, height = result
-    assert data.startswith(b"\x89PNG") and (width, height) == (180, 270)
-    assert thumbnail.cells(width, height) == (14, 10)  # two thirds as tall as wide, cells twice as tall as wide
+    assert data.startswith(b"\x89PNG") and (width, height) == (360, 540)
+    assert thumbnail.cells(width, height) == (24, 18)  # two thirds as tall as wide, cells twice as tall as wide
 
 
 def test_something_that_is_not_an_image_gives_no_picture():
@@ -213,7 +213,7 @@ def test_a_narrow_terminal_gets_no_picture_rather_than_one_on_top_of_the_list():
 def test_a_wide_terminal_gets_it_and_the_rows_are_reported():
     out = io.StringIO()
     rows = thumbnail.show(png(1, size=(300, 450)), thumbnail.ITERM2, out, terminal_columns=140)
-    assert rows == 10 and out.getvalue().startswith("\n" * 10) and "1337;File" in out.getvalue()
+    assert rows == 18 and out.getvalue().startswith("\n" * 18) and "1337;File" in out.getvalue()
 
 
 def test_an_unreadable_cover_draws_nothing():
@@ -273,3 +273,13 @@ def test_through_tmux_doubles_the_escapes_inside_a_passthrough_envelope():
 def test_only_the_picture_goes_through_tmux():
     placed = thumbnail.place(b"x", thumbnail.KITTY, 14, 10, 120, tmux=True)
     assert placed.startswith("\n" * 10 + "\x1b[10A\x1b7\x1b[107G\x1bPtmux;") and placed.endswith("\x1b\\\x1b8")
+
+
+def test_clearing_deletes_every_placement_and_only_for_kitty(monkeypatch):
+    monkeypatch.delenv("TMUX", raising=False)
+    out = io.StringIO()
+    thumbnail.clear(thumbnail.KITTY, out)
+    assert out.getvalue() == "\x1b_Ga=d,d=A,q=2\x1b\\"
+    other = io.StringIO()
+    thumbnail.clear(thumbnail.ITERM2, other)
+    assert other.getvalue() == ""

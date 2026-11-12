@@ -18,9 +18,9 @@ from typing import Optional
 logger = logging.getLogger(__name__)
 
 KITTY, ITERM2 = "kitty", "iterm2"
-THUMB_COLUMNS = 14  # width of the picture, in terminal cells
+THUMB_COLUMNS = 24  # width of the picture, in terminal cells
 MIN_TERMINAL_COLUMNS = 100  # narrower than this, the picture would sit on top of the list
-PICTURE_WIDTH = 180  # pixels of the picture that is sent; the terminal scales it into its cells
+PICTURE_WIDTH = 360  # pixels of the picture that is sent; the terminal scales it into its cells
 CELL_ASPECT = 2.0  # a terminal cell is about twice as tall as it is wide
 KITTY_CHUNK = 4096  # the kitty protocol takes the data in pieces of at most this many base64 characters
 OFF = {"never", "off", "no", "false", "0", "none"}
@@ -145,3 +145,13 @@ def show(image: bytes, kind: str, stream=None, terminal_columns: Optional[int] =
     stream.write(place(png, kind, columns, rows, terminal_columns, tmux=in_tmux()))
     stream.flush()
     return rows
+
+
+def clear(kind: str, stream=None) -> None:
+    """Remove the pictures drawn so far (kitty protocol; iTerm2 pictures scroll away with their lines)."""
+    if kind != KITTY:
+        return
+    stream = sys.stdout if stream is None else stream
+    sequence = "\x1b_Ga=d,d=A,q=2\x1b\\"
+    stream.write(through_tmux(sequence) if in_tmux() else sequence)
+    stream.flush()

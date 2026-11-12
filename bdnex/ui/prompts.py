@@ -167,6 +167,12 @@ class InquirerPrompter:
             shortcut("A", "bort the import (what is decided is kept; run it again to continue)", "fg:ansired"), "a")
         print(match_header(path, on))
         self._thumbnail(path)
+        try:
+            return self._ask_match(path, choices, fragments, keys)
+        finally:
+            self._clear_thumbnail()
+
+    def _ask_match(self, path, choices, fragments, keys):
         while True:
             answer = self._select("Which album?", choices, fragments, keys)
             if answer == self.ABORT:
@@ -188,6 +194,8 @@ class InquirerPrompter:
         if kind is None:
             return
         try:
+            thumbnail.clear(kind)  # the previous album's picture, which would show through
+            self._drawn = kind
             from bdnex.importer import covers
 
             image = covers.front_cover(path, os.path.splitext(path)[1].lstrip(".").lower())
@@ -196,6 +204,14 @@ class InquirerPrompter:
         except Exception as err:  # a picture is a help: never the reason the question can not be asked
             import logging
             logging.getLogger(__name__).debug(f"no thumbnail for {path}: {err}")
+
+    def _clear_thumbnail(self) -> None:
+        kind, self._drawn = getattr(self, "_drawn", None), None
+        if kind:
+            try:
+                thumbnail.clear(kind)
+            except Exception:  # a picture is a help
+                pass
 
     def confirm_series(self, folder: str, paths: list[str], proposal) -> str:
         """Several files in one folder: are they one series? ``series`` or ``each`` (match them one by one)."""
