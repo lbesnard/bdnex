@@ -45,17 +45,18 @@ rest keeps working. Review it with `bdnex config --defaults`, then set
 ## Main options
 
 ```yaml
-directory: ~/comics                      # library root (required)
+directory: ~/comics                      # library root (required); file paths are stored relative to it
 library: ~/.local/share/bdnex/bdnex.sqlite
 
 match:
-  strong_threshold: 90                   # applied without asking
+  strong_threshold: 90                   # applied without asking when import.auto is true
   medium_threshold: 70                   # between medium and strong: ask
-  use_cover: true
-  use_isbn: true
 
 import:
   mode: in_place                         # in_place | copy | move
+  auto: false                            # false: you check every file; true: strong matches are unasked
+  workers: 0                             # background matching processes; 0 = CPU cores - 1, 1 = none
+  lookahead: 100                         # files matched ahead of the one you are reviewing
 duplicates:
   keys: [series, volume]
   action: ask                            # ask | skip | keep_both | replace

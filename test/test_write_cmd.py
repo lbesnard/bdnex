@@ -107,7 +107,8 @@ def import_env(tmp_path, monkeypatch, make_cbz):
         conf = tmp_path / "bdnex.yaml"
         conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"),
                                         "directory": str(tmp_path / "comics"),
-                                        "bedetheque": {"delay": [0, 0]}, **(extra or {})}))
+                                        "bedetheque": {"delay": [0, 0]}, **(extra or {}),
+                                        "import": {"auto": True, **(extra or {}).get("import", {})}}))
         monkeypatch.setenv("BDNEX_CONFIG", str(conf))
 
     configure()
@@ -119,6 +120,8 @@ def import_env(tmp_path, monkeypatch, make_cbz):
     monkeypatch.setattr(Bedetheque, "album_info", lambda self, url, recache=False: original(self, ALBUM_URL, recache))
     monkeypatch.setattr("bdnex.importer.bedetheque.bedetheque.uniform", lambda a, b: 0)
     monkeypatch.setattr("time.sleep", lambda s: None)
+    from bdnex.ui import init_cmd
+    assert init_cmd.run([], out=io.StringIO(), bar_stream=io.StringIO()) == 0  # the album list, as `bdnex init`
     path = make_cbz("Nains - T01 - Redwin de la forge.cbz")
     return path, tmp_path, configure
 
@@ -146,7 +149,7 @@ def test_import_with_move_flag(import_env):
     code, text = do_import("--move", "--force", path)
     dest = tmp / "comics" / "Series" / "Nains" / "Nains - T01 - Redwin de la Forge.cbz"
     assert code == 0 and dest.exists() and not os.path.exists(path)
-    with Library(tmp / "lib.sqlite") as lib:
+    with Library(tmp / "lib.sqlite", root=tmp / "comics") as lib:
         assert lib.get_file(str(dest)) is not None  # the library tracks the new location
 
 
@@ -167,7 +170,7 @@ def test_import_move_without_directory_explains_and_keeps_the_import(import_env,
     path, tmp, configure = import_env
     conf = tmp / "bdnex.yaml"
     conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp / "lib.sqlite"),
-                                    "bedetheque": {"delay": [0, 0]}}))
+                                    "import": {"auto": True}, "bedetheque": {"delay": [0, 0]}}))
     code, text = do_import("--move", path)
     assert code == 1 and os.path.exists(path)
     assert "directory" in capsys.readouterr().err
@@ -180,7 +183,7 @@ def test_import_records_a_damaged_but_readable_file(import_env, make_damaged_cbz
     _, tmp, _ = import_env
     path, _ = make_damaged_cbz("Nains - T01 - Redwin de la forge.cbz")
     code, text = do_import(path)
-    assert code == 0 and "1 tagged" in text
+    assert code == 0 and "1 complete" in text
     assert "archive damaged (page p01.jpg failed its checksum)" in text and "bdnex repair" in text
     with Library(tmp / "lib.sqlite") as lib:
         assert lib.get_file(path)["corrupted"] == 1 and lib.get_file(path)["album_id"] is not None

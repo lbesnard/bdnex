@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
 import os
@@ -23,13 +24,29 @@ class SchemaTooNewError(RuntimeError):
     """The database was created by a newer bdnex."""
 
 
+class LibraryRootError(RuntimeError):
+    """The database holds paths relative to the library folder, but no folder is configured."""
+
+
 class Library:
     """Open (and create / migrate if needed) a bdnex library database.
 
     Use ``":memory:"`` for a throwaway database.
+
+    ``root`` is the library folder (``directory`` in the configuration). The paths of files under it
+    are stored relative to it, so moving the collection only means changing ``directory``; other
+    files keep their absolute path. The API always takes and returns absolute paths.
     """
 
-    def __init__(self, path=":memory:"):
+    @classmethod
+    def for_settings(cls, settings) -> "Library":
+        """The library of a loaded configuration (its database and its ``directory``)."""
+        from bdnex.config import PLACEHOLDER_DIRECTORY
+
+        root = settings.directory if settings.directory not in ("", PLACEHOLDER_DIRECTORY) else None
+        return cls(settings.library_path, root=root)
+
+    def __init__(self, path=":memory:", root=None):
         if path != ":memory:":
             path = os.path.expanduser(str(path))
             os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
@@ -38,7 +55,9 @@ class Library:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         register_functions(self.conn)
+        self.root = os.path.abspath(os.path.expanduser(str(root))).rstrip("/") if root else None
         self._migrate()
+        self._adopt_root()
 
     # ------------------------------------------------------------------ setup
     def _migrate(self):
@@ -51,6 +70,55 @@ class Library:
             with self.conn:
                 self.conn.executescript("BEGIN;" + MIGRATIONS[version])
                 self.conn.execute(f"PRAGMA user_version = {version + 1}")
+
+    # ------------------------------------------------------------------ paths
+    def _store(self, path) -> str:
+        """The form of ``path`` kept in the database: relative to the root when under it."""
+        absolute = os.path.abspath(os.path.expanduser(str(path)))
+        if self.root and absolute.startswith(self.root + os.sep):
+            return absolute[len(self.root) + 1:]
+        return absolute
+
+    def _resolve(self, stored: str) -> str:
+        """The absolute path of a stored one."""
+        if os.path.isabs(stored):
+            return stored
+        if not self.root:
+            raise LibraryRootError(
+                "this library stores paths relative to your comics folder, but `directory` is not set "
+                "in the configuration (`bdnex config --edit`)")
+        return os.path.join(self.root, stored)
+
+    def _file_row(self, row) -> dict[str, Any]:
+        record = dict(row)
+        if "path" in record and record["path"] is not None:
+            record["path"] = self._resolve(record["path"])
+        return record
+
+    def _adopt_root(self) -> None:
+        """Store the paths under the root relative to it; refuse relative ones without a root."""
+        if not self.root:
+            if self.conn.execute("SELECT 1 FROM files WHERE path NOT LIKE '/%' LIMIT 1").fetchone():
+                self.conn.close()
+                raise LibraryRootError(
+                    "this library stores paths relative to your comics folder, but `directory` is not set "
+                    "in the configuration (`bdnex config --edit`)")
+            return
+        prefix = self.root + os.sep
+        converted = 0
+        with self.conn:
+            for table in ("files", "import_log"):
+                rows = self.conn.execute(
+                    f"SELECT rowid AS rid, path FROM {table} WHERE substr(path, 1, ?) = ?", (len(prefix), prefix)).fetchall()
+                for row in rows:
+                    try:
+                        self.conn.execute(f"UPDATE {table} SET path = ? WHERE rowid = ?",
+                                          (row["path"][len(prefix):], row["rid"]))
+                        converted += 1
+                    except sqlite3.IntegrityError:  # the relative form is registered already: leave it
+                        logger.warning(f"{row['path']} is registered twice; left as it was")
+        if converted:
+            logger.info(f"Stored {converted} path(s) relative to {self.root}")
 
     @property
     def schema_version(self) -> int:
@@ -86,7 +154,14 @@ class Library:
 
     # ---------------------------------------------------------------- albums
     def add_album(self, info: AlbumInfo) -> int:
-        """Insert or update an album (identified by source + source_id)."""
+        """Insert or update an album (identified by source + source_id).
+
+        Values the user changed with :meth:`edit_album` are kept on top of what the source says.
+        """
+        existing = self.find_album(info.source, info.source_id)
+        edits = self._edits_of(existing) if existing is not None else {}
+        if edits:
+            info = self._apply_edits(info, edits)
         with self.conn:
             series_id = self.add_series(info.series) if info.series else None
             publisher_id = self._get_or_create("publishers", info.publisher) if info.publisher else None
@@ -128,6 +203,94 @@ class Library:
                     (album_id, self._get_or_create("genres", genre)))
         return album_id
 
+    # ------------------------------------------------------------ hand edits
+    EDIT_SCALARS = ("title", "volume", "alternate_number", "publisher", "isbn", "year", "month", "day",
+                    "pages", "language", "format", "summary")
+    EDIT_FIELDS = EDIT_SCALARS + ("series", "credits", "genres")
+
+    def _edits_of(self, album_id: int) -> dict[str, Any]:
+        row = self.conn.execute("SELECT extra FROM albums WHERE id = ?", (album_id,)).fetchone()
+        return json.loads(row["extra"]).get("edits", {}) if row else {}
+
+    @staticmethod
+    def _apply_edits(info: AlbumInfo, edits: dict[str, Any]) -> AlbumInfo:
+        """``info`` with the user's edits laid over it (a new object; ``info`` is untouched)."""
+        changes: dict[str, Any] = {key: edits[key] for key in Library.EDIT_SCALARS if key in edits}
+        if "series" in edits and info.series is not None:
+            changes["series"] = dataclasses.replace(info.series, name=edits["series"])
+        if "credits" in edits:
+            credits = {**info.credits, **edits["credits"]}
+            changes["credits"] = {role: names for role, names in credits.items() if names}
+        if "genres" in edits:
+            changes["genres"] = list(edits["genres"])
+        changes["extra"] = {**info.extra, "edits": edits}
+        return dataclasses.replace(info, **changes)
+
+    def edit_album(self, album_id: int, changes: dict[str, Any]) -> None:
+        """Change an album by hand; the change survives re-imports, ``--recache`` and ``reparse``.
+
+        ``changes`` may hold any of :attr:`EDIT_SCALARS` (``None`` clears a value), ``series`` (renames
+        the series, so every album of it), ``credits`` (``{role: [names]}``: the listed roles are
+        replaced, an empty list removes the role) and ``genres`` (the complete list).
+        """
+        album = self.get_album(album_id)
+        if album is None:
+            raise KeyError(f"no album {album_id}")
+        unknown = set(changes) - set(self.EDIT_FIELDS)
+        if unknown:
+            raise ValueError(f"can not edit: {', '.join(sorted(unknown))}")
+        if "series" in changes and album["kind"] != "series":
+            raise ValueError("a one-shot has no series to rename")
+        edits = dict(album["extra"].get("edits", {}))
+        with self.conn:
+            columns = {k: changes[k] for k in self.EDIT_SCALARS if k in changes and k != "publisher"}
+            if columns:
+                self.conn.execute("UPDATE albums SET " + ", ".join(f"{c} = ?" for c in columns) + " WHERE id = ?",
+                                  [*columns.values(), album_id])
+            if "publisher" in changes:
+                name = changes["publisher"]
+                self.conn.execute("UPDATE albums SET publisher_id = ? WHERE id = ?",
+                                  (self._get_or_create("publishers", name) if name else None, album_id))
+            for role, names in (changes.get("credits") or {}).items():
+                self.conn.execute(
+                    "DELETE FROM album_credits WHERE album_id = ? AND role = ?", (album_id, role))
+                for name in names:
+                    self.conn.execute("INSERT OR IGNORE INTO album_credits(album_id, person_id, role) VALUES (?, ?, ?)",
+                                      (album_id, self._get_or_create("people", name), role))
+                edits.setdefault("credits", {})[role] = list(names)
+            if "genres" in changes:
+                self.conn.execute("DELETE FROM album_genres WHERE album_id = ?", (album_id,))
+                for genre in changes["genres"]:
+                    self.conn.execute("INSERT OR IGNORE INTO album_genres(album_id, genre_id) VALUES (?, ?)",
+                                      (album_id, self._get_or_create("genres", genre)))
+                edits["genres"] = list(changes["genres"])
+            for key in self.EDIT_SCALARS:
+                if key in changes:
+                    edits[key] = changes[key]
+            self._store_edits(album_id, edits)
+            if "series" in changes:
+                self._rename_series(album, changes["series"])
+
+    def _store_edits(self, album_id: int, edits: dict[str, Any]) -> None:
+        row = self.conn.execute("SELECT extra FROM albums WHERE id = ?", (album_id,)).fetchone()
+        extra = json.loads(row["extra"])
+        extra["edits"] = edits
+        self.conn.execute("UPDATE albums SET extra = ? WHERE id = ?",
+                          (json.dumps(extra, ensure_ascii=False, default=str, sort_keys=True), album_id))
+
+    def _rename_series(self, album: dict[str, Any], name: str) -> None:
+        series_id = self.conn.execute("SELECT series_id FROM albums WHERE id = ?", (album["id"],)).fetchone()[0]
+        self.conn.execute("UPDATE series SET name = ? WHERE id = ?", (name, series_id))
+        for row in self.conn.execute("SELECT id FROM albums WHERE series_id = ?", (series_id,)).fetchall():
+            self._store_edits(row["id"], {**self._edits_of(row["id"]), "series": name})
+
+    def series_albums(self, album_id: int) -> list[int]:
+        """Ids of all the albums in the same series as ``album_id`` (just itself for a one-shot)."""
+        rows = self.conn.execute(
+            "SELECT id FROM albums WHERE series_id = (SELECT series_id FROM albums WHERE id = ?) "
+            "AND series_id IS NOT NULL", (album_id,)).fetchall()
+        return [r["id"] for r in rows] or [album_id]
+
     EDITABLE_ALBUM_COLUMNS = frozenset({"title", "year", "month", "day", "volume", "language", "isbn",
                                         "pages", "summary"})
 
@@ -159,8 +322,8 @@ class Library:
             ).rowcount
 
     def files_for_album(self, album_id: int) -> list[dict[str, Any]]:
-        return [dict(r) for r in self.conn.execute(
-            "SELECT * FROM files WHERE album_id = ? ORDER BY path", (album_id,))]
+        return sorted((self._file_row(r) for r in self.conn.execute(
+            "SELECT * FROM files WHERE album_id = ?", (album_id,))), key=lambda r: r["path"])
 
     def files_matching_album(self, source: str, source_id: str, keys: dict[str, Any],
                              exclude_path: str) -> list[dict[str, Any]]:
@@ -179,11 +342,13 @@ class Library:
         same_keys = f"({' AND '.join(clauses)})" if clauses else "0"
         sql = ("SELECT f.* FROM files f JOIN albums a ON a.id = f.album_id "
                "LEFT JOIN series s ON s.id = a.series_id "
-               f"WHERE f.path != ? AND ((a.source = ? AND a.source_id = ?) OR {same_keys}) ORDER BY f.path")
-        return [dict(r) for r in self.conn.execute(sql, [os.path.abspath(exclude_path), source, source_id, *params])]
+               f"WHERE f.path != ? AND ((a.source = ? AND a.source_id = ?) OR {same_keys})")
+        rows = self.conn.execute(sql, [self._store(exclude_path), source, source_id, *params])
+        return sorted((self._file_row(r) for r in rows), key=lambda r: r["path"])
 
     def files_with_md5(self, md5: str) -> list[dict[str, Any]]:
-        return [dict(r) for r in self.conn.execute("SELECT * FROM files WHERE md5 = ? ORDER BY path", (md5,))]
+        return sorted((self._file_row(r) for r in self.conn.execute("SELECT * FROM files WHERE md5 = ?", (md5,))),
+                      key=lambda r: r["path"])
 
     # ------------------------------------------------------- merging a fresh parse
     SCALARS = ("title", "volume", "alternate_number", "publisher", "isbn", "year", "month", "day", "pages",
@@ -203,9 +368,11 @@ class Library:
             extra.pop("partial", None)  # a full parse replaces a sitemap-only record
         values = {key: getattr(info, key) if getattr(info, key) not in (None, "") else old.get(key)
                   for key in self.SCALARS}
-        return AlbumInfo(source=info.source, source_id=info.source_id, series=series, credits=credits,
-                         genres=info.genres or old["genres"], extra=extra,
-                         publisher=values.pop("publisher"), **values)
+        merged = AlbumInfo(source=info.source, source_id=info.source_id, series=series, credits=credits,
+                           genres=info.genres or old["genres"], extra=extra,
+                           publisher=values.pop("publisher"), **values)
+        edits = old["extra"].get("edits")
+        return self._apply_edits(merged, edits) if edits else merged
 
     def preview_merge(self, info: AlbumInfo) -> list[str]:
         """What :meth:`merge_album` would change, one short line each (empty when nothing)."""
@@ -287,15 +454,14 @@ class Library:
                        page_count = excluded.page_count, corrupted = excluded.corrupted,
                        has_metadata = excluded.has_metadata, mtime = excluded.mtime,
                        checked = CURRENT_TIMESTAMP""",
-                (info.path, album_id, md5, info.size, info.format, info.page_count,
+                (self._store(info.path), album_id, md5, info.size, info.format, info.page_count,
                  int(info.corrupted), int(info.has_metadata), info.mtime))
         return self.conn.execute("SELECT id FROM files WHERE path = ?",
-                                 (info.path,)).fetchone()["id"]
+                                 (self._store(info.path),)).fetchone()["id"]
 
     def get_file(self, path) -> Optional[dict[str, Any]]:
-        row = self.conn.execute("SELECT * FROM files WHERE path = ?",
-                                (os.path.abspath(path),)).fetchone()
-        return dict(row) if row else None
+        row = self.conn.execute("SELECT * FROM files WHERE path = ?", (self._store(path),)).fetchone()
+        return self._file_row(row) if row else None
 
     def refresh_file(self, path) -> int:
         """Recompute size/md5/... after a file was modified (e.g. tags written)."""
@@ -306,7 +472,7 @@ class Library:
         old_path, new_path = os.path.abspath(old_path), os.path.abspath(new_path)
         with self.conn:
             cur = self.conn.execute("UPDATE files SET path = ? WHERE path = ?",
-                                    (new_path, old_path))
+                                    (self._store(new_path), self._store(old_path)))
         if cur.rowcount == 0:
             raise KeyError(f"{old_path} is not in the library")
         self.refresh_file(new_path)
@@ -314,11 +480,11 @@ class Library:
     def set_file_album(self, path, album_id: Optional[int]) -> None:
         with self.conn:
             self.conn.execute("UPDATE files SET album_id = ? WHERE path = ?",
-                              (album_id, os.path.abspath(path)))
+                              (album_id, self._store(path)))
 
     def remove_file(self, path) -> None:
         with self.conn:
-            self.conn.execute("DELETE FROM files WHERE path = ?", (os.path.abspath(path),))
+            self.conn.execute("DELETE FROM files WHERE path = ?", (self._store(path),))
 
     def scan(self, root) -> dict[str, int]:
         """Register every comic file under ``root``; return counters."""
@@ -336,14 +502,17 @@ class Library:
         groups = []
         for row in self.conn.execute(
                 "SELECT md5 FROM files GROUP BY md5 HAVING COUNT(*) > 1 ORDER BY md5"):
-            groups.append([dict(r) for r in self.conn.execute(
-                "SELECT * FROM files WHERE md5 = ? ORDER BY path", (row["md5"],))])
+            groups.append(sorted((self._file_row(r) for r in self.conn.execute(
+                "SELECT * FROM files WHERE md5 = ?", (row["md5"],))), key=lambda r: r["path"]))
         return groups
 
     # ---------------------------------------------------------------- query
     def query(self, terms: list[str], files: bool = False) -> list[dict[str, Any]]:
         """Albums (or files with ``files=True``) matching the query terms. See ``library.query``."""
-        return run_query(self.conn, terms, files_mode=files)
+        rows = run_query(self.conn, terms, files_mode=files)
+        if not files:
+            return rows
+        return sorted((self._file_row(r) for r in rows), key=lambda r: r["path"])  # stored paths do not sort like real ones
 
     # ----------------------------------------------------------- source cache
     def cache_put(self, source: str, kind: str, url: str, content: bytes | str) -> None:
@@ -376,13 +545,119 @@ class Library:
         with self.conn:
             self.conn.execute(
                 "INSERT INTO import_log(path, outcome, score, album_id) VALUES (?, ?, ?, ?)",
-                (os.path.abspath(path), outcome, score, album_id))
+                (self._store(path), outcome, score, album_id))
 
     def last_import(self, path) -> Optional[dict[str, Any]]:
         row = self.conn.execute(
             "SELECT * FROM import_log WHERE path = ? ORDER BY id DESC LIMIT 1",
-            (os.path.abspath(path),)).fetchone()
-        return dict(row) if row else None
+            (self._store(path),)).fetchone()
+        return self._file_row(row) if row else None
+
+    # ------------------------------------------- files without an album, moved files
+    def unmatched(self, terms: Iterable[str] = ()) -> list[dict[str, Any]]:
+        """Files with no album: registered but not linked, or skipped / failed at the last import.
+
+        ``terms`` must all appear in the path (case and accents ignored). Rows have ``path``,
+        ``outcome`` (``untagged``, ``skipped`` or ``failed``), ``score`` (best match, when known)
+        and ``at``.
+        """
+        rows = [self._file_row(r) for r in self.conn.execute(
+            """SELECT l.path, l.outcome, l.score, l.at FROM import_log l
+               JOIN (SELECT path, MAX(id) AS last FROM import_log GROUP BY path) m ON m.last = l.id
+               WHERE l.outcome IN ('skipped', 'failed')
+                 AND NOT EXISTS (SELECT 1 FROM files f WHERE f.path = l.path AND f.album_id IS NOT NULL)""")]
+        seen = {r["path"] for r in rows}
+        for r in self.conn.execute("SELECT path, checked AS at FROM files WHERE album_id IS NULL"):
+            path = self._resolve(r["path"])
+            if path not in seen:
+                rows.append({"path": path, "outcome": "untagged", "score": None, "at": r["at"]})
+        wanted = [fold(t) for t in terms]
+        rows = [r for r in rows if all(t in fold(r["path"]) for t in wanted)]
+        return sorted(rows, key=lambda r: r["path"])
+
+    def missing_files(self) -> list[dict[str, Any]]:
+        """Registered files that are no longer on disk (moved, renamed or deleted outside bdnex)."""
+        rows = (self._file_row(r) for r in self.conn.execute("SELECT * FROM files"))
+        return sorted((r for r in rows if not os.path.exists(r["path"])), key=lambda r: r["path"])
+
+    def relocate(self, old: str, new: str, apply: bool = True) -> dict[str, Any]:
+        """Replace the folder prefix ``old`` by ``new`` in every file path (and the import log).
+
+        Files under the library root are stored relative to it and follow it when ``directory``
+        changes, so this is for the others (and for databases kept with absolute paths). Returns
+        ``{"files": n, "log": n, "collisions": [...], "moved": [(old, new), ...]}`` in absolute paths.
+        Nothing is changed when a new path is already registered (``collisions``) or when ``apply``
+        is false.
+        """
+        old, new = os.path.abspath(os.path.expanduser(old)), os.path.abspath(os.path.expanduser(new))
+
+        def rewrite(path: str) -> Optional[str]:
+            if path == old:
+                return new
+            return new + path[len(old):] if path.startswith(old.rstrip("/") + "/") else None
+
+        files = [(r["path"], self._resolve(r["path"])) for r in self.conn.execute("SELECT path FROM files")]
+        moved = [(stored, rewrite(path)) for stored, path in files if rewrite(path)]
+        moving = {stored for stored, _ in moved}
+        taken = {stored for stored, _ in files} - moving
+        collisions = [target for _, target in moved if self._store(target) in taken]
+        logged = [(r["id"], rewrite(self._resolve(r["path"]))) for r in self.conn.execute("SELECT id, path FROM import_log")
+                  if rewrite(self._resolve(r["path"]))]
+        shown = [(self._resolve(stored), target) for stored, target in moved]
+        result = {"files": len(moved), "log": len(logged), "collisions": collisions, "moved": shown}
+        if apply and not collisions:
+            with self.conn:
+                for stored, target in moved:
+                    self.conn.execute("UPDATE files SET path = ? WHERE path = ?", (self._store(target), stored))
+                for log_id, target in logged:
+                    self.conn.execute("UPDATE import_log SET path = ? WHERE id = ?", (self._store(target), log_id))
+        return result
+
+    # ------------------------------------------------------------------- meta
+    def get_meta(self, key: str) -> Optional[str]:
+        row = self.conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def set_meta(self, key: str, value: Optional[str] = None) -> None:
+        """Store a value (the current UTC time, as the import log writes it, when ``value`` is None)."""
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO meta(key, value) VALUES (?, COALESCE(?, CURRENT_TIMESTAMP)) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
+
+    # ------------------------------------------------------------------ reset
+    def reset(self, apply: bool = True) -> dict[str, int]:
+        """Forget everything about your collection, keep what was downloaded.
+
+        Deletes the files, albums, series, credits, genres, publishers (with your hand edits) and
+        the import log. The ``source_cache`` (sitemaps, album and series pages, covers) stays, so
+        importing again needs no network for what was already fetched. Files on disk are not
+        touched. Returns what is (or would be) deleted, by table.
+        """
+        tables = ("import_log", "files", "album_genres", "album_credits", "albums", "series", "genres",
+                  "people", "publishers")  # children first
+        counts = {t: self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
+        if apply:
+            with self.conn:
+                for table in tables:
+                    self.conn.execute(f"DELETE FROM {table}")
+            self.conn.execute("VACUUM")
+        return counts
+
+    def cache_summary(self) -> dict[str, tuple[int, int]]:
+        """Cached entries by kind: ``{"sitemap": (count, bytes), ...}``."""
+        return {r["kind"]: (r["n"], r["size"] or 0) for r in self.conn.execute(
+            "SELECT kind, COUNT(*) AS n, SUM(LENGTH(content)) AS size FROM source_cache GROUP BY kind")}
+
+    def backup_to(self, destination) -> str:
+        """A consistent copy of the whole database (cache included) at ``destination``."""
+        destination = os.path.expanduser(str(destination))
+        copy = sqlite3.connect(destination)
+        try:
+            self.conn.backup(copy)
+        finally:
+            copy.close()
+        return destination
 
     # ----------------------------------------------------------------- stats
     def stats(self) -> dict[str, int]:

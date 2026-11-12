@@ -36,7 +36,7 @@ def test_default_listing(setup):
     code, text = run()
     assert code == 0
     lines = text.strip().splitlines()
-    assert lines[0] == "La bibliomule de Cordoue [partial]  (Lupano, Wilfrid) [2021]  1 file"
+    assert lines[0] == "La bibliomule de Cordoue [not fetched]  (Lupano, Wilfrid) [2021]  1 file"
     assert lines[1] == "Nains - T01 - Redwin de la Forge  (Jarry, Nicolas) [2015]  1 file"
 
 
@@ -107,7 +107,7 @@ def test_long_view_shows_everything_known(setup):
 
 def test_long_view_marks_partial_and_damaged_files(setup):
     code, text = run("--long", "partial:true")
-    assert "[oneshot, partial: sitemap data only]" in text and "bib.cbz" in text
+    assert "[oneshot, matched, details not fetched (`bdnex import --fetch`)]" in text and "bib.cbz" in text
 
 
 def test_long_json_has_the_complete_records(setup):
@@ -134,3 +134,10 @@ def test_long_view_columns_never_run_together(tmp_path, monkeypatch, make_cbz):
              "extra": {}}
     text = describe.long(album, [])
     assert "coverartist  Goux" in text  # the longest label still leaves a gap
+
+
+def test_complete_is_the_opposite_of_partial(setup):
+    code, text = run("complete:false")
+    assert code == 0 and "bibliomule" in text.lower() and "[not fetched]" in text
+    assert run("complete:true")[1].strip() == run("partial:false")[1].strip()
+    assert "bibliomule" not in run("complete:true")[1].lower()

@@ -1,8 +1,10 @@
 """The import session: match files to albums and record the result in the library.
 
-Pipeline per file: skip if already imported -> corruption/duplicate-file checks ->
-local candidates -> score -> (ask) -> fetch metadata, falling back to what the
-sitemap URL alone tells -> store album + link file -> log.
+Pipeline: file names are matched in the background (``pipeline.match_ahead``) while the user
+reviews earlier files. Per file: skip if already imported -> corruption/duplicate-file checks ->
+candidates -> score -> (ask) -> link the file to the album as known from the sitemap alone.
+Afterwards the album pages are fetched, politely and slowly, and complete those albums; an
+interrupted fetch loses nothing (``import --fetch`` resumes).
 """
 
 from __future__ import annotations
@@ -14,7 +16,8 @@ from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
 
 from bdnex.config import Settings
-from bdnex.importer.matching import Match, Recommendation, query_from_filename, recommend, rerank
+from bdnex.importer.matching import Match, Recommendation, find_matches, recommend
+from bdnex.importer.pipeline import match_ahead, resolve_workers
 from bdnex.importer.source import Candidate, MetadataSource
 from bdnex.library import Library
 from bdnex.library.hashing import file_md5
@@ -22,8 +25,15 @@ from bdnex.library.scan import inspect_file, iter_comic_files
 
 logger = logging.getLogger(__name__)
 
-TAGGED, PARTIAL, SKIPPED, DUPLICATE, FAILED, PRETEND = (
-    "tagged", "partial", "skipped", "duplicate", "failed", "pretend")
+TAGGED, PARTIAL, SKIPPED, DUPLICATE, FAILED, PRETEND, ALREADY = (
+    "tagged", "partial", "skipped", "duplicate", "failed", "pretend", "already")
+# What a user reads for the outcomes that were named after the database (stored values do not change).
+OUTCOME_LABELS = {TAGGED: "complete", PARTIAL: "matched"}
+STEPS = ("match", "fetch")
+
+
+class NeedsTerminal(RuntimeError):
+    """A question has to be asked but there is nobody to ask: the import stops instead of failing file by file."""
 
 
 class Prompter(Protocol):
@@ -51,20 +61,45 @@ class ImportReport:
         return sum(1 for r in self.results if r.outcome == outcome)
 
 
+def album_label(album: dict) -> str:
+    """``Nains - T01 - Redwin de la Forge`` for messages."""
+    title, series, volume = album.get("title") or "", album.get("series"), album.get("volume")
+    if series and volume is not None:
+        return f"{series} - T{int(volume):02d}" + (f" - {title}" if title and title != series else "")
+    return title or series or "?"
+
+
 class ImportSession:
+    """Import files in steps: ``match`` (file -> album, offline) and ``fetch`` (album -> metadata).
+
+    ``steps`` selects them; both by default. A step that is already done for a file is skipped,
+    unless ``force`` asks for it to be redone. ``auto`` is ``None`` (the user checks every file),
+    ``"strong"`` (matches at or above ``match.strong_threshold`` are applied unasked) or ``"all"``
+    (nothing is asked: strong and medium matches are applied, the rest skipped).
+    """
+
     def __init__(self, library: Library, source: MetadataSource, settings: Settings,
-                 prompter: Optional[Prompter] = None, pretend: bool = False,
-                 force: bool = False, recache: bool = False, retry_partial: bool = False,
-                 progress: Optional[Callable[[str], None]] = None):
+                 prompter: Optional[Prompter] = None, pretend: bool = False, force: bool = False,
+                 auto=None, steps=STEPS, progress: Optional[Callable[[str], None]] = None,
+                 workers: Optional[int] = None, bar: Optional[Callable] = None):
         self.library = library
         self.source = source
         self.settings = settings
         self.prompter = prompter
         self.pretend = pretend
         self.force = force
-        self.recache = recache
-        self.retry_partial = retry_partial
+        self.steps = frozenset(steps)
         self.progress = progress or (lambda message: None)
+        self.bar = bar  # (total, label) -> object with update(detail) and finish(message)
+        wanted = settings.import_.auto if auto is None else auto
+        self.auto = "all" if wanted == "all" else "strong" if wanted in (True, "strong") else None
+        self.workers = resolve_workers(settings.import_.workers if workers is None else workers)
+        self._pending: list[tuple[ImportResult, Candidate, str]] = []
+
+    @property
+    def recache(self) -> bool:
+        """Redoing the fetch means asking the site again, not reading the stored page."""
+        return self.force and "fetch" in self.steps
 
     # ------------------------------------------------------------------ run
     def run(self, paths: list[str]) -> ImportReport:
@@ -75,22 +110,119 @@ class ImportSession:
                 report.results.append(ImportResult(path, FAILED, note=f"{path!r} is not an existing file or folder"))
             else:
                 files.extend(self._collect([path]))
+        if not paths:  # no path: everything the library already knows
+            files = [row["path"] for row in self.library.query([], files=True)]
         if not files:
             return report
-        if not self.source.is_ready() or self.recache:
+        if "match" in self.steps and not self.source.is_ready():
             self.progress(f"Preparing the {self.source.name} source (first run only, may take a minute)...")
-            self.source.prepare(recache=self.recache, progress=self.progress)
+            self.source.prepare(progress=self.progress)
+        kinds = {path: self._classify(path) for path in files}
+        todo = [path for path in files if kinds[path][0] == "match"]
+        stream = match_ahead(self.source, todo, workers=self.workers,
+                             lookahead=self.settings.import_.lookahead)
+        self._pending = []
         for number, path in enumerate(files, start=1):
-            self.progress(f"[{number}/{len(files)}] {os.path.basename(path)}")
+            kind = kinds[path][0]
+            if kind in ("match", "fetch"):
+                self.progress(f"[{number}/{len(files)}] {os.path.basename(path)}")
             try:
-                result = self.import_file(path)
+                matches = None
+                if kind == "match":
+                    _, matches = next(stream)
+                    if isinstance(matches, Exception):
+                        raise matches
+                result = self.import_file(path, matches=matches, defer_fetch=True)
+            except NeedsTerminal:
+                raise  # not this file's fault: the decisions made so far are saved, the run stops
             except Exception as err:  # one bad file must not stop the batch
                 logger.exception(f"{path} failed")
                 result = ImportResult(path, FAILED, note=str(err))
                 if not self.pretend:
                     self.library.log_import(path, FAILED)
             report.results.append(result)
+        self._fetch_pending()
         return report
+
+    # ----------------------------------------------------- what to do with a file
+    def _classify(self, path: str) -> tuple[str, Optional[dict]]:
+        """``match`` (find its album), ``fetch`` (read its album's page), ``already`` (done),
+        ``remembered`` (skipped earlier) or ``unmatched`` (nothing to fetch for it yet)."""
+        known = self.library.get_file(path)
+        album = self.library.get_album(known["album_id"]) if known and known["album_id"] is not None else None
+        if album is not None:
+            if "match" in self.steps and (self.force or not self.settings.import_.resume):
+                return "match", album
+            partial = bool(album["extra"].get("partial"))
+            mine = album["source"] == self.source.name
+            if "fetch" in self.steps and mine and (partial or self.force):
+                return "fetch", album
+            return "already", album
+        if "match" not in self.steps:
+            return "unmatched", None
+        if not self.force and self._skipped_before(path):
+            return "remembered", None
+        return "match", None
+
+    def _skipped_before(self, path: str) -> bool:
+        """You (or the matching) skipped this file, and no new albums have been downloaded since."""
+        last = self.library.last_import(path)
+        if not last or last["outcome"] != SKIPPED:
+            return False
+        refreshed = self.library.get_meta("sitemaps_at")
+        return not (refreshed and refreshed > last["at"])
+
+    def _without_matching(self, path: str, kind: str, album: Optional[dict], defer_fetch: bool) -> ImportResult:
+        if kind == "remembered":
+            return ImportResult(path, SKIPPED, note="skipped earlier; `--force` looks at it again "
+                                                    "(so does `bdnex init` when it finds new albums)")
+        if kind == "unmatched":
+            return ImportResult(path, SKIPPED, note="not matched yet: `bdnex import --match` first")
+        if kind == "already":
+            more = (" (its details are not fetched yet: `bdnex import --fetch`)"
+                    if album["extra"].get("partial") and "fetch" not in self.steps else "")
+            return ImportResult(path, ALREADY, album_id=album["id"],
+                                note=f"already imported as {album_label(album)}{more}; `--force` redoes it")
+        # fetch: the album is known, its page is not (or is to be read again)
+        candidate = Candidate(album["source_id"], album["url"], "", album["volume"])
+        if self.pretend:
+            return ImportResult(path, PRETEND, album_id=album["id"], note=f"would fetch {album['url']}")
+        result = ImportResult(path, PARTIAL, album_id=album["id"], note=f"matched as {album_label(album)}")
+        self._pending.append((result, candidate, ""))
+        if not defer_fetch:
+            self._fetch_pending()
+        return result
+
+    def _fetch_pending(self) -> None:
+        """Read the album pages of the files linked so far: one polite request each."""
+        pending, self._pending = self._pending, []
+        if not pending or "fetch" not in self.steps:
+            return
+        bar = self.bar(len(pending), "Album pages") if self.bar else None
+        if bar is None:
+            self.progress(f"Fetching {len(pending)} album page(s) (Ctrl-C stops; `bdnex import --fetch` resumes)...")
+        try:
+            for number, (result, candidate, damaged) in enumerate(pending, start=1):
+                name = candidate.url.rsplit("/", 1)[-1]
+                if bar:
+                    bar.update(name)
+                else:
+                    self.progress(f"[page {number}/{len(pending)}] {name}")
+                try:
+                    album_id, partial, note = self._album_for(candidate)
+                except Exception as err:
+                    logger.exception(f"{candidate.url} failed")
+                    result.note = f"page not fetched: {err}"
+                    continue
+                result.album_id = album_id
+                result.outcome = PARTIAL if partial else TAGGED
+                result.note = "; ".join(n for n in (note, damaged) if n)
+                self._log(result.path, result.outcome, result.score, album_id)
+        except KeyboardInterrupt:
+            self.progress("Interrupted: the files stay linked; `bdnex import --fetch` reads the rest of the pages.")
+        finally:
+            if bar:
+                bar.finish()
 
     @staticmethod
     def _collect(paths: list[str]) -> list[str]:
@@ -103,15 +235,13 @@ class ImportSession:
         return files
 
     # ------------------------------------------------------------ one file
-    def import_file(self, path: str) -> ImportResult:
-        known = self.library.get_file(path)
-        if known and known["album_id"] is not None and self.settings.import_.resume and not self.force:
-            album = self.library.get_album(known["album_id"])
-            partial = bool(album and album["extra"].get("partial"))
-            if partial and self.retry_partial:
-                return self._retry_partial(path, album)
-            hint = " (partial: `--retry-partial` fetches its page)" if partial else ""
-            return ImportResult(path, SKIPPED, album_id=known["album_id"], note="already imported" + hint)
+    def import_file(self, path: str, matches: Optional[list[Match]] = None,
+                    defer_fetch: bool = False) -> ImportResult:
+        """Import one file. ``matches`` come from ``pipeline.match_ahead`` (computed here when absent);
+        with ``defer_fetch`` the album page is left for :meth:`_fetch_pending`."""
+        kind, album = self._classify(path)
+        if kind != "match":
+            return self._without_matching(path, kind, album, defer_fetch)
 
         info = inspect_file(path)
         if not info.readable:
@@ -123,10 +253,10 @@ class ImportSession:
         if dup is not None:
             return dup
 
-        matches = self._matches(path)
+        matches = matches if matches is not None else self._matches(path)
         candidate, score = self._select(path, matches)
         if candidate is None:
-            self._log(path, SKIPPED)
+            self._log(path, SKIPPED, matches[0].score if matches else None)  # how close the best guess was
             return ImportResult(path, SKIPPED, note="no match")
 
         shown = f"{score:.0f}" if score is not None else "chosen by you"
@@ -140,7 +270,7 @@ class ImportSession:
             self._log(path, DUPLICATE, score)
             return ImportResult(path, DUPLICATE, score=score, note="album already in library")
 
-        album_id, partial, note = self._album_for(candidate)
+        album_id, partial, note = self._album_for(candidate, fetch=not defer_fetch and 'fetch' in self.steps)
         note = "; ".join(n for n in (note, damaged) if n)
         if album_action == "replace":
             for other in self.library.files_for_album(album_id):
@@ -149,20 +279,12 @@ class ImportSession:
         self.library.add_file(path, album_id)
         outcome = PARTIAL if partial else TAGGED
         self._log(path, outcome, score, album_id)
-        return ImportResult(path, outcome, score=score, album_id=album_id, note=note)
-
-    def _retry_partial(self, path: str, album: dict) -> ImportResult:
-        """Complete an album that was recorded from the sitemap only: its page URL is already known."""
-        if album["source"] != self.source.name:
-            return ImportResult(path, SKIPPED, album_id=album["id"],
-                                note=f"partial album of source {album['source']!r}, not {self.source.name!r}")
-        if self.pretend:
-            return ImportResult(path, PRETEND, album_id=album["id"], note=f"would fetch {album['url']}")
-        candidate = Candidate(album["source_id"], album["url"], "", album["volume"])
-        album_id, partial, note = self._album_for(candidate)
-        outcome = PARTIAL if partial else TAGGED
-        self._log(path, outcome, album_id=album_id)
-        return ImportResult(path, outcome, album_id=album_id, note=note or "page fetched")
+        if partial and "fetch" not in self.steps:
+            note = "; ".join(n for n in (note, "details not fetched: `bdnex import --fetch` gets them") if n)
+        result = ImportResult(path, outcome, score=score, album_id=album_id, note=note)
+        if defer_fetch and partial and "fetch" in self.steps:
+            self._pending.append((result, candidate, damaged))
+        return result
 
     # -------------------------------------------------------------- helpers
     def _log(self, path, outcome, score=None, album_id=None):
@@ -173,8 +295,8 @@ class ImportSession:
         action = self.settings.duplicates.action
         if action != "ask":
             return action
-        if self.force or self.prompter is None:
-            return "skip"  # never silently create/replace duplicates
+        if self.auto == "all" or self.prompter is None or self.pretend:
+            return "skip"  # never silently create/replace duplicates; a preview does not ask
         return self.prompter.duplicate_action(path, others, what)
 
     def _duplicate_file(self, path) -> Optional[ImportResult]:
@@ -206,16 +328,16 @@ class ImportSession:
         return self._resolve_duplicate(path, others, "album already linked")
 
     def _matches(self, path) -> list[Match]:
-        query = query_from_filename(path)
-        return rerank(query, self.source.candidates(query, limit=5))
+        return find_matches(self.source, path)
 
     def _select(self, path, matches: list[Match]) -> tuple[Optional[Candidate], Optional[float]]:
         strong, medium = self.settings.match.strong_threshold, self.settings.match.medium_threshold
         best = matches[0] if matches else None
         rec = recommend(best.score, strong, medium) if best else Recommendation.NONE
-        if rec is Recommendation.STRONG:
-            return best.candidate, best.score
-        if self.force:
+        never_ask = self.auto == "all" or self.pretend  # a preview must not stop at every file
+        if rec is Recommendation.STRONG and (self.auto or never_ask or self.prompter is None):
+            return best.candidate, best.score  # otherwise the user confirms it, pre-selected
+        if never_ask:
             return (best.candidate, best.score) if rec is Recommendation.MEDIUM else (None, None)
         if self.prompter is None:
             return None, None
@@ -225,14 +347,22 @@ class ImportSession:
         score = next((m.score for m in matches if m.candidate == chosen), None)
         return chosen, score
 
-    def _album_for(self, candidate: Candidate) -> tuple[int, bool, str]:
-        """Return (album_id, partial, note), storing the album when it is new or refreshed."""
+    def _album_for(self, candidate: Candidate, fetch: bool = True) -> tuple[int, bool, str]:
+        """Return (album_id, partial, note), storing the album when it is new or refreshed.
+
+        With ``fetch=False`` no page is requested: an unknown album is stored as known from the
+        sitemap (partial) and the caller completes it later.
+        """
         existing = self.library.find_album(self.source.name, candidate.source_id)
         existing_full = (existing is not None
                          and not self.library.get_album(existing)["extra"].get("partial"))
         if existing_full and not self.recache:
             self.progress("    album already complete in the library: nothing to fetch")
             return existing, False, "album already in library"
+        if not fetch:
+            if existing is not None:
+                return existing, True, ""
+            return self.library.add_album(self.source.partial_info(candidate)), True, ""
         self.progress(f"    fetching the album page ({self.source.name}; the first request waits a few seconds)...")
         started = time.monotonic()
         try:

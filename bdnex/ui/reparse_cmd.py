@@ -42,7 +42,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
 
     updated = unchanged = missing = failed = 0
-    with Library(settings.library_path) as library:
+    with Library.for_settings(settings) as library:
         try:
             source = create_source(settings.source, library, offline)
             rows = library.query(args.query)

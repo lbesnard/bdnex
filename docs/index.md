@@ -7,19 +7,20 @@ readers such as [Komga](https://komga.org/) understand.
 
 It is inspired by [beets](https://beets.io), the music library manager.
 
-```{note}
-bdnex is being reshaped into a library manager. The pages marked *(planned)*
-describe the target behaviour; the [roadmap](roadmap.md) says what exists today.
-```
+A typical session: `bdnex import ~/comics` (you confirm each match), `bdnex ls` to look around,
+`bdnex write` to put the tags into the files. [How do I…?](guides/cookbook.md) lists the common
+tasks; [Getting started](guides/getting-started.md) is the walk-through.
 
 ```{toctree}
 :maxdepth: 2
 :caption: User guide
 
 guides/getting-started
+guides/cookbook
 guides/importing
 guides/queries
 guides/writing
+guides/maintaining
 guides/configuration
 ```
 

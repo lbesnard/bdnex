@@ -85,7 +85,7 @@ def fake_session(lib, **kw):
 
 
 def test_import_with_a_foreign_source(lib, make_cbz):
-    session, source = fake_session(lib, force=True)
+    session, source = fake_session(lib, auto="all")
     path = make_cbz("Tintin - T05 - Le lotus bleu.cbz")
     source.prepare()  # `run()` does this; calling import_file directly, we do it ourselves
     result = session.import_file(path)
@@ -97,7 +97,7 @@ def test_import_with_a_foreign_source(lib, make_cbz):
 
 
 def test_run_prepares_the_source_once_and_reports_its_name(lib, make_cbz, tmp_path):
-    session, source = fake_session(lib, force=True)
+    session, source = fake_session(lib, auto="all")
     messages = []
     session.progress = messages.append
     make_cbz("Tintin T05 lotus bleu.cbz")
@@ -110,7 +110,7 @@ def test_run_prepares_the_source_once_and_reports_its_name(lib, make_cbz, tmp_pa
 
 
 def test_foreign_source_unavailable_page_falls_back_to_partial_info(lib, make_cbz):
-    session, source = fake_session(lib, force=True, config={"plugins": {"fake": {
+    session, source = fake_session(lib, auto="all", config={"plugins": {"fake": {
         "unavailable": ["https://fake.example/albums/100"]}}})
     source.prepare()
     result = session.import_file(make_cbz("Tintin T05 lotus bleu.cbz"))
@@ -119,7 +119,7 @@ def test_foreign_source_unavailable_page_falls_back_to_partial_info(lib, make_cb
 
 
 def test_duplicate_detection_uses_the_sources_own_name(lib, make_cbz):
-    session, source = fake_session(lib, config={"duplicates": {"action": "skip"}}, force=True)
+    session, source = fake_session(lib, config={"duplicates": {"action": "skip"}}, auto="all")
     source.prepare()
     first = session.import_file(make_cbz("Tintin T05 lotus bleu.cbz", pages=3))
     second = session.import_file(make_cbz("copy Tintin T05 lotus bleu.cbz", pages=4))
@@ -127,7 +127,7 @@ def test_duplicate_detection_uses_the_sources_own_name(lib, make_cbz):
 
 
 def test_a_one_shot_from_a_foreign_source(lib, make_cbz):
-    session, source = fake_session(lib, force=True)
+    session, source = fake_session(lib, auto="all")
     source.prepare()
     result = session.import_file(make_cbz("Maus.cbz"))
     album = lib.get_album(result.album_id)
@@ -149,6 +149,6 @@ def test_the_minimal_source_in_the_docs_really_works(lib, make_cbz, monkeypatch)
     s = settings(source="mysource:create_source")
     source = create_source(s.source, lib, s)
     check_source(source)
-    result = ImportSession(lib, source, s, force=True).run([make_cbz("Maus.cbz")])
+    result = ImportSession(lib, source, s, auto="all").run([make_cbz("Maus.cbz")])
     assert result.results[0].outcome == TAGGED
     assert lib.get_album(result.results[0].album_id)["credits"] == {"Writer": ["Spiegelman, Art"]}

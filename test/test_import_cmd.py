@@ -13,6 +13,7 @@ from helpers import ALBUM_URL, FakeWeb
 def setup(tmp_path, monkeypatch, make_cbz):
     conf = tmp_path / "bdnex.yaml"
     conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"),
+                                    "import": {"auto": True},
                                     "bedetheque": {"delay": [0, 0]}}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     web = FakeWeb()
@@ -24,6 +25,8 @@ def setup(tmp_path, monkeypatch, make_cbz):
                         lambda self, url, recache=False: original(self, ALBUM_URL, recache))
     monkeypatch.setattr("bdnex.importer.bedetheque.bedetheque.uniform", lambda a, b: 0)
     monkeypatch.setattr("time.sleep", lambda s: None)
+    from bdnex.ui import init_cmd
+    assert init_cmd.run([], out=io.StringIO(), bar_stream=io.StringIO()) == 0  # the album list, as `bdnex init`
     return make_cbz("Nains - T01 - Redwin de la forge.cbz"), tmp_path
 
 
@@ -32,7 +35,7 @@ def test_import_command_end_to_end(setup):
     out = io.StringIO()
     assert import_cmd.run([str(os.path.dirname(path))], out=out) == 0
     text = out.getvalue()
-    assert "tagged" in text and "1 file(s): 1 tagged" in text
+    assert "complete" in text and "1 file(s): 1 complete" in text
 
     from bdnex.library import Library
     with Library(tmp_path / "lib.sqlite") as lib:
@@ -73,7 +76,7 @@ def test_import_command_shows_progress_on_stderr(setup, capsys):
     path, tmp_path = setup
     import_cmd.run([path], out=io.StringIO())
     err = capsys.readouterr().err
-    assert "Preparing the bedetheque source" in err and "[1/1] Nains - T01 - Redwin de la forge.cbz" in err
+    assert "[1/1] Nains - T01 - Redwin de la forge.cbz" in err
 
 
 def test_verbosity_levels():
@@ -96,8 +99,10 @@ def test_import_command_with_a_configured_foreign_source(tmp_path, monkeypatch, 
                                     "source": "helpers:create_fake_source"}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     out = io.StringIO()
-    assert import_cmd.run(["--force", make_cbz("Maus.cbz")], out=out) == 0
-    assert "1 file(s): 1 tagged" in out.getvalue()
+    assert import_cmd.run(["--auto=all", make_cbz("Maus.cbz")], out=out) == 1  # no album list: `bdnex init` first
+    monkeypatch.setattr("helpers.FakeSource.is_ready", lambda self: True)
+    assert import_cmd.run(["--auto=all", make_cbz("Maus.cbz")], out=out) == 0
+    assert "1 file(s): 1 complete" in out.getvalue()
     from bdnex.library import Library
     with Library(tmp_path / "lib.sqlite") as lib:
         assert lib.get_album(lib.find_album("fake", "200"))["title"] == "Maus"
@@ -110,7 +115,7 @@ def test_import_command_with_an_unknown_source(tmp_path, monkeypatch, capsys, ma
     assert import_cmd.run([make_cbz("a.cbz")], out=io.StringIO()) == 1
     err = capsys.readouterr().err
     assert "unknown source 'nope'" in err and "bedetheque" in err and "config --edit" in err
-def test_import_command_retry_partial_flag(setup, monkeypatch):
+def test_import_command_fetch_step_completes_matched_albums(setup, monkeypatch, capsys):
     path, tmp_path = setup
     original = Bedetheque.album_info
 
@@ -120,15 +125,18 @@ def test_import_command_retry_partial_flag(setup, monkeypatch):
     monkeypatch.setattr(Bedetheque, "album_info", blocked)
     out = io.StringIO()
     import_cmd.run([path], out=out)
-    assert "1 partial" in out.getvalue()
+    assert "1 matched" in out.getvalue() and "`bdnex import --fetch` tries again" in out.getvalue()
     out = io.StringIO()
-    import_cmd.run([path], out=out)
-    assert "1 skipped" in out.getvalue() and "--retry-partial" in out.getvalue()
+    import_cmd.run(["--match", path], out=out)  # only the match step: it is done already
+    assert "1 already" in out.getvalue() and "--fetch" in out.getvalue()
 
     monkeypatch.setattr(Bedetheque, "album_info", lambda self, url, recache=False: original(self, ALBUM_URL, recache))
     out = io.StringIO()
-    assert import_cmd.run(["--retry-partial", path], out=out) == 0
-    assert "1 tagged" in out.getvalue()
+    assert import_cmd.run(["--fetch", path], out=out) == 0
+    assert "1 complete" in out.getvalue()
+    out = io.StringIO()
+    import_cmd.run(["--fetch", path], out=out)
+    assert "1 already" in out.getvalue()
     from bdnex.library import Library
     with Library(tmp_path / "lib.sqlite") as lib:
         assert lib.query(["partial:true"]) == []
@@ -150,7 +158,7 @@ def test_report_describes_what_was_recorded(setup):
     out = io.StringIO()
     import_cmd.run([path], out=out)
     text = out.getvalue()
-    assert "tagged" in text and "-> Nains - T01 - Redwin de la Forge (series)" in text
+    assert "complete" in text and "-> Nains - T01 - Redwin de la Forge (series)" in text
     assert "Jarry, Nicolas" in text and "Soleil Productions 2015" in text and "56 pages" in text
     assert "complete" in text and "bdnex ls --long" in text
 

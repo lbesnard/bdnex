@@ -10,7 +10,7 @@ Each argument is one term; all terms must match (AND)::
     volume:3   rating:4..
     author:uderzo            any credit;  writer: penciller: colorist: ...
     genre:fantasy  publisher:soleil  kind:oneshot
-    filename:redwin  format:cbz  corrupted:true  partial:true
+    filename:redwin  format:cbz  corrupted:true  complete:false
     ^genre:humour            a leading ^ negates the term
 """
 
@@ -53,7 +53,8 @@ TEXT_FIELDS = {"title": "a.title", "series": "s.name", "publisher": "pub.name", 
 FILE_TEXT_FIELDS = {"path": "f.path", "filename": "basename(f.path)", "format": "f.format", "md5": "f.md5"}
 NUMERIC_FIELDS = {"year": "a.year", "volume": "a.volume", "pages": "a.pages", "rating": "a.rating"}
 FILE_NUMERIC_FIELDS = {"size": "f.size", "filepages": "f.page_count"}
-BOOL_FIELDS = {"partial": "COALESCE(json_extract(a.extra, '$.partial'), 0)"}
+BOOL_FIELDS = {"partial": "COALESCE(json_extract(a.extra, '$.partial'), 0)",
+               "complete": "(1 - COALESCE(json_extract(a.extra, '$.partial'), 0))"}  # its page was read
 FILE_BOOL_FIELDS = {"corrupted": "f.corrupted", "tagged": "(f.album_id IS NOT NULL)",
                     "metadata": "f.has_metadata"}
 

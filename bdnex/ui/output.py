@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import sys
+import time
 
 
 def progress(message: str) -> None:
@@ -19,3 +20,67 @@ def add_verbosity(parser) -> None:
 def setup_logging(verbosity: int) -> None:
     level = logging.WARNING if verbosity <= 0 else logging.INFO if verbosity == 1 else logging.DEBUG
     logging.basicConfig(level=level, format="%(levelname)-7s %(name)s: %(message)s", stream=sys.stderr, force=True)
+
+
+def human_duration(seconds: float) -> str:
+    seconds = int(round(seconds))
+    if seconds < 90:
+        return f"{seconds} s"
+    if seconds < 5400:
+        return f"{round(seconds / 60)} min"
+    return f"{seconds / 3600:.1f} h"
+
+
+class Bar:
+    """A progress bar with a percentage and an estimate of the time left.
+
+    On a terminal one line is redrawn in place; elsewhere (a pipe, a log) a plain line is printed
+    every 10 %, so the output stays readable. ``total`` may be an estimate: the bar never reaches
+    100 % before :meth:`finish`.
+    """
+
+    def __init__(self, total: int, label: str = "", stream=None, width: int = 24, tty: bool | None = None,
+                 clock=time.monotonic, exact: bool = True):
+        self.total, self.label, self.width = max(1, total), label, width
+        self.exact = exact  # False: ``total`` is a guess, so the bar stays under 100 % until finish()
+        self.stream = stream or sys.stderr
+        self.tty = self.stream.isatty() if tty is None else tty
+        self.done = 0
+        self._clock, self._start, self._last_decile = clock, clock(), -1
+        self._shown = False
+
+    # -- drawing
+    def percent(self) -> int:
+        pct = int(100 * self.done / self.total)
+        return min(100, pct) if self.exact else min(99, pct)
+
+    def line(self, detail: str = "") -> str:
+        pct = self.percent()
+        filled = int(self.width * pct / 100)
+        eta = ""
+        if self.done >= 2:
+            left = (self._clock() - self._start) / self.done * max(0, self.total - self.done)
+            eta = f"  about {human_duration(left)} left" if left >= 1 else ""
+        bar = "█" * filled + "░" * (self.width - filled)
+        return f"{self.label} [{bar}] {pct:>3}%  {self.done}/{self.total}{eta}  {detail}".rstrip()
+
+    def update(self, detail: str = "", step: int = 1) -> None:
+        self.done += step
+        if self.done > self.total:
+            self.total = self.done + 1  # the estimate was low (only an estimate can be)
+            self.exact = False
+        text = self.line(detail)
+        if self.tty:
+            print("\r\x1b[K" + text, end="", file=self.stream, flush=True)
+            self._shown = True
+        elif self.percent() // 10 > self._last_decile or self.total <= 10:
+            self._last_decile = self.percent() // 10
+            print(text, file=self.stream, flush=True)
+
+    def finish(self, message: str = "") -> None:
+        """End the bar (clearing the line on a terminal) and print ``message``."""
+        if self.tty and self._shown:
+            print("\r\x1b[K", end="", file=self.stream)
+        if message:
+            print(message, file=self.stream, flush=True)
+        self._shown = False

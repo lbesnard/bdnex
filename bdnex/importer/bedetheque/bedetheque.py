@@ -45,6 +45,10 @@ def http_fetch(url: str) -> bytes:
     return response.content
 
 
+VOLUME_TIEBREAK = 10.0  # only orders the candidates; the reported score does not include it
+MAX_POSTINGS = 4000  # a word in more albums than this ('integrale') is no use to find candidates
+
+
 class Bedetheque:
     """Look albums up on Bédéthèque, through the library cache.
 
@@ -69,6 +73,7 @@ class Bedetheque:
         self.sitemap_delay = sitemap_delay
         self._sleep = sleep
         self._index: Optional[list[Candidate]] = None
+        self._words: Optional[dict[str, list[int]]] = None
 
     # --------------------------------------------------------------- fetching
     def _get(self, kind: str, url: str, recache: bool = False) -> bytes:
@@ -103,6 +108,7 @@ class Bedetheque:
             if sitemap.is_empty_sitemap(content):
                 break
         self._index = None
+        self._words = None
         return fetched
 
     # -- MetadataSource protocol
@@ -139,9 +145,79 @@ class Bedetheque:
         return self._index
 
     # --------------------------------------------------------------- matching
+    def album_count(self) -> int:
+        """Albums in the cached sitemaps (0 when there are none)."""
+        try:
+            return len(self._load_index())
+        except FileNotFoundError:
+            return 0
+
+    def warm(self) -> None:
+        """Load the matching index now, so worker processes forked later share it."""
+        self._word_index()
+
+    def _word_index(self) -> dict[str, list[int]]:
+        """word -> positions in the index of the candidates containing it (built once)."""
+        if self._words is None:
+            words: dict[str, list[int]] = {}
+            for pos, cand in enumerate(self._load_index()):
+                for word in set(cand.name.split()):
+                    if not (word.isdigit() and len(word) <= 3):
+                        words.setdefault(word, []).append(pos)
+            self._words = words
+        return self._words
+
+    def _pool(self, words: list[str]) -> set[int]:
+        """Positions of the candidates sharing a (possibly misspelt) word with the query."""
+        index = self._word_index()
+        pool: set[int] = set()
+        for word in words:
+            postings = index.get(word)
+            if postings is None and len(word) > 3:
+                near = process.extract(word, list(index), scorer=fuzz.ratio, limit=3, score_cutoff=85)
+                postings = [pos for other, _, _ in near for pos in index[other]]
+            if postings and len(postings) <= MAX_POSTINGS:  # too common a word narrows nothing
+                pool.update(postings)
+        return pool
+
+    @staticmethod
+    def _score(words: list[str], cand: Candidate) -> float:
+        """0-100: how many query words the candidate has, and how close the texts are.
+
+        The volume is not part of this: the importer adjusts for it (``matching.rerank``).
+        """
+        cand_words = [w for w in cand.name.split() if not (w.isdigit() and len(w) <= 3)]  # volumes out, years in
+        known = set(cand_words)
+        hits = sum(1 for w in words if w in known
+                   or (len(w) > 3 and any(fuzz.ratio(w, c) >= 85 for c in cand_words)))
+        coverage = hits / len(words)
+        extra = sum(1 for c in cand_words if c not in words and not c.isdigit())  # years do not count
+        closeness = fuzz.ratio(" ".join(words), " ".join(cand_words))
+        score = 60 * coverage + 0.4 * closeness - min(extra, 6) * 1.5 * coverage
+        # every word of the album name is in the file name: the rest is probably author names
+        title = {c for c in cand_words if not c.isdigit()}
+        distinctive = len(title) >= 3 or (len(title) == 2 and sum(map(len, title)) >= 12)
+        if distinctive and all(c in words for c in title):
+            unexplained = sum(1 for w in words if w not in known)
+            score = max(score, 85 - 2 * min(unexplained, 5))
+        return max(0.0, min(100.0, score))
+
     def candidates(self, name: str, limit: int = 5) -> list[tuple[Candidate, float]]:
-        """Best fuzzy matches for ``name`` (score 0-100). No network access."""
+        """Best matches for ``name`` (score 0-100). No network access.
+
+        Candidates are looked up by word, then scored on word coverage and text similarity, so
+        ``Bleach 68`` finds ``bleach 68 the ordinary peace`` and ignores ``peach 6``.
+        """
         index = self._load_index()
+        words, volumes = sitemap.query_tokens(name)
+        if words:
+            pool = self._pool(words)
+            if pool:
+                # a series has many albums with the same title score: keep the wanted volume in the cut
+                scored = sorted(((self._score(words, index[pos]), pos) for pos in pool),
+                                key=lambda sp: sp[0] + (VOLUME_TIEBREAK if index[sp[1]].volume in volumes else 0),
+                                reverse=True)
+                return [(index[pos], score) for score, pos in scored[:limit]]
         query = sitemap.remove_common_words(name)
         hits = process.extract(query, [c.name for c in index], scorer=fuzz.ratio, limit=limit)
         return [(index[pos], score) for _, score, pos in hits]
