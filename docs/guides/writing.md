@@ -111,6 +111,8 @@ which the library does not take from a file. Nothing is stored in a preview (`--
   left alone (`skip`).
 - `.pdf`: pages are taken **one by one**. A page that is a single picture (or one picture plus tiny ones such as a
   logo, under 2% of the page) is extracted untouched: no re-encoding, no quality loss, about the PDF's own size.
+  If that picture is in a format comic readers do not open (JPEG 2000, JBIG2...), it is decoded and saved as PNG
+  with the same pixels: still lossless, but bigger than the compressed original.
   Only the pages that are something else (text, several large pictures, transparency, a picture format viewers
   do not open) are drawn at `write.pdf_dpi`, as PNG or JPEG (`write.pdf_render_format: auto` uses JPEG for
   pages made of JPEG pictures, which keeps them close to their original size, and PNG otherwise).

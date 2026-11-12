@@ -872,3 +872,14 @@ def test_the_report_says_how_many_pdf_pages_had_to_be_drawn(lib, make_pdf, make_
     row = registered(lib, scan, add_series_album(lib))
     result = Organizer(lib, settings_for(tmp_path), pretend=True).process(row, WRITE)
     assert "all 3 pages extracted untouched" in result.note
+
+
+
+
+def test_the_report_counts_pictures_saved_as_png_without_loss(lib, make_image_pdf, tmp_path, monkeypatch):
+    from bdnex.organizer import archive as arch
+    monkeypatch.setattr(arch, "PDF_EXTRACTABLE", {"png"})  # the test PDF holds JPEGs: treat them as unopenable
+    scan, _ = make_image_pdf("scan.pdf", pages=2)
+    row = registered(lib, scan, add_oneshot(lib))
+    result = Organizer(lib, settings_for(tmp_path), pretend=True).process(row, WRITE)
+    assert "extracted without loss (2 saved as PNG, same pixels)" in result.note

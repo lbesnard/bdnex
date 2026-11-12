@@ -212,3 +212,24 @@ def test_drawn_pages_of_jpeg_pictures_are_drawn_as_jpeg_in_auto(tmp_path):
     jpg, _ = archive.read_entries(path, "pdf", "auto", 150, "jpeg")
     assert auto[0].name.endswith(".jpg") and png[0].name.endswith(".png") and jpg[0].name.endswith(".jpg")
     assert auto[0].data[:2] == b"\xff\xd8" and png[0].data.startswith(b"\x89PNG")
+
+
+
+
+def test_a_picture_in_a_format_viewers_do_not_open_is_decoded_to_png_with_the_same_pixels(tmp_path, monkeypatch):
+    import pymupdf
+
+    source = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 40, 60), False)
+    source.set_rect(source.irect, (10, 200, 30))
+    doc = pymupdf.open()
+    page = doc.new_page(width=200, height=300)
+    page.insert_image(page.rect, pixmap=source)
+    path = str(tmp_path / "odd.pdf")
+    doc.save(path)
+    doc.close()
+    # pretend PNG is a format that cannot be copied out as it is (as JPEG 2000 or JBIG2 would be)
+    monkeypatch.setattr(archive, "PDF_EXTRACTABLE", {"jpg", "jpeg"})
+    (entry,), _ = archive.read_entries(path, "pdf", "auto", 72)
+    assert entry.decoded and not entry.rendered and entry.name.endswith(".png")
+    back = pymupdf.Pixmap(entry.data)
+    assert (back.width, back.height) == (40, 60) and back.samples == source.samples  # not resampled, not altered
