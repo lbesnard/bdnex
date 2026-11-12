@@ -81,6 +81,8 @@ write:
   pdf_mode: auto                         # auto | extract | render (extract keeps the scanned images untouched)
   pdf_dpi: 200                           # resolution when PDF pages have to be rendered
   delete_original: ask                   # after a CBR / PDF was converted: ask | yes | no
+  use_trash: true                        # a deleted original goes to the trash folder (false: deleted for good)
+  min_free_space: 200                    # MiB that must stay free on the disk (and for the database) after writing
   conflict: ask                          # a ComicInfo.xml that differs from the database: ask | file | database
   corrupted: ask                         # a damaged archive that can not be repaired: ask | leave | move
   size_tolerance: 20                     # % the new archive may differ in size from the original (0 = no check)

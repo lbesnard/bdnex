@@ -23,10 +23,15 @@ def unique(path: Path) -> Path:
     return path.with_name(f"{path.stem} ({n}){path.suffix}")
 
 
-def move_to_trash(library, settings, path: str, reason: str) -> int:
-    """Move a file into the trash, forget it as a library file, and record it. Returns the trash id."""
+def move_to_trash(library, settings, path: str, reason: str, row: Optional[dict] = None,
+                  forget: bool = True) -> int:
+    """Move a file into the trash, forget it as a library file, and record it. Returns the trash id.
+
+    ``row``: what the library knew of the file, when it is not (any more) under this path; ``forget=False``
+    leaves the library's file record alone (it belongs to another path by now).
+    """
     source = Path(os.path.abspath(path))
-    row = library.get_file(str(source))
+    row = row if row is not None else library.get_file(str(source))
     stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     destination = unique(settings.trash_path / stamp / source.name)
     destination.parent.mkdir(parents=True, exist_ok=True)
@@ -35,7 +40,7 @@ def move_to_trash(library, settings, path: str, reason: str) -> int:
                               album_id=row["album_id"] if row else None, md5=row["md5"] if row else None,
                               size=row["size"] if row else destination.stat().st_size,
                               fmt=row["format"] if row else destination.suffix.lstrip(".").lower())
-    if row:
+    if row and forget:
         library.remove_file(str(source))
     return entry
 

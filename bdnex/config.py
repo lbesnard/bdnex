@@ -93,6 +93,8 @@ class Write(_Section):
     pdf_mode: Literal["auto", "extract", "render"]
     pdf_dpi: int = Field(ge=72, le=1200)
     delete_original: Literal["ask", "yes", "no"]
+    use_trash: bool
+    min_free_space: int = Field(ge=0)
     conflict: Literal["ask", "file", "database"]
     corrupted: Literal["ask", "leave", "move"]
     size_tolerance: float = Field(ge=0, le=1000)

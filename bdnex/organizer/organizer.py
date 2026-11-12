@@ -12,6 +12,7 @@ put in place; the checksum stored in the database is refreshed.
 
 from __future__ import annotations
 
+import errno
 import logging
 import os
 import shutil
@@ -31,6 +32,7 @@ WRITE, MOVE, COPY = "write", "move", "copy"
 WRITTEN, MOVED, COPIED, UNCHANGED, SKIPPED, FAILED, PRETEND, REPAIRED = (
     "written", "moved", "copied", "unchanged", "skipped", "failed", "pretend", "repaired")
 TMP_SUFFIX = ".bdnex-tmp"
+ROOM_FACTOR = 1.25  # the new archive is expected to take at most this much of the original's size
 MIN_SIZE_CHANGE = 1024 * 1024  # a difference under 1 MiB is never worth a question (tags on a tiny file)
 
 # template fields that can be saved back to the database when typed at a prompt
@@ -71,6 +73,21 @@ def human_size(size: int) -> str:
             return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
         size /= 1024
     return f"{size} B"
+
+
+class NoRoom(archive.ArchiveError):
+    """There is not enough free space to write safely."""
+
+
+def free_space(path: str) -> int:
+    """Bytes free on the disk that holds ``path`` (or the nearest existing parent of it)."""
+    folder = os.path.abspath(path)
+    while folder and not os.path.exists(folder):
+        parent = os.path.dirname(folder)
+        if parent == folder:
+            break
+        folder = parent
+    return shutil.disk_usage(folder).free
 
 
 def _flush_to_disk(path: str) -> None:
@@ -179,8 +196,16 @@ class Organizer:
                 spare = True
                 steps.append(f"kept as a spare version in {self.settings.duplicates.versions_dir}")
 
+        problem = self._room_problem(dest, int(os.path.getsize(path) * ROOM_FACTOR))
+        if problem:
+            return FileResult(path, FAILED, note=problem)
         try:
             self._build(dest, entries, xml, compare_to=path)
+        except OSError as err:
+            if err.errno != errno.ENOSPC:
+                raise
+            return FileResult(path, FAILED, note="the disk is full: the partial file was removed, "
+                                                "the original is untouched")
         except SizeChanged as change:
             refused = self._size_decision(path, change)
             if refused is not None:
@@ -199,11 +224,16 @@ class Organizer:
                 return FileResult(path, FAILED, note=f"the new archive failed the final check ({err}): "
                                                     "the original is kept")
 
+        old_row = self.library.get_file(path)
         removed = self._dispose_source(path, dest, mode, converted)
         self._update_library(path, dest)
+        if removed == "trash":
+            self._send_to_trash(path, old_row, f"converted to {os.path.basename(dest)}")
         if spare and not row.get("spare"):
             self.library.set_file_fields(dest, spare=1)
         outcome = {WRITE: WRITTEN, MOVE: MOVED, COPY: COPIED}[mode]
+        if removed == "trash":
+            steps.append("original moved to the trash")
         return FileResult(path, outcome, dest, "; ".join(steps) + ("" if removed or same_place else " (original kept)"))
 
     # --------------------------------------------------------------- repairing
@@ -224,11 +254,33 @@ class Organizer:
         if dest != path and os.path.exists(dest):
             return FileResult(path, SKIPPED, note=f"{dest} already exists")
         self._build(dest, recovered.entries, recovered.comicinfo)
-        if dest != path and self.settings.write.delete_original != "no" and (
-                self.settings.write.delete_original == "yes" or self._confirm(f"Delete the damaged original {path}?")):
-            os.remove(path)
+        old_row = self.library.get_file(path)
+        delete = dest != path and self.settings.write.delete_original != "no" and (
+            self.settings.write.delete_original == "yes" or self._confirm(f"Delete the damaged original {path}?"))
         self._update_library(path, dest)
+        if delete:
+            if self.settings.write.use_trash:
+                self._send_to_trash(path, old_row, f"repaired as {os.path.basename(dest)}")
+            else:
+                os.remove(path)
         return FileResult(path, REPAIRED, dest, note)
+
+    def _room_problem(self, dest: str, needed: int) -> Optional[str]:
+        """Why writing ``needed`` bytes at ``dest`` is not safe (``None`` when it is): the disk of the file and
+        the disk of the database must both keep ``write.min_free_space`` MiB free."""
+        keep = self.settings.write.min_free_space * 1024 * 1024
+        if keep == 0:
+            return None
+        spots = [(dest, needed, "the disk of the comics")]
+        if self.library.path != ":memory:":
+            spots.append((self.library.path, 0, "the disk of the library database"))
+        for where, extra, label in spots:
+            free = free_space(where)
+            if free < extra + keep:
+                return (f"not enough free space on {label}: {human_size(free)} free, "
+                        f"{human_size(extra + keep)} needed (write.min_free_space is "
+                        f"{self.settings.write.min_free_space} MiB); nothing was written")
+        return None
 
     def _size_decision(self, path: str, change: SizeChanged) -> Optional[FileResult]:
         """``None`` to go on with the new archive, else the result that leaves the original alone."""
@@ -398,14 +450,20 @@ class Organizer:
             return str(trash.unique(Path(dest))), False
         return str(trash.unique(Path(self._versions_path(dest)))), True
 
-    def _dispose_source(self, src: str, dest: str, mode: str, converted: bool) -> bool:
-        """Remove the original when appropriate. Returns True if it was removed."""
+    def _send_to_trash(self, path: str, row: Optional[dict], reason: str) -> None:
+        trash.move_to_trash(self.library, self.settings, path, reason, row=row, forget=False)
+
+    def _dispose_source(self, src: str, dest: str, mode: str, converted: bool):
+        """Remove the original when appropriate. Returns ``True`` if it was deleted, ``"trash"`` if it is to be
+        moved to the trash (the caller does it once the library points at the new file), ``False`` if it stays."""
         if os.path.abspath(src) == os.path.abspath(dest) or mode == COPY:
             return False
         policy = self.settings.write.delete_original
         if converted:  # a cbr/pdf replaced by its cbz: honour delete_original
             if policy == "no" or (policy == "ask" and not self._confirm(f"Delete the original {src}?")):
                 return False
+            if self.settings.write.use_trash:
+                return "trash"  # moved once the library knows the new path
         os.remove(src)
         return True
 
