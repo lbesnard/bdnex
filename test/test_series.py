@@ -159,3 +159,89 @@ def test_series_command_without_a_library(tmp_path, monkeypatch, capsys):
     conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "none.sqlite")}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     assert series_cmd.run([], out=io.StringIO()) == 1 and "No library yet" in capsys.readouterr().err
+
+
+# ------------------------------------------------------- everything the page says (layout-free)
+# Modelled on the structures the current site template uses (Open Graph tags, schema.org microdata, <dl> rows),
+# with the other usual ones (table rows, <li><label> lines, JSON-LD). Replace it by a saved real series page.
+SYNTHETIC = """<html><head>
+<meta property="og:title" content="Foo - Série BD"><meta property="og:image" content="https://www.bedetheque.com/cache/foo.jpg">
+<meta name="description" content="Le résumé de la série Foo."><meta name="viewport" content="width=device-width">
+<script type="application/ld+json">{"@type": "BookSeries", "name": "Foo", "numberOfItems": 4}</script>
+<script type="application/ld+json">{ not json </script></head><body><h1>Foo</h1>
+<span itemprop="genre">Franco-Belge - Humour, Satire</span>
+<span itemprop="inLanguage">fr</span>
+<div itemprop="aggregateRating"><span itemprop="ratingValue">4.2</span><span itemprop="ratingCount">90</span></div>
+<dl><dt>Origine :</dt><dd>Europe</dd><dt>Langue</dt><dd>Français</dd><dt>Statut</dt><dd>Série terminée</dd>
+    <dt>251</dt><dd>pages</dd><dt>11/2021</dt><dd>(26 novembre 2021)</dd></dl>
+<table><tr><th>Nb. d'albums</th><td>4</td></tr></table>
+<ul><li><label>Collection :</label> Les Grands Classiques</li><li><strong>Parution</strong> 1990 - 2005</li></ul>
+<p itemprop="description">Une très longue description. </p>
+<a href="https://www.bedetheque.com/BD-Foo-Tome-1-Un-111.html">1</a><a href="https://www.bedetheque.com/BD-Foo-Tome-2-Deux-112.html">2</a>
+</body></html>"""
+
+
+def test_the_page_is_harvested_whatever_its_layout():
+    details = parser.parse_series_details(SYNTHETIC)
+    assert details["meta"] == {"og:title": "Foo - Série BD", "og:image": "https://www.bedetheque.com/cache/foo.jpg",
+                               "description": "Le résumé de la série Foo."}  # the viewport tag is not content
+    assert details["microdata"]["genre"] == ["Franco-Belge - Humour, Satire"]
+    assert details["jsonld"] == [{"@type": "BookSeries", "name": "Foo", "numberOfItems": 4}]  # the broken block is skipped
+    assert details["fields"] == {"Origine": "Europe", "Langue": "Français", "Statut": "Série terminée",
+                                 "Nb. d'albums": "4", "Collection": "Les Grands Classiques", "Parution": "1990 - 2005"}
+    assert [a["volume"] for a in details["albums"]] == [1, 2]
+
+
+def test_the_usual_things_get_a_stable_name():
+    details = parser.parse_series_details(SYNTHETIC)
+    assert details["genres"] == ["Franco-Belge - Humour", "Satire"]
+    assert (details["status"], details["origin"], details["language"]) == ("Série terminée", "Europe", "Français")
+    assert (details["rating"], details["rating_count"]) == ("4.2", "90")
+    assert details["image"] == "https://www.bedetheque.com/cache/foo.jpg"
+
+
+def test_a_value_is_never_taken_for_a_label():
+    fields = parser.parse_series_details(SYNTHETIC)["fields"]
+    assert "251" not in fields and "11/2021" not in fields  # '251 pages' and a date are not rows of a table
+
+
+def test_what_the_page_lacks_is_not_invented():
+    details = parser.parse_series_details("<html><body><dl><dt>Genre</dt><dd>Fantasy</dd></dl></body></html>")
+    assert details == {"fields": {"Genre": "Fantasy"}, "genres": ["Fantasy"]}
+
+
+def test_a_label_called_series_is_not_a_status():
+    html = "<html><body><dl><dt>Série</dt><dd>Bibliomule de Cordoue (La)</dd></dl></body></html>"
+    assert "status" not in parser.parse_series_details(html)
+
+
+def test_the_current_site_template_is_harvested_too():
+    """A real current-template page (an album page): same site, same tags."""
+    page = open(os.path.join(HERE, "bedetheque_oneshot_bibliomule.html"), encoding="utf-8", errors="replace").read()
+    details = parser.parse_series_details(page)
+    assert details["genres"] == ["Franco-Belge - Conte ou légende", "Satire"]
+    assert (details["rating"], details["rating_count"], details["language"]) == ("4.2", "90", "fr")
+    assert details["image"].endswith("Couv_433432.jpg") and details["fields"]["Éditeur"] == "Dargaud"
+    assert "status" not in details
+
+
+def test_it_is_all_kept_with_the_series():
+    web = FakeWeb()
+    web.pages[SERIES_URL] = SYNTHETIC.encode()
+    lib = Library(":memory:")
+    source = Bedetheque(lib, fetch=web, sleep=lambda s: None)
+    lib.add_album(source.album_info(ALBUM_URL))
+    extra = json.loads(lib.conn.execute("SELECT extra FROM series WHERE source_id = '47467'").fetchone()["extra"])
+    assert extra["genres"] == ["Franco-Belge - Humour", "Satire"] and extra["fields"]["Origine"] == "Europe"
+    assert extra["meta"]["og:title"] == "Foo - Série BD" and len(extra["albums"]) == 2 and "summary" not in extra
+
+
+def test_series_long_shows_what_the_page_said(library_with_series, tmp_path):
+    with Library(tmp_path / "lib.sqlite") as lib:
+        lib.add_series(SeriesInfo("b", "2", "Foo", extra={"genres": ["Humour", "Satire"], "status": "Série terminée",
+                                                          "origin": "Europe", "rating": "4.2", "rating_count": "90"}))
+    code, text = run("foo", "--long")
+    assert "    genres: Humour, Satire" in text and "    status: Série terminée" in text
+    assert "    origin: Europe" in text and "    rating: 4.2 (90 votes)" in text
+    assert "genres" not in run("foo")[1]  # only with --long
+    assert json.loads(run("--json", "foo")[1])[0]["extra"]["status"] == "Série terminée"

@@ -164,7 +164,8 @@ class Library:
         """Every series with what you have of it and, when its page was read, what is missing.
 
         Rows have ``id``, ``name``, ``url``, ``owned`` (albums with a file), ``known`` (albums the source
-        lists, ``None`` when no series page was read) and ``missing`` (those you have no file for).
+        lists, ``None`` when no series page was read), ``missing`` (those you have no file for) and ``extra``
+        (what else the series page said).
         ``terms`` must all appear in the name (case and accents ignored).
         """
         wanted = [fold(t) for t in terms]
@@ -180,7 +181,8 @@ class Library:
             known = json.loads(series["extra"]).get("albums")
             missing = None if known is None else [a for a in known if str(a["source_id"]) not in owned]
             rows.append({"id": series["id"], "name": series["name"], "url": series["url"], "owned": len(owned),
-                         "known": None if known is None else len(known), "missing": missing})
+                         "known": None if known is None else len(known), "missing": missing,
+                         "extra": {k: v for k, v in json.loads(series["extra"]).items() if k != "albums"}})
         return rows
 
     # ---------------------------------------------------------------- albums

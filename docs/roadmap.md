@@ -21,7 +21,7 @@
 | Keep every replaced `ComicInfo.xml`, with a restore command | planned |
 | `bdnex backup` (database copy without the re-downloadable sitemaps) | planned |
 | Every album of a series, kept with the series; `bdnex series` shows what is missing | available |
-| Series genres, status and other series-page details | planned (needs a saved current series page to read) |
+| Series genres, status and other series-page details | available, read without knowing the layout; to be checked against a real current series page |
 | Cover similarity as part of the match score (today it is a check after the fetch) | undecided |
 | Swap the main file and a spare version | planned |
 | A second source (e.g. BnF) | planned |

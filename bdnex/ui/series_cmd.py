@@ -15,6 +15,19 @@ def label(album: dict) -> str:
     return f"{number}  {album['title']}".rstrip()
 
 
+def details(extra: dict) -> list[str]:
+    """What the series page said, one line each: the normalised values it has."""
+    lines = []
+    for key, name in (("genres", "genres"), ("status", "status"), ("origin", "origin"), ("language", "language")):
+        value = extra.get(key)
+        if value:
+            lines.append(f"{name}: {', '.join(value) if isinstance(value, list) else value}")
+    if extra.get("rating"):
+        votes = f" ({extra['rating_count']} votes)" if extra.get("rating_count") else ""
+        lines.append(f"rating: {extra['rating']}{votes}")
+    return lines
+
+
 def run(argv: list[str], out=sys.stdout) -> int:
     parser = argparse.ArgumentParser(
         prog="bdnex series", description=__doc__,
@@ -44,11 +57,16 @@ def run(argv: list[str], out=sys.stdout) -> int:
     for row in rows:
         if row["known"] is None:
             print(f"{row['name']}  {row['owned']} album(s)  (the series' own album list is not known yet)", file=out)
+            if args.long:
+                for line in details(row["extra"]):
+                    print(f"    {line}", file=out)
             continue
         missing = row["missing"]
         print(f"{row['name']}  {row['owned']} of {row['known']} albums"
               + (f"  ·  missing {len(missing)}" if missing else "  ·  complete"), file=out)
         if args.long:
+            for line in details(row["extra"]):
+                print(f"    {line}", file=out)
             for album in missing:
                 print(f"    {label(album)}  {album['url']}", file=out)
     if not rows:
