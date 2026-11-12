@@ -44,12 +44,16 @@ def report(results, out) -> int:
         line = f"{r.outcome:<9} {r.path}"
         if r.dest and r.dest != r.path:
             line += f"\n          -> {r.dest}"
+        elif r.outcome == "pretend" and r.dest:
+            line += "\n          (stays where it is)"
         if r.note:
             line += f"\n          {r.note}"
         print(line, file=out)
     summary = ", ".join(f"{sum(1 for r in results if r.outcome == o)} {o}" for o in OUTCOMES
                         if any(r.outcome == o for r in results))
     print(f"\n{len(results)} file(s): {summary or 'nothing to do'}", file=out)
+    if any(r.outcome == "pretend" for r in results):
+        print("Preview only: nothing was changed. Run the same command without -n to do it.", file=out)
     return 1 if any(r.outcome == FAILED for r in results) else 0
 
 
@@ -73,7 +77,10 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
         print(f"No library yet ({settings.library_path}): run `bdnex import <folder>` first.", file=sys.stderr)
         return 1
 
-    with Library.for_settings(settings) as library:
+    if args.pretend:
+        print("Preview: nothing is written, moved, converted or deleted, and the library is opened read-only.",
+              file=sys.stderr)
+    with Library.for_settings(settings, readonly=args.pretend) as library:
         try:
             rows = library.query([*args.query, "corrupted:true"] if command == "repair"
                                  else [*args.query, "tagged:true"], files=True)
