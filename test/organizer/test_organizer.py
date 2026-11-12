@@ -861,3 +861,14 @@ def test_the_abort_key_of_a_real_question_raises_it(monkeypatch):
 def test_the_report_says_where_it_stopped_and_how_to_continue():
     from bdnex.ui.write_cmd import aborted_message
     assert "Aborted at /x/a.cbz" in aborted_message("/x/a.cbz") and "bdnex write" in aborted_message("/x/a.cbz")
+
+
+def test_the_report_says_how_many_pdf_pages_had_to_be_drawn(lib, make_pdf, make_image_pdf, tmp_path):
+    drawn = make_pdf("text.pdf", pages=2)
+    row = registered(lib, drawn, add_oneshot(lib))
+    result = Organizer(lib, settings_for(tmp_path), pretend=True).process(row, WRITE)
+    assert "2 of 2 page(s) had to be drawn" in result.note
+    scan, _ = make_image_pdf("scan.pdf", pages=3)
+    row = registered(lib, scan, add_series_album(lib))
+    result = Organizer(lib, settings_for(tmp_path), pretend=True).process(row, WRITE)
+    assert "all 3 pages extracted untouched" in result.note

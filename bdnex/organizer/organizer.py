@@ -181,7 +181,7 @@ class Organizer:
         if recovered is not None:
             entries, existing = recovered.entries, recovered.comicinfo
         else:
-            entries, existing = archive.read_entries(path, fmt, write.pdf_mode, write.pdf_dpi)
+            entries, existing = archive.read_entries(path, fmt, write.pdf_mode, write.pdf_dpi, write.pdf_render_format)
         new_fields = comicinfo.album_to_fields(album, archive.page_count(entries))
         xml = self._resolve_xml(path, existing, new_fields, album_id)
         if isinstance(xml, FileResult):
@@ -194,6 +194,12 @@ class Organizer:
 
         steps = [f"repair {len(repaired_pages)} page(s) with a wrong checksum"] if repaired_pages else []
         steps += [f"convert {fmt} -> cbz"] if converted else []
+        drawn = [number for number, entry in enumerate(entries, start=1) if entry.rendered]
+        if drawn:
+            steps.append(f"{len(drawn)} of {len(entries)} page(s) had to be drawn, not extracted "
+                         f"(page {', '.join(map(str, drawn[:8]))}{'...' if len(drawn) > 8 else ''})")
+        elif fmt == "pdf":
+            steps.append(f"all {len(entries)} pages extracted untouched")
         steps.append("write ComicInfo.xml" if xml != existing else "keep ComicInfo.xml")
         if not same_place:
             if mode == WRITE:  # the converted file sits next to the original: nothing moves

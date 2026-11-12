@@ -27,6 +27,7 @@ class Entry:
     name: str
     data: bytes
     compress_type: Optional[int] = None  # kept from the source archive; None = decide from the extension
+    rendered: bool = False  # a PDF page that had to be drawn (not an image taken out untouched)
 
     @property
     def is_image(self) -> bool:
@@ -37,7 +38,8 @@ def _is_comicinfo(name: str) -> bool:
     return posixpath.basename(name).lower() == COMICINFO
 
 
-def read_entries(path: str, fmt: str, pdf_mode: str = "auto", pdf_dpi: int = 200) -> tuple[list[Entry], Optional[bytes]]:
+def read_entries(path: str, fmt: str, pdf_mode: str = "auto", pdf_dpi: int = 200,
+                 pdf_render_format: str = "auto") -> tuple[list[Entry], Optional[bytes]]:
     """Return (entries, existing ComicInfo.xml bytes) of an archive; ComicInfo is not in ``entries``."""
     try:
         if fmt == "cbz":
@@ -45,7 +47,7 @@ def read_entries(path: str, fmt: str, pdf_mode: str = "auto", pdf_dpi: int = 200
         if fmt == "cbr":
             return _read_rar(path)
         if fmt == "pdf":
-            return _read_pdf(path, pdf_mode, pdf_dpi), None
+            return _read_pdf(path, pdf_mode, pdf_dpi, pdf_render_format), None
     except ArchiveError:
         raise
     except Exception as err:
@@ -81,44 +83,78 @@ def _read_rar(path):
     return entries, info
 
 
-def _read_pdf(path, mode: str, dpi: int) -> list[Entry]:
+MAIN_IMAGE_SHARE = 0.85  # an image covering this much of the page is the page
+LEFT_OUT_SHARE = 0.02  # other images smaller than this (a logo, a stamp) may be left out of the extraction
+JPEG_QUALITY = 90
+
+
+def _read_pdf(path, mode: str, dpi: int, render_format: str = "auto") -> list[Entry]:
+    """The pages of a PDF as images, page by page: each page that is one plain image is taken out
+    untouched (lossless); the others are drawn, unless ``mode`` is ``extract`` (then they are an error)."""
     import pymupdf
 
     with pymupdf.open(path) as doc:
         if doc.page_count == 0:
             raise ArchiveError("the PDF has no pages")
-        if mode in ("auto", "extract"):
-            extracted = _pdf_extract(doc)
-            if extracted is not None:
-                return extracted
+        width = len(str(doc.page_count))
+        entries, odd = [], []
+        for number, page in enumerate(doc, start=1):
+            taken = None if mode == "render" else _pdf_page_image(doc, page)
+            if taken is not None:
+                ext, data = taken
+                entries.append(Entry(f"page-{number:0{width}d}.{ext}", data))
+                continue
             if mode == "extract":
-                raise ArchiveError("some pages are not a single plain image: use pdf_mode auto or render")
-        return _pdf_render(doc, dpi)
+                odd.append(number)
+                continue
+            ext, data = _pdf_render_page(page, dpi, render_format)
+            entries.append(Entry(f"page-{number:0{width}d}.{ext}", data, rendered=True))
+        if odd:
+            raise ArchiveError(f"page(s) {', '.join(map(str, odd[:10]))}{'...' if len(odd) > 10 else ''} "
+                               "are not a single plain image: use pdf_mode auto or render")
+        return entries
 
 
-def _pdf_extract(doc) -> Optional[list[Entry]]:
-    """The embedded page images, untouched, or None if any page is not one plain image."""
-    entries = []
-    width = len(str(doc.page_count))
-    for number, page in enumerate(doc, start=1):
+def _pdf_page_image(doc, page) -> Optional[tuple[str, bytes]]:
+    """``(extension, bytes)`` of the image that is this page, untouched; ``None`` if the page is anything else
+    (text, several pictures, transparency, a format a viewer would not open)."""
+    images = page.get_images(full=True)
+    if not images:
+        return None
+    if len(images) > 1:
+        area = abs(page.rect.width * page.rect.height) or 1.0
+        shares = {}
+        for info in page.get_image_info(xrefs=True):
+            box = info["bbox"]
+            shares[info["xref"]] = max(0.0, (box[2] - box[0]) * (box[3] - box[1])) / area
+        main = [im for im in images if shares.get(im[0], 0) >= MAIN_IMAGE_SHARE]
+        others = [im for im in images if im not in main]
+        if len(main) != 1 or any(shares.get(im[0], 1) >= LEFT_OUT_SHARE for im in others):
+            return None
+        images = main
+    xref, smask = images[0][0], images[0][1]
+    if smask:  # transparency: the bare image would not look like the page
+        return None
+    info = doc.extract_image(xref)
+    ext = ((info or {}).get("ext") or "").lower()
+    if not info or ext not in PDF_EXTRACTABLE:
+        return None
+    return ("jpg" if ext == "jpeg" else ext), info["image"]
+
+
+def _pdf_render_page(page, dpi: int, render_format: str) -> tuple[str, bytes]:
+    """A page drawn as an image. ``auto``: JPEG when the page is made of JPEG pictures (a PNG of those would be
+    many times bigger for the same look), PNG for anything else (text, vector art)."""
+    if render_format == "auto":
         images = page.get_images(full=True)
-        if len(images) != 1:
-            return None
-        xref, smask = images[0][0], images[0][1]
-        if smask:  # transparency: the bare image would not look like the page
-            return None
-        info = doc.extract_image(xref)
-        ext = (info.get("ext") or "").lower()
-        if not info or ext not in PDF_EXTRACTABLE:
-            return None
-        entries.append(Entry(f"page-{number:0{width}d}.{'jpg' if ext == 'jpeg' else ext}", info["image"]))
-    return entries
-
-
-def _pdf_render(doc, dpi: int) -> list[Entry]:
-    width = len(str(doc.page_count))
-    return [Entry(f"page-{n:0{width}d}.png", page.get_pixmap(dpi=dpi).tobytes("png"))
-            for n, page in enumerate(doc, start=1)]
+        render_format = "jpeg" if images and all("DCT" in str(im[8]) for im in images) else "png"
+    pixmap = page.get_pixmap(dpi=dpi)
+    if render_format == "jpeg":
+        if pixmap.alpha:
+            import pymupdf
+            pixmap = pymupdf.Pixmap(pixmap, 0)
+        return "jpg", pixmap.tobytes("jpeg", jpg_quality=JPEG_QUALITY)
+    return "png", pixmap.tobytes("png")
 
 
 def page_count(entries: list[Entry]) -> int:
