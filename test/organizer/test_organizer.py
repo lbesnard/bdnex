@@ -772,6 +772,49 @@ def test_a_disk_that_fills_up_midway_leaves_the_original_and_no_debris(lib, make
     assert open(path, "rb").read() == original and not os.path.exists(path + ".bdnex-tmp")
 
 
+# ------------------------------------------------------------------ format_preferred
+def test_format_none_converts_nothing(lib, tmp_path):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    original = open(src, "rb").read()
+    result = Organizer(lib, settings_for(tmp_path, write={"format_preferred": "none", "delete_original": "yes"})
+                       ).process(row, WRITE)
+    assert result.outcome == SKIPPED and "format_preferred" in result.note
+    assert open(src, "rb").read() == original and not os.path.exists(tmp_path / "old.cbz")
+
+
+def test_format_none_still_tags_a_cbz(lib, make_cbz, tmp_path):
+    path = make_cbz("a.cbz", pages=2)
+    row = registered(lib, path, add_series_album(lib))
+    assert Organizer(lib, settings_for(tmp_path, write={"format_preferred": "none"})).process(row, WRITE
+                                                                                          ).outcome == WRITTEN
+
+
+def test_format_none_also_leaves_the_pdf(lib, make_pdf, tmp_path):
+    pdf = make_pdf("p.pdf")
+    row = registered(lib, pdf, add_oneshot(lib))
+    organizer = Organizer(lib, settings_for(tmp_path, write={"format_preferred": "none"}))
+    assert organizer.process(row, WRITE).outcome == SKIPPED and os.path.exists(pdf)
+
+
+def test_format_none_does_not_repair_a_cbr_into_a_cbz(lib, tmp_path):
+    src = str(tmp_path / "damaged.cbr")
+    shutil.copy(BD_CBR, src)
+    organizer = Organizer(lib, settings_for(tmp_path, write={"format_preferred": "none"}))
+    result = organizer.repair({"path": src, "format": "cbr", "corrupted": 1})
+    assert result.outcome == SKIPPED and not os.path.exists(tmp_path / "damaged.cbz")
+
+
+def test_pdf_and_cbr_have_their_own_switches_under_cbz(lib, make_pdf, tmp_path):
+    pdf = make_pdf("p.pdf")
+    row = registered(lib, pdf, add_oneshot(lib))
+    settings = settings_for(tmp_path, write={"pdf": "skip", "cbr": "convert"})
+    assert Organizer(lib, settings).process(row, WRITE).outcome == SKIPPED
+
+
+
+
 # ----------------------------------------------------------------------------- abort
 def test_aborting_stops_the_run_and_leaves_the_other_files_alone(lib, make_cbz, tmp_path):
     from bdnex.organizer.organizer import WriteAborted

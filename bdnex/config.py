@@ -88,6 +88,7 @@ class Cover(_Section):
 
 
 class Write(_Section):
+    format_preferred: Literal["cbz", "none"]
     cbr: Literal["convert", "skip"]
     pdf: Literal["convert", "skip"]
     pdf_mode: Literal["auto", "extract", "render"]

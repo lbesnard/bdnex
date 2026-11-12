@@ -76,6 +76,7 @@ cover:
   match_percentage: 40                   # similarity (0-100) from which a cover is trusted
 
 write:
+  format_preferred: cbz                  # cbz | none: convert other formats to CBZ (per cbr / pdf below), or never convert
   cbr: convert                           # convert | skip
   pdf: convert                           # convert | skip
   pdf_mode: auto                         # auto | extract | render (extract keeps the scanned images untouched)

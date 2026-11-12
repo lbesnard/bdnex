@@ -156,6 +156,9 @@ class Organizer:
         if not os.path.exists(path):
             return FileResult(path, FAILED, note="file not found")
         write = self.settings.write
+        if fmt != "cbz" and write.format_preferred == "none":
+            return FileResult(path, SKIPPED, note=f"{fmt} left as it is (write.format_preferred: none): "
+                                                  "only a CBZ can be tagged without converting it")
         if fmt == "cbr" and write.cbr == "skip":
             return FileResult(path, SKIPPED, note="cbr skipped (write.cbr: skip)")
         if fmt == "pdf" and write.pdf == "skip":
@@ -256,6 +259,9 @@ class Organizer:
             return FileResult(path, FAILED, note="file not found")
         if not row.get("corrupted"):
             return FileResult(path, UNCHANGED, note="not damaged")
+        if fmt != "cbz" and self.settings.write.format_preferred == "none":
+            return FileResult(path, SKIPPED, note=f"{fmt} left as it is (write.format_preferred: none): "
+                                                  "repairing it would convert it to CBZ")
         recovered = archive.read_entries_lenient(path, fmt)
         if not recovered.ok:
             return FileResult(path, FAILED, note="can not be repaired: " + "; ".join(recovered.lost))
