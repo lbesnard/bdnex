@@ -103,6 +103,25 @@ class InquirerPrompter:
                 continue  # nothing picked: back to the list
             return answer
 
+    def confirm_series(self, folder: str, paths: list[str], proposal) -> str:
+        """Several files in one folder: are they one series? ``series`` or ``each`` (match them one by one)."""
+        self._need_terminal()
+        shown = 25
+        print(f"\n{folder} ({len(paths)} files)")
+        for path in paths[:shown]:
+            print(f"  {os.path.basename(path)}")
+        if len(paths) > shown:
+            print(f"  ... and {len(paths) - shown} more")
+        print(f"These files look like one series: \"{proposal.name}\" "
+              f"({proposal.covered} of {len(paths)} files have their volume in it).")
+        answer = self._select("Is this one series?", [
+            {"name": f"Yes: match them by volume number in \"{proposal.name}\"", "value": "series"},
+            {"name": "No: match each file by itself", "value": "each"},
+            {"name": "Abort the import (what is decided is kept; run it again to continue)", "value": self.ABORT}])
+        if answer == self.ABORT:
+            raise ImportAborted(folder)
+        return answer
+
     # -- searching the whole album list
     def search(self, path: str) -> Optional[Candidate]:
         """Let the user find the album by hand: ``fzf`` over the whole list when it is installed, else a

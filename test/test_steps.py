@@ -346,3 +346,11 @@ def test_a_preview_does_not_ask_about_duplicates(cli, make_cbz):
     run_import("--auto", first)
     code, text = run_import("--auto", "-n", copy)  # identical bytes: it would have asked what to do
     assert code == 0 and "duplicate" in text
+
+
+def test_series_flags():
+    parse = import_cmd.build_parser().parse_args
+    assert parse(["x"]).series is None  # the configuration decides
+    assert parse(["--series", "x"]).series == "always" and parse(["--no-series", "x"]).series == "never"
+    with pytest.raises(SystemExit):
+        parse(["--series", "--no-series", "x"])

@@ -52,6 +52,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cover-check", action=argparse.BooleanOptionalAction, default=None,
                         help="compare each file's cover with its album's (one request per album; needs "
                              "`pip install 'bdnex[cover]'`); default: `cover.check`")
+    series = parser.add_mutually_exclusive_group()
+    series.add_argument("--series", dest="series", action="store_const", const="always", default=None,
+                        help="assume the files of a folder are the volumes of one series, without asking "
+                             "(default: asked when the names do not make it obvious; `import.series`)")
+    series.add_argument("--no-series", dest="series", action="store_const", const="never",
+                        help="match every file by itself, never as a folder")
     parser.add_argument("--workers", type=int, metavar="N",
                         help="processes matching file names in the background (0 = CPU cores - 1, 1 = none; "
                              "default: `import.workers`)")
@@ -132,7 +138,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
             return 1
         session = ImportSession(library, source, settings, prompter=InquirerPrompter(source=source),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps,
-                                workers=args.workers, cover_check=args.cover_check, progress=progress, bar=lambda total, label: Bar(total, label))
+                                workers=args.workers, cover_check=args.cover_check, series=args.series, progress=progress, bar=lambda total, label: Bar(total, label))
         try:
             report = session.run(args.paths)
         except NeedsTerminal:

@@ -23,7 +23,7 @@ def downloads(world, make_cbz):
         shutil.copy(make_cbz(f"src{number}.cbz", pages=3 + number), path)
         paths.append(str(path))
     paths.sort()  # the order the files are looked at
-    configure(**{"import": {"outside": "move", "auto": False}, "duplicates": {"action": "keep_both"}})
+    configure(**{"import": {"outside": "move", "auto": False, "series": "never"}, "duplicates": {"action": "keep_both"}})
     return root, folder, paths
 
 
