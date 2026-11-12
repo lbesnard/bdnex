@@ -20,6 +20,8 @@
 | Plugin system for other metadata sources | available |
 | Keep every replaced `ComicInfo.xml`, with a restore command | planned |
 | `bdnex backup` (database copy without the re-downloadable sitemaps) | planned |
+| Folders as series: obvious ones assumed, the others asked, files mapped by volume | available |
+| Series page metadata (genres, status, every album of the series), "what am I missing" | planned (needs a saved series page) |
 | Cover similarity as part of the match score (today it is a check after the fetch) | undecided |
 | Swap the main file and a spare version | planned |
 | A second source (e.g. BnF) | planned |

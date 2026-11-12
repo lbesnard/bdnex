@@ -67,6 +67,7 @@ class Import(_Section):
     workers: int = Field(ge=0)
     lookahead: int = Field(ge=1)
     outside: Literal["ask", "move", "copy", "leave"]
+    series: Literal["ask", "always", "never"]
 
 
 class Duplicates(_Section):

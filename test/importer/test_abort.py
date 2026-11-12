@@ -32,7 +32,7 @@ def three_albums(make_cbz):
 
 
 def env_with(prompter):
-    env = Env(FakeWeb(), make_settings(**{"import": {"auto": False}, "duplicates": {"action": "keep_both"}}), prompter)
+    env = Env(FakeWeb(), make_settings(**{"import": {"auto": False, "series": "never"}, "duplicates": {"action": "keep_both"}}), prompter)
     env.source.update_sitemaps()
     env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
     return env

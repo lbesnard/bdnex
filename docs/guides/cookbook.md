@@ -57,6 +57,13 @@ installed (any recent version), it searches all ~370,000 albums as you type, ign
 file's name. Without `fzf` you type a few words and filter their best hits. **Ctrl-O** opens the highlighted
 album's page in your browser so you can check it before choosing. Esc goes back to the list.
 
+## …import a folder that holds a series?
+
+Nothing to do for the usual case: a folder whose files are `T01`, `T02`, `T03`... is taken for a series and every
+file is matched by volume number inside it. When the names do not make it obvious, bdnex lists the files and asks
+*Is this one series?*. `bdnex import --series` assumes yes for every such folder; `--no-series` never groups. See
+[Importing](importing.md#folders-with-several-files).
+
 ## …stop an import half way and continue later?
 
 Choose **Abort the import** in the match question (or press Ctrl-C while pages are being fetched). What you
