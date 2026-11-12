@@ -199,7 +199,9 @@ class Organizer:
             steps.append(f"{len(drawn)} of {len(entries)} page(s) had to be drawn, not extracted "
                          f"(page {', '.join(map(str, drawn[:8]))}{'...' if len(drawn) > 8 else ''})")
         elif fmt == "pdf":
-            steps.append(f"all {len(entries)} pages extracted untouched")
+            decoded = sum(1 for entry in entries if entry.decoded)
+            steps.append(f"all {len(entries)} pages extracted untouched" if not decoded else
+                         f"all {len(entries)} pages extracted without loss ({decoded} saved as PNG, same pixels)")
         steps.append("write ComicInfo.xml" if xml != existing else "keep ComicInfo.xml")
         if not same_place:
             if mode == WRITE:  # the converted file sits next to the original: nothing moves

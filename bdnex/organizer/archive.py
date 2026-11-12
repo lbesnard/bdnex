@@ -28,6 +28,7 @@ class Entry:
     data: bytes
     compress_type: Optional[int] = None  # kept from the source archive; None = decide from the extension
     rendered: bool = False  # a PDF page that had to be drawn (not an image taken out untouched)
+    decoded: bool = False  # a PDF picture in a format viewers do not open, saved as PNG pixel for pixel
 
     @property
     def is_image(self) -> bool:
@@ -101,8 +102,8 @@ def _read_pdf(path, mode: str, dpi: int, render_format: str = "auto") -> list[En
         for number, page in enumerate(doc, start=1):
             taken = None if mode == "render" else _pdf_page_image(doc, page)
             if taken is not None:
-                ext, data = taken
-                entries.append(Entry(f"page-{number:0{width}d}.{ext}", data))
+                ext, data, decoded = taken
+                entries.append(Entry(f"page-{number:0{width}d}.{ext}", data, decoded=decoded))
                 continue
             if mode == "extract":
                 odd.append(number)
@@ -115,9 +116,10 @@ def _read_pdf(path, mode: str, dpi: int, render_format: str = "auto") -> list[En
         return entries
 
 
-def _pdf_page_image(doc, page) -> Optional[tuple[str, bytes]]:
-    """``(extension, bytes)`` of the image that is this page, untouched; ``None`` if the page is anything else
-    (text, several pictures, transparency, a format a viewer would not open)."""
+def _pdf_page_image(doc, page) -> Optional[tuple[str, bytes, bool]]:
+    """``(extension, bytes, decoded)`` of the image that is this page; ``None`` if the page is anything else
+    (text, several pictures, transparency). The picture is untouched, except in a format a viewer would not
+    open (JPEG 2000, JBIG2...): that one is decoded and saved as PNG, which keeps every pixel (``decoded``)."""
     images = page.get_images(full=True)
     if not images:
         return None
@@ -137,9 +139,22 @@ def _pdf_page_image(doc, page) -> Optional[tuple[str, bytes]]:
         return None
     info = doc.extract_image(xref)
     ext = ((info or {}).get("ext") or "").lower()
-    if not info or ext not in PDF_EXTRACTABLE:
+    if info and ext in PDF_EXTRACTABLE:
+        return ("jpg" if ext == "jpeg" else ext), info["image"], False
+    return _decode_picture(doc, xref)
+
+
+def _decode_picture(doc, xref) -> Optional[tuple[str, bytes, bool]]:
+    """A picture in an unusual format as a PNG with the same pixels (grey or RGB); ``None`` if it can not be."""
+    import pymupdf
+
+    try:
+        pixmap = pymupdf.Pixmap(doc, xref)
+        if pixmap.alpha or pixmap.colorspace is None or pixmap.colorspace.n not in (1, 3):
+            return None  # a colour space change would not keep the pixels: draw the page instead
+        return "png", pixmap.tobytes("png"), True
+    except Exception:
         return None
-    return ("jpg" if ext == "jpeg" else ext), info["image"]
 
 
 def _pdf_render_page(page, dpi: int, render_format: str) -> tuple[str, bytes]:
