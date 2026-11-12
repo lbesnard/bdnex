@@ -47,7 +47,8 @@ class Scripted(InquirerPrompter):
     def _need_terminal(self):
         pass
 
-    def _select(self, message, choices):
+    def _select(self, message, choices, fragments=None):
+        self.fragments = fragments
         self.shown.append((message, choices))
         answer = self.selects.pop(0)
         return answer(choices) if callable(answer) else answer
