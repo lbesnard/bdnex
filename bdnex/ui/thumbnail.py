@@ -36,13 +36,44 @@ def protocol(setting: str = "auto", env=None, stream=None) -> Optional[str]:
     if wanted in (KITTY, ITERM2):
         return wanted
     term = env.get("TERM", "")
-    if env.get("TMUX") or env.get("STY") or term.startswith(("screen", "tmux")):
-        return None  # a multiplexer swallows the sequences unless it is set up to pass them through
+    if env.get("STY"):
+        return None  # GNU screen swallows the sequences
+    if env.get("TMUX"):
+        # tmux swallows them too, unless `allow-passthrough` is on; the terminal around it is then told apart by
+        # the variables it exports (they survive inside tmux), the ones tmux itself sets are of no use
+        if not passthrough(env):
+            return None
+        if env.get("KITTY_WINDOW_ID") or env.get("GHOSTTY_RESOURCES_DIR"):
+            return KITTY
+        return ITERM2 if env.get("LC_TERMINAL") == "iTerm2" or env.get("WEZTERM_EXECUTABLE") else None
+    if term.startswith(("screen", "tmux")):
+        return None
     if env.get("KITTY_WINDOW_ID") or term == "xterm-kitty" or env.get("TERM_PROGRAM") == "ghostty":
         return KITTY
     if env.get("TERM_PROGRAM") in ("iTerm.app", "WezTerm") or env.get("LC_TERMINAL") == "iTerm2":
         return ITERM2
     return None
+
+
+def in_tmux(env=None) -> bool:
+    return bool((os.environ if env is None else env).get("TMUX"))
+
+
+def passthrough(env=None) -> bool:
+    """Is tmux set to hand escape sequences to the terminal (``set -g allow-passthrough on``)?"""
+    import subprocess
+
+    try:
+        out = subprocess.run(["tmux", "show", "-gv", "allow-passthrough"], capture_output=True, text=True,
+                             timeout=2, env=dict(os.environ if env is None else env)).stdout.strip()
+    except Exception:
+        return False
+    return out in ("on", "all")
+
+
+def through_tmux(sequence: str) -> str:
+    """Wrap a sequence so that tmux passes it on to the terminal: ``ESC P tmux ;`` + doubled ESCs + ``ESC \\``."""
+    return "\x1bPtmux;" + sequence.replace("\x1b", "\x1b\x1b") + "\x1b\\"
 
 
 def small_png(image: bytes, width: int = PICTURE_WIDTH) -> Optional[tuple[bytes, int, int]]:
@@ -84,7 +115,7 @@ def escape(png: bytes, kind: str, columns: int, rows: int) -> str:
     return "".join(parts)
 
 
-def place(png: bytes, kind: str, columns: int, rows: int, terminal_columns: int) -> str:
+def place(png: bytes, kind: str, columns: int, rows: int, terminal_columns: int, tmux: bool = False) -> str:
     """Everything to write so that the picture sits on the far right, beside the lines that follow.
 
     Room is made first (the lines are printed, then the cursor goes back up), the cursor position is saved,
@@ -92,7 +123,10 @@ def place(png: bytes, kind: str, columns: int, rows: int, terminal_columns: int)
     the left, over the same rows.
     """
     column = terminal_columns - columns + 1
-    return f"{chr(10) * rows}\x1b[{rows}A\x1b7\x1b[{column}G{escape(png, kind, columns, rows)}\x1b8"
+    picture = escape(png, kind, columns, rows)
+    if tmux:
+        picture = through_tmux(picture)  # the cursor moves stay tmux's own: only the picture goes through
+    return f"{chr(10) * rows}\x1b[{rows}A\x1b7\x1b[{column}G{picture}\x1b8"
 
 
 def show(image: bytes, kind: str, stream=None, terminal_columns: Optional[int] = None) -> int:
@@ -108,6 +142,6 @@ def show(image: bytes, kind: str, stream=None, terminal_columns: Optional[int] =
         return 0
     png, width, height = thumbnail
     columns, rows = cells(width, height)
-    stream.write(place(png, kind, columns, rows, terminal_columns))
+    stream.write(place(png, kind, columns, rows, terminal_columns, tmux=in_tmux()))
     stream.flush()
     return rows
