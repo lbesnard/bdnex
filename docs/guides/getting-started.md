@@ -22,6 +22,8 @@ uv run bdnex --help        # `uv run` uses the clone; a bdnex installed earlier 
 
 `.cbr` files need an `unrar` (or `7z` / `bsdtar`) program on your system to be read.
 
+The optional cover check needs OpenCV: `pip install 'bdnex[cover]'` (or `uv tool install 'bdnex[cover]'`).
+
 ## First run
 
 The first command creates `~/.config/bdnex/bdnex.yaml` and tells you to edit it:

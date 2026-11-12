@@ -35,8 +35,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ipdb"]
+dev = ["pytest", "pytest-cov", "ipdb", "opencv-python-headless>=4.8"]
 docs = ["sphinx>=7", "furo", "myst-parser"]
+cover = ["opencv-python-headless>=4.8"]  # `cover.check`: compare a file's cover with the album's
 
 [project.urls]
 Homepage = "https://github.com/lbesnard/bdnex"

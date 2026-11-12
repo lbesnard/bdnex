@@ -80,6 +80,11 @@ class Trash(_Section):
     dir: str = Field(min_length=1)
 
 
+class Cover(_Section):
+    check: bool
+    match_percentage: float = Field(ge=0, le=100)
+
+
 class Write(_Section):
     cbr: Literal["convert", "skip"]
     pdf: Literal["convert", "skip"]
@@ -114,6 +119,7 @@ class Settings(_Section):
     import_: Import = Field(alias="import")
     duplicates: Duplicates
     trash: Trash
+    cover: Cover
     write: Write
     paths: Paths
     source: str = Field(min_length=1)

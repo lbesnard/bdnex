@@ -54,6 +54,7 @@ class MetadataSource(Protocol):
         """What can be known from the candidate alone, with ``extra={"partial": True}``."""
 
 
+# Optional: ``cover_image(url, recache=False) -> bytes | None`` returns an album's cover (``cover.check``).
 # Optional: ``warm() -> None`` loads the local matching data before the importer forks its worker
 # processes (they then share it instead of loading it each).
 REQUIRED = ("name", "fetch_errors", "is_ready", "prepare", "candidates", "album_info", "partial_info")

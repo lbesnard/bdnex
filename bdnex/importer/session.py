@@ -17,6 +17,7 @@ from typing import Callable, Optional, Protocol
 
 from bdnex import trash
 from bdnex.config import Settings
+from bdnex.importer import covers
 from bdnex.importer.matching import Match, Recommendation, find_matches, recommend
 from bdnex.importer.pipeline import match_ahead, resolve_workers
 from bdnex.importer.source import Candidate, MetadataSource
@@ -83,7 +84,8 @@ class ImportSession:
     def __init__(self, library: Library, source: MetadataSource, settings: Settings,
                  prompter: Optional[Prompter] = None, pretend: bool = False, force: bool = False,
                  auto=None, steps=STEPS, progress: Optional[Callable[[str], None]] = None,
-                 workers: Optional[int] = None, bar: Optional[Callable] = None):
+                 workers: Optional[int] = None, bar: Optional[Callable] = None,
+                 cover_check: Optional[bool] = None):
         self.library = library
         self.source = source
         self.settings = settings
@@ -97,6 +99,9 @@ class ImportSession:
         self.auto = "all" if wanted == "all" else "strong" if wanted in (True, "strong") else None
         self.workers = resolve_workers(settings.import_.workers if workers is None else workers)
         self._pending: list[tuple[ImportResult, Candidate, str]] = []
+        self._covers: list[ImportResult] = []  # complete albums whose file's cover was never compared
+        self.cover_check = settings.cover.check if cover_check is None else cover_check
+        self._cover_off = False  # set when the check turns out to be impossible (no OpenCV)
 
     @property
     def recache(self) -> bool:
@@ -126,7 +131,7 @@ class ImportSession:
         self._pending = []
         for number, path in enumerate(files, start=1):
             kind = kinds[path][0]
-            if kind in ("match", "fetch"):
+            if kind in ("match", "fetch", "cover"):
                 self.progress(f"[{number}/{len(files)}] {os.path.basename(path)}")
             try:
                 matches = None
@@ -159,6 +164,8 @@ class ImportSession:
             mine = album["source"] == self.source.name
             if "fetch" in self.steps and mine and (partial or self.force):
                 return "fetch", album
+            if "fetch" in self.steps and mine and self.cover_check and known["cover_score"] is None and album["cover_url"]:
+                return "cover", album  # complete, but its cover was never compared with the file's
             return "already", album
         if "match" not in self.steps:
             return "unmatched", None
@@ -185,6 +192,13 @@ class ImportSession:
                     if album["extra"].get("partial") and "fetch" not in self.steps else "")
             return ImportResult(path, ALREADY, album_id=album["id"],
                                 note=f"already imported as {album_label(album)}{more}; `--force` redoes it")
+        if kind == "cover":
+            result = ImportResult(path, ALREADY, album_id=album["id"], note=f"already imported as {album_label(album)}")
+            if not self.pretend:
+                self._covers.append(result)
+                if not defer_fetch:
+                    self._fetch_pending()
+            return result
         # fetch: the album is known, its page is not (or is to be read again)
         candidate = Candidate(album["source_id"], album["url"], "", album["volume"])
         if self.pretend:
@@ -198,7 +212,10 @@ class ImportSession:
     def _fetch_pending(self) -> None:
         """Read the album pages of the files linked so far: one polite request each."""
         pending, self._pending = self._pending, []
-        if not pending or "fetch" not in self.steps:
+        if "fetch" not in self.steps:
+            return
+        if not pending:
+            self._check_covers()
             return
         bar = self.bar(len(pending), "Album pages") if self.bar else None
         if bar is None:
@@ -220,11 +237,66 @@ class ImportSession:
                 result.outcome = PARTIAL if partial else TAGGED
                 result.note = "; ".join(n for n in (note, damaged) if n)
                 self._log(result.path, result.outcome, result.score, album_id)
+                if not partial and self.cover_check:
+                    self._check_cover(result)
         except KeyboardInterrupt:
             self.progress("Interrupted: the files stay linked; `bdnex import --fetch` reads the rest of the pages.")
         finally:
             if bar:
                 bar.finish()
+        self._check_covers()
+
+    # ------------------------------------------------------------- covers
+    def _check_covers(self) -> None:
+        """Compare the covers of complete albums that were not part of this run's fetching."""
+        waiting, self._covers = self._covers, []
+        if waiting and not self._cover_off:
+            self.progress(f"Comparing {len(waiting)} cover(s) (one request each, politely)...")
+        for result in waiting:
+            self._check_cover(result)
+
+    def _check_cover(self, result: ImportResult) -> None:
+        """Compare the file's cover with the album's: below ``cover.match_percentage`` it is probably
+        the wrong album. The score is kept with the file (``ls --files cover:..40``)."""
+        path = result.path
+        if self._cover_off or result.album_id is None:
+            return
+        fetch_image = getattr(self.source, "cover_image", None)
+        album, row = self.library.get_album(result.album_id), self.library.get_file(path)
+        if fetch_image is None or not album or not album["cover_url"] or row is None:
+            return
+        try:
+            local = covers.front_cover(path, row["format"])
+            online = fetch_image(album["cover_url"], recache=self.recache)
+            if not local or not online:
+                return
+            score = round(covers.sift_similarity(local, online), 1)
+        except covers.CoverUnavailable as err:
+            self.progress(f"cover.check is on but {err}")
+            self._cover_off = True
+            return
+        except (covers.CoverError, *self.source.fetch_errors) as err:
+            result.note = "; ".join(n for n in (result.note, f"cover not compared: {err}") if n)
+            return
+        self.library.set_file_fields(path, cover_score=score)
+        threshold = self.settings.cover.match_percentage
+        if score >= threshold:
+            return
+        choice = "keep"
+        asking = self.prompter is not None and self.auto != "all" and not self.pretend
+        if asking and hasattr(self.prompter, "cover_mismatch"):
+            try:
+                choice = self.prompter.cover_mismatch(path, album_label(album), score, threshold)
+            except NeedsTerminal:
+                choice = "keep"
+        if choice == "unlink":
+            self.library.set_file_album(path, None)
+            self.library.log_import(path, SKIPPED, score)
+            result.outcome, result.album_id = SKIPPED, None
+            result.note = f"cover differs ({score:.0f}% < {threshold:.0f}%): unlinked from {album_label(album)}"
+        else:
+            result.note = "; ".join(n for n in (result.note, f"the cover differs from the album's ({score:.0f}% < {threshold:.0f}%): "
+                                                f"check `bdnex ls --files cover:..{threshold:.0f}`") if n)
 
     @staticmethod
     def _collect(paths: list[str]) -> list[str]:

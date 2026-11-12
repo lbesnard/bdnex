@@ -92,6 +92,18 @@ Without a terminal to ask on, `ask` leaves them. With `import.mode: copy|move` e
 nothing is asked. Before a file is moved in, it is compared with the files the album already has: see
 [Duplicates, versions and the trash](versions.md).
 
+### Checking covers
+
+`bdnex import --cover-check` (or `cover.check: true`) compares the front cover of each file with the
+album's cover, with SIFT features, which cope with different sizes, crops and compression. It needs
+OpenCV: `pip install 'bdnex[cover]'` (`uv tool install 'bdnex[cover]'`). The similarity (0-100) is kept
+with the file. Below `cover.match_percentage` (40 by default), a terminal run asks whether to keep the
+match or unlink it; unattended runs keep it and say so. List the doubtful ones with
+`bdnex ls --files cover:..40`.
+
+It costs one extra request per album (the cover), so it is off by default, and a file whose album is already
+complete gets its cover compared the first time you run `bdnex import --fetch --cover-check`.
+
 ### The album list: `bdnex init`
 
 Matching works from the Bédéthèque sitemaps: about 55 files, 70 MB, downloaded once and kept in
@@ -151,6 +163,7 @@ reported as you typed it.
 | `-n`, `--pretend` | show what would happen; no database change, no page fetched, no question asked |
 | `-W`, `--move`, `--copy` | afterwards write the tags / move into the library tree / copy there |
 | `--no-move` | leave files from outside your library folder where they are (`import.outside`) |
+| `--cover-check` / `--no-cover-check` | compare each cover with the album's (overrides `cover.check`) |
 | `--workers N` | background matching processes (overrides `import.workers`) |
 | `-v` | list the `already` files too, and more detail |
 

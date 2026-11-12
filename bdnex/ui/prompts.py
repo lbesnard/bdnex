@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Optional
 
+import os
 import sys
 
 from bdnex.importer.matching import Match
@@ -76,6 +77,18 @@ class InquirerPrompter:
         choices.sort(key=lambda choice: choice["value"] != suggested)
         choices[0]["name"] += "  <- suggested"
         return inquirer.select(message="Which one do you keep?", choices=choices).execute()
+
+    def cover_mismatch(self, path: str, album: str, score: float, threshold: float) -> str:
+        """The file's cover does not look like the album's: ``keep`` the match or ``unlink`` it."""
+        from InquirerPy import inquirer
+
+        self._need_terminal()
+        return inquirer.select(
+            message=f"The cover of {os.path.basename(path)} looks little like the cover of {album} "
+                    f"({score:.0f}% < {threshold:.0f}%).",
+            choices=[{"name": "Keep this match", "value": "keep"},
+                     {"name": "Unlink it (it will be looked at again at the next import --force)", "value": "unlink"}],
+        ).execute()
 
     def choose_placement(self, count: int, directory: str) -> str:
         """What to do with files imported from outside the library folder: ``move`` | ``copy`` | ``leave``."""

@@ -49,6 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     where.add_argument("--no-move", action="store_true",
                        help="leave files from outside your library folder where they are (`import.outside`); "
                             "`bdnex move staged:true` places them later")
+    parser.add_argument("--cover-check", action=argparse.BooleanOptionalAction, default=None,
+                        help="compare each file's cover with its album's (one request per album; needs "
+                             "`pip install 'bdnex[cover]'`); default: `cover.check`")
     parser.add_argument("--workers", type=int, metavar="N",
                         help="processes matching file names in the background (0 = CPU cores - 1, 1 = none; "
                              "default: `import.workers`)")
@@ -123,7 +126,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
             return 1
         session = ImportSession(library, source, settings, prompter=InquirerPrompter(),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps,
-                                workers=args.workers, progress=progress, bar=lambda total, label: Bar(total, label))
+                                workers=args.workers, cover_check=args.cover_check, progress=progress, bar=lambda total, label: Bar(total, label))
         try:
             report = session.run(args.paths)
         except NeedsTerminal:
