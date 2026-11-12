@@ -103,7 +103,16 @@ which the library does not take from a file. Nothing is stored in a preview (`--
 - Conversion is automatic with `bdnex write` and `bdnex move`: set `write.cbr` and `write.pdf` to `convert`
   (the default) or `skip`. The other direction, CBZ to CBR, is not offered: RAR can not be written.
 - `write.delete_original: ask | yes | no` decides what happens to the CBR/PDF after conversion. `yes` deletes it
-  without asking, once the new CBZ has passed both checks.
+  without asking, once the new CBZ has passed both checks. With `write.use_trash: true` (the default) "deleted"
+  means moved to the trash folder (`trash.dir`, inside your library folder) and recorded in the library with its
+  album, checksum and the reason: `bdnex trash` lists it, `--restore ID` puts it back, `--empty` deletes it for
+  good. `use_trash: false` deletes the original for good, straight away. A damaged original that `bdnex repair`
+  replaced follows the same rule.
+- **Free space.** Before a file is written, the disk that holds it must keep `write.min_free_space` MiB free
+  after the new archive (estimated at 125% of the original), and so must the disk of the library database, so a
+  full disk can neither leave a half-written archive nor starve the database. If not, the file is reported as
+  `failed` and nothing is written. If the disk fills up anyway, the partial file is removed and the original is
+  untouched (SQLite itself rolls back an interrupted change). `write.min_free_space: 0` turns the check off.
 
 ## Path templates
 

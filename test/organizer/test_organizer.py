@@ -679,3 +679,94 @@ def test_a_good_conversion_is_checked_twice(lib, tmp_path, monkeypatch):
     monkeypatch.setattr(archive, "verify_cbz", lambda *a: calls.append(a[0]) or real(*a))
     assert Organizer(lib, settings_for(tmp_path, write={"delete_original": "yes"})).process(row, WRITE).outcome == WRITTEN
     assert [c.endswith(".bdnex-tmp") for c in calls] == [True, False]
+
+
+# --------------------------------------------------------- trash for originals, and free space
+def test_a_deleted_original_goes_to_the_trash_and_is_recorded(lib, tmp_path):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    album_id = add_oneshot(lib)
+    row = registered(lib, src, album_id)
+    old_md5 = row["md5"]
+    result = Organizer(lib, settings_for(tmp_path, write={"delete_original": "yes"})).process(row, WRITE)
+    assert result.outcome == WRITTEN and "moved to the trash" in result.note
+    assert not os.path.exists(src)
+    (entry,) = lib.trash_entries()
+    assert os.path.exists(entry["trash_path"]) and entry["path"] == src
+    assert entry["album_id"] == album_id and entry["md5"] == old_md5 and entry["format"] == "cbr"
+    assert "converted to old.cbz" in entry["reason"]
+    dest = str(tmp_path / "old.cbz")
+    assert lib.get_file(dest)["album_id"] == album_id and lib.get_file(src) is None  # the library follows the new file
+
+
+def test_without_the_trash_the_original_is_deleted_for_good(lib, tmp_path):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    Organizer(lib, settings_for(tmp_path, write={"delete_original": "yes", "use_trash": False})).process(row, WRITE)
+    assert not os.path.exists(src) and lib.trash_entries() == []
+
+
+def test_a_kept_original_is_not_trashed(lib, tmp_path):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    Organizer(lib, settings_for(tmp_path, write={"delete_original": "no"})).process(row, WRITE)
+    assert os.path.exists(src) and lib.trash_entries() == []
+
+
+def test_a_trashed_original_can_be_restored(lib, tmp_path):
+    from bdnex import trash
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    settings = settings_for(tmp_path, write={"delete_original": "yes"})
+    Organizer(lib, settings).process(row, WRITE)
+    (entry,) = lib.trash_entries()
+    assert trash.restore(lib, entry["id"]) == src and os.path.exists(src)
+
+
+def test_not_enough_room_writes_nothing(lib, tmp_path, monkeypatch):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    monkeypatch.setattr("bdnex.organizer.organizer.free_space", lambda path: 10 * 1024 * 1024)  # 10 MiB free
+    result = Organizer(lib, settings_for(tmp_path, write={"delete_original": "yes"})).process(row, WRITE)
+    assert result.outcome == FAILED and "not enough free space" in result.note and "min_free_space" in result.note
+    assert os.path.exists(src) and not os.path.exists(tmp_path / "old.cbz") and not os.path.exists(str(tmp_path / "old.cbz.bdnex-tmp"))
+
+
+def test_the_disk_of_the_database_counts_too(tmp_path, monkeypatch):
+    with Library(tmp_path / "db" / "l.sqlite") as library:
+        src = str(tmp_path / "old.cbr")
+        shutil.copy(BD_CBR, src)
+        row = registered(library, src, add_oneshot(library))
+        monkeypatch.setattr("bdnex.organizer.organizer.free_space",
+                            lambda path: 10**12 if str(path).endswith(".cbz") else 1024)
+        result = Organizer(library, settings_for(tmp_path)).process(row, WRITE)
+        assert result.outcome == FAILED and "database" in result.note
+
+
+def test_min_free_space_zero_turns_the_check_off(lib, tmp_path, monkeypatch):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    monkeypatch.setattr("bdnex.organizer.organizer.free_space", lambda path: 0)
+    assert Organizer(lib, settings_for(tmp_path, write={"min_free_space": 0, "delete_original": "no"})
+                     ).process(row, WRITE).outcome == WRITTEN
+
+
+def test_a_disk_that_fills_up_midway_leaves_the_original_and_no_debris(lib, make_cbz, tmp_path, monkeypatch):
+    import errno
+    path = make_cbz("a.cbz", pages=3)
+    original = open(path, "rb").read()
+    row = registered(lib, path, add_series_album(lib))
+
+    def full(dest, entries, xml):
+        open(dest, "wb").write(b"partial")
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(archive, "write_cbz", full)
+    result = Organizer(lib, settings_for(tmp_path)).process(row, WRITE)
+    assert result.outcome == FAILED and "disk is full" in result.note
+    assert open(path, "rb").read() == original and not os.path.exists(path + ".bdnex-tmp")
