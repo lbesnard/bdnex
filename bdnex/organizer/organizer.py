@@ -77,6 +77,15 @@ def human_size(size: int) -> str:
     return f"{size} B"
 
 
+def _flush_to_disk(path: str) -> None:
+    """Make sure the bytes are on the disk, not only in the cache, before the file takes its place."""
+    try:
+        with open(path, "rb") as handle:
+            os.fsync(handle.fileno())
+    except OSError:
+        pass  # not every file system allows it; the checks that matter were already made
+
+
 @dataclass
 class FileResult:
     path: str
@@ -186,6 +195,14 @@ class Organizer:
             if converted:
                 steps.append(f"size {human_size(os.path.getsize(path))} -> {human_size(os.path.getsize(dest))}")
 
+        if converted and not same_place and mode != COPY:
+            try:  # the file as it now is on disk, read afresh, before the original may go
+                archive.verify_cbz(dest, entries, xml)
+            except archive.ArchiveError as err:
+                os.remove(dest)
+                return FileResult(path, FAILED, note=f"the new archive failed the final check ({err}): "
+                                                    "the original is kept")
+
         removed = self._dispose_source(path, dest, mode, converted)
         self._update_library(path, dest)
         if spare and not row.get("spare"):
@@ -239,6 +256,7 @@ class Organizer:
         try:
             archive.write_cbz(tmp, entries, xml)
             archive.verify_cbz(tmp, entries, xml)
+            _flush_to_disk(tmp)
             tolerance = self.settings.write.size_tolerance
             if compare_to is not None and tolerance > 0 and os.path.exists(compare_to):
                 before, after = os.path.getsize(compare_to), os.path.getsize(tmp)

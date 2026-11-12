@@ -649,3 +649,33 @@ def test_ask_puts_the_question_and_follows_the_answer(lib, make_cbz, tmp_path, s
     row = registered(lib, other, add_series_album(lib, source_id="3", volume=3))
     assert Organizer(lib, settings).process(row, WRITE).outcome == SKIPPED
     assert Organizer(lib, settings, force=True).process(row, WRITE).outcome == WRITTEN
+
+
+def test_the_original_is_never_deleted_if_the_new_archive_fails_the_final_check(lib, tmp_path, monkeypatch):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    real, calls = archive.verify_cbz, []
+
+    def verify(dest, entries, xml):
+        calls.append(dest)
+        if not dest.endswith(".bdnex-tmp"):  # the first check (the temporary file) passes, the final one does not
+            raise archive.ArchiveError("a page differs")
+        return real(dest, entries, xml)
+
+    monkeypatch.setattr(archive, "verify_cbz", verify)
+    result = Organizer(lib, settings_for(tmp_path, write={"delete_original": "yes"})).process(row, WRITE)
+    assert result.outcome == FAILED and "original is kept" in result.note
+    assert os.path.exists(src) and not os.path.exists(tmp_path / "old.cbz")
+    assert lib.get_file(src) is not None
+    assert len(calls) == 2
+
+
+def test_a_good_conversion_is_checked_twice(lib, tmp_path, monkeypatch):
+    src = str(tmp_path / "old.cbr")
+    shutil.copy(BD_CBR, src)
+    row = registered(lib, src, add_oneshot(lib))
+    real, calls = archive.verify_cbz, []
+    monkeypatch.setattr(archive, "verify_cbz", lambda *a: calls.append(a[0]) or real(*a))
+    assert Organizer(lib, settings_for(tmp_path, write={"delete_original": "yes"})).process(row, WRITE).outcome == WRITTEN
+    assert [c.endswith(".bdnex-tmp") for c in calls] == [True, False]

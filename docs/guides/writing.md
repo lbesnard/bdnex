@@ -31,6 +31,10 @@ After every write the file's checksum is recomputed and stored in the database.
 - The new archive is built in a temporary file next to its destination and **verified** (same pages,
   byte for byte, ComicInfo present) before it replaces or sits next to anything.
 - If verification fails, the original is left untouched and no temporary file remains.
+- The checks are: the zip's own checksums, every page present with the same bytes as in the original (a
+  hash of each), `ComicInfo.xml` as intended. The new file is flushed to disk before it takes its place.
+- **Before an original CBR or PDF is deleted**, the new CBZ is read again from disk and checked a second time;
+  if that fails the new file is removed, the original is kept and the file is reported as `failed`.
 - **Size check.** The new archive must also have about the size of the original: more than
   `write.size_tolerance` percent apart (default 20, and never for a difference under 1 MiB) means something
   unexpected happened, for instance a PDF whose pages had to be rendered to PNG. `write.size_change` then
@@ -98,7 +102,8 @@ which the library does not take from a file. Nothing is stored in a preview (`--
   `write.pdf_dpi`. `extract` refuses anything that is not extractable, `render` always renders.
 - Conversion is automatic with `bdnex write` and `bdnex move`: set `write.cbr` and `write.pdf` to `convert`
   (the default) or `skip`. The other direction, CBZ to CBR, is not offered: RAR can not be written.
-- `write.delete_original: ask | yes | no` decides what happens to the CBR/PDF after conversion.
+- `write.delete_original: ask | yes | no` decides what happens to the CBR/PDF after conversion. `yes` deletes it
+  without asking, once the new CBZ has passed both checks.
 
 ## Path templates
 
