@@ -134,3 +134,27 @@ def diff_fields(old: dict[str, str], new: dict[str, str]) -> list[Change]:
 def merge_with_existing(existing: dict[str, str], new: dict[str, str]) -> dict[str, str]:
     """The database's values win; everything else already in the file is kept."""
     return {**existing, **new}
+
+
+def fields_to_changes(values: dict[str, str]) -> dict[str, Any]:
+    """The album edits (``Library.edit_album``) that make the library say what these ComicInfo fields say.
+
+    Fields with no home in the library (page count, rating, notes, web address) and ``Series`` (renaming it
+    would rename the series of every album) are left out.
+    """
+    changes: dict[str, Any] = {}
+    for field, key in (("Title", "title"), ("Summary", "summary"), ("Publisher", "publisher"),
+                       ("LanguageISO", "language"), ("Format", "format"), ("AlternateNumber", "alternate_number")):
+        if field in values:
+            changes[key] = values[field]
+    for field, key in (("Year", "year"), ("Month", "month"), ("Day", "day"), ("Volume", "volume")):
+        if field in values and values[field].strip().isdigit():
+            changes[key] = int(values[field])
+    if "Number" in values and "volume" not in changes and values["Number"].strip().isdigit():
+        changes["volume"] = int(values["Number"])
+    for role in CREDIT_FIELDS:
+        if role in values:
+            changes.setdefault("credits", {})[role] = [n.strip() for n in values[role].split(",") if n.strip()]
+    if "Genre" in values:
+        changes["genres"] = [g.strip() for g in values["Genre"].split(",") if g.strip()]
+    return changes

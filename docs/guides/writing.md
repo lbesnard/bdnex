@@ -71,6 +71,17 @@ around its first difference with its length before and after. Colours appear on 
 `NO_COLOR=1` turns them off and `FORCE_COLOR=1` forces them. Set it to `database` or `file` to decide
 once, or use `--force` (the database wins where it has a value).
 
+The question offers four answers: **Database**, **File**, **Field by field** and **Skip this file**.
+*Field by field* goes through the differences one at a time: take the database's value, the file's, or type
+your own (a summary, a list of writers separated by commas, a year...).
+
+**What you choose is kept in the library.** Whatever won over the database's value is stored as a hand edit
+of the album (the same as `bdnex edit`), so the library says what the file now says, and a later
+`bdnex import --recache` or `bdnex reparse` keeps it. The page fetched from the source is not touched: it
+stays stored as it was, and the edits are laid over it. `Series` is never changed this way (it would rename
+the series of every album; use `bdnex edit` for that), nor are the page count, rating, notes and web address,
+which the library does not take from a file. Nothing is stored in a preview (`--pretend`).
+
 ## Formats
 
 - `.cbz` is the only format bdnex writes.
