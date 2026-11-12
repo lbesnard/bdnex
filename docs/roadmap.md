@@ -15,12 +15,12 @@
 | `bdnex reset`: empty the library, keep sitemaps and fetched pages | available |
 | Duplicates: side-by-side comparison, spare versions in `_versions/`, `bdnex trash` | available |
 | Files from outside the library folder: `import.outside`, staged files | available |
-| Same book in another format recognised by its cover hash | available |
+| Cover check with SIFT (`bdnex[cover]`), cover hash for duplicates | available |
 | Bédéthèque source plugin, pluggable page fetchers | available |
 | Plugin system for other metadata sources | available |
 | Keep every replaced `ComicInfo.xml`, with a restore command | planned |
 | `bdnex backup` (database copy without the re-downloadable sitemaps) | planned |
-| Cover similarity as part of the match score | undecided |
+| Cover similarity as part of the match score (today it is a check after the fetch) | undecided |
 | Swap the main file and a spare version | planned |
 | A second source (e.g. BnF) | planned |
 

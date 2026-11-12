@@ -1,6 +1,7 @@
-"""Taking a cover out of a file, and the cheap cover hash."""
+"""Taking a cover out of a file, the cheap cover hash, and the SIFT comparison."""
 
 import random
+import sys
 import zipfile
 
 import pymupdf
@@ -113,3 +114,56 @@ def test_a_registered_files_hash_is_computed_once_and_kept(tmp_path):
     assert covers.library_cover_hash(library, path) == 7
 
 
+# ------------------------------------------------------------------------------ SIFT
+cv2 = pytest.importorskip("cv2")
+numpy = pytest.importorskip("numpy")
+
+
+def art(seed, size=(600, 900)):
+    """A busy cover with a title: plenty of features to describe."""
+    rng = numpy.random.default_rng(seed)
+    width, height = size
+    image = numpy.full((height, width, 3), 200, numpy.uint8)
+    for _ in range(80):
+        color = tuple(int(c) for c in rng.integers(0, 255, 3))
+        x, y = int(rng.integers(0, width - 40)), int(rng.integers(0, height - 40))
+        if rng.random() < 0.5:
+            cv2.circle(image, (x, y), int(rng.integers(10, 60)), color, -1)
+        else:
+            cv2.rectangle(image, (x, y), (x + int(rng.integers(20, 100)), y + int(rng.integers(20, 100))), color, -1)
+    cv2.putText(image, f"BDNEX {seed}", (40, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0, 0, 0), 4)
+    return image
+
+
+def jpeg(image, quality=90):
+    return cv2.imencode(".jpg", image, [cv2.IMWRITE_JPEG_QUALITY, quality])[1].tobytes()
+
+
+def test_the_same_cover_scanned_smaller_scores_high_and_another_one_low():
+    original = jpeg(art(1))
+    rescanned = jpeg(cv2.resize(art(1), (400, 600)), 60)
+    same = covers.sift_similarity(original, rescanned)
+    other = covers.sift_similarity(original, jpeg(art(2)))
+    assert same > 40 > other and same - other > 25  # the old default threshold, 40, separates them
+
+
+def test_comparison_is_symmetric_enough_and_bounded():
+    a, b = jpeg(art(3)), jpeg(art(3), 50)
+    assert 0 <= covers.sift_similarity(a, b) <= 100 and abs(covers.sift_similarity(a, b) - covers.sift_similarity(b, a)) < 15
+
+
+def test_a_flat_image_has_nothing_to_compare():
+    assert covers.sift_similarity(jpeg(art(1)), jpeg(numpy.full((900, 600, 3), 128, numpy.uint8))) == 0.0
+
+
+def test_an_unreadable_image_is_an_error_not_a_crash():
+    with pytest.raises(covers.CoverError):
+        covers.sift_similarity(b"not an image", jpeg(art(1)))
+    with pytest.raises(covers.CoverError):
+        covers.sift_similarity(jpeg(art(1)), b"")
+
+
+def test_without_opencv_the_error_says_how_to_install_it(monkeypatch):
+    monkeypatch.setitem(sys.modules, "cv2", None)
+    with pytest.raises(covers.CoverUnavailable, match="bdnex\\[cover\\]"):
+        covers.sift_similarity(b"x", b"y")

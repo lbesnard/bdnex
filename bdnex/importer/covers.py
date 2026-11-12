@@ -1,9 +1,14 @@
-"""Front covers: take one out of a comic file, and tell whether two files have the same one.
+"""Front covers: take one out of a comic file, and compare two covers.
 
-:func:`cover_hash` / :func:`hash_distance` answer "are these two files the same book?". A 64-bit
-perceptual hash of the cover is tiny, needs no extra dependency and is stored in the library, so
-thousands of files can be compared at once. The same pictures in another container (CBZ, CBR, PDF)
-give almost the same hash.
+Two comparisons, for two jobs:
+
+* :func:`sift_similarity` answers "is this the cover of that album?". It compares a file's cover with
+  the album's cover found on the web, which differ in size, crop and compression, so it matches local
+  features (SIFT). It needs OpenCV (``pip install 'bdnex[cover]'``).
+* :func:`cover_hash` / :func:`hash_distance` answer "are these two files the same book?". A 64-bit
+  perceptual hash of the cover is tiny, needs no extra dependency and is stored in the library, so
+  thousands of files can be compared at once. The same pictures in another container (CBZ, CBR, PDF)
+  give almost the same hash.
 """
 
 from __future__ import annotations
@@ -23,7 +28,17 @@ logger = logging.getLogger(__name__)
 
 HASH_BITS = 64
 SAME_COVER_DISTANCE = 10  # bits of 64 that may differ between two copies of the same cover
+SIFT_HEIGHT = 600  # both images are scaled to this height before the comparison
+SIFT_RATIO = 0.6  # Lowe's ratio test: a match counts if it is clearly better than the second best
 PDF_COVER_DPI = 100
+
+
+class CoverUnavailable(RuntimeError):
+    """OpenCV is not installed, so covers can not be compared with SIFT."""
+
+
+class CoverError(ValueError):
+    """An image could not be read."""
 
 
 # ------------------------------------------------------------------ taking a cover out
@@ -126,3 +141,42 @@ def library_cover_hash(library, path: str) -> Optional[int]:
     return value
 
 
+# -------------------------------------------------------------------- the SIFT check
+def _opencv():
+    try:
+        import cv2
+        import numpy
+    except ImportError as err:
+        raise CoverUnavailable("comparing covers needs OpenCV: pip install 'bdnex[cover]'") from err
+    return cv2, numpy
+
+
+def _grey(cv2, numpy, image: bytes, height: int):
+    try:
+        picture = cv2.imdecode(numpy.frombuffer(image, numpy.uint8), cv2.IMREAD_GRAYSCALE) if image else None
+    except cv2.error as err:  # OpenCV raises, rather than returns None, for some broken input
+        raise CoverError(f"not a readable image: {err}") from err
+    if picture is None:
+        raise CoverError("not a readable image")
+    rows, cols = picture.shape[:2]
+    return cv2.resize(picture, (max(1, round(cols * height / rows)), height), interpolation=cv2.INTER_AREA)
+
+
+def sift_similarity(original: bytes, other: bytes, height: int = SIFT_HEIGHT, ratio: float = SIFT_RATIO) -> float:
+    """How alike two covers are, 0-100: the share of the distinctive SIFT features of the image with
+    fewer of them that also appear in the other one.
+
+    Raises :class:`CoverUnavailable` without OpenCV and :class:`CoverError` for an unreadable image.
+    Images with too little detail to describe (a flat colour) compare as 0.
+    """
+    cv2, numpy = _opencv()
+    first, second = _grey(cv2, numpy, original, height), _grey(cv2, numpy, other, height)
+    sift = cv2.SIFT_create()
+    points_a, described_a = sift.detectAndCompute(first, None)
+    points_b, described_b = sift.detectAndCompute(second, None)
+    if described_a is None or described_b is None or len(described_a) < 2 or len(described_b) < 2:
+        return 0.0
+    matcher = cv2.FlannBasedMatcher({"algorithm": 1, "trees": 5}, {})  # 1 = KD-tree, for float descriptors
+    pairs = matcher.knnMatch(described_a, described_b, k=2)
+    good = sum(1 for pair in pairs if len(pair) == 2 and pair[0].distance < ratio * pair[1].distance)
+    return min(100.0, 100.0 * good / min(len(points_a), len(points_b)))

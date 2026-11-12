@@ -67,6 +67,10 @@ duplicates:
 trash:
   dir: .bdnex-trash                      # replaced files wait here, inside `directory`
 
+cover:
+  check: false                           # compare each file's cover with its album's (bdnex[cover])
+  match_percentage: 40                   # similarity (0-100) from which a cover is trusted
+
 write:
   cbr: convert                           # convert | skip
   pdf: convert                           # convert | skip

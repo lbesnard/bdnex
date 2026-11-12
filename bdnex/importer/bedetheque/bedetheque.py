@@ -250,4 +250,8 @@ class Bedetheque:
         """Cover image bytes (cached)."""
         if not info.cover_url:
             return None
-        return self._get("cover", info.cover_url, recache)
+        return self.cover_image(info.cover_url, recache)
+
+    def cover_image(self, url: str, recache: bool = False) -> Optional[bytes]:
+        """The image at ``url`` (an album's ``cover_url``), through the library cache: one polite request."""
+        return self._get("cover", url, recache) if url else None

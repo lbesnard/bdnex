@@ -157,3 +157,10 @@ own. `candidates` is called from those workers, so it must not use the network o
 holds and how many are new. If your source has such a list, add `album_count(self) -> int` (the
 albums known locally, 0 when none) and, for the bar, `sitemaps_cached(self) -> int` (how many files
 a refresh will go through). Both are optional; without them `init` still works, with a rough bar.
+
+## Optional: `cover_image(url, recache=False)`
+
+For `cover.check` the importer asks the source for an album's cover with `cover_image(url)` (the
+`cover_url` you stored in `AlbumInfo`): the image bytes, or `None`. Do it through `library.cache_get` /
+`cache_put` so each cover is requested once. Without it the check is skipped for that source.
+
