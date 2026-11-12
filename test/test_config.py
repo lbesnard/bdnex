@@ -287,3 +287,17 @@ def test_no_warning_when_the_fetcher_is_set_or_nothing_is(conf_path):
     assert load_config().warnings == []
     write(conf_path, {"config_version": 2})
     assert load_config().warnings == []
+
+
+@pytest.mark.parametrize("written, expected", [("no", "no"), ("yes", "yes"), ("ask", "ask")])
+def test_an_unquoted_yes_or_no_in_the_yaml_file_is_accepted(tmp_path, written, expected):
+    """YAML itself reads ``delete_original: no`` as false."""
+    import yaml
+    user = yaml.safe_load(f"config_version: 2\ndirectory: {tmp_path}\nwrite:\n  delete_original: {written}\n")
+    assert build_settings(user)[0].write.delete_original == expected
+    assert build_settings(user)[0].write.delete_original in ("ask", "yes", "no")
+
+
+def test_other_wrong_values_are_still_reported(tmp_path):
+    with pytest.raises(ConfigError, match="delete_original"):
+        build_settings({"config_version": 2, "directory": str(tmp_path), "write": {"delete_original": "maybe"}})
