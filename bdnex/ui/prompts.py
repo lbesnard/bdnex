@@ -371,12 +371,10 @@ class InquirerPrompter:
         suggested = "skip" if comparison.suggestion == KEEP_EXISTING else "replace"
         choices.sort(key=lambda choice: choice["value"] != suggested)
         choices[0]["name"] += "  <- suggested"
-        return inquirer.select(message="Which one do you keep?", choices=choices).execute()
+        return self._ask("Which one do you keep?", choices)
 
     def resolve_collision(self, comparison, root=None) -> str:
         """The destination name is taken: ``skip`` | ``replace`` | ``keep_both`` (as a spare version)."""
-        from InquirerPy import inquirer
-
         from bdnex.versions import KEEP_EXISTING, table
 
         self._need_terminal()
@@ -413,20 +411,31 @@ class InquirerPrompter:
         ).execute()
 
     # -- write / move
-    def conflict(self, path: str, diff_lines: list[str]) -> str:
+    def _ask(self, message: str, choices: list):
+        """A question of the write / move run: its answers, then **[A]bort the run** (key ``a``)."""
         from InquirerPy import inquirer
 
+        from bdnex.organizer.organizer import WriteAborted
+
+        choices = [*choices, {"name": "[A]bort the run (what is done stays; run it again to continue)",
+                              "value": self.ABORT}]
+        prompt = inquirer.select(message=message, choices=choices)
+        bind_shortcuts(prompt, {"a": self.ABORT})
+        answer = prompt.execute()
+        if answer == self.ABORT:
+            raise WriteAborted()
+        return answer
+
+    def conflict(self, path: str, diff_lines: list[str]) -> str:
         from bdnex.ui import diffview
         from bdnex.ui.color import enabled
 
         print("\n" + diffview.conflict_text(path, diff_lines, enabled()))
-        return inquirer.select(
-            message="Which one wins?",
-            choices=[{"name": "Database (overwrite the file's values)", "value": "database"},
-                     {"name": "File (keep its ComicInfo.xml as it is; the library takes its values)", "value": "file"},
-                     {"name": "Field by field (choose, or type your own value)", "value": "fields"},
-                     {"name": "Skip this file", "value": "skip"}],
-        ).execute()
+        return self._ask("Which one wins?", [
+            {"name": "Database (overwrite the file's values)", "value": "database"},
+            {"name": "File (keep its ComicInfo.xml as it is; the library takes its values)", "value": "file"},
+            {"name": "Field by field (choose, or type your own value)", "value": "fields"},
+            {"name": "Skip this file", "value": "skip"}])
 
     def resolve_fields(self, path: str, changes: list, file_fields: dict, db_fields: dict) -> Optional[dict]:
         """For each difference: the database's value, the file's, or one typed by hand (default: the database's)."""
@@ -443,7 +452,7 @@ class InquirerPrompter:
                 choices.append({"name": f"File:     {short_file}", "value": "file"})
             choices.append({"name": "Type a value...", "value": "edit"})
             choices.append({"name": "Skip this file", "value": "skip"})
-            answer = inquirer.select(message=f"[{number}/{len(changes)}] {change.field}", choices=choices).execute()
+            answer = self._ask(f"[{number}/{len(changes)}] {change.field}", choices)
             if answer == "skip":
                 return None
             if answer == "edit":
@@ -453,9 +462,9 @@ class InquirerPrompter:
         return chosen
 
     def confirm(self, message: str, default: bool = False) -> bool:
-        from InquirerPy import inquirer
-
-        return bool(inquirer.confirm(message=message, default=default).execute())
+        choices = [{"name": "[Y]es", "value": "yes"}, {"name": "[N]o", "value": "no"}]
+        choices.sort(key=lambda choice: choice["value"] != ("yes" if default else "no"))
+        return self._ask(message, choices) == "yes"
 
     def ask_value(self, field: str, label: str) -> Optional[str]:
         from InquirerPy import inquirer
@@ -464,33 +473,25 @@ class InquirerPrompter:
         return value.strip() or None
 
     def collision(self, dest: str) -> str:
-        from InquirerPy import inquirer
-
-        return inquirer.select(
-            message=f"Destination exists: {dest}",
-            choices=[{"name": "Skip", "value": "skip"},
-                     {"name": "Keep both (add a number)", "value": "keep_both"},
-                     {"name": "Replace", "value": "replace"}],
-        ).execute()
+        return self._ask(f"Destination exists: {dest}", [
+            {"name": "Skip", "value": "skip"},
+            {"name": "Keep both (add a number)", "value": "keep_both"},
+            {"name": "Replace", "value": "replace"}])
 
     def size_action(self, path: str, before: int, after: int, tolerance: float) -> str:
-        from InquirerPy import inquirer
-
         from bdnex.organizer.organizer import human_size
 
         print(f"\n{path}\nThe new archive is {human_size(after)}, the original {human_size(before)} "
               f"(more than {tolerance:g}% apart). Every page is in it, byte for byte.")
-        return inquirer.select(message="What now?", choices=[
+        return self._ask("What now?", [
             {"name": "Refuse it: keep the original untouched", "value": "refuse"},
-            {"name": "Accept the new archive", "value": "accept"}]).execute()
+            {"name": "Accept the new archive", "value": "accept"}])
 
     def corrupted_action(self, path: str, problems: list[str], can_move: bool) -> str:
-        from InquirerPy import inquirer
-
         print(f"\n{path}\nThe archive is damaged and could not be repaired:")
         for line in problems:
             print(f"  - {line}")
         choices = [{"name": "Leave it as it is", "value": "leave"}]
         if can_move:
             choices.append({"name": "Move it anyway (as it is, no tags written)", "value": "move"})
-        return inquirer.select(message="What now?", choices=choices).execute()
+        return self._ask("What now?", choices)

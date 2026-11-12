@@ -10,7 +10,7 @@ from typing import Optional
 from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.query import QueryError
-from bdnex.organizer.organizer import COPY, FAILED, MOVE, WRITE, FileResult, Organizer
+from bdnex.organizer.organizer import COPY, FAILED, MOVE, WRITE, FileResult, Organizer, WriteAborted
 from bdnex.ui.output import add_verbosity, progress, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
@@ -53,6 +53,11 @@ def report(results, out) -> int:
     return 1 if any(r.outcome == FAILED for r in results) else 0
 
 
+def aborted_message(path: str, command: str = "write") -> str:
+    return (f"Aborted at {path}. What was done is kept and the other files were not touched: "
+            f"run `bdnex {command}` again to continue (finished files are reported as unchanged).")
+
+
 def run(command: str, argv: list[str], out=sys.stdout) -> int:
     args = _parser(command).parse_args(argv)
     setup_logging(args.verbose)
@@ -83,11 +88,17 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
                 progress(f"[{number}/{len(rows)}] {os.path.basename(row['path'])}")
                 try:
                     results.append(organizer.repair(row))
+                except WriteAborted:
+                    organizer.aborted_at = row["path"]
+                    break
                 except Exception as err:
                     results.append(FileResult(row["path"], FAILED, note=str(err)))
         else:
             results = organizer.run(rows, mode, progress=progress)
-    return report(results, out)
+    code = report(results, out)
+    if organizer.aborted_at:
+        print(aborted_message(organizer.aborted_at, command), file=out)
+    return code
 
 
 def run_write(argv: list[str], out=sys.stdout) -> int:

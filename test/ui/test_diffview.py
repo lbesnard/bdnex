@@ -116,6 +116,9 @@ def test_the_conflict_prompt_prints_the_readable_diff(monkeypatch, capsys, clean
         def __init__(self, **kw):
             self.kw = kw
 
+        def register_kb(self, *keys):
+            return lambda handler: handler
+
         def execute(self):
             return "database"
 
