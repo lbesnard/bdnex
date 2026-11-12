@@ -39,23 +39,37 @@ class Library:
     """
 
     @classmethod
-    def for_settings(cls, settings) -> "Library":
+    def for_settings(cls, settings, readonly=False) -> "Library":
         """The library of a loaded configuration (its database and its ``directory``)."""
         from bdnex.config import PLACEHOLDER_DIRECTORY
 
         root = settings.directory if settings.directory not in ("", PLACEHOLDER_DIRECTORY) else None
-        return cls(settings.library_path, root=root)
+        return cls(settings.library_path, root=root, readonly=readonly)
 
-    def __init__(self, path=":memory:", root=None):
+    def __init__(self, path=":memory:", root=None, readonly=False):
+        """``readonly``: open the file read-only, changing nothing (no migration, no path rewriting); for servers."""
         if path != ":memory:":
             path = os.path.expanduser(str(path))
-            os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+            if not readonly:
+                os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         self.path = path
-        self.conn = sqlite3.connect(path)
+        if readonly:
+            self.conn = sqlite3.connect(f"file:{os.path.abspath(path)}?mode=ro", uri=True)
+        else:
+            self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         register_functions(self.conn)
         self.root = os.path.abspath(os.path.expanduser(str(root))).rstrip("/") if root else None
+        if readonly:
+            self.conn.execute("PRAGMA query_only = ON")
+            found = self.schema_version
+            if found != SCHEMA_VERSION:
+                self.conn.close()
+                raise SchemaTooNewError(
+                    f"{self.path} has schema v{found}, this bdnex needs v{SCHEMA_VERSION}: "
+                    "run any other bdnex command once (for example `bdnex ls -c`) to update it")
+            return
         self._migrate()
         self._adopt_root()
 

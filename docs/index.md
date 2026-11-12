@@ -28,6 +28,7 @@ guides/versions
 guides/queries
 guides/writing
 guides/maintaining
+guides/api
 guides/configuration
 ```
 
