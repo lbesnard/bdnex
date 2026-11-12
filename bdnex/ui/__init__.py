@@ -20,6 +20,7 @@ commands:
   reparse  re-read the pages stored in the library (offline) to fill in more details
   repair   rebuild damaged archives (wrong page checksums) as clean CBZ files
   config   show or edit the configuration
+  completion  print a tab-completion script for bash, zsh or fish
 
 Run `bdnex <command> --help` for the options of a command.
 The former `bdnex -f FILE` / `-d DIR` still work and run `bdnex import -W`.
@@ -62,6 +63,10 @@ def _main(argv):
     if argv and argv[0] == "config":
         from bdnex.ui.config_cmd import run
         sys.exit(run(argv[1:]))
+
+    if argv and argv[0] == "completion":
+        from bdnex.ui.completion_cmd import run as run_completion
+        sys.exit(run_completion(argv[1:]))
 
     if not check_config():
         sys.exit(1)

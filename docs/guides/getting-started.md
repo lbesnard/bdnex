@@ -91,3 +91,16 @@ from them later, offline.
 - [Write tags and organise files](writing.md)
 - [Edit, find unmatched files, move your collection](maintaining.md)
 - [Configuration](configuration.md)
+
+
+## Tab completion
+
+`bdnex completion bash|zsh|fish` prints a completion script for the commands, their options and file names.
+Load it from your shell's startup file:
+
+```bash
+eval "$(bdnex completion zsh)"        # ~/.zshrc  (use bash in ~/.bashrc)
+bdnex completion fish > ~/.config/fish/completions/bdnex.fish
+```
+
+The script is read from the program's own `--help`, so it follows the version you installed.
