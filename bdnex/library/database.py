@@ -91,7 +91,7 @@ class Library:
             # is set up and torn down in different worker threads)
             self.conn = sqlite3.connect(f"file:{os.path.abspath(path)}?mode=ro", uri=True, check_same_thread=False)
         else:
-            self.conn = sqlite3.connect(path)
+            self.conn = sqlite3.connect(path, timeout=30)  # several processes may write (see `Organizer.run(workers=)`)
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         register_functions(self.conn)

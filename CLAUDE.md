@@ -44,6 +44,15 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 - **Look at it for real**: Chromium is available. `tools/demo_library.py` builds a demo library; see the
   `check-web-page` skill for serving it and taking screenshots. Never claim a page works from the code alone.
 
+## Several files at once (`Organizer.run(workers=)`)
+- Workers are forked processes with their own `Library` connection (a connection is never shared; an in-memory library
+  can not be used with workers). A worker holds a `_Deferring` prompter: any question raises `Deferred` **before anything is
+  written**, and the main process redoes that file with the real prompter, in order. So a question must always be asked
+  *before* the new file is built (see `_delete_wanted`); never add one after `_build`.
+- `_independent` keeps files with the same destination (or a destination another file is leaving) out of the pool.
+  Progress for the bar is read from shared memory (`_STATE`): `Future.running()` is true as soon as a task is queued.
+- Memory: a file is held whole while it is worked on; a PDF can be hundreds of MB. `write.workers` caps it.
+
 ## Rules that are easy to forget
 - **Tests never touch the real home.** `test/conftest.py` has an autouse `isolated_home` fixture; keep it.
 - **Docs are enforced by tests** (`test/test_docs_in_sync.py`): every command, flag, config option, query field and

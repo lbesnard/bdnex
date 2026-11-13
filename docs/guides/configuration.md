@@ -110,6 +110,8 @@ write:
   corrupted: ask                         # a damaged archive that can not be repaired: ask | leave | move
   size_tolerance: 20                     # % the new archive may differ in size from the original (0 = no check)
   size_change: ask                       # when it differs more than that: ask | accept | refuse
+  workers: 0                             # files written at once by write / move (0: the cores less one, at most 4; 1: one by one)
+  workers: 0                             # files written at once by write / move (0: the cores less one, at most 4; 1: one by one)
 
 paths:
   oneshot: 'OneShot/$language/$title - $authors/$title - $authors'
