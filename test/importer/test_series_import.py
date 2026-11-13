@@ -165,3 +165,43 @@ def test_each_folder_is_decided_on_its_own(make_cbz):
     env.session.run([root])
     assert [linked(env, f) for f in foo] == [("Foo", 1), ("Foo", 2), ("Foo", 3)]
     assert [linked(env, f) for f in bar] == [("Bar", 1), ("Bar", 2)]
+
+
+def test_ticking_files_makes_the_others_the_next_series(make_cbz):
+    names = ("Foo - T01 - Titre.cbz", "Foo - T02 - Titre.cbz", "Bar - T01 - Titre.cbz", "Bar - T02 - Titre.cbz")
+
+    class Choosing(Prompter):
+        def __init__(self):
+            super().__init__()
+            self.answers = ["choose", "series"]
+            self.picks = []
+
+        def confirm_series(self, folder, paths, proposal):
+            super().confirm_series(folder, paths, proposal)
+            return self.answers.pop(0)
+
+        def pick_files(self, folder, paths, ticked):
+            self.picks.append([os.path.basename(p) for p in paths])
+            return [p for p in paths if os.path.basename(p).startswith("Foo")]
+
+    files = folder(make_cbz, "Mixed", *names)
+    env = env_for(Choosing())
+    env.session.run([os.path.dirname(files[0])])
+    prompter = env.session.prompter
+    assert len(prompter.picks) == 1 and len(prompter.series_asked) == 2  # asked again for the files left over
+    assert [linked(env, f) for f in files] == [("Foo", 1), ("Foo", 2), ("Bar", 1), ("Bar", 2)]
+
+
+def test_ticking_nothing_matches_each_file_by_itself_and_ends(make_cbz):
+    class Nothing(Prompter):
+        def confirm_series(self, folder, paths, proposal):
+            super().confirm_series(folder, paths, proposal)
+            return "choose"
+
+        def pick_files(self, folder, paths, ticked):
+            return []
+
+    files = folder(make_cbz, "Foo", *UNCLEAR)
+    env = env_for(Nothing())
+    env.session.run([os.path.dirname(files[0])])
+    assert len(env.session.prompter.series_asked) == 1 and len(env.session.prompter.match_asked) == 3
