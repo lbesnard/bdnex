@@ -137,3 +137,14 @@ def test_a_series_whose_title_is_made_of_numbers_is_a_series():
     assert folders.title_and_volume(paths[0]) == (["14", "18"], 1)
     assert folders.title_and_volume(paths[8]) == (["14", "18"], 9)
     assert folders.classify(paths) == folders.SERIES
+
+
+def test_the_files_ticked_at_first_are_the_ones_named_like_most_of_the_series():
+    from types import SimpleNamespace
+    names = ["Les_Impetueuses_Tribulations_d_Achille_Talon_T01.cbz", "Les_Impetueuses_Tribulations_d_Achille_Talon_T02.cbz",
+             *[f"Tome {n:02d} - Achille Talon et un titre.pdf" for n in range(1, 6)]]
+    paths = [f"/x/{name}" for name in names]
+    proposal = SimpleNamespace(mapping={path: object() for path in paths})  # the volumes of the cbz are in it too
+    from bdnex.importer.folders import likely_members, name_shape
+    assert name_shape(paths[0]).startswith("les impetueuses") and name_shape(paths[2]) == "tome"
+    assert likely_members(proposal, paths) == set(paths[2:])

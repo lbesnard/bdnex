@@ -170,3 +170,27 @@ def _album_in_series(source, key: str, name: str, volume: int, own: list[Match])
 
 def folder_name(paths: list[str]) -> str:
     return os.path.basename(os.path.dirname(paths[0]))
+
+
+def name_shape(path: str) -> str:
+    """The way a file is named, volume number and title left out: ``Tome 01 - Foo.pdf`` -> ``tome``,
+    ``Les_Impetueuses_Tribulations_T01.cbz`` -> ``les impetueuses``. Files of one series are usually named alike."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    prefix = []
+    for word in re.split(r"[\s_.\-]+", fold(stem)):
+        if not word:
+            continue
+        if any(c.isdigit() for c in word):
+            break  # the volume number: what comes before it is how the series is named
+        prefix.append(word)
+    return " ".join(prefix) or fold(stem).split(" ")[0]
+
+
+def likely_members(proposal, paths: list[str]) -> set[str]:
+    """The files to tick at first when the user picks the members of a series: the ones the series was found in,
+    named like most of them (a sub-series in the same folder is usually named differently)."""
+    mapped = [path for path in paths if path in proposal.mapping]
+    if not mapped:
+        return set()
+    common = collections.Counter(name_shape(path) for path in mapped).most_common(1)[0][0]
+    return {path for path in mapped if name_shape(path) == common}

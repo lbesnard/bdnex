@@ -320,7 +320,7 @@ class ImportSession:
     def _choose_files(self, paths: list[str], proposal) -> tuple[list[str], list[str]]:
         """The user ticks the files that belong to the series: -> (ticked, the others)."""
         pick = getattr(self.prompter, "pick_files", None)
-        ticked = pick(folders.folder_name(paths), paths, set(proposal.mapping)) if pick else list(paths)
+        ticked = pick(folders.folder_name(paths), paths, folders.likely_members(proposal, paths)) if pick else list(paths)
         ticked = [path for path in paths if path in set(ticked)]
         return ticked, [path for path in paths if path not in set(ticked)]
 
