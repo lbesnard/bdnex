@@ -189,6 +189,20 @@ On 2,000 real file names against the full Bédéthèque index: 50 s with one pro
 with 13. Workers are forked, so they share the loaded index; on a system without `fork`
 (Windows) matching runs in the main process.
 
+## Recording files first, matching later: `--as-is`
+
+```bash
+bdnex import --as-is ~/comics     # record every file, nothing else
+bdnex ls --files tagged:false     # they are in the library, not yet linked to an album
+bdnex import ~/comics             # later: match and fetch them, as usual
+```
+
+`--as-is` reads each file once and stores its path, format, size, page count, checksum, whether it looks damaged,
+and what its own `ComicInfo.xml` says (series, number, title... kept as the file's own `embedded` data, apart from
+any album). It asks nothing, uses no network, and moves, converts or writes nothing. Files already in the library are
+left alone (`--force` records them again). `ls --files -l` shows the file's own metadata, and `embedded:` finds files
+by it (`bdnex ls --files embedded:nains`). Recorded files are not "skipped": the next `bdnex import` matches them.
+
 ## The report
 
 bdnex prints what it is doing on stderr (the match and its score, then a progress bar for the

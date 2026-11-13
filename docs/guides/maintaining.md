@@ -148,6 +148,20 @@ bdnex relocate /old/folder /new/folder           # rewrite them (files and impor
 run if a new path is already registered, and only matches whole folders (`/comics` does not
 rewrite `/comics2`). A path that lands under `directory` is stored relative.
 
+### Files moved or renamed by hand: `bdnex relink`
+
+If you moved or renamed files outside bdnex (a file manager, another tool), they show in `bdnex ls --missing`.
+`relink` looks for them by content:
+
+```bash
+bdnex relink -n ~/comics            # preview: which missing file was found where
+bdnex relink ~/comics ~/Downloads   # link them again (default folder: `directory`)
+```
+
+A missing file is looked for by size and checksum in the folders you give. When exactly one copy is found, the
+library points at it again, keeping its album, import history and edits. Several copies are listed and left alone,
+and what is not found stays in `ls --missing`. Nothing on disk is touched.
+
 `bdnex ls --files` and `path:` queries match the **stored** form, so `path:Series/Nains`
 works for files in the tree, whatever `directory` is.
 

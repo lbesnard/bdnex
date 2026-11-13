@@ -28,6 +28,7 @@ class FileInfo:
     has_metadata: bool
     readable: bool = True  # False when the archive can not even be opened (nothing can be done with it)
     problem: Optional[str] = None  # why it is corrupted, in words
+    embedded: Optional[dict] = None  # the simple fields of the file's own ComicInfo.xml
 
 
 def detect_format(path) -> Optional[str]:
@@ -65,6 +66,20 @@ def _count_images(names) -> int:
     return sum(1 for n in names if n.lower().endswith(IMAGE_EXTENSIONS))
 
 
+def _embedded(archive, names) -> Optional[dict]:
+    """The simple fields of the ComicInfo.xml inside an archive (``None``: none, or unreadable)."""
+    from bdnex.organizer.comicinfo import parse_xml
+
+    name = next((n for n in names if os.path.basename(n).lower() == "comicinfo.xml"), None)
+    if name is None:
+        return None
+    try:
+        return parse_xml(archive.read(name)) or None
+    except Exception as err:  # a broken ComicInfo.xml must not make the file unreadable
+        logger.debug(f"{name} could not be parsed: {err}")
+        return None
+
+
 def inspect_file(path) -> FileInfo:
     """Return format, size, page count and integrity of a comic file.
 
@@ -76,6 +91,7 @@ def inspect_file(path) -> FileInfo:
     page_count = None
     corrupted = False
     has_metadata = False
+    embedded = None
     readable = True
     problem = None
 
@@ -88,11 +104,13 @@ def inspect_file(path) -> FileInfo:
                 names = zf.namelist()
                 page_count = _count_images(names)
                 has_metadata = any(os.path.basename(n) == "ComicInfo.xml" for n in names)
+                embedded = _embedded(zf, names)
         elif fmt == "cbr":
             with rarfile.RarFile(path) as rf:
                 names = rf.namelist()
                 page_count = _count_images(names)
                 has_metadata = any(os.path.basename(n) == "ComicInfo.xml" for n in names)
+                embedded = _embedded(rf, names)
         elif fmt == "pdf":
             import pymupdf
 
@@ -108,4 +126,4 @@ def inspect_file(path) -> FileInfo:
 
     return FileInfo(path=path, format=fmt, size=stat.st_size, mtime=stat.st_mtime,
                     page_count=page_count, corrupted=corrupted, has_metadata=has_metadata,
-                    readable=readable, problem=problem)
+                    readable=readable, problem=problem, embedded=embedded)

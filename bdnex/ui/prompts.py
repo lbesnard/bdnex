@@ -377,7 +377,6 @@ class InquirerPrompter:
 
     def resolve_duplicate(self, comparison, what: str, root=None) -> str:
         """Which file(s) to keep when an album already has one: ``skip`` | ``replace`` | ``keep_both``."""
-        from InquirerPy import inquirer
 
         from bdnex.versions import KEEP_EXISTING, table
 
@@ -405,7 +404,7 @@ class InquirerPrompter:
         suggested = "skip" if comparison.suggestion == KEEP_EXISTING else "replace"
         choices.sort(key=lambda choice: choice["value"] != suggested)
         choices[0]["name"] += "  <- suggested"
-        return inquirer.select(message="Which one do you keep?", choices=choices).execute()
+        return self._ask("Which one do you keep?", choices)
 
     def cover_mismatch(self, path: str, album: str, score: float, threshold: float) -> str:
         """The file's cover does not look like the album's: ``keep`` the match or ``unlink`` it."""

@@ -209,7 +209,8 @@ class ImportSession:
             except ImportAborted:
                 report.aborted_at, report.total = path, len(files)
                 break  # this file stays undecided: it is asked about again next time
-            except NeedsTerminal:
+            except (NeedsTerminal, KeyboardInterrupt):
+                stream.close()  # stop the background matching before leaving
                 raise  # not this file's fault: the decisions made so far are saved, the run stops
             except Exception as err:  # one bad file must not stop the batch
                 logger.exception(f"{path} failed")

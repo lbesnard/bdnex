@@ -14,7 +14,6 @@ Two comparisons, for two jobs:
 from __future__ import annotations
 
 import logging
-import os
 import posixpath
 import re
 import zipfile
@@ -26,7 +25,6 @@ from bdnex.organizer.archive import IMAGE_EXTS, PDF_EXTRACTABLE
 
 logger = logging.getLogger(__name__)
 
-HASH_BITS = 64
 SAME_COVER_DISTANCE = 10  # bits of 64 that may differ between two copies of the same cover
 SIFT_HEIGHT = 600  # both images are scaled to this height before the comparison
 SIFT_RATIO = 0.6  # Lowe's ratio test: a match counts if it is clearly better than the second best

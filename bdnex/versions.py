@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Optional
 
 from bdnex.importer import covers
 from bdnex.library.hashing import file_md5

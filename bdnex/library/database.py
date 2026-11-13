@@ -107,6 +107,8 @@ class Library:
         record = dict(row)
         if "path" in record and record["path"] is not None:
             record["path"] = self._resolve(record["path"])
+        if isinstance(record.get("embedded"), str):
+            record["embedded"] = json.loads(record["embedded"])
         return record
 
     def _adopt_root(self) -> None:
@@ -493,16 +495,17 @@ class Library:
         with self.conn:
             self.conn.execute(
                 """INSERT INTO files(path, album_id, md5, size, format, page_count,
-                                     corrupted, has_metadata, mtime)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     corrupted, has_metadata, mtime, embedded)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(path) DO UPDATE SET
                        album_id = COALESCE(excluded.album_id, files.album_id),
                        md5 = excluded.md5, size = excluded.size, format = excluded.format,
                        page_count = excluded.page_count, corrupted = excluded.corrupted,
                        has_metadata = excluded.has_metadata, mtime = excluded.mtime,
-                       checked = CURRENT_TIMESTAMP""",
+                       embedded = excluded.embedded, checked = CURRENT_TIMESTAMP""",
                 (self._store(info.path), album_id, md5, info.size, info.format, info.page_count,
-                 int(info.corrupted), int(info.has_metadata), info.mtime))
+                 int(info.corrupted), int(info.has_metadata), info.mtime,
+                 json.dumps(info.embedded, ensure_ascii=False) if info.embedded else None))
         return self.conn.execute("SELECT id FROM files WHERE path = ?",
                                  (self._store(info.path),)).fetchone()["id"]
 
@@ -651,6 +654,46 @@ class Library:
         """Registered files that are no longer on disk (moved, renamed or deleted outside bdnex)."""
         rows = (self._file_row(r) for r in self.conn.execute("SELECT * FROM files"))
         return sorted((r for r in rows if not os.path.exists(r["path"])), key=lambda r: r["path"])
+
+    def relink(self, folders: list[str], apply: bool = True) -> dict[str, Any]:
+        """Find files that were moved or renamed outside bdnex: look in ``folders`` for a file with the same
+        content (size, then md5) as each missing one and point the library at it. Returns
+        ``{"found": [(old, new)], "lost": [old...], "ambiguous": [(old, [new...])]}``; a file whose copy is
+        already registered, or that has several copies, is left alone."""
+        missing = self.missing_files()
+        by_size: dict[int, list[dict[str, Any]]] = {}
+        for row in missing:
+            by_size.setdefault(row["size"], []).append(row)
+        registered = {row["path"] for row in (self._file_row(r) for r in self.conn.execute("SELECT path FROM files"))}
+        candidates: dict[str, list[str]] = {}  # md5 -> paths on disk
+        for folder in folders:
+            for path in iter_comic_files(os.path.abspath(os.path.expanduser(folder))):
+                if path in registered:
+                    continue
+                try:
+                    if os.path.getsize(path) in by_size:
+                        candidates.setdefault(file_md5(path), []).append(path)
+                except OSError:
+                    continue
+        result: dict[str, Any] = {"found": [], "lost": [], "ambiguous": []}
+        for row in missing:
+            paths = sorted(set(candidates.get(row["md5"], [])))
+            if not paths:
+                result["lost"].append(row["path"])
+            elif len(paths) > 1:
+                result["ambiguous"].append((row["path"], paths))
+            else:
+                result["found"].append((row["path"], paths[0]))
+        if apply:
+            used = set()
+            for old, new in result["found"]:
+                if new in used:  # two missing rows with the same content: the first one takes the file
+                    continue
+                used.add(new)
+                with self.conn:
+                    self.conn.execute("UPDATE files SET path = ? WHERE path = ?", (self._store(new), self._store(old)))
+                    self.conn.execute("UPDATE import_log SET path = ? WHERE path = ?", (self._store(new), self._store(old)))
+        return result
 
     def relocate(self, old: str, new: str, apply: bool = True) -> dict[str, Any]:
         """Replace the folder prefix ``old`` by ``new`` in every file path (and the import log).

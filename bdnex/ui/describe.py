@@ -94,15 +94,28 @@ def long(album: dict[str, Any], files: list[dict[str, Any]]) -> str:
         lines.append(f"  {'file':<13}{f['path']}")
         lines.append(f"  {'':<13}{f['format']}, {f['page_count'] or '?'} pages, {size(f['size'])}"
                      + (f"  ({flags})" if flags else ""))
+        if f.get("embedded"):
+            lines.append(f"  {'':<13}{embedded_line(f['embedded'])}")
     if not files:
         lines.append(f"  {'file':<13}(none linked)")
     return "\n".join(lines)
 
 
+def embedded_line(embedded) -> str:
+    """What a file's own ComicInfo.xml says, in one line (empty when it has none)."""
+    if not embedded:
+        return ""
+    series, number, title = embedded.get("Series"), embedded.get("Number") or embedded.get("Volume"), embedded.get("Title")
+    year = embedded.get("Year")
+    text = " - ".join(x for x in (series, f"#{number}" if number else None, title) if x)
+    return f"in the file: {text}" + (f" ({year})" if year else "") if text else "in the file: a ComicInfo.xml without series or title"
+
+
 def file_block(row: dict[str, Any], album_label: str) -> str:
     flags = ", ".join(x for x in ("corrupted" if row["corrupted"] else "", "has ComicInfo.xml" if row["has_metadata"] else "") if x)
     return (f"{row['path']}\n  {row['format']}, {row['page_count'] or '?'} pages, {size(row['size'])}"
-            + (f"  ({flags})" if flags else "") + f"\n  album: {album_label}\n  md5: {row['md5']}")
+            + (f"  ({flags})" if flags else "") + f"\n  album: {album_label}"
+            + (f"\n  {embedded_line(row.get('embedded'))}" if row.get("embedded") else "") + f"\n  md5: {row['md5']}")
 
 
 __all__ = ["label", "short", "long", "file_block", "credits_line", "completeness", "os"]
