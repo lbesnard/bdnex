@@ -375,3 +375,14 @@ def test_closing_prefetch_early_stops_asking_for_more_pages(lib):
     next(stream)
     stream.close()
     assert len(fetched) < 40  # the window ahead is small, and the rest was cancelled
+
+
+def test_prefetch_lets_a_display_follow_what_is_being_fetched(lib):
+    import time
+    ticks, seen = [], []
+    source = Bedetheque(lib, fetch=lambda url: (time.sleep(0.9), b"<html>x</html>")[1], sleep=lambda s: None, parallel=3)
+    urls = _album_urls(3)
+    for url, error in source.prefetch(urls, 3, tick=lambda: (ticks.append(1), seen.append(source.active))):
+        pass
+    assert ticks and max(seen) == 3  # the three were being fetched together while the first was awaited
+    assert source.downloaded == 3 and source.active == 0

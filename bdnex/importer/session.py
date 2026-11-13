@@ -179,6 +179,8 @@ class ImportSession:
         base = len(report.results)  # results of the files before this loop (paths that do not exist)
         history: list[int] = []  # positions of the files the user was asked about, to go back to them
         skipped_folders: set[str] = set()  # folders the user chose to skip
+        followed: dict[int, list[str]] = {}  # position -> the files whose album came from the series chosen at that file
+        self._series_asked: set[str] = set()  # folders where the user already said what the series is
         position = 0
         if "match" in self.steps:
             self.phase("match", f"Matching {len(files)} file(s) to albums")
@@ -212,6 +214,9 @@ class ImportSession:
                 del report.results[base + position:]
                 skipped_folders.discard(os.path.dirname(files[position]))  # asked about again
                 chosen.pop(files[position], None)  # a file the folder had decided is asked about on its own
+                for later in followed.pop(position, []):  # what was offered for the rest of the folder from this file
+                    chosen.pop(later, None)
+                self._series_asked.discard(os.path.dirname(files[position]))
                 self.progress(f"Back to {os.path.basename(files[position])}: what was decided from there is taken back.")
                 continue
             except SkipFolder:
@@ -229,6 +234,15 @@ class ImportSession:
                 if not self.pretend:
                     self.library.log_import(path, FAILED)
                     result.journal = Journal(logged=True)
+            folder = os.path.dirname(path)
+            if kind == "match" and self._asked and folder not in skipped_folders:
+                rest = [p for p in files[position + 1:] if kinds[p][0] == "match" and os.path.dirname(p) == folder and p not in chosen]
+                offered = self._series_from_choice(path, result, rest, ready, stream) if rest else None
+                if offered == "skip":
+                    skipped_folders.add(folder)
+                elif offered:
+                    chosen.update(offered)
+                    followed[position] = list(offered)
             report.results.append(result)
             if self._asked:
                 history.append(position)
@@ -310,6 +324,7 @@ class ImportSession:
             self.progress(f"Series folder {folders.folder_name(paths)}: {len(paths)} files, "
                           f"{proposal.covered} found by volume in \"{proposal.name}\"")
         else:
+            self._series_asked.add(os.path.dirname(paths[0]))  # you are asked about this folder once
             answer = self._ask_series(paths, proposal)
             if answer == "skip":
                 raise SkipFolder(paths[0])
@@ -334,6 +349,39 @@ class ImportSession:
         ticked = pick(folders.folder_name(paths), paths, folders.likely_members(proposal, paths)) if pick else list(paths)
         ticked = [path for path in paths if path in set(ticked)]
         return ticked, [path for path in paths if path not in set(ticked)]
+
+    def _series_from_choice(self, path: str, result, rest: list[str], ready: dict, stream):
+        """You picked an album of a series by hand for one file of a folder whose files were not taken for a series:
+        offer that series for the other files, by volume number. ``{file: (album, score, why)}``, ``"skip"`` (skip the
+        folder), or ``None`` (nothing to offer, or you said no)."""
+        folder = os.path.dirname(path)
+        ask = getattr(self.prompter, "confirm_same_series", None)
+        if (ask is None or self.pretend or self.auto == "all" or self.series_mode == "never" or folder in self._series_asked
+                or result.outcome not in (TAGGED, PARTIAL) or result.album_id is None):
+            return None
+        series = self.library.series_of_album(result.album_id)
+        if series is None:
+            return None  # a one-shot: there is no series to offer
+        self._read(stream, ready, rest)
+        matches = {p: ready[p] for p in rest if not isinstance(ready[p], Exception)}
+        proposal = folders.propose_for_series(self.source, series[0], series[1], rest, matches)
+        if proposal is None:
+            return None
+        self._series_asked.add(folder)
+        first = os.path.basename(path)
+        try:
+            answer = ask(folders.folder_name(rest), rest, proposal, first)
+        except NeedsTerminal:
+            return None
+        why = f'series "{series[1]}" (from {first})'
+        mapping = {p: (candidate, next((m.score for m in matches.get(p, []) if m.candidate == candidate), None), why)
+                   for p, candidate in proposal.mapping.items()}
+        if answer == "skip":
+            return "skip"
+        if answer == "choose":
+            ticked = self._choose_files(rest, proposal)[0]
+            return {p: m for p, m in mapping.items() if p in ticked}
+        return mapping if answer == "series" else None
 
     def _ask_series(self, paths: list[str], proposal) -> str:
         """``series``, ``each``, ``choose`` or ``skip``. Nobody to ask (preview, ``--auto=all``, no prompter, no terminal): ``each``."""
@@ -430,14 +478,23 @@ class ImportSession:
             self.progress(f"Fetching {len(pending)} album page(s) (Ctrl-C stops; `bdnex import --fetch` resumes)...")
         workers = getattr(self.source, "parallel", 1)
         arriving = None
+        current = [""]  # the page the bar is on
+
+        def busy(name: str) -> str:
+            """What the bar says: the page it waits for, and how many are being fetched at the same time."""
+            active = getattr(self.source, "active", 0)
+            return f"{name}  ({active} being fetched, {getattr(self.source, 'downloaded', 0)} of {len(pending)} fetched)" if arriving is not None else name
+
         if workers > 1 and hasattr(self.source, "prefetch") and not self.pretend:
             self.progress(f"Fetching {workers} pages at a time.")
-            arriving = self.source.prefetch([candidate.url for _, candidate, _ in pending], workers, recache=self.recache)
+            arriving = self.source.prefetch([candidate.url for _, candidate, _ in pending], workers, recache=self.recache,
+                                            tick=lambda: bar and bar.refresh(busy(current[0])))
         try:
             for number, (result, candidate, damaged) in enumerate(pending, start=1):
                 name = candidate.url.rsplit("/", 1)[-1]
+                current[0] = name
                 if bar:
-                    bar.update(name)
+                    bar.update(busy(name))
                 else:
                     self.progress(f"[page {number}/{len(pending)}] {name}")
                 try:

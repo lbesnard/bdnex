@@ -191,3 +191,16 @@ def test_a_banner_names_the_step(capsys):
     assert "Step 1/2  Matching 5 file(s) to albums" in err and "─" in err
     output.banner("Result")
     assert "Step" not in capsys.readouterr().err
+
+
+def test_a_progress_bar_can_be_redrawn_with_new_text_without_counting_a_step():
+    import io
+    from bdnex.ui.output import Bar
+    stream = io.StringIO()
+    bar = Bar(7, "Album pages", stream=stream, tty=True)
+    bar.update("BD-One.html")
+    bar.refresh("BD-One.html  (3 being fetched, 4 of 7 fetched)")
+    assert bar.done == 1 and "3 being fetched" in stream.getvalue()
+    quiet = io.StringIO()
+    Bar(7, "x", stream=quiet, tty=False).refresh("nothing on a pipe")
+    assert quiet.getvalue() == ""

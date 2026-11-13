@@ -347,17 +347,17 @@ class InquirerPrompter:
             except Exception:  # a picture is a help
                 pass
 
-    def confirm_series(self, folder: str, paths: list[str], proposal) -> str:
-        """Several files in one folder: are they one series? ``series`` or ``each`` (match them one by one)."""
-        self._need_terminal()
+    def _list_folder(self, folder: str, paths: list[str]) -> None:
         shown, on = 25, color.enabled()
         print(f"\n{color.paint(color.rule(), 'dim', on)}\n{color.paint(folder + '/', 'cyan', on)} ({len(paths)} files)")
         for path in paths[:shown]:
             print(f"  {color.paint(os.path.basename(path), 'bold', on)}")
         if len(paths) > shown:
             print(f"  ... and {len(paths) - shown} more")
-        print(f"These files look like one series: {color.paint(chr(34) + proposal.name + chr(34), 'cyan_bold', on)} "
-              f"({proposal.covered} of {len(paths)} files have their volume in it).")
+
+    def _series_choice(self, folder: str, proposal) -> str:
+        """The keys of the series question: ``series``, ``each``, ``choose`` or ``skip`` (Abort raises)."""
+        on = color.enabled()
         abort = "bort the import (what is decided is kept; run it again to continue)"
         rows = [  # (key, rest of the label after the key, value, colour)
             ("Y", f"es: match them by volume number in \"{proposal.name}\"", "series", "fg:ansigreen"),
@@ -371,6 +371,24 @@ class InquirerPrompter:
         if answer == self.ABORT:
             raise ImportAborted(folder)
         return answer
+
+    def confirm_series(self, folder: str, paths: list[str], proposal) -> str:
+        """Several files in one folder: are they one series? ``series`` or ``each`` (match them one by one)."""
+        self._need_terminal()
+        on = color.enabled()
+        self._list_folder(folder, paths)
+        print(f"These files look like one series: {color.paint(chr(34) + proposal.name + chr(34), 'cyan_bold', on)} "
+              f"({proposal.covered} of {len(paths)} files have their volume in it).")
+        return self._series_choice(folder, proposal)
+
+    def confirm_same_series(self, folder: str, paths: list[str], proposal, first: str) -> str:
+        """You picked an album of a series for a file: do the other files of the folder belong to it?"""
+        self._need_terminal()
+        on = color.enabled()
+        self._list_folder(folder, paths)
+        print(f"You matched {color.paint(first, 'bold', on)} to the series {color.paint(chr(34) + proposal.name + chr(34), 'cyan_bold', on)}. "
+              f"The other files look like more of its volumes ({proposal.covered} of {len(paths)} have theirs in it).")
+        return self._series_choice(folder, proposal)
 
     def _checkbox(self, message: str, choices: list):
         from InquirerPy import inquirer

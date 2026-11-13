@@ -114,6 +114,12 @@ class Bar:
             self._last_decile = self.percent() // 10
             print(text, file=self.stream, flush=True)
 
+    def refresh(self, detail: str = "") -> None:
+        """Redraw the line with new text, without counting a step (a terminal only)."""
+        if self.tty:
+            print("\r\x1b[K" + self.line(detail), end="", file=self.stream, flush=True)
+            self._shown = True
+
     def finish(self, message: str = "") -> None:
         """End the bar (clearing the line on a terminal) and print ``message``."""
         if self.tty and self._shown:
