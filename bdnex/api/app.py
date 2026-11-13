@@ -1,4 +1,9 @@
-"""The FastAPI application. It only reads: the database is opened read-only for every request."""
+"""The FastAPI application.
+
+Reading: the database is opened read-only for every request. Changing (jobs, review answers) is off unless
+``api.allow_changes`` is true, and then needs the token whenever one is set, a header a web page of another site
+cannot send, and a request from the page's own address.
+"""
 
 from __future__ import annotations
 
@@ -8,8 +13,11 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse, Response
+from pydantic import BaseModel
 
+from bdnex.api.jobs import SPECS, Busy, JobError, JobManager
 from bdnex.config import Settings
 from bdnex.library import Library
 from bdnex.library.query import QueryError
@@ -18,8 +26,22 @@ STATIC = Path(__file__).resolve().parent / "static"
 MAX_LIMIT = 1000
 
 
-def create_app(settings: Settings, token: Optional[str] = None):
-    """The application for ``settings``; ``token`` (default ``api.token``) is required when set."""
+class JobRequest(BaseModel):
+    command: str
+    preview: bool = True        # a preview changes nothing: the real run has to be asked for
+    query: list[str] = []
+    paths: list[str] = []
+    copy_files: bool = False    # `move` leaves the originals where they are
+    batch: Optional[str] = None
+
+
+class ReviewAnswer(BaseModel):
+    action: str                 # keep | unlink
+
+
+def create_app(settings: Settings, token: Optional[str] = None, allow_changes: Optional[bool] = None):
+    """The application for ``settings``; ``token`` (default ``api.token``) is required when set; ``allow_changes``
+    (default ``api.allow_changes``) lets the page run jobs and answer reviews."""
     try:
         from importlib.metadata import version
         __version__ = version("bdnex")
@@ -27,6 +49,8 @@ def create_app(settings: Settings, token: Optional[str] = None):
         __version__ = "unknown"
 
     token = settings.api.token if token is None else token
+    allow_changes = settings.api.allow_changes if allow_changes is None else allow_changes
+    jobs = JobManager(settings)
     app = FastAPI(
         title="bdnex", version=__version__,
         description="Read-only view of your bdnex library. The `q` parameter takes the same terms as "
@@ -41,6 +65,18 @@ def create_app(settings: Settings, token: Optional[str] = None):
             raise HTTPException(401, "a valid `Authorization: Bearer <token>` header is required",
                                 headers={"WWW-Authenticate": "Bearer"})
 
+    def can_change(request: Request) -> None:
+        """A change needs: changes enabled, the token (if any), our own header, and no foreign origin."""
+        allowed(request)
+        if not allow_changes:
+            raise HTTPException(403, "changes are disabled: set `api.allow_changes: true` in the configuration "
+                                     "(or start the server with --allow-changes)")
+        if request.headers.get("x-requested-with") != "bdnex":
+            raise HTTPException(403, "missing the `X-Requested-With: bdnex` header")
+        origin = request.headers.get("origin")
+        if origin and origin.split("://", 1)[-1] != request.headers.get("host"):
+            raise HTTPException(403, "this request comes from another site")
+
     def library():
         if not settings.library_path.exists():
             raise HTTPException(503, f"no library yet ({settings.library_path}): run `bdnex import` first")
@@ -53,7 +89,9 @@ def create_app(settings: Settings, token: Optional[str] = None):
         finally:
             lib.close()
 
+    app.mount("/static", StaticFiles(directory=STATIC), name="static")  # the page's own files: nothing of the library
     guarded = [Depends(allowed)]
+    changing = [Depends(can_change)]
 
     def terms(q: str) -> list[str]:
         try:
@@ -103,7 +141,7 @@ def create_app(settings: Settings, token: Optional[str] = None):
         # the stored name is relative to cover.dir; never serve anything that resolves outside of it
         if target is None or not target.is_file() or settings.cover_path.resolve() not in target.resolve().parents:
             raise HTTPException(404, "this album has no saved cover (`bdnex import --fetch` downloads it)")
-        return FileResponse(target)
+        return FileResponse(target, headers={"Cache-Control": "private, max-age=600"})
 
     @app.get("/api/files", dependencies=guarded, summary="Files matching a query")
     def files(q: str = Query("", description="`bdnex ls --files` terms"),
@@ -123,9 +161,156 @@ def create_app(settings: Settings, token: Optional[str] = None):
             rows = [r for r in rows if r["missing"]]
         return {"count": len(rows), "items": rows}
 
+    @app.get("/api/series/{series_id}", dependencies=guarded, summary="One series: each volume, owned or missing")
+    def series_detail(series_id: int, lib: Library = Depends(library)):
+        row = lib.conn.execute("SELECT * FROM series WHERE id = ?", (series_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, f"no series {series_id}")
+        import json as _json
+
+        known = _json.loads(row["extra"]).get("albums")
+        mine = {r["source_id"]: dict(r) for r in lib.conn.execute(
+            "SELECT a.id, a.source_id, a.title, a.volume, a.cover_file, a.url, "
+            "(SELECT COUNT(*) FROM files f WHERE f.album_id = a.id) AS files FROM albums a WHERE a.series_id = ?", (series_id,))}
+        volumes = []
+        for entry in known if known is not None else []:
+            have = mine.pop(str(entry["source_id"]), None)
+            volumes.append({"volume": entry.get("volume"), "title": entry.get("title"), "url": entry.get("url"),
+                            "album_id": have["id"] if have else None, "owned": bool(have and have["files"]),
+                            "has_cover": bool(have and have["cover_file"])})
+        for have in mine.values():  # albums of the series the source's list does not show (or no list at all)
+            volumes.append({"volume": have["volume"], "title": have["title"], "url": have["url"], "album_id": have["id"],
+                            "owned": bool(have["files"]), "has_cover": bool(have["cover_file"])})
+        volumes.sort(key=lambda v: (v["volume"] is None, v["volume"] or 0, v["title"] or ""))
+        return {"id": row["id"], "name": row["name"], "url": row["url"], "list_known": known is not None, "volumes": volumes}
+
     @app.get("/api/trash", dependencies=guarded, summary="Files waiting in the trash")
     def trash(lib: Library = Depends(library)):
         rows = lib.trash_entries()
         return {"count": len(rows), "items": rows}
+
+    # ------------------------------------------------------------------ more to look at
+    @app.get("/api/overview", dependencies=guarded, summary="Counts and the state of the library, for the front page")
+    def overview(lib: Library = Depends(library)):
+        count = lambda sql: lib.conn.execute(sql).fetchone()[0]  # noqa: E731
+        return {
+            **lib.stats(),
+            "formats": {r[0]: r[1] for r in lib.conn.execute("SELECT format, COUNT(*) FROM files GROUP BY format ORDER BY 2 DESC")},
+            "decades": {str(r[0]) + "s": r[1] for r in lib.conn.execute(
+                "SELECT (year / 10) * 10 AS decade, COUNT(*) FROM albums WHERE year IS NOT NULL GROUP BY decade ORDER BY decade")},
+            "review": count("SELECT COUNT(*) FROM files WHERE review IS NOT NULL"),
+            "partial": count("SELECT COUNT(*) FROM albums WHERE COALESCE(json_extract(extra, '$.partial'), 0) = 1"),
+            "with_cover": count("SELECT COUNT(*) FROM albums WHERE cover_file IS NOT NULL"),
+            "collection": settings.collection_path,
+            "sources": [{"name": src.alias, "path": src.folder, "mode": src.mode} for src in settings.import_.sources],
+            "allow_changes": allow_changes, "busy": jobs.busy(),
+        }
+
+    @app.get("/api/config", dependencies=guarded, summary="The settings that matter to the page (no secrets)")
+    def config():
+        return {"collection_path": settings.collection_path, "library": str(settings.library_path),
+                "cover_dir": str(settings.cover_path), "paths": {"series": settings.paths.series, "oneshot": settings.paths.oneshot,
+                                                                 "rules": [r.model_dump() for r in settings.paths.rules]},
+                "sources": [src.model_dump() for src in settings.import_.sources],
+                "write": settings.write.model_dump(), "api": {"host": settings.api.host, "port": settings.api.port,
+                                                              "token_required": bool(token), "allow_changes": allow_changes}}
+
+    @app.get("/api/files/{file_id}/cover", dependencies=guarded, summary="The first page of a file, as a small picture")
+    def file_cover(file_id: int, lib: Library = Depends(library)):
+        from bdnex.importer import covers
+        from bdnex.ui import thumbnail
+
+        row = lib.file_by_id(file_id)
+        if row is None:
+            raise HTTPException(404, f"no file {file_id}")
+        image = covers.front_cover(row["path"], row["format"]) if Path(row["path"]).exists() else None
+        small = thumbnail.small_png(image, width=320) if image else None
+        if not small:
+            raise HTTPException(404, "no first page could be read from this file")
+        return Response(small[0], media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
+
+    @app.get("/api/review", dependencies=guarded, summary="Matches that wait for a look (their cover looked different)")
+    def review(lib: Library = Depends(library)):
+        items = []
+        for row in lib.query(["review:true"], files=True):
+            album = lib.get_album(row["id"]) if row["id"] is not None else None
+            kept = album.get("cover_file") if album else None
+            items.append({"file_id": row["file_id"], "path": row["path"], "format": row["format"], "reason": row["review"],
+                          "cover_score": row.get("cover_score"),
+                          "album": {"id": row["id"], "title": row["title"], "series": row["series"], "volume": row["volume"],
+                                    "has_cover": bool(kept and (settings.cover_path / kept).exists())}})
+        return {"count": len(items), "items": items}
+
+    @app.post("/api/review/{file_id}", dependencies=changing, summary="Answer a review: keep the match, or unlink the file")
+    def answer_review(file_id: int, answer: ReviewAnswer):
+        if answer.action not in ("keep", "unlink"):
+            raise HTTPException(400, "`action` is `keep` or `unlink`")
+        with Library.for_settings(settings) as lib:
+            row = lib.file_by_id(file_id)
+            if row is None or not row.get("review"):
+                raise HTTPException(404, f"file {file_id} is not waiting for a review")
+            if answer.action == "keep":
+                lib.clear_review(row["path"])
+            else:
+                lib.set_file_album(row["path"], None)
+                lib.log_import(row["path"], "skipped", row.get("cover_score"))
+        return {"ok": True}
+
+    @app.get("/api/duplicates", dependencies=guarded, summary="The same book in several files")
+    def duplicates_view(lib: Library = Depends(library)):
+        from bdnex.library.health import duplicates
+
+        groups = duplicates(lib)
+        return {"count": len(groups), "items": [
+            {"why": g["why"], "files": [{"file_id": f["id"], "path": f["path"], "format": f["format"], "size": f["size"],
+                                         "pages": f["page_count"], "spare": bool(f["spare"])} for f in g["files"]]}
+            for g in groups]}
+
+    @app.get("/api/check", dependencies=guarded, summary="Is the library consistent with itself and with the disk?")
+    def check_view(lib: Library = Depends(library)):
+        from bdnex.library.health import check
+
+        found = check(lib, settings)
+        return {"count": len(found), "items": [{"key": f.key, "problem": f.problem, "items": f.items, "advice": f.advice,
+                                                 "fixable": f.fixable} for f in found]}
+
+    # ------------------------------------------------------------------------- jobs
+    @app.get("/api/jobs/available", dependencies=guarded, summary="The jobs that can be started")
+    def available():
+        return {"items": [{"command": name, "label": spec.label, "writes": spec.writes} for name, spec in SPECS.items()],
+                "allow_changes": allow_changes}
+
+    @app.get("/api/jobs", dependencies=guarded, summary="The jobs of this server run, newest first")
+    def job_list():
+        return {"items": [{**job.public(after=10 ** 9), "lines": []} for job in jobs.all()]}
+
+    @app.get("/api/jobs/{job_id}", dependencies=guarded, summary="One job, with its output from line `after`")
+    def job_get(job_id: int, after: int = Query(0, ge=0)):
+        job = jobs.get(job_id)
+        if job is None:
+            raise HTTPException(404, f"no job {job_id}")
+        return job.public(after=after)
+
+    @app.post("/api/jobs", dependencies=guarded, summary="Start a job (a preview changes nothing)")
+    def job_start(request: Request, body: JobRequest):
+        if not body.preview:  # the real run is a change: all the safeguards apply
+            can_change(request)
+        try:
+            options = {"preview": body.preview, "query": body.query, "paths": body.paths, "copy": body.copy_files,
+                       "batch": body.batch}
+            job = jobs.start(body.command, options, allow_changes=allow_changes)
+        except JobError as err:
+            raise HTTPException(400, str(err)) from err
+        except PermissionError as err:
+            raise HTTPException(403, str(err)) from err
+        except Busy as err:
+            raise HTTPException(409, str(err)) from err
+        return job.public()
+
+    @app.post("/api/jobs/{job_id}/cancel", dependencies=changing, summary="Ask a running job to stop")
+    def job_cancel(job_id: int):
+        if not jobs.cancel(job_id):
+            raise HTTPException(404, f"job {job_id} is not running")
+        return {"ok": True}
 
     return app

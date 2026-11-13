@@ -1,0 +1,340 @@
+"use strict";
+// bdnex web page: no build step, no framework. Everything shown from the server goes through textContent.
+const $ = (sel, root = document) => root.querySelector(sel);
+const el = (tag, attrs = {}, ...kids) => {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") node.className = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else node.setAttribute(k, v === true ? "" : v);
+  }
+  for (const kid of kids.flat()) if (kid != null && kid !== false) node.append(kid instanceof Node ? kid : document.createTextNode(String(kid)));
+  return node;
+};
+
+let token = "";
+try { token = sessionStorage.getItem("bdnex-token") || ""; } catch (e) { /* storage may be blocked */ }
+const app = { overview: null };
+const view = $("#view");
+
+// ------------------------------------------------------------------ talking to the server
+async function api(path, { params = {}, method = "GET", body } = {}) {
+  const url = new URL(path, location.origin);
+  for (const [k, v] of Object.entries(params)) if (v !== "" && v !== false && v != null) url.searchParams.set(k, v);
+  const headers = {};
+  if (token) headers.Authorization = "Bearer " + token;
+  if (method !== "GET") { headers["Content-Type"] = "application/json"; headers["X-Requested-With"] = "bdnex"; }
+  const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 401) { await askToken(); return api(path, { params, method, body }); }
+  if (!res.ok) {
+    let message = res.statusText;
+    try { message = (await res.json()).detail || message; } catch (e) { /* not JSON */ }
+    throw new Error(message);
+  }
+  return res.json();
+}
+
+function askToken() {
+  return new Promise(resolve => {
+    const input = el("input", { type: "password", placeholder: "access token", autofocus: true });
+    render(el("h1", {}, "Access token"), el("p", { class: "lead" }, "This server asks for a token."),
+      el("form", { class: "row", onsubmit: e => {
+        e.preventDefault(); token = input.value;
+        try { sessionStorage.setItem("bdnex-token", token); } catch (err) { /* ignore */ }
+        resolve();
+      } }, input, el("button", { class: "primary", type: "submit" }, "Unlock")));
+  });
+}
+
+// Pictures cannot send the token header, so with a token they are fetched and shown from memory.
+function picture(img, path) {
+  if (!token) { img.src = path; return; }
+  fetch(path, { headers: { Authorization: "Bearer " + token } })
+    .then(r => r.ok ? r.blob() : Promise.reject(new Error(r.statusText)))
+    .then(b => { img.src = URL.createObjectURL(b); })
+    .catch(() => img.dispatchEvent(new Event("error")));
+}
+
+function cover(path, fallbackText) {
+  const box = el("div", { class: "cover" });
+  const img = el("img", { alt: "", loading: "lazy" });
+  img.addEventListener("error", () => { img.remove(); box.append(el("span", { class: "ph" }, (fallbackText || "?").slice(0, 2).toUpperCase())); });
+  box.append(img);
+  if (path) picture(img, path); else img.dispatchEvent(new Event("error"));
+  return box;
+}
+
+// ------------------------------------------------------------------ small helpers
+const label = a => {
+  const vol = a.volume != null ? "T" + String(a.volume).padStart(2, "0") : (a.alternate_number || "");
+  const title = a.title && a.title !== a.series ? a.title : "";
+  return [a.series, vol, title].filter(Boolean).join(" - ") || a.title || "(untitled)";
+};
+const size = n => n == null ? "" : n > 1073741824 ? (n / 1073741824).toFixed(1) + " GiB" : n > 1048576 ? (n / 1048576).toFixed(1) + " MiB" : Math.ceil(n / 1024) + " KiB";
+const canChange = () => !!(app.overview && app.overview.allow_changes);
+// `text in backticks` becomes code
+const rich = text => String(text ?? "").split("`").map((part, i) => i % 2 ? el("code", {}, part) : part);
+const header = (title, lead) => [el("h1", {}, title), lead ? el("p", { class: "lead" }, rich(lead)) : null];
+const render = (...kids) => view.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false));
+const loading = () => render(el("p", { class: "hint" }, "Loading…"));
+const failure = e => render(el("div", { class: "panel err" }, e.message));
+
+function searchBox(placeholder, value, onsubmit) {
+  const input = el("input", { type: "search", placeholder, value, "aria-label": "search" });
+  return el("form", { class: "row", onsubmit: e => { e.preventDefault(); onsubmit(input.value.trim()); } },
+    input, el("button", { class: "primary", type: "submit" }, "Search"));
+}
+
+// ------------------------------------------------------------------ the views
+const VIEWS = {
+  overview: { name: "Overview", icon: "◧", async draw() {
+    const o = app.overview = await api("/api/overview");
+    const tile = (n, text, href, alert) => el("a", { class: "tile" + (alert && n ? " alert" : ""), href: href || "#/overview" }, el("b", {}, n), el("span", {}, text));
+    const bars = (data, unit) => {
+      const entries = Object.entries(data), max = Math.max(1, ...entries.map(e => e[1]));
+      return el("div", { class: "bars" }, entries.map(([k, v]) => el("div", { class: "bar" },
+        el("span", {}, k), el("span", {}, el("i", { style: `width:${Math.max(1, Math.round(100 * v / max))}%` })), el("span", {}, `${v}${unit || ""}`))));
+    };
+    render(...header("Your library", o.collection ? o.collection : "No collection folder is set yet."),
+      el("div", { class: "tiles" },
+        tile(o.albums, "albums", "#/albums"), tile(o.series, "series", "#/series"), tile(o.files, "files", "#/files"),
+        tile(o.oneshots, "one-shots", "#/albums"),
+        tile(o.review, "to review", "#/review", true), tile(o.corrupted, "damaged files", "#/health", true),
+        tile(o.untagged, "files without an album", "#/files", true), tile(o.partial, "albums to fetch", "#/tasks", true)),
+      el("div", { class: "cols" },
+        el("div", { class: "panel" }, el("h3", {}, "Files by format"), bars(o.formats)),
+        el("div", { class: "panel" }, el("h3", {}, "Albums by decade"), Object.keys(o.decades).length ? bars(o.decades) : el("p", { class: "hint" }, "No year known yet."))),
+      o.sources.length ? [el("h2", {}, "Import sources"), el("div", { class: "panel" }, o.sources.map(s =>
+        el("div", { class: "row" }, el("b", {}, s.name), el("span", { class: "tag" }, s.mode), el("span", { class: "hint" }, s.path))))] : null,
+      el("p", { class: "hint" }, `${o.with_cover} of ${o.albums} albums have a saved cover.`));
+  } },
+
+  albums: { name: "Albums", icon: "▦", async draw(q = "", offset = 0, previous = []) {
+    const data = await api("/api/albums", { params: { q, limit: 60, offset } });
+    const items = [...previous, ...data.items];
+    const cards = items.map(a => el("div", { class: "card", tabindex: 0, onclick: () => albumDialog(a.id), onkeydown: e => { if (e.key === "Enter") albumDialog(a.id); } },
+      el("div", { class: "cover" }, a.partial ? el("span", { class: "badge" }, "not fetched") : null, cover(`/api/albums/${a.id}/cover`, a.title)),
+      el("div", { class: "meta" }, el("div", { class: "t" }, a.series ? `${a.series}${a.volume != null ? " T" + a.volume : ""}` : a.title),
+        el("div", { class: "s" }, [a.series ? a.title : null, a.year].filter(Boolean).join(" · ")))));
+    const next = offset + data.items.length;
+    render(...header("Albums", `${data.count} match${data.count === 1 ? "" : "es"}`),
+      searchBox("series:nains year:2010..2015 ^genre:humour", q, v => VIEWS.albums.draw(v, 0)),
+      el("p", { class: "hint" }, rich("Same terms as `bdnex ls`: field:value, ranges, ::regex, ^ to exclude.")),
+      cards.length ? el("div", { class: "grid" }, cards) : el("p", { class: "hint" }, "No album."),
+      next < data.count ? el("div", { class: "more" }, el("button", { onclick: () => VIEWS.albums.draw(q, next, items) }, `Show more (${data.count - next})`)) : null);
+  } },
+
+  series: { name: "Series", icon: "☰", async draw(name = "", onlyMissing = false) {
+    const data = await api("/api/series", { params: { name, missing: onlyMissing } });
+    const only = el("input", { type: "checkbox", id: "only" }); only.checked = onlyMissing;
+    const form = el("form", { class: "row", onsubmit: e => { e.preventDefault(); VIEWS.series.draw($("input[type=search]", form).value.trim(), only.checked); } },
+      el("input", { type: "search", placeholder: "words of the series name", value: name, "aria-label": "series name" }),
+      el("label", { class: "hint" }, only, " only incomplete"), el("button", { class: "primary", type: "submit" }, "Search"));
+    const rows = data.items.map(s => {
+      const pct = s.known ? Math.round(100 * s.owned / s.known) : 100;
+      const body = el("div", {});
+      let opened = false;
+      const head = el("div", { class: "s-head", onclick: async () => {
+        if (opened) { body.replaceChildren(); opened = false; return; }
+        opened = true; body.replaceChildren(el("p", { class: "hint" }, "Loading…"));
+        try { body.replaceChildren(await seriesVolumes(s.id)); } catch (e) { body.replaceChildren(el("p", { class: "err" }, e.message)); }
+      } }, el("strong", {}, s.name),
+        el("span", { class: "tag " + (s.known == null ? "" : s.missing.length ? "warn" : "ok") },
+          s.known == null ? "list unknown" : s.missing.length ? `missing ${s.missing.length}` : "complete"),
+        el("div", { class: "meter" + (s.missing && s.missing.length ? " partial" : "") }, el("i", { style: `width:${pct}%` })),
+        el("span", { class: "hint", style: "margin:0;min-width:64px;text-align:right" }, s.known == null ? `${s.owned}` : `${s.owned} / ${s.known}`));
+      return el("div", { class: "panel" }, head, body);
+    });
+    render(...header("Series", "Click a series to see which volumes you have."), form, el("div", { class: "series" }, rows.length ? rows : el("p", { class: "hint" }, "No series.")));
+    if (data.items.length === 1) $(".s-head", view).click();  // a search that finds one series opens it
+  } },
+
+  review: { name: "Review", icon: "✓", async draw() {
+    const data = await api("/api/review");
+    const out = [...header("Review matches", "Files whose cover does not look like their album's. Is the match right?")];
+    if (!canChange()) out.push(el("p", { class: "hint warn" }, rich("This server is read-only: start it with `api.allow_changes: true` (or `--allow-changes`) to answer here. Meanwhile `bdnex review` does the same in the terminal.")));
+    if (!data.items.length) out.push(el("div", { class: "panel" }, "Nothing waits for a review."));
+    const list = el("div", { class: "review" });
+    for (const item of data.items) {
+      const card = el("div", { class: "panel r-card" });
+      const answer = async action => {
+        try { await api(`/api/review/${item.file_id}`, { method: "POST", body: { action } }); card.remove(); refreshBadge(); }
+        catch (e) { card.append(el("p", { class: "err" }, e.message)); }
+      };
+      card.append(
+        el("div", { class: "pair" },
+          el("figure", {}, cover(`/api/files/${item.file_id}/cover`, "file"), el("figcaption", {}, "the file")),
+          el("figure", {}, cover(item.album.has_cover ? `/api/albums/${item.album.id}/cover` : null, "?"), el("figcaption", {}, item.album.has_cover ? "the album on the site" : "cover not downloaded yet"))),
+        el("div", { class: "r-text" }, el("h3", {}, label(item.album)), el("p", { class: "warn" }, item.reason),
+          el("p", { class: "path" }, item.path),
+          el("div", { class: "row" },
+            el("button", { class: "primary", disabled: !canChange(), onclick: () => answer("keep") }, "Keep the match"),
+            el("button", { disabled: !canChange(), onclick: () => confirm("Unlink this file from the album? It stays on disk.") && answer("unlink") }, "Unlink"))));
+      list.append(card);
+    }
+    render(...out, list);
+  } },
+
+  health: { name: "Health", icon: "✚", async draw() {
+    const data = await api("/api/check");
+    const dups = await api("/api/duplicates");
+    const out = [...header("Library health", "Is the library consistent with itself and with the disk?")];
+    if (!data.items.length) out.push(el("div", { class: "panel ok" }, "Everything is consistent."));
+    const list = el("div", { class: "findings" });
+    for (const f of data.items) list.append(el("div", { class: "panel finding" },
+      el("div", { class: "row" }, el("strong", {}, f.problem), f.fixable ? el("span", { class: "tag ok" }, "can be fixed") : null),
+      f.advice ? el("div", { class: "hint" }, rich(f.advice)) : null, f.items.length ? el("ul", {}, f.items.map(i => el("li", {}, i))) : null));
+    out.push(list);
+    if (data.items.some(f => f.fixable)) out.push(el("p", {}, el("button", { class: "primary", disabled: !canChange(),
+      onclick: () => confirm("Settle what is safe: remove empty series, forget missing cover files, dead trash records and temporary files?") && startJob("check-fix", { preview: false }) }, "Fix what is safe")));
+    out.push(el("h2", {}, "The same book twice"));
+    if (!dups.items.length) out.push(el("div", { class: "panel" }, "No duplicates found."));
+    for (const g of dups.items) out.push(el("div", { class: "panel", style: "margin-bottom:10px" }, el("strong", {}, g.why),
+      g.files.map(f => el("div", { class: "hint", style: "margin:4px 0" }, `${f.format} · ${f.pages ?? "?"} pages · ${size(f.size)}${f.spare ? " · spare" : ""} — ${f.path}`))));
+    render(...out);
+  } },
+
+  tasks: { name: "Tasks", icon: "▶", async draw(jobId) {
+    const available = await api("/api/jobs/available");
+    const history = await api("/api/jobs");
+    app.overview = app.overview || await api("/api/overview");
+    const logBox = el("div", {});
+    const query = el("input", { type: "text", placeholder: "only these files (same terms as bdnex ls --files), e.g. series:nains" });
+    const folder = el("select", {}, el("option", { value: "" }, "your whole collection"),
+      el("option", { value: app.overview.collection || "" }, "collection folder"), ...(app.overview.sources || []).map(s => el("option", { value: s.path }, "source: " + s.name)));
+    const cards = available.items.map(j => {
+      const wantsPaths = ["record", "relink"].includes(j.command), wantsQuery = ["write", "move", "repair"].includes(j.command);
+      const opts = () => ({ query: wantsQuery ? query.value.split(/\s+/).filter(Boolean) : [], paths: wantsPaths && folder.value ? [folder.value] : [],
+                            copy_files: false });
+      return el("div", { class: "panel job" }, el("h3", {}, j.label),
+        el("div", { class: "row" },
+          el("button", { onclick: () => startJob(j.command, { ...opts(), preview: true }, logBox) }, j.writes ? "Preview" : "Run"),
+          j.writes ? el("button", { class: "danger", disabled: !available.allow_changes,
+            onclick: () => confirm(`Run “${j.label}” for real? It changes your files or your library.`) && startJob(j.command, { ...opts(), preview: false }, logBox) }, "Run for real") : null));
+    });
+    render(...header("Tasks", "The same operations as the command line. A preview changes nothing; run it first."),
+      available.allow_changes ? null : el("p", { class: "hint warn" }, rich("Read-only server: previews and checks only. Set `api.allow_changes: true` to run for real.")),
+      el("div", { class: "row", style: "margin-bottom:12px" }, query, folder), el("div", { class: "jobs" }, cards), logBox,
+      el("h2", {}, "Earlier runs"), el("div", { class: "panel" }, history.items.length ? history.items.map(j =>
+        el("div", { class: "row" }, el("b", {}, `#${j.id}`), j.label, el("span", { class: "tag " + (j.status === "done" ? "ok" : j.status === "running" ? "warn" : "bad") }, j.status),
+          el("button", { onclick: () => followJob(j.id, logBox) }, "Show"))) : el("span", { class: "hint" }, "Nothing has run yet.")));
+    const running = history.items.find(j => j.status === "running");
+    if (jobId) followJob(Number(jobId), logBox); else if (running) followJob(running.id, logBox);
+  } },
+
+  files: { name: "Files", icon: "▤", async draw(q = "", offset = 0) {
+    const data = await api("/api/files", { params: { q, limit: 100, offset } });
+    const rows = data.items.map(f => el("tr", {}, el("td", {}, f.path), el("td", {}, f.format), el("td", {}, size(f.size)),
+      el("td", {}, f.corrupted ? el("span", { class: "tag bad" }, "damaged") : "", f.spare ? el("span", { class: "tag" }, "spare") : "", f.review ? el("span", { class: "tag warn" }, "to review") : "")));
+    const to = offset + data.items.length;
+    render(...header("Files", `${data.count} file(s)`), searchBox("format:cbz corrupted:true tagged:false", q, v => VIEWS.files.draw(v, 0)),
+      el("div", { class: "panel scroll", style: "margin-top:12px" }, el("table", {}, el("thead", {}, el("tr", {}, ["Path", "Format", "Size", ""].map(h => el("th", {}, h)))), el("tbody", {}, rows))),
+      el("div", { class: "more" }, el("button", { disabled: offset === 0, onclick: () => VIEWS.files.draw(q, Math.max(0, offset - 100)) }, "‹ Previous"), " ",
+        el("button", { disabled: to >= data.count, onclick: () => VIEWS.files.draw(q, to) }, "Next ›")));
+  } },
+
+  trash: { name: "Trash", icon: "✕", async draw() {
+    const data = await api("/api/trash");
+    render(...header("Trash", "Files that were replaced wait here. Restore or empty them with `bdnex trash`."),
+      el("div", { class: "panel scroll" }, data.items.length ? el("table", {}, el("thead", {}, el("tr", {}, ["Was at", "Why", "Size", "Trashed"].map(h => el("th", {}, h)))),
+        el("tbody", {}, data.items.map(t => el("tr", {}, el("td", {}, t.path), el("td", {}, t.reason), el("td", {}, size(t.size)), el("td", {}, t.trashed))))) : "The trash is empty."));
+  } },
+
+  settings: { name: "Settings", icon: "⚙", async draw() {
+    const c = await api("/api/config");
+    const rows = [["Collection", c.collection_path], ["Library database", c.library], ["Covers", c.cover_dir],
+      ["Series path", c.paths.series], ["One-shot path", c.paths.oneshot], ["Rules", c.paths.rules.length ? c.paths.rules.map(r => `${r.match.join(" ")} → ${r.template}`).join("\n") : "none"],
+      ["Sources", c.sources.length ? c.sources.map(s => `${s.name || s.path} (${s.mode})`).join(", ") : "none"],
+      ["Convert CBR / PDF", `${c.write.cbr} / ${c.write.pdf}`], ["Server", `${c.api.host}:${c.api.port}${c.api.token_required ? " · token" : ""} · ${c.api.allow_changes ? "changes allowed" : "read-only"}`]];
+    render(...header("Settings", "Shown from your configuration file. Edit it with `bdnex config --edit`."),
+      el("div", { class: "panel" }, el("dl", {}, rows.flatMap(([k, v]) => [el("dt", {}, k), el("dd", { style: "white-space:pre-line" }, v)]))));
+  } },
+};
+
+// ------------------------------------------------------------------ dialogs and jobs
+async function albumDialog(id) {
+  const a = await api("/api/albums/" + id);
+  const credits = Object.entries(a.credits || {}).map(([role, names]) => [role, names.join(", ")]);
+  const rows = [["Series", a.series], ["Year", a.year], ["Language", a.language], ["Publisher", a.publisher], ["ISBN", a.isbn],
+    ["Genres", (a.genres || []).join(", ")], ...credits];
+  const dialog = $("#dialog");
+  dialog.replaceChildren(el("button", { class: "d-close", "aria-label": "close", onclick: () => dialog.close() }, "×"),
+    el("div", { class: "d-body" }, cover(`/api/albums/${id}/cover`, a.title),
+      el("div", {}, el("h2", { style: "margin-top:0" }, label(a)), a.url ? el("a", { href: a.url, target: "_blank", rel: "noopener" }, "Open the album page") : null,
+        el("dl", {}, rows.filter(r => r[1]).flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, String(v))])),
+        a.summary ? el("p", {}, a.summary) : null, el("h3", {}, `Files (${a.files.length})`),
+        a.files.map(f => el("div", { class: "hint", style: "margin:2px 0" }, `${f.format} · ${size(f.size)} — ${f.path}`)))));
+  dialog.showModal();
+}
+
+async function seriesVolumes(id) {
+  const s = await api("/api/series/" + id);
+  const tiles = s.volumes.map(v => {
+    const text = v.volume != null ? String(v.volume) : "·";
+    const tip = `${v.title || ""}${v.owned ? "" : " (missing)"}`;
+    if (v.owned && v.album_id) return el("button", { class: "vol", title: tip, onclick: () => albumDialog(v.album_id) }, text);
+    return el(v.url ? "a" : "span", { class: "vol missing", title: tip, href: v.url || null, target: v.url ? "_blank" : null, rel: v.url ? "noopener" : null }, text);
+  });
+  return el("div", {}, el("div", { class: "vols" }, tiles), el("p", { class: "legend" }, s.list_known ? "Filled: you have it. Dashed: missing (opens its page)." : "The list of volumes is unknown: run `bdnex import --fetch`."));
+}
+
+let polling = null;
+async function startJob(command, options, box) {
+  try {
+    const job = await api("/api/jobs", { method: "POST", body: { command, ...options } });
+    if (!box) { location.hash = "#/tasks"; await new Promise(r => setTimeout(r, 150)); box = $("#view > div:last-of-type") || view; }
+    followJob(job.id, box);
+  } catch (e) { alert(e.message); }
+}
+
+async function followJob(id, box) {
+  box = box || view;
+  if (polling) clearTimeout(polling);
+  const status = el("span", { class: "tag warn" }, "running"), log = el("pre", { class: "log" }), cancel = el("button", { disabled: !canChange() }, "Cancel");
+  box.replaceChildren(el("div", { class: "row", style: "margin-top:14px" }, el("b", {}, `Job #${id}`), status, cancel), log);
+  cancel.addEventListener("click", async () => { try { await api(`/api/jobs/${id}/cancel`, { method: "POST" }); } catch (e) { alert(e.message); } });
+  let after = 0;
+  const tick = async () => {
+    let job;
+    try { job = await api(`/api/jobs/${id}`, { params: { after } }); } catch (e) { log.append(e.message); return; }
+    if (job.lines.length) { log.append(job.lines.join("\n") + "\n"); log.scrollTop = log.scrollHeight; }
+    after = job.next;
+    status.textContent = job.status; status.className = "tag " + (job.status === "done" ? "ok" : job.status === "running" ? "warn" : "bad");
+    if (job.status === "running") polling = setTimeout(tick, 700); else { cancel.disabled = true; refreshBadge(); }
+  };
+  tick();
+}
+
+// ------------------------------------------------------------------ navigation
+async function refreshBadge() {
+  try { app.overview = await api("/api/overview"); } catch (e) { return; }
+  drawNav(); drawMode();
+}
+function drawNav() {
+  const here = (location.hash.slice(2).split("?")[0] || "overview").split("/")[0];
+  $("#nav").replaceChildren(...Object.entries(VIEWS).map(([id, v]) => el("a", { href: "#/" + id, "aria-current": id === here ? "page" : null },
+    el("span", {}, v.icon), v.name, id === "review" && app.overview && app.overview.review ? el("span", { class: "count" }, app.overview.review) : null)));
+}
+function drawMode() {
+  const o = app.overview;
+  $("#mode").replaceChildren(...[o ? el("b", { class: o.allow_changes ? "on" : "" }, o.allow_changes ? "changes allowed" : "read-only") : null,
+    o && o.busy ? el("div", {}, "a job is running") : null].filter(Boolean));
+}
+async function route() {
+  const [path, query] = location.hash.slice(2).split("?");
+  const id = (path || "overview").split("/")[0];
+  const params = new URLSearchParams(query || "");
+  const entry = VIEWS[id] || VIEWS.overview;
+  drawNav(); loading();
+  try {  // a link such as #/albums?q=series:nains or #/series?name=nains opens the view already filtered
+    if (id === "albums") await entry.draw(params.get("q") || "");
+    else if (id === "series") await entry.draw(params.get("name") || "", params.get("missing") === "1");
+    else if (id === "files") await entry.draw(params.get("q") || "");
+    else if (id === "tasks") await entry.draw(params.get("job"));
+    else await entry.draw();
+  } catch (e) { failure(e); }
+  window.scrollTo(0, 0);
+}
+window.addEventListener("hashchange", route);
+(async () => { try { app.overview = await api("/api/overview"); } catch (e) { /* the view shows it */ } drawNav(); drawMode(); route(); })();

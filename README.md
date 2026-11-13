@@ -54,6 +54,8 @@ based on metadata and not an obscure filename.
 - duplicates are shown side by side and you keep one, the other, or both: spare versions go to `_versions/`,
   replaced files to a restorable trash (`bdnex trash`)
 - files imported from outside your library folder (a download folder) are moved or copied in, or left and placed later
+- a **web page** (`bdnex serve`): browse the library as a wall of covers, see which volumes of a series are missing,
+  review doubtful matches, and, if you allow it, run the same tasks as the command line without a terminal
 - optional cover check (`pip install 'bdnex[cover]'`): the file's cover against the album's, with SIFT
 - `bdnex edit`, `reparse`, `reset`, `relocate`: fix, rebuild offline, start over, move your collection
 - `bdnex ls`: search the library (`series:nains author:uderzo year:2010..2015 ^genre:humour`)

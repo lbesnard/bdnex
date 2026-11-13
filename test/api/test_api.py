@@ -42,7 +42,8 @@ def client(settings, **kw):
 
 def test_home_is_the_web_page(library):
     page = client(library).get("/")
-    assert page.status_code == 200 and "bdnex library" in page.text and "text/html" in page.headers["content-type"]
+    assert page.status_code == 200 and "/static/app.js" in page.text and "text/html" in page.headers["content-type"]
+    assert client(library).get("/static/app.js").status_code == 200 and client(library).get("/static/app.css").status_code == 200
 
 
 def test_stats_and_health(library):
