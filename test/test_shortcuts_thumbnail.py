@@ -355,3 +355,14 @@ def test_a_failure_while_following_a_resize_is_silent():
     prompts.follow_resize(types.SimpleNamespace(application=app), picture(200))
     app.output.get_size = lambda: 1 / 0
     app.render()  # no exception
+
+
+def test_the_series_question_has_coloured_keys_like_the_match_question(monkeypatch):
+    prompter, _ = ask(monkeypatch, answer="series")
+    from types import SimpleNamespace
+    proposal = SimpleNamespace(name="Achille Talon", covered=2)
+    prompter.confirm_series("Folder", ["/x/a.cbz", "/x/b.cbz"], proposal)
+    assert prompter.seen["shortcuts"] == {"y": "series", "n": "each", "c": "choose", "s": "skip",
+                                          "a": InquirerPrompter.ABORT}
+    names = [c["name"] for c in prompter.seen["choices"]]
+    assert names[0].startswith("[Y]es") and names[2].startswith("[C]hoose") and names[3].startswith("[S]kip this folder")

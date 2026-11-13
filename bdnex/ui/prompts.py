@@ -29,6 +29,7 @@ def display_name(candidate: Candidate) -> str:
 FUZZY_POOL = 2000  # albums offered to the Python fuzzy prompt: its engine is too slow for the whole list
 OPEN_HINT = "Ctrl-O opens the highlighted album's page in your browser"
 MATCH_HINT = "Enter or a highlighted key chooses; O opens the highlighted album's page"
+PLAIN_HINT = "Enter or a highlighted key chooses"
 CONFIRM_HINT = "Enter or a highlighted key chooses; O opens the album's page to check it"
 KEY_STYLE = "bold underline"  # the letter of a shortcut, in the colour of its line
 
@@ -153,7 +154,7 @@ class InquirerPrompter:
         from InquirerPy import inquirer
 
         prompt = inquirer.select(message=message, choices=choices,
-                                 instruction=f"({MATCH_HINT if shortcuts and 'a' in shortcuts else CONFIRM_HINT if shortcuts else OPEN_HINT})")
+                                 instruction=f"({self._hint(shortcuts)})")
         if shortcuts and getattr(self, "_picture", None) is not None:
             follow_resize(prompt, self._picture)
         bind_open(prompt, ("c-o", "o", "O") if shortcuts else ("c-o",))
@@ -162,6 +163,15 @@ class InquirerPrompter:
         if fragments:
             colorize_choices(prompt, fragments)
         return prompt.execute()
+
+    @staticmethod
+    def _hint(shortcuts: Optional[dict]) -> str:
+        """The line under the question: what the keys do."""
+        if not shortcuts:
+            return OPEN_HINT
+        if "a" not in shortcuts:
+            return CONFIRM_HINT
+        return MATCH_HINT if "e" in shortcuts or "1" in shortcuts else PLAIN_HINT
 
     def _fuzzy(self, message: str, choices: list):
         """Type to filter the choices (case-insensitive); Ctrl-C gives ``None``."""
@@ -300,12 +310,16 @@ class InquirerPrompter:
             print(f"  ... and {len(paths) - shown} more")
         print(f"These files look like one series: {color.paint(chr(34) + proposal.name + chr(34), 'cyan_bold', on)} "
               f"({proposal.covered} of {len(paths)} files have their volume in it).")
-        answer = self._select("Is this one series?", [
-            {"name": f"Yes: match them by volume number in \"{proposal.name}\"", "value": "series"},
-            {"name": "No: match each file by itself", "value": "each"},
-            {"name": "Choose which files belong to it (the others are looked at as another series)", "value": "choose"},
-            {"name": "Skip this folder (none of its files is imported now)", "value": "skip"},
-            {"name": "Abort the import (what is decided is kept; run it again to continue)", "value": self.ABORT}])
+        abort = "bort the import (what is decided is kept; run it again to continue)"
+        rows = [  # (key, rest of the label after the key, value, colour)
+            ("Y", f"es: match them by volume number in \"{proposal.name}\"", "series", "fg:ansigreen"),
+            ("N", "o: match each file by itself", "each", "fg:ansiyellow"),
+            ("C", "hoose which files belong to it (the others are looked at as another series)", "choose", "fg:ansicyan"),
+            ("S", "kip this folder (none of its files is imported now)", "skip", "fg:ansiyellow"),
+            ("A", abort, self.ABORT, "fg:ansired")]
+        choices = [{"name": f"[{key}]{rest}", "value": value} for key, rest, value, _ in rows]
+        fragments = [shortcut(key, rest, tone) if on else None for key, rest, _, tone in rows]
+        answer = self._select("Is this one series?", choices, fragments, {key.lower(): value for key, _, value, _ in rows})
         if answer == self.ABORT:
             raise ImportAborted(folder)
         return answer
