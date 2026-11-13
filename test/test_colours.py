@@ -204,3 +204,18 @@ def test_a_progress_bar_can_be_redrawn_with_new_text_without_counting_a_step():
     quiet = io.StringIO()
     Bar(7, "x", stream=quiet, tty=False).refresh("nothing on a pipe")
     assert quiet.getvalue() == ""
+
+
+def test_a_progress_line_is_cut_to_the_width_of_the_terminal(monkeypatch):
+    import io
+    import os
+    from bdnex.ui.output import Bar
+    monkeypatch.setattr("shutil.get_terminal_size", lambda fallback=None: os.terminal_size((60, 20)))
+    stream = io.StringIO()
+    bar = Bar(7, "Album pages", stream=stream, tty=True)
+    bar.update("Abaddon-Shadmi-Tome-1-Abaddon · Ada-Baldi-Ada · Adieu-Bridavoine-Tardi  (3 of 6 fetched)")
+    drawn = stream.getvalue().replace("\r\x1b[K", "")
+    assert len(drawn) <= 59 and drawn.endswith("…")
+    stream.truncate(0), stream.seek(0)
+    bar.update("short")
+    assert "short" in stream.getvalue() and "…" not in stream.getvalue()
