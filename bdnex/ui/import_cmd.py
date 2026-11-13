@@ -33,6 +33,10 @@ def build_parser() -> argparse.ArgumentParser:
                        help="find the album of each file, from the album list (offline; run `bdnex init` first)")
     steps.add_argument("-f", "--fetch", action="store_true",
                        help="read the album pages: authors, publisher, summary, genres... (slow, politely)")
+    parser.add_argument("-s", "--select", action="append", default=[], metavar="TERM",
+                        help="work on the files already in the library that match this `bdnex ls --files` term "
+                             "(repeatable, all must match): `--select tagged:false`, `--select 'author:uderzo'`. "
+                             "Added to the paths, if any")
     parser.add_argument("--as-is", action="store_true",
                         help="only record the files: name, path, format, size, pages, checksum and what their own "
                              "ComicInfo.xml says. No matching, no network, nothing moved or written. "
@@ -127,6 +131,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
         return 1
     if args.as_is:
         return _record_as_is(args, settings, out)
+    if args.select:
+        code = _select_paths(args, settings)
+        if code:
+            return code
     if "match" in steps and not args.paths:  # no folder given: look at the library folder of the configuration
         try:
             args.paths = [str(settings.require_library_directory())]
@@ -204,6 +212,27 @@ def run(argv: list[str], out=sys.stdout) -> int:
               "from there.", file=out)
         return 1
     return 1 if organize_failed or report.count(FAILED) or any(r.outcome == "failed" for r in organize_results) else 0
+
+
+def _select_paths(args, settings) -> int:
+    """``--select``: the library files that match the terms become the files to work on."""
+    from bdnex.library.query import QueryError
+
+    if not settings.library_path.exists():
+        print(f"No library yet ({settings.library_path}): nothing to select from.", file=sys.stderr)
+        return 1
+    try:
+        with Library.for_settings(settings, readonly=True) as library:
+            rows = library.query(args.select, files=True)
+    except QueryError as err:
+        print(f"bad --select query: {err}", file=sys.stderr)
+        return 2
+    if not rows:
+        print("No file in the library matches --select " + " ".join(args.select), file=sys.stderr)
+        return 1
+    print(f"--select: {len(rows)} file(s) of the library", file=sys.stderr)
+    args.paths = [*args.paths, *(row["path"] for row in rows)]
+    return 0
 
 
 def _record_as_is(args, settings, out) -> int:
