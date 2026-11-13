@@ -8,7 +8,9 @@ The recommended way is [uv](https://docs.astral.sh/uv/):
 curl -fsSL https://raw.githubusercontent.com/lbesnard/bdnex/main/install.sh | sh
 ```
 
-This installs the latest release wheel as an isolated tool. `pipx` and `pip`
+This installs the latest release wheel as an isolated tool; run it again to upgrade. With uv alone, see *Installation* in
+the README (`uv tool install --force` with the latest release address, or `uv tool install git+https://github.com/lbesnard/bdnex.git`
+for the `main` branch, then `uv tool upgrade bdnex`). `pipx` and `pip`
 work too. Python 3.10 to 3.13 is required.
 
 From a clone, for development:

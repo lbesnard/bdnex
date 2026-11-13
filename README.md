@@ -107,17 +107,28 @@ curl -fsSL https://raw.githubusercontent.com/lbesnard/bdnex/main/install.sh | sh
 The script fetches the latest GitHub release wheel and installs it with `uv tool`
 (falling back to `pipx`, then `pip`).
 
-Or directly with uv, from a specific release on the [Releases page](https://github.com/lbesnard/bdnex/releases):
+Or with uv alone, always the **latest release** (no version to type):
 
 ```bash
-uv tool install https://github.com/lbesnard/bdnex/releases/download/vX.Y.Z/bdnex-X.Y.Z-py3-none-any.whl
+uv tool install --force "$(curl -fsSL https://api.github.com/repos/lbesnard/bdnex/releases/latest \
+  | grep -o 'https://[^"]*\.whl')"
 ```
 
-### Latest from source
+The same line upgrades an installed bdnex to the newest release. A specific release, from the
+[Releases page](https://github.com/lbesnard/bdnex/releases):
+
+```bash
+uv tool install --force https://github.com/lbesnard/bdnex/releases/download/vX.Y.Z/bdnex-X.Y.Z-py3-none-any.whl
+```
+
+### Latest from source (the `main` branch)
 
 ```bash
 uv tool install git+https://github.com/lbesnard/bdnex.git
+uv tool upgrade bdnex          # later: pulls the newest commit of the branch
 ```
+
+With the optional cover check (OpenCV): `uv tool install "bdnex[cover] @ git+https://github.com/lbesnard/bdnex.git"`.
 
 ### Development
 
