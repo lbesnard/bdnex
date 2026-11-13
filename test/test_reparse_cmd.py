@@ -134,7 +134,7 @@ def test_a_page_that_no_longer_parses_is_reported_and_the_rest_continue(env, mon
 
     monkeypatch.setattr(Bedetheque, "album_info", flaky)
     code, text = run()
-    assert code == 1 and "failed  Broken: cannot read this page" in text and "1 updated" in text
+    assert code == 1 and "failed  Broken" in text and "cannot read this page" in text and "1 updated" in text
 
 
 def test_errors(tmp_path, monkeypatch, capsys):

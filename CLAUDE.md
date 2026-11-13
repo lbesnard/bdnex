@@ -99,4 +99,7 @@ never ran in a test crashed that way), `uv run python -m compileall -q bdnex` (P
 - Tests: autouse fixtures isolate HOME and switch the automatic cover check off; `FakeWeb` (test/helpers.py) serves
   fixtures and a real picture. A bug found by reading code gets a test that fails without the fix.
 - Long commands show their phases with `banner()` and tint progress lines (`ui/output.py`); plain text in a pipe.
+- **Results are drawn by `ui/results.py`**: one table of outcome -> colour (`STYLES`), one shape (`head` / `block` /
+  `footer`: `● label  Title`, indented lines, a rule and counts). A command names the outcome; it never picks a colour
+  or prints its own `●`. A new kind of result = a row in `STYLES`.
 - Anything drawn is a help, never a reason for the import to fail (swallow errors, log at debug).

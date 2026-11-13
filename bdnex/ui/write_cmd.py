@@ -11,7 +11,7 @@ from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.organizer.organizer import auto_workers, COPY, FAILED, MOVE, WRITE, Organizer, WriteAborted
-from bdnex.ui import color
+from bdnex.ui import color, results
 from bdnex.ui.output import Bar, add_verbosity, banner, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
@@ -42,10 +42,6 @@ def _parser(command: str) -> argparse.ArgumentParser:
     return parser
 
 
-LABEL_STYLE = {"repaired": "green_bold", "written": "green_bold", "moved": "green_bold", "copied": "green_bold",
-               "unchanged": "dim", "skipped": "yellow", "failed": "red_bold", "pretend": "cyan_bold"}
-
-
 def _short(path: str, root: Optional[str]) -> str:
     """The path below the library folder when it is in it (the rest of the line is the same for every file)."""
     if root:
@@ -74,10 +70,7 @@ def _steps(note: str, dest: Optional[str]) -> list[str]:
 def format_result(r, root: Optional[str], on: bool, number: int = 0, total: int = 0) -> str:
     """One file's block: what happened, where it went, the steps, how long it took."""
     label = "would do" if r.outcome == "pretend" else r.outcome
-    style = LABEL_STYLE.get(r.outcome, "dim")
-    counter = f"{color.paint(f'[{number}/{total}]', 'dim', on)} " if number else ""
-    lines = [f"\n{counter}{color.paint('●', style, on)} {color.paint(label, style, on)}  "
-             f"{color.paint(os.path.basename(r.path), 'bold', on)}"]
+    lines = [results.head(label, os.path.basename(r.path), on, r.outcome, f"[{number}/{total}]" if number else "")]
     if r.dest and r.dest != r.path:
         same, old, new = _changed_parts(_short(r.path, root), _short(r.dest, root))
         lines.append(f"    from  {color.paint(same, 'dim', on)}{color.paint(old, 'red', on)}")

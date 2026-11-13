@@ -8,7 +8,7 @@ import sys
 from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.health import check, fix
-from bdnex.ui import color
+from bdnex.ui import color, results
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -36,16 +36,12 @@ def run(argv: list[str], out=sys.stdout) -> int:
             return 0
         for finding in findings:
             tag = " [fixable]" if finding.fixable else ""
-            print(f"\n{color.paint('●', 'yellow', on)} {color.paint(finding.problem, 'bold', on)}{tag}", file=out)
-            for item in finding.items:
-                print(f"    {item}", file=out)
-            if finding.advice:
-                print(f"    {color.paint(finding.advice, 'dim', on)}", file=out)
+            lines = [*finding.items, *([color.paint(finding.advice, "dim", on)] if finding.advice else [])]
+            print(results.block("", f"{finding.problem}{tag}", lines, on, "problem"), file=out)
         if args.fix:
             done = fix(library, settings, findings)
-            print("", file=out)
             for line in done or ["nothing could be settled automatically"]:
-                print(color.paint(f"fixed: {line}", "green", on), file=out)
+                print(results.head("fixed" if done else "", line, on, "fixed" if done else "problem"), file=out)
             return 0
     fixable = sum(1 for f in findings if f.fixable)
     print(f"\n{len(findings)} thing(s) to look at." + (f" `bdnex check --fix` settles the {fixable} marked [fixable]." if fixable else ""),
