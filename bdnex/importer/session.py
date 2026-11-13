@@ -272,34 +272,60 @@ class ImportSession:
         return ready
 
     def _folder_decision(self, group: list[str], ready: dict) -> dict[str, tuple]:
-        """For a folder with several files: ``{file: (album, score, why)}`` when they are one series, else ``{}``.
+        """For a folder with several files: ``{file: (album, score, why)}`` for the ones that are a series.
 
         A folder whose names make it obvious (every file has its own volume number and they start alike) is
         taken for a series; otherwise the user is asked, unless ``import.series: always``. The series is
-        found by letting the files vote (see :mod:`bdnex.importer.folders`).
+        found by letting the files vote (see :mod:`bdnex.importer.folders`). When the user says only some of
+        the files belong to it, the ones left over are looked at as the next series, and so on.
         """
         paths = [path for path in group if not isinstance(ready[path], Exception)]
+        decided: dict[str, tuple] = {}
+        while len(paths) > 1:
+            mapping, paths = self._one_series(paths, ready, first=not decided and len(paths) == len(group))
+            decided.update(mapping)
+        return decided
+
+    def _one_series(self, paths: list[str], ready: dict, first: bool) -> tuple[dict, list[str]]:
+        """-> (``{file: (album, score, why)}`` of one series, the files left for another look)."""
         kind = folders.classify(paths)
-        if kind in (None, folders.VERSIONS):  # versions of one album are the duplicate dialog's business
-            return {}
+        if first and kind in (None, folders.VERSIONS):  # versions of one album are the duplicate dialog's business
+            return {}, []
         proposal = folders.propose_series(self.source, paths, {path: ready[path] for path in paths})
         if proposal is None:
-            return {}
-        if not (kind == folders.SERIES and proposal.solid) and self.series_mode != "always":
+            return {}, []
+        left: list[str] = []
+        if self.series_mode == "always" or (first and kind == folders.SERIES and proposal.solid):
+            self.progress(f"Series folder {folders.folder_name(paths)}: {len(paths)} files, "
+                          f"{proposal.covered} found by volume in \"{proposal.name}\"")
+        else:
             answer = self._ask_series(paths, proposal)
             if answer == "skip":
                 raise SkipFolder(paths[0])
-            if answer != "series":
-                return {}
-        else:
-            self.progress(f"Series folder {folders.folder_name(paths)}: {len(paths)} files, "
-                          f"{proposal.covered} found by volume in \"{proposal.name}\"")
+            if answer == "choose":
+                paths, left = self._choose_files(paths, proposal)
+                if not paths:
+                    return {}, []  # nothing ticked: match every file by itself (and never loop on the same files)
+                proposal = folders.propose_series(self.source, paths, {path: ready[path] for path in paths}) \
+                    if len(paths) > 1 else None
+                if proposal is None:
+                    return {}, left
+            elif answer != "series":
+                return {}, []
         why = f"series \"{proposal.name}\""
-        return {path: (candidate, next((m.score for m in ready[path] if m.candidate == candidate), None), why)
-                for path, candidate in proposal.mapping.items()}
+        mapping = {path: (candidate, next((m.score for m in ready[path] if m.candidate == candidate), None), why)
+                   for path, candidate in proposal.mapping.items()}
+        return mapping, left
+
+    def _choose_files(self, paths: list[str], proposal) -> tuple[list[str], list[str]]:
+        """The user ticks the files that belong to the series: -> (ticked, the others)."""
+        pick = getattr(self.prompter, "pick_files", None)
+        ticked = pick(folders.folder_name(paths), paths, set(proposal.mapping)) if pick else list(paths)
+        ticked = [path for path in paths if path in set(ticked)]
+        return ticked, [path for path in paths if path not in set(ticked)]
 
     def _ask_series(self, paths: list[str], proposal) -> str:
-        """``series`` or ``each``. Nobody to ask (preview, ``--auto=all``, no prompter, no terminal): ``each``."""
+        """``series``, ``each``, ``choose`` or ``skip``. Nobody to ask (preview, ``--auto=all``, no prompter, no terminal): ``each``."""
         ask = getattr(self.prompter, "confirm_series", None)
         if ask is None or self.pretend or self.auto == "all":
             return "each"

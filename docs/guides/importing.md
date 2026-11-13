@@ -121,6 +121,13 @@ series (`100 Bullets` T01 matching `Stray Bullets`). A series that shares no wor
 never suggested. Files with no volume (specials) are matched one by one as usual, and answering *No* matches every
 file by itself.
 
+**A folder that holds two series** (say `Achille Talon` volumes plus a sub-series, or a few unrelated books): at
+*Is this one series?* choose *Choose which files belong to it*. A list of the folder's files opens; the ones the
+series was found in start ticked, **Space** ticks or unticks, **Enter** confirms. The ticked files become that
+series. The others are looked at as the next series (the same question again, for them only), and so on until
+nothing is left; at any step you can say *No* (each file by itself) or *Skip this folder*. Ticking nothing matches
+each file by itself.
+
 `--series` (or `import.series: always`) assumes a series for every multi-file folder without asking;
 `--no-series` (`import.series: never`) matches every file alone. A preview, `--auto=all` and a run without a
 terminal never ask: they match file by file.
@@ -195,6 +202,23 @@ and what its own `ComicInfo.xml` says (series, number, title... kept as the file
 any album). It asks nothing, uses no network, and moves, converts or writes nothing. Files already in the library are
 left alone (`--force` records them again). `ls --files -l` shows the file's own metadata, and `embedded:` finds files
 by it (`bdnex ls --files embedded:nains`). Recorded files are not "skipped": the next `bdnex import` matches them.
+
+### Importing files that are already in the library: `--select`
+
+`bdnex import <folder>` works on the files of a folder. To work on files the library already knows, select them with
+the [query language](queries.md) of `bdnex ls --files`:
+
+```bash
+bdnex import --select tagged:false                    # match + fetch everything recorded with --as-is
+bdnex import --select tagged:false --select 'embedded:nains'   # terms are ANDed
+bdnex import --fetch --force --select author:uderzo   # read the pages of an author's albums again
+bdnex import --match --force --select 'series:/^(antares|centaure)$/'   # ask again about these albums
+bdnex import -n --select format:pdf                   # a preview of what would be done
+```
+
+`--select` can be repeated and combined with paths; the steps and options (`--match`, `--fetch`, `--force`,
+`--auto`, `--move`...) are the same as for a folder. A bare `bdnex import` looks at your library folder only, so files
+recorded from elsewhere need `--select` (or their folder).
 
 ## The report
 
