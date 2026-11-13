@@ -454,6 +454,7 @@ the same answer is the same key everywhere. Press the highlighted letter, in eit
 | `K` | keep the match (review), or keep the file as it is (conflicts) | green / red |
 | `L` | unlink the file from the album (review); leave it as it is (damaged archive, outside files) | yellow |
 | `D` | the database wins (conflicts) | green |
+| `W` | the database wins for the rest of the queue (conflicts) | green |
 | `E` / `U` | enter a search / type the address of the album | cyan |
 | `R`, `C`, `M` | rematch, choose (files, fields), move | cyan |
 

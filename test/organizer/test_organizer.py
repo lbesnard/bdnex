@@ -149,6 +149,27 @@ def test_conflict_prompt_decides(lib, make_cbz, tmp_path, answer, expect_title):
     assert kind == "conflict" and any("Old title" in line for line in diff)
 
 
+def test_database_wins_for_the_rest_is_asked_once(lib, make_cbz, tmp_path):
+    """`database_all` answers this conflict and every later one of the run without asking again."""
+    first = existing_xml_cbz(make_cbz, tmp_path)
+    second = tmp_path / "other.cbz"
+    shutil.copy(first, second)
+    prompter = FakePrompter(conflict="database_all")
+    organizer = Organizer(lib, settings_for(tmp_path), prompter)
+    rows = [registered(lib, first, add_series_album(lib)), registered(lib, str(second), add_series_album(lib, "2", 2))]
+    results = [organizer.process(row, WRITE) for row in rows]
+    assert [r.outcome for r in results] == [WRITTEN, WRITTEN]
+    assert len(prompter.asked) == 1
+    assert comicinfo_of(first)["Title"] == comicinfo_of(str(second))["Title"] == "Redwin de la Forge"
+
+
+def test_database_wins_for_the_rest_is_per_run(lib, make_cbz, tmp_path):
+    prompter = FakePrompter(conflict="database_all")
+    path = existing_xml_cbz(make_cbz, tmp_path)
+    Organizer(lib, settings_for(tmp_path), prompter).process(registered(lib, path, add_series_album(lib)), WRITE)
+    assert Organizer(lib, settings_for(tmp_path), FakePrompter(conflict="file"))._database_wins is False
+
+
 def test_conflict_database_keeps_foreign_fields(lib, make_cbz, tmp_path):
     path = existing_xml_cbz(make_cbz, tmp_path)
     row = registered(lib, path, add_series_album(lib))
