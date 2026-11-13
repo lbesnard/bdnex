@@ -8,11 +8,12 @@ import sys
 from typing import Optional
 
 from bdnex.config import ConfigError
+from bdnex.formatting import short_path
 from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.organizer.organizer import auto_workers, COPY, FAILED, MOVE, WRITE, Organizer, WriteAborted
 from bdnex.ui import color, context, results
-from bdnex.ui.output import Bar, add_verbosity, banner, setup_logging
+from bdnex.ui.output import Bar, add_pretend, add_verbosity, add_workers, banner, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
 OUTCOMES = ("repaired", "written", "moved", "copied", "unchanged", "skipped", "failed", "pretend")
@@ -30,9 +31,8 @@ def _parser(command: str) -> argparse.ArgumentParser:
                "(`collection_path`, `paths` in the config).")
     parser = argparse.ArgumentParser(prog=f"bdnex {command}", description=doc)
     parser.add_argument("query", nargs="*", help="files to process, same terms as `bdnex ls --files`")
-    parser.add_argument("-n", "--pretend", action="store_true", help="show what would be done; change nothing")
-    parser.add_argument("--workers", type=int, metavar="N",
-                        help="files written at once (0: the cores less one, at most 4; 1: one by one); default: `write.workers`")
+    add_pretend(parser)
+    add_workers(parser, "files written", "write.workers", ", at most 4")
     parser.add_argument("--force", action="store_true",
                         help="never ask: the database wins, name clashes get a number, originals are kept")
     if command == "move":
@@ -40,15 +40,6 @@ def _parser(command: str) -> argparse.ArgumentParser:
                             help="leave the source files untouched; the copy is what the database tracks")
     add_verbosity(parser)
     return parser
-
-
-def _short(path: str, root: Optional[str]) -> str:
-    """The path below the library folder when it is in it (the rest of the line is the same for every file)."""
-    if root:
-        root = os.path.expanduser(root).rstrip("/") + "/"
-        if path.startswith(root):
-            return path[len(root):]
-    return path
 
 
 def _changed_parts(old: str, new: str) -> tuple[str, str, str]:
@@ -72,11 +63,11 @@ def format_result(r, root: Optional[str], on: bool, number: int = 0, total: int 
     label = "would do" if r.outcome == "pretend" else r.outcome
     lines = [results.head(label, os.path.basename(r.path), on, r.outcome, f"[{number}/{total}]" if number else "")]
     if r.dest and r.dest != r.path:
-        same, old, new = _changed_parts(_short(r.path, root), _short(r.dest, root))
+        same, old, new = _changed_parts(short_path(r.path, root), short_path(r.dest, root))
         lines.append(f"    from  {color.paint(same, 'dim', on)}{color.paint(old, 'red', on)}")
         lines.append(f"    to    {color.paint(same, 'dim', on)}{color.paint(new, 'green', on)}")
     elif r.outcome == "pretend" and r.dest:
-        lines.append(f"    {color.paint('stays where it is', 'dim', on)}  {color.paint(_short(r.path, root), 'dim', on)}")
+        lines.append(f"    {color.paint('stays where it is', 'dim', on)}  {color.paint(short_path(r.path, root), 'dim', on)}")
     steps = _steps(r.note, r.dest) if r.outcome == "pretend" else [r.note] if r.note else []
     for step in steps:
         lines.append(f"    {color.paint('•', 'dim', on)} {step}")

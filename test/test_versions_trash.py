@@ -63,7 +63,7 @@ def test_with_several_existing_versions_the_best_one_is_the_reference():
 def test_the_table_lays_the_files_side_by_side():
     text = table(compare([facts(path="/lib/Series/a.cbz")], facts(path="/dl/a.cbr", format="cbr", md5="b"), PREFER), root="/lib")
     assert "existing  " in text and "Series/a.cbz" in text and "/lib/Series" not in text  # relative to the library
-    assert "new       /dl/a.cbr" in text and "cbr · 20 pages · 100.0 MB · ok" in text
+    assert "new       /dl/a.cbr" in text and "cbr · 20 pages · 100.0 MiB · ok" in text
     assert "same book" in text and "suggested: keep the existing file" in text
 
 

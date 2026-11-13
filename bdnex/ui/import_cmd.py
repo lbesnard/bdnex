@@ -13,7 +13,7 @@ from bdnex.importer.session import (ALREADY, DUPLICATE, FAILED, OUTCOME_LABELS, 
                                     ImportSession, NeedsTerminal)
 from bdnex.library import Library
 from bdnex.ui import color, context, describe, results
-from bdnex.ui.output import Bar, add_verbosity, banner, progress, setup_logging
+from bdnex.ui.output import Bar, add_pretend, add_verbosity, add_workers, banner, progress, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
 
@@ -50,8 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "--auto=all never asks: medium matches are applied too, the rest skipped")
     parser.add_argument("--no-auto", dest="auto", action="store_const", const=False,
                         help="check every file, whatever import.auto says")
-    parser.add_argument("-n", "--pretend", action="store_true",
-                        help="show what would be done; change nothing")
+    add_pretend(parser)
     parser.add_argument("-W", "--write", action="store_true",
                         help="afterwards, write ComicInfo.xml into the imported files (in place)")
     where = parser.add_mutually_exclusive_group()
@@ -71,9 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "(default: asked when the names do not make it obvious; `import.series`)")
     series.add_argument("--no-series", dest="series", action="store_const", const="never",
                         help="match every file by itself, never as a folder")
-    parser.add_argument("--workers", type=int, metavar="N",
-                        help="processes matching file names in the background, and reading the files for --as-is (0 = CPU cores - 1, 1 = none; "
-                             "default: `import.workers`)")
+    add_workers(parser, "processes matching file names in the background, and reading the files for --as-is")
     add_verbosity(parser)
     legacy = parser.add_argument_group("old names (still work)")
     legacy.add_argument("--no-fetch", action="store_true", help="same as --match")

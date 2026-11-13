@@ -9,7 +9,8 @@ from bdnex.importer.bedetheque import Bedetheque
 from bdnex.importer.session import ALREADY, PARTIAL, PRETEND, SKIPPED, TAGGED
 from bdnex.library import Library
 from bdnex.ui import import_cmd, init_cmd
-from bdnex.ui.output import Bar, human_duration
+from bdnex.formatting import human_duration
+from bdnex.ui.output import Bar
 from helpers import ALBUM_URL, FakeWeb
 from importer.test_session import FILE, Env, FakePrompter, make_settings
 

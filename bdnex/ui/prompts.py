@@ -566,7 +566,7 @@ class InquirerPrompter:
             {"action": "replace", "value": "replace"}])
 
     def size_action(self, path: str, before: int, after: int, tolerance: float) -> str:
-        from bdnex.organizer.organizer import human_size
+        from bdnex.formatting import human_size
 
         print(f"\n{path}\nThe new archive is {human_size(after)}, the original {human_size(before)} "
               f"(more than {tolerance:g}% apart). Every page is in it, byte for byte.")

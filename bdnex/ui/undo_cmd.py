@@ -10,6 +10,7 @@ import sys
 from bdnex.library import Library
 from bdnex.organizer.organizer import Organizer
 from bdnex.ui import color, context, results
+from bdnex.ui.output import add_pretend
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -21,7 +22,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
                "that was converted (the original is in the trash: `bdnex trash`), copies, and files that were changed "
                "or moved again since.")
     parser.add_argument("batch", nargs="?", help="the run to take back: its name from the list, or `last`")
-    parser.add_argument("-n", "--pretend", action="store_true", help="show what would be moved back; change nothing")
+    add_pretend(parser, "be moved back")
     args = parser.parse_args(argv)
     settings = context.settings()
     if settings is None:

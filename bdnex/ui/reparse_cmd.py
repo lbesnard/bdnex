@@ -9,7 +9,7 @@ from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.ui import color, context, describe, results
-from bdnex.ui.output import add_verbosity, progress, setup_logging
+from bdnex.ui.output import add_pretend, add_verbosity, progress, setup_logging
 
 OFFLINE = "bdnex.importer.registry:offline_fetch"
 DETAIL_STYLE = {"new details": "green", "updated details": "yellow", "dropped details": "red"}
@@ -40,7 +40,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
                     "Values already in the library are never erased; run `bdnex write` afterwards to put "
                     "them into the files.")
     parser.add_argument("query", nargs="*", help="albums to update, same terms as `bdnex ls` (default: all)")
-    parser.add_argument("-n", "--pretend", action="store_true", help="show what would change; change nothing")
+    add_pretend(parser, "change")
     add_verbosity(parser)
     args = parser.parse_args(argv)
     setup_logging(args.verbose)

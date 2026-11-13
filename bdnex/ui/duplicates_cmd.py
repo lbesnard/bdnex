@@ -5,14 +5,11 @@ from __future__ import annotations
 import argparse
 import sys
 
+from bdnex.formatting import human_size
 from bdnex.library import Library
 from bdnex.library.health import duplicates
 from bdnex.ui import color, context, results
-from bdnex.ui.output import progress
-
-
-def _megabytes(size: int) -> str:
-    return f"{size / 1024 / 1024:.1f} MB"
+from bdnex.ui.output import add_workers, progress
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -23,8 +20,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
                "when it meets one, and `bdnex trash` holds what was replaced.")
     parser.add_argument("--covers", action="store_true",
                         help="also compare the first pages of every file (reads each file once; slow on a big library)")
-    parser.add_argument("--workers", type=int, metavar="N",
-                        help="files read at once with --covers (0: the cores less one; 1: one by one); default: `import.workers`")
+    add_workers(parser, "files read with --covers")
     args = parser.parse_args(argv)
     settings = context.settings()
     if settings is None:
@@ -37,11 +33,11 @@ def run(argv: list[str], out=sys.stdout) -> int:
         workers = resolve_workers(settings.import_.workers if args.workers is None else args.workers)
         groups = duplicates(library, compute_covers=args.covers, progress=progress if args.covers else None, workers=workers)
         for group in groups:
-            lines = [f"{row['format']:<4} {row['page_count'] or '?':>4} pages  {_megabytes(row['size']):>9}  "
+            lines = [f"{row['format']:<4} {row['page_count'] or '?':>4} pages  {human_size(row['size']):>9}  "
                      f"{row['path']}{'  (spare)' if row.get('spare') else ''}" for row in group["files"]]
             print(results.block("", group["why"], lines, on, "group"), file=out)
     wasted = sum(sum(f["size"] for f in g["files"]) - max(f["size"] for f in g["files"]) for g in groups if g["why"] == "identical content")
     print(f"\n{len(groups)} group(s) of files that look like the same book."
-          + (f" Identical copies take {_megabytes(wasted)} too much." if wasted else "")
+          + (f" Identical copies take {human_size(wasted)} too much." if wasted else "")
           + ("" if args.covers else " (`--covers` also compares first pages.)"), file=out)
     return 0

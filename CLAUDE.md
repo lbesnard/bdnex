@@ -99,6 +99,9 @@ never ran in a test crashed that way), `uv run python -m compileall -q bdnex` (P
 - Tests: autouse fixtures isolate HOME and switch the automatic cover check off; `FakeWeb` (test/helpers.py) serves
   fixtures and a real picture. A bug found by reading code gets a test that fails without the fix.
 - Long commands show their phases with `banner()` and tint progress lines (`ui/output.py`); plain text in a pipe.
+- **Shared options and formats**: `-n` is `add_pretend(parser, "what would happen")` and `--workers` is
+  `add_workers(parser, ...)` (`ui/output.py`); sizes, durations and short paths are `bdnex/formatting.py`
+  (`human_size`, `human_duration`, `short_path`). Do not write another `megabytes`.
 - **A command starts with `ui/context.py`**: `settings = context.settings(...)` (config + the library file exists, one
   wording, exit code 1), `context.has_library(settings, "nothing to ...")`, `context.bad_query(err)` (exit code 2).
   Never write your own "No library yet" or `except ConfigError`.

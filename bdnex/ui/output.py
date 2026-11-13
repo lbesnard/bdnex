@@ -7,6 +7,8 @@ import re
 import sys
 import time
 
+from bdnex.formatting import human_duration
+
 
 def _tint(message: str, on: bool) -> str:
     """Colour the kinds of progress line the commands print (only on a terminal)."""
@@ -49,18 +51,20 @@ def add_verbosity(parser) -> None:
                         help="more detail: -v for info, -vv for debug (requests, cache hits)")
 
 
+def add_pretend(parser, what: str = "be done") -> None:
+    """``-n / --pretend``: the same flag and the same promise in every command (``what`` says what would happen)."""
+    parser.add_argument("-n", "--pretend", action="store_true", help=f"show what would {what}; change nothing")
+
+
+def add_workers(parser, unit: str, setting: str = "import.workers", note: str = "") -> None:
+    """``--workers N``: how many files at once; ``unit`` says what is done to a file, ``setting`` is the default."""
+    parser.add_argument("--workers", type=int, metavar="N",
+                        help=f"{unit} at once (0: the cores less one{note}; 1: one by one); default: `{setting}`")
+
+
 def setup_logging(verbosity: int) -> None:
     level = logging.WARNING if verbosity <= 0 else logging.INFO if verbosity == 1 else logging.DEBUG
     logging.basicConfig(level=level, format="%(levelname)-7s %(name)s: %(message)s", stream=sys.stderr, force=True)
-
-
-def human_duration(seconds: float) -> str:
-    seconds = int(round(seconds))
-    if seconds < 90:
-        return f"{seconds} s"
-    if seconds < 5400:
-        return f"{round(seconds / 60)} min"
-    return f"{seconds / 3600:.1f} h"
 
 
 class Bar:
