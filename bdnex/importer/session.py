@@ -133,7 +133,8 @@ class ImportSession:
         self._asked = False  # the user was asked about the file being matched
         self.series_mode = settings.import_.series if series is None else series  # ask | always | never
         self._covers: list[ImportResult] = []  # complete albums whose file's cover was never compared
-        self.cover_check = settings.cover.check if cover_check is None else cover_check
+        wanted_check = settings.cover.check if cover_check is None else cover_check
+        self.cover_check = covers.opencv_installed() if wanted_check == "auto" else bool(wanted_check)
         self._cover_off = False  # set when the check turns out to be impossible (no OpenCV)
 
     @property
@@ -512,11 +513,12 @@ class ImportSession:
         threshold = self.settings.cover.match_percentage
         if score >= threshold:
             return
-        choice = "keep"
+        choice, decided = "keep", False
         asking = self.prompter is not None and self.auto != "all" and not self.pretend
         if asking and hasattr(self.prompter, "cover_mismatch"):
             try:
                 choice = self.prompter.cover_mismatch(path, album_label(album), score, threshold)
+                decided = True  # you looked at it: nothing is left to review
             except NeedsTerminal:
                 choice = "keep"
         if choice == "unlink":
@@ -525,8 +527,10 @@ class ImportSession:
             result.outcome, result.album_id = SKIPPED, None
             result.note = f"cover differs ({score:.0f}% < {threshold:.0f}%): unlinked from {album_label(album)}"
         else:
-            result.note = "; ".join(n for n in (result.note, f"the cover differs from the album's ({score:.0f}% < {threshold:.0f}%): "
-                                                f"check `bdnex ls --files cover:..{threshold:.0f}`") if n)
+            if not decided and not self.pretend:
+                self.library.flag_review(path, f"the cover differs from the album's ({score:.0f}% < {threshold:.0f}%)")
+            result.note = "; ".join(n for n in (result.note, f"the cover differs from the album's ({score:.0f}% < {threshold:.0f}%)"
+                                                + ("" if decided else ": `bdnex review` to look at it")) if n)
 
     @staticmethod
     def _collect(paths: list[str]) -> list[str]:

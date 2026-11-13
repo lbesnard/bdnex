@@ -33,7 +33,7 @@ class FakePrompter:
 
 
 def make_settings(**overrides):
-    user = {"config_version": 2, "import": {"auto": True}, **overrides}
+    user = {"config_version": 2, "import": {"auto": True}, "cover": {"check": False}, **overrides}
     return build_settings(user)[0]
 
 

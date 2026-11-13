@@ -234,3 +234,12 @@ def find_cover(directory, source: str, source_id: str) -> Optional[str]:
         if (folder / f"{stem}{extension}").exists():
             return f"{folder.name}/{stem}{extension}"
     return None
+
+
+def opencv_installed() -> bool:
+    """Can covers be compared with SIFT (is OpenCV installed)?"""
+    try:
+        _opencv()
+    except CoverUnavailable:
+        return False
+    return True

@@ -73,9 +73,21 @@ def test_keeping_a_doubtful_match_flags_it_and_keeps_the_score(tmp_path):
     env = env_for(web_with_cover(1), Prompter("keep"))
     path = cbz_with_cover(tmp_path, FILE, 2)
     result = env.session.run([path]).results[0]
-    assert result.outcome == TAGGED and "the cover differs" in result.note and "cover:..40" in result.note
+    assert result.outcome == TAGGED and "the cover differs" in result.note
     assert env.lib.get_file(path)["album_id"] is not None and env.lib.get_file(path)["cover_score"] < 40
     assert [r["path"] for r in env.lib.query(["cover:..40"], files=True)] == [path]
+    assert env.lib.get_file(path)["review"] is None  # you looked at it and kept it: nothing to review
+
+
+def test_an_unattended_run_flags_the_doubtful_match_for_review(tmp_path):
+    env = env_for(web_with_cover(1), None)
+    path = cbz_with_cover(tmp_path, FILE, 2)
+    result = env.session.run([path]).results[0]
+    assert "`bdnex review`" in result.note
+    assert "cover differs" in env.lib.get_file(path)["review"]
+    assert [r["path"] for r in env.lib.query(["review:true"], files=True)] == [path]
+    env.lib.set_file_album(path, None)
+    assert env.lib.get_file(path)["review"] is None  # unlinked: no longer a match to question
 
 
 def test_unattended_runs_keep_the_match_and_say_so(tmp_path):
