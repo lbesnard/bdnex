@@ -99,7 +99,7 @@ def test_relative_paths_without_a_root_are_refused_with_an_explanation(tree):
     root, inside, _, db = tree
     with Library(db, root=root) as lib:
         lib.add_file(inside)
-    with pytest.raises(LibraryRootError, match="directory"):
+    with pytest.raises(LibraryRootError, match="collection_path"):
         Library(db)
     with Library(db, root=root) as lib:  # and the file is fine
         assert lib.get_file(inside)
@@ -129,7 +129,7 @@ def test_relocate_handles_outside_files_and_stores_relative_when_it_lands_in_the
 
 def test_for_settings_uses_the_configured_directory_and_ignores_the_placeholder(tree, tmp_path):
     root, inside, _, _ = tree
-    settings = build_settings({"config_version": 2, "library": str(tmp_path / "s.sqlite"), "directory": str(root)})[0]
+    settings = build_settings({"config_version": 2, "library": str(tmp_path / "s.sqlite"), "collection_path": str(root)})[0]
     with Library.for_settings(settings) as lib:
         assert lib.root == str(root)
     placeholder = build_settings({"config_version": 2, "library": str(tmp_path / "p.sqlite")})[0]

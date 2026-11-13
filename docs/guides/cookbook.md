@@ -6,7 +6,7 @@ Short answers to the things you will actually want to do, with the commands. Eve
 ## …get started? Where do the sitemaps come from?
 
 ```bash
-bdnex config --edit        # first time: set `directory` to your comics folder
+bdnex config --edit        # first time: set `collection_path` to your comics folder
 bdnex init                 # download the album list (the Bédéthèque sitemaps), with a progress bar
 bdnex import ~/comics      # match your files and read their album pages
 ```
@@ -83,7 +83,7 @@ bdnex import --fetch                     # later, as long as you like; Ctrl-C an
 ## …import again? Redo a file?
 
 Running `bdnex import ~/comics` again is cheap (and plain `bdnex import` does the same on the library folder of
-your configuration, `directory`, to pick up the files you added to it): files already done are only counted ("83 already"),
+your configuration, `collection_path`, to pick up the files you added to it): files already done are only counted ("83 already"),
 new files are matched, and albums whose pages were not read yet get them. A file you skipped is
 remembered and not asked about again.
 
@@ -133,7 +133,7 @@ erased from the file. `--force` lets the database win without asking. See
 
 ```bash
 bdnex move -n                # preview: each file's new path on the `->` line, nothing is touched
-bdnex move                   # write the tags, then rename into `directory` following `paths`
+bdnex move                   # write the tags, then rename into `collection_path` following `paths`
 bdnex move --copy            # leave the originals alone; the copy is what the library tracks
 ```
 
@@ -221,7 +221,7 @@ files are untouched. See [Maintaining](maintaining.md#starting-from-scratch).
 bdnex import ~/Downloads        # match, read the pages, then ONE question about where the files go
 ```
 
-Files outside your library folder (`directory`) are asked about once per run: **move** them in (tags
+Files outside your library folder (`collection_path`) are asked about once per run: **move** them in (tags
 written, names from your templates, CBR and PDF converted to CBZ), **copy** them, or **leave** them. Decide
 once with `import.outside: move`, or per run with `--move`, `--copy` or `--no-move`. Files you leave are
 remembered ("staged") with the path they came from:
@@ -271,11 +271,11 @@ album, so it is off unless you ask. See [Importing](importing.md#checking-covers
 
 ```bash
 mv ~/comics /mnt/nas/comics
-bdnex config --edit          # directory: /mnt/nas/comics
+bdnex config --edit          # collection_path: /mnt/nas/comics
 bdnex ls --missing           # nothing listed: everything was found
 ```
 
-Paths under `directory` are stored relative to it, so nothing in the database changes. See
+Paths under `collection_path` are stored relative to it, so nothing in the database changes. See
 [Maintaining](maintaining.md#paths-and-moving-your-collection).
 
 ## …back up my library?
@@ -291,7 +291,7 @@ downloaded again.
 | Message or symptom | What to do |
 |---|---|
 | `invalid bdnex config: …` | the message names the option; `bdnex config --edit`, compare with `bdnex config --defaults` |
-| `directory is not set` | set `directory` in the configuration; the library stores paths relative to it |
+| `collection_path is not set` | set `collection_path` in the configuration; the library stores paths relative to it |
 | `bdnex: command not found` after installing | run it with `uv run bdnex …` from a clone, or reinstall with the install script; an old install does not know the new commands |
 | albums stay *matched* (`[not fetched]` in `bdnex ls`) | the page could not be fetched: see "when Bédéthèque blocks my requests", then `bdnex import --fetch` |
 | `The destination is already taken by another file` | two files for one album: choose keep existing / new / both (see [Duplicates](versions.md)) |

@@ -31,7 +31,7 @@ The optional cover check needs OpenCV: `pip install 'bdnex[cover]'` (or `uv tool
 The first command creates `~/.config/bdnex/bdnex.yaml` and tells you to edit it:
 
 ```bash
-bdnex config --edit        # set `directory` to your comics folder
+bdnex config --edit        # set `collection_path` to your comics folder
 ```
 
 `bdnex config --path` prints where the file is, `bdnex config --defaults` lists every option.
@@ -42,7 +42,7 @@ See [Configuration](configuration.md).
 ```bash
 bdnex init                   # 1. download the album list, once (about a minute, 70 MB)
 bdnex import -n ~/comics     # 2. preview: what would be matched (nothing is changed)
-bdnex import ~/comics        # 3. import: you confirm each match (no folder: your `directory`)
+bdnex import ~/comics        # 3. import: you confirm each match (no folder: your `collection_path`)
 bdnex ls                     # 4. what is in the library
 bdnex ls --unmatched         #    ... and which files found no album
 bdnex write -n               # 5. preview the tags that would be written

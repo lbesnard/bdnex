@@ -118,7 +118,7 @@ Use `bdnex write <query>` instead if you only want the tags updated and the name
 
 ## Paths, and moving your collection
 
-The library stores the path of each file **relative to `directory`** (your comics folder in the
+The library stores the path of each file **relative to `collection_path`** (your comics folder in the
 configuration) when the file is under it, and the full path otherwise. A comic imported from
 somewhere else (`import.mode: in_place`) keeps working; it just keeps its absolute path.
 
@@ -126,17 +126,17 @@ Moving the whole collection is therefore one edit:
 
 ```bash
 mv ~/comics /mnt/nas/comics
-bdnex config --edit              # directory: /mnt/nas/comics
+bdnex config --edit              # collection_path: /mnt/nas/comics
 bdnex ls --missing               # nothing listed: every file was found
 ```
 
-Nothing in the database is rewritten. If you point `directory` at the wrong place, the files
-show up in `bdnex ls --missing` (and nothing is lost): fix `directory` and they are found again.
+Nothing in the database is rewritten. If you point `collection_path` at the wrong place, the files
+show up in `bdnex ls --missing` (and nothing is lost): fix `collection_path` and they are found again.
 
-- **First start after upgrading.** The first command that runs with your `directory` set stores
+- **First start after upgrading.** The first command that runs with your `collection_path` set stores
   the paths under it relative to it, once. A library with relative paths cannot be opened
-  without `directory`; bdnex says so and stops. An older bdnex refuses the database (schema v2).
-- **Files outside `directory`.** Moved folders outside it, or paths you want to change one by
+  without `collection_path`; bdnex says so and stops. An older bdnex refuses the database (schema v2).
+- **Files outside `collection_path`.** Moved folders outside it, or paths you want to change one by
   one, are handled by `bdnex relocate`:
 
 ```bash
@@ -146,7 +146,7 @@ bdnex relocate /old/folder /new/folder           # rewrite them (files and impor
 
 `relocate` only rewrites paths; it reads, hashes and touches nothing on disk. It refuses to
 run if a new path is already registered, and only matches whole folders (`/comics` does not
-rewrite `/comics2`). A path that lands under `directory` is stored relative.
+rewrite `/comics2`). A path that lands under `collection_path` is stored relative.
 
 ### Files moved or renamed by hand: `bdnex relink`
 
@@ -155,7 +155,7 @@ If you moved or renamed files outside bdnex (a file manager, another tool), they
 
 ```bash
 bdnex relink -n ~/comics            # preview: which missing file was found where
-bdnex relink ~/comics ~/Downloads   # link them again (default folder: `directory`)
+bdnex relink ~/comics ~/Downloads   # link them again (default folder: `collection_path`)
 ```
 
 A missing file is looked for by size and checksum in the folders you give. When exactly one copy is found, the
@@ -163,7 +163,7 @@ library points at it again, keeping its album, import history and edits. Several
 and what is not found stays in `ls --missing`. Nothing on disk is touched.
 
 `bdnex ls --files` and `path:` queries match the **stored** form, so `path:Series/Nains`
-works for files in the tree, whatever `directory` is.
+works for files in the tree, whatever `collection_path` is.
 
 ## Is the library healthy? `bdnex check`
 

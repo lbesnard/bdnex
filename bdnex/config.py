@@ -22,9 +22,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 CONFIG_VERSION = 2
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")  # `api.host` values that do not leave this machine
-PLACEHOLDER_DIRECTORY = "/path/to/comics/library"
+PLACEHOLDER_COLLECTION = "/path/to/comics/library"
 CONF_DIR = Path(__file__).resolve().parent / "conf"
 DEFAULTS_PATH = CONF_DIR / "bdnex.yaml"
+
+# Options that were renamed: old key -> new key (the old one still works, with a warning).
+RENAMED_KEYS = {"directory": "collection_path"}
 
 # Top-level options that existed once: key -> config_version that removed it.
 REMOVED_KEYS = {"bdnex": 2}
@@ -39,7 +42,7 @@ USER_TEMPLATE = """\
 config_version: {version}
 
 # REQUIRED before `bdnex import`: the folder that holds (or will hold) your comics.
-directory: {placeholder}
+collection_path: {placeholder}
 """
 
 
@@ -193,7 +196,7 @@ class Bedetheque(_Section):
 
 class Settings(_Section):
     config_version: int = Field(ge=0)
-    directory: str
+    collection_path: str
     library: str
     match: Match
     # "import" is a Python keyword
@@ -226,17 +229,17 @@ class Settings(_Section):
     @property
     def trash_path(self) -> Path:
         """Where replaced files go: ``trash.dir`` in the library folder (beside the database without one)."""
-        if self.directory and self.directory != PLACEHOLDER_DIRECTORY:
-            return Path(os.path.expanduser(self.directory)) / self.trash.dir
+        if self.collection_path and self.collection_path != PLACEHOLDER_COLLECTION:
+            return Path(os.path.expanduser(self.collection_path)) / self.trash.dir
         return self.library_path.parent / "trash"
 
-    def require_library_directory(self) -> Path:
+    def require_collection(self) -> Path:
         """The managed library root; refuses the untouched placeholder."""
-        if not self.directory or self.directory == PLACEHOLDER_DIRECTORY:
+        if not self.collection_path or self.collection_path == PLACEHOLDER_COLLECTION:
             raise ConfigError(
-                "`directory` is not set in your bdnex config: edit it "
+                "`collection_path` is not set in your bdnex config: edit it "
                 "(`bdnex config --edit`) and set it to your comics folder.")
-        return Path(os.path.expanduser(self.directory))
+        return Path(os.path.expanduser(self.collection_path))
 
 
 @dataclass
@@ -316,6 +319,15 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
     user = {k: v for k, v in user.items() if not (v is None and isinstance(defaults.get(k), dict))}
     warnings: list[str] = []
     errors: list[str] = []
+    for old, new in RENAMED_KEYS.items():  # an old name keeps working, once, with a warning
+        if old in user:
+            value = user.pop(old)
+            if new in user:
+                warnings.append(f"`{old}` is the old name of `{new}`, which is also set: `{old}` is ignored. Delete it.")
+            else:
+                user[new] = value
+                warnings.append(f"`{old}` is now called `{new}`: rename it in your config "
+                                "(`bdnex config --update` does it for you).")
 
     version = user.get("config_version", 0)
     if not isinstance(version, int) or isinstance(version, bool):
@@ -344,9 +356,9 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
     merged["config_version"] = version
     try:
         settings = Settings.model_validate(merged)
-        if settings.directory and settings.directory != PLACEHOLDER_DIRECTORY \
-                and not os.path.isdir(os.path.expanduser(settings.directory)):
-            warnings.append(f"`directory` ({settings.directory}) is not an existing folder: create it, or fix it "
+        if settings.collection_path and settings.collection_path != PLACEHOLDER_COLLECTION \
+                and not os.path.isdir(os.path.expanduser(settings.collection_path)):
+            warnings.append(f"`collection_path` ({settings.collection_path}) is not an existing folder: create it, or fix it "
                             "with `bdnex config --edit` (a disk that is not mounted?)")
         if settings.bedetheque.fetcher_endpoint and not settings.bedetheque.fetcher:
             warnings.append(
@@ -368,7 +380,7 @@ def ensure_user_config(path: Optional[Path] = None) -> tuple[Path, bool]:
     path.parent.mkdir(parents=True, exist_ok=True)
     from bdnex.config_template import complete
 
-    text, _ = complete(USER_TEMPLATE.format(version=CONFIG_VERSION, placeholder=PLACEHOLDER_DIRECTORY))
+    text, _ = complete(USER_TEMPLATE.format(version=CONFIG_VERSION, placeholder=PLACEHOLDER_COLLECTION))
     path.write_text(text, encoding="utf-8")
     return path, True
 
@@ -397,5 +409,5 @@ def load_config(path: Optional[Path] = None) -> LoadedConfig:
 
 FIRST_RUN_MESSAGE = (
     "Created a new bdnex configuration file: {path}\n"
-    "Please edit it before importing: at least set `directory` to your comics folder\n"
+    "Please edit it before importing: at least set `collection_path` to your comics folder\n"
     "(`bdnex config --edit` opens it, `bdnex config --defaults` lists every option).")

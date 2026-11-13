@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import subprocess
 import sys
@@ -76,13 +77,23 @@ def _update(path) -> int:
         print(f"Created {path}, with every option listed (commented out).")
         return 0
     text = path.read_text(encoding="utf-8")
+    from bdnex.config import RENAMED_KEYS
+
+    renamed = []
+    for old, new_name in RENAMED_KEYS.items():  # an option that changed its name keeps its value
+        text2 = re.sub(rf"(?m)^{old}:", f"{new_name}:", text)
+        if text2 != text:
+            renamed.append(f"{old} -> {new_name}")
+            text = text2
     new, added = complete(text)
-    if not added:
+    if not added and not renamed:
         print(f"{path} already lists every option.")
         return 0
     backup = path.with_name(path.name + ".bak")
-    backup.write_text(text, encoding="utf-8")
+    backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     path.write_text(new, encoding="utf-8")
+    for line in renamed:
+        print(f"Renamed the option {line}.")
     print(f"Added {len(added)} option(s) to {path}, commented out (the previous file is {backup.name}):")
     for name in added:
         print(f"  {name}")

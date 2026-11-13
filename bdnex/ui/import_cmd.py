@@ -26,7 +26,7 @@ def build_parser() -> argparse.ArgumentParser:
         prog="bdnex import", description=__doc__,
         epilog="With neither --match nor --fetch, both steps run. A step that is already done for a file "
                "is skipped (the report says so); --force redoes it.")
-    parser.add_argument("paths", nargs="*", help="comic files or folders (default: your library folder, `directory` in the "
+    parser.add_argument("paths", nargs="*", help="comic files or folders (default: your library folder, `collection_path` in the "
                                                  "configuration; with --fetch alone: everything in the library)")
     steps = parser.add_argument_group("steps (default: both)")
     steps.add_argument("-m", "--match", action="store_true",
@@ -137,10 +137,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
             return code
     if "match" in steps and not args.paths:  # no folder given: look at the library folder of the configuration
         try:
-            args.paths = [str(settings.require_library_directory())]
+            args.paths = [str(settings.require_collection())]
         except ConfigError:
             print("Give the files or folders to match, e.g. `bdnex import ~/comics`\n"
-                  "(without one, bdnex looks at `directory` from your configuration, which is not set:\n"
+                  "(without one, bdnex looks at `collection_path` from your configuration, which is not set:\n"
                   "`bdnex config --edit`).", file=sys.stderr)
             return 2
         print(f"No folder given: importing your library folder, {args.paths[0]}", file=sys.stderr)
@@ -259,7 +259,7 @@ def _record_as_is(args, settings, out) -> int:
     paths = args.paths
     if not paths:
         try:
-            paths = [str(settings.require_library_directory())]
+            paths = [str(settings.require_collection())]
         except ConfigError as err:
             print(f"Give the files or folders to record, e.g. `bdnex import --as-is ~/comics`: {err}", file=sys.stderr)
             return 2
@@ -372,7 +372,7 @@ def _place(args, settings, library, report, prompter=None):
                 if args.write:
                     plan.append((outside, WRITE))
     if any(mode != WRITE for _, mode in plan):
-        settings.require_library_directory()
+        settings.require_collection()
     never_ask = args.auto == "all"
     organizer = Organizer(library, settings, prompter=None if never_ask else InquirerPrompter(), force=never_ask)
     results = []

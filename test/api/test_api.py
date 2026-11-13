@@ -17,7 +17,7 @@ from bdnex.library import AlbumInfo, Library, SeriesInfo  # noqa: E402
 
 @pytest.fixture
 def settings(tmp_path):
-    user = {"config_version": 2, "directory": str(tmp_path / "comics"), "library": str(tmp_path / "lib.sqlite")}
+    user = {"config_version": 2, "collection_path": str(tmp_path / "comics"), "library": str(tmp_path / "lib.sqlite")}
     return build_settings(user)[0]
 
 

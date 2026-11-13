@@ -10,7 +10,7 @@ from bdnex.ui import serve_cmd  # noqa: E402
 @pytest.fixture
 def config(tmp_path, monkeypatch):
     path = tmp_path / "c.yaml"
-    path.write_text(f"config_version: 2\ndirectory: {tmp_path}/comics\nlibrary: {tmp_path}/lib.sqlite\n")
+    path.write_text(f"config_version: 2\ncollection_path: {tmp_path}/comics\nlibrary: {tmp_path}/lib.sqlite\n")
     (tmp_path / "lib.sqlite").write_bytes(b"")
     monkeypatch.setenv("BDNEX_CONFIG", str(path))
     return path
@@ -37,6 +37,6 @@ def test_local_by_default(config, monkeypatch):
 
 def test_no_library_yet(tmp_path, monkeypatch, capsys):
     path = tmp_path / "c.yaml"
-    path.write_text(f"config_version: 2\ndirectory: {tmp_path}/comics\nlibrary: {tmp_path}/none.sqlite\n")
+    path.write_text(f"config_version: 2\ncollection_path: {tmp_path}/comics\nlibrary: {tmp_path}/none.sqlite\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(path))
     assert serve_cmd.run([]) == 1 and "No library yet" in capsys.readouterr().err

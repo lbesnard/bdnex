@@ -88,7 +88,7 @@ def test_facts_of_a_registered_and_a_new_file(make_cbz):
 def lib_env(tmp_path, make_cbz):
     root = tmp_path / "comics"
     root.mkdir()
-    settings = build_settings({"config_version": 2, "directory": str(root), "library": str(tmp_path / "l.sqlite")})[0]
+    settings = build_settings({"config_version": 2, "collection_path": str(root), "library": str(tmp_path / "l.sqlite")})[0]
     library = Library.for_settings(settings)
     album = library.add_album(AlbumInfo("b", "1", "T", series=SeriesInfo("b", "s", "S"), volume=1))
     path = root / "S" / "T.cbr"
@@ -185,7 +185,7 @@ def cmd(tmp_path, monkeypatch, make_cbz):
     root = tmp_path / "comics"
     root.mkdir()
     conf = tmp_path / "bdnex.yaml"
-    conf.write_text(yaml.safe_dump({"config_version": 2, "directory": str(root), "library": str(tmp_path / "l.sqlite")}))
+    conf.write_text(yaml.safe_dump({"config_version": 2, "collection_path": str(root), "library": str(tmp_path / "l.sqlite")}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     settings = build_settings(yaml.safe_load(conf.read_text()))[0]
     with Library.for_settings(settings) as library:

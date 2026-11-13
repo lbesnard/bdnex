@@ -63,7 +63,7 @@ def test_import_command_rejects_invalid_config(tmp_path, monkeypatch, capsys):
 def test_main_dispatches_import(monkeypatch, tmp_path):
     from bdnex import ui
     conf = tmp_path / "c.yaml"
-    conf.write_text("config_version: 2\ndirectory: ~/c\n")
+    conf.write_text("config_version: 2\ncollection_path: ~/c\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     seen = {}
     monkeypatch.setattr("bdnex.ui.import_cmd.run", lambda argv: seen.setdefault("argv", argv) and 0)

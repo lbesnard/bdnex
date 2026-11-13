@@ -11,7 +11,7 @@
 | `bdnex write` / `move`: tags, rename, convert CBR/PDF, repair damaged archives | available |
 | `bdnex reparse`: rebuild albums from the stored pages, offline | available |
 | `bdnex edit`: change metadata by hand, kept across re-imports | available |
-| Paths relative to `directory`; `bdnex relocate` | available |
+| Paths relative to `collection_path`; `bdnex relocate` | available |
 | `bdnex reset`: empty the library, keep sitemaps and fetched pages | available |
 | Duplicates: side-by-side comparison, spare versions in `_versions/`, `bdnex trash` | available |
 | Files from outside the library folder: `import.outside`, staged files | available |
