@@ -6,13 +6,13 @@ import argparse
 import os
 import sys
 
-from bdnex.config import ConfigError, load_config
+from bdnex.config import ConfigError
 from bdnex.importer.bedetheque.fetchers import FetcherError
 from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.importer.session import (ALREADY, DUPLICATE, FAILED, OUTCOME_LABELS, PARTIAL, PRETEND, SKIPPED, TAGGED,
                                     ImportSession, NeedsTerminal)
 from bdnex.library import Library
-from bdnex.ui import color, describe, results
+from bdnex.ui import color, context, describe, results
 from bdnex.ui.output import Bar, add_verbosity, banner, progress, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
@@ -126,10 +126,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
     steps, notes = resolve_steps(args)
     for note in notes:
         print(note, file=sys.stderr)
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
+    settings = context.settings(library=False)
+    if settings is None:
         return 1
     if args.as_is:
         return _record_as_is(args, settings, out)
@@ -249,8 +247,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
 
 def _skipped_paths(args, settings) -> int:
     """``--skipped``: the files skipped at an earlier import (and still there) become the files to work on."""
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}): nothing was skipped.", file=sys.stderr)
+    if not context.has_library(settings, "nothing was skipped."):
         return 1
     with Library.for_settings(settings, readonly=True) as library:
         rows = [row for row in library.unmatched() if row["outcome"] == "skipped"]
@@ -269,8 +266,7 @@ def _select_paths(args, settings) -> int:
     """``--select``: the library files that match the terms become the files to work on."""
     from bdnex.library.query import QueryError
 
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}): nothing to select from.", file=sys.stderr)
+    if not context.has_library(settings, "nothing to select from."):
         return 1
     try:
         with Library.for_settings(settings, readonly=True) as library:

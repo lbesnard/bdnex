@@ -7,10 +7,9 @@ import os
 import shutil
 import sys
 
-from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.organizer.organizer import Organizer
-from bdnex.ui import color, results
+from bdnex.ui import color, context, results
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -24,13 +23,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
     parser.add_argument("batch", nargs="?", help="the run to take back: its name from the list, or `last`")
     parser.add_argument("-n", "--pretend", action="store_true", help="show what would be moved back; change nothing")
     args = parser.parse_args(argv)
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
-        return 1
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}).", file=sys.stderr)
+    settings = context.settings()
+    if settings is None:
         return 1
 
     on = color.enabled(out)

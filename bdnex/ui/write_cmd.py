@@ -7,11 +7,11 @@ import os
 import sys
 from typing import Optional
 
-from bdnex.config import ConfigError, load_config
+from bdnex.config import ConfigError
 from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.organizer.organizer import auto_workers, COPY, FAILED, MOVE, WRITE, Organizer, WriteAborted
-from bdnex.ui import color, results
+from bdnex.ui import color, context, results
 from bdnex.ui.output import Bar, add_verbosity, banner, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
@@ -175,15 +175,8 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
     args = _parser(command).parse_args(argv)
     setup_logging(args.verbose)
     mode = WRITE if command in ("write", "repair") else (COPY if args.copy else MOVE)
-    try:
-        settings = load_config().settings
-        if mode != WRITE:
-            settings.require_collection()
-    except ConfigError as err:
-        print(err, file=sys.stderr)
-        return 1
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}): run `bdnex import <folder>` first.", file=sys.stderr)
+    settings = context.settings(collection=mode != WRITE)
+    if settings is None:
         return 1
 
     if args.pretend:
@@ -194,8 +187,7 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
             rows = library.query([*args.query, "corrupted:true"] if command == "repair"
                                  else [*args.query, "tagged:true"], files=True)
         except QueryError as err:
-            print(f"bad query: {err}", file=sys.stderr)
-            return 2
+            return context.bad_query(err)
         organizer = Organizer(library, settings, prompter=None if args.force else InquirerPrompter(),
                               pretend=args.pretend, force=args.force)
         workers = args.workers if args.workers is not None else settings.write.workers

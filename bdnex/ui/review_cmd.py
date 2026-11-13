@@ -5,11 +5,11 @@ from __future__ import annotations
 import argparse
 import sys
 
-from bdnex.config import ConfigError, load_config
 from bdnex.importer import covers
 from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.ui.describe import label
+from bdnex.ui import context
 
 
 def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
@@ -22,13 +22,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     parser.add_argument("query", nargs="*", help="only these files, same terms as `bdnex ls --files` (e.g. series:nains)")
     parser.add_argument("-l", "--list", action="store_true", help="only list the flagged files and why; ask nothing")
     args = parser.parse_args(argv)
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
-        return 1
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}).", file=sys.stderr)
+    settings = context.settings()
+    if settings is None:
         return 1
 
     rematch: list[str] = []
@@ -38,8 +33,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
         try:
             rows = library.query(["review:true", *args.query], files=True)
         except QueryError as err:
-            print(f"bad query: {err}", file=sys.stderr)
-            return 2
+            return context.bad_query(err)
         if not rows:
             print("Nothing to review.", file=out)
             return 0

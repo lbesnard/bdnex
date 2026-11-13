@@ -6,8 +6,8 @@ import argparse
 import os
 import sys
 
-from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
+from bdnex.ui import context
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -22,13 +22,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
     parser.add_argument("new", help="the folder they are in now")
     parser.add_argument("-n", "--pretend", action="store_true", help="show what would change; change nothing")
     args = parser.parse_args(argv)
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
-        return 1
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}).", file=sys.stderr)
+    settings = context.settings()
+    if settings is None:
         return 1
 
     with Library.for_settings(settings, sync_sources=False) as library:  # the sources are about to change

@@ -17,10 +17,9 @@ from typing import Any, Callable
 
 import yaml
 
-from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.query import QueryError
-from bdnex.ui import describe
+from bdnex.ui import context, describe
 
 INT_FIELDS = {"volume": (0, 9999), "year": (0, 9999), "month": (1, 12), "day": (1, 31), "pages": (0, 99999)}
 TEXT_FIELDS = ("title", "alternate_number", "publisher", "language", "format", "isbn", "summary")
@@ -244,13 +243,8 @@ def run(argv: list[str], out=sys.stdout, editor: Callable[[str], str] = open_edi
     parser.add_argument("-n", "--pretend", action="store_true", help="show the changes, store nothing")
     args = parser.parse_args(argv)
 
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
-        return 1
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}): run `bdnex import <folder>` first.", file=sys.stderr)
+    settings = context.settings()
+    if settings is None:
         return 1
     try:
         assignments = parse_assignments(args.set)
@@ -262,8 +256,7 @@ def run(argv: list[str], out=sys.stdout, editor: Callable[[str], str] = open_edi
         try:
             rows = [r for r in library.query(args.query) if r.get("id")]
         except QueryError as err:
-            print(f"bad query: {err}", file=sys.stderr)
-            return 2
+            return context.bad_query(err)
         albums = [library.get_album(r["id"]) for r in rows]
         if not albums:
             print("No album matches that query.", file=sys.stderr)

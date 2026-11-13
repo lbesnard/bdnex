@@ -6,8 +6,8 @@ import argparse
 import datetime
 import sys
 
-from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
+from bdnex.ui import context
 
 LABELS = (("files", "files"), ("albums", "albums"), ("series", "series"), ("people", "people"),
           ("genres", "genres"), ("publishers", "publishers"), ("import_log", "import log entries"))
@@ -25,13 +25,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     parser.add_argument("--no-backup", action="store_true",
                         help="do not copy the database to <library>.before-reset-<date> first")
     args = parser.parse_args(argv)
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
-        return 1
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}): nothing to reset.", file=sys.stderr)
+    settings = context.settings(doing="nothing to reset.")
+    if settings is None:
         return 1
 
     with Library.for_settings(settings) as library:

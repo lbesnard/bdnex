@@ -5,10 +5,9 @@ from __future__ import annotations
 import argparse
 import sys
 
-from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.health import duplicates
-from bdnex.ui import color, results
+from bdnex.ui import color, context, results
 from bdnex.ui.output import progress
 
 
@@ -27,13 +26,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
     parser.add_argument("--workers", type=int, metavar="N",
                         help="files read at once with --covers (0: the cores less one; 1: one by one); default: `import.workers`")
     args = parser.parse_args(argv)
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
-        return 1
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}).", file=sys.stderr)
+    settings = context.settings()
+    if settings is None:
         return 1
 
     on = color.enabled(out)
