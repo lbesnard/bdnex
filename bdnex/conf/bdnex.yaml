@@ -55,6 +55,7 @@ write:
   corrupted: ask                        # when a damaged archive can't be repaired: ask | leave | move (as is, no tags)
   size_tolerance: 20                    # % the new archive may differ in size from the original (0 = no check)
   size_change: ask                      # when it differs more than that: ask | accept | refuse
+  workers: 0                            # files written at once by write / move (0: the cores less one, at most 4; 1: one by one)
 
 paths:
   oneshot: 'OneShot/$language/$title - $authors/$title - $authors'

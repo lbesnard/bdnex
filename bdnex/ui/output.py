@@ -131,6 +131,15 @@ class Bar:
             print("\r\x1b[K" + self._fit(self.line(detail)), end="", file=self.stream, flush=True)
             self._shown = True
 
+    def say(self, text: str, stream=None) -> None:
+        """Print ``text`` on its own lines above the bar (the bar line is cleared first, and drawn again by the next
+        update). ``stream`` is where the text goes (the bar's own stream by default)."""
+        target = stream or self.stream
+        if self.tty and self._shown:
+            print("\r\x1b[K", end="", file=self.stream, flush=True)
+            self._shown = False
+        print(text, file=target, flush=True)
+
     def finish(self, message: str = "") -> None:
         """End the bar (clearing the line on a terminal) and print ``message``."""
         if self.tty and self._shown:

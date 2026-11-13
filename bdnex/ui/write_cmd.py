@@ -10,9 +10,9 @@ from typing import Optional
 from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.query import QueryError
-from bdnex.organizer.organizer import COPY, FAILED, MOVE, WRITE, FileResult, Organizer, WriteAborted
+from bdnex.organizer.organizer import auto_workers, COPY, FAILED, MOVE, WRITE, FileResult, Organizer, WriteAborted
 from bdnex.ui import color
-from bdnex.ui.output import add_verbosity, progress, setup_logging
+from bdnex.ui.output import Bar, add_verbosity, banner, progress, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
 OUTCOMES = ("repaired", "written", "moved", "copied", "unchanged", "skipped", "failed", "pretend")
@@ -31,6 +31,8 @@ def _parser(command: str) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog=f"bdnex {command}", description=doc)
     parser.add_argument("query", nargs="*", help="files to process, same terms as `bdnex ls --files`")
     parser.add_argument("-n", "--pretend", action="store_true", help="show what would be done; change nothing")
+    parser.add_argument("--workers", type=int, metavar="N",
+                        help="files written at once (0: the cores less one, at most 4; 1: one by one); default: `write.workers`")
     parser.add_argument("--force", action="store_true",
                         help="never ask: the database wins, name clashes get a number, originals are kept")
     if command == "move":
@@ -69,29 +71,106 @@ def _steps(note: str, dest: Optional[str]) -> list[str]:
             and step != "stays where it is"]
 
 
-def report(results, out, root: Optional[str] = None) -> int:
+def format_result(r, root: Optional[str], on: bool, number: int = 0, total: int = 0) -> str:
+    """One file's block: what happened, where it went, the steps, how long it took."""
+    label = "would do" if r.outcome == "pretend" else r.outcome
+    style = LABEL_STYLE.get(r.outcome, "dim")
+    counter = f"{color.paint(f'[{number}/{total}]', 'dim', on)} " if number else ""
+    lines = [f"\n{counter}{color.paint('●', style, on)} {color.paint(label, style, on)}  "
+             f"{color.paint(os.path.basename(r.path), 'bold', on)}"]
+    if r.dest and r.dest != r.path:
+        same, old, new = _changed_parts(_short(r.path, root), _short(r.dest, root))
+        lines.append(f"    from  {color.paint(same, 'dim', on)}{color.paint(old, 'red', on)}")
+        lines.append(f"    to    {color.paint(same, 'dim', on)}{color.paint(new, 'green', on)}")
+    elif r.outcome == "pretend" and r.dest:
+        lines.append(f"    {color.paint('stays where it is', 'dim', on)}  {color.paint(_short(r.path, root), 'dim', on)}")
+    steps = _steps(r.note, r.dest) if r.outcome == "pretend" else [r.note] if r.note else []
+    for step in steps:
+        lines.append(f"    {color.paint('•', 'dim', on)} {step}")
+    if r.seconds >= 0.05 and r.outcome != "pretend":
+        lines.append(f"    {color.paint(f'{r.seconds:.1f} s', 'dim', on)}")
+    return "\n".join(lines)
+
+
+def summary(results, out) -> int:
     on = color.enabled(out)
-    for r in results:
-        label = "would do" if r.outcome == "pretend" else r.outcome
-        print(f"\n{color.paint('●', LABEL_STYLE.get(r.outcome, 'dim'), on)} "
-              f"{color.paint(label, LABEL_STYLE.get(r.outcome, 'dim'), on)}  "
-              f"{color.paint(os.path.basename(r.path), 'bold', on)}", file=out)
-        if r.dest and r.dest != r.path:
-            same, old, new = _changed_parts(_short(r.path, root), _short(r.dest, root))
-            print(f"    from  {color.paint(same, 'dim', on)}{color.paint(old, 'red', on)}", file=out)
-            print(f"    to    {color.paint(same, 'dim', on)}{color.paint(new, 'green', on)}", file=out)
-        elif r.outcome == "pretend" and r.dest:
-            print(f"    {color.paint('stays where it is', 'dim', on)}  {color.paint(_short(r.path, root), 'dim', on)}",
-                  file=out)
-        steps = _steps(r.note, r.dest) if r.outcome == "pretend" else [r.note] if r.note else []
-        for step in steps:
-            print(f"    {color.paint('•', 'dim', on)} {step}", file=out)
-    summary = ", ".join(f"{sum(1 for r in results if r.outcome == o)} {o}" for o in OUTCOMES
-                        if any(r.outcome == o for r in results))
-    print(f"\n{color.rule()}\n{len(results)} file(s): {summary or 'nothing to do'}", file=out)
+    counts = ", ".join(f"{sum(1 for r in results if r.outcome == o)} {o}" for o in OUTCOMES
+                       if any(r.outcome == o for r in results))
+    print(f"\n{color.rule()}\n{len(results)} file(s): {counts or 'nothing to do'}", file=out)
     if any(r.outcome == "pretend" for r in results):
         print("Preview only: nothing was changed. Run the same command without -n to do it.", file=out)
-    return 1 if any(r.outcome == FAILED for r in results) else 0
+    failed = [r for r in results if r.outcome == FAILED]
+    if failed:
+        print(color.paint(f"{len(failed)} file(s) failed (listed above); the others were not affected.", "red", on), file=out)
+    return 1 if failed else 0
+
+
+def report(results, out, root: Optional[str] = None) -> int:
+    """Every result, then the summary (for callers that did not stream the results as they came)."""
+    on = color.enabled(out)
+    for r in results:
+        print(format_result(r, root, on), file=out)
+    return summary(results, out)
+
+
+class QuietPrompter:
+    """Wraps the prompter so that a question starts on a clean line: the progress bar is cleared first."""
+
+    def __init__(self, prompter, bar):
+        self._prompter, self._bar = prompter, bar
+
+    def __getattr__(self, name):
+        target = getattr(self._prompter, name)
+        if not callable(target):
+            return target
+
+        def ask(*args, **kwargs):
+            self._bar.say("")
+            return target(*args, **kwargs)
+        return ask
+
+
+LEGEND = ("Each file: its archive is read, a new CBZ is written with the ComicInfo.xml and the pages byte for byte, the "
+          "new file is checked against the original pages, then put in place (the original goes only after that).")
+
+
+def _run_files(organizer, rows, mode, out, root, command: str, workers: int = 1) -> list:
+    """Process the files showing what happens: a bar with the file and the step on a terminal, and each result as soon
+    as it is known (not all of them at the end)."""
+    on = color.enabled(out)
+    bar = Bar(len(rows), "Files") if rows and sys.stderr.isatty() and not organizer.pretend else None
+    if rows and not organizer.pretend:
+        banner(f"{'Writing tags into' if mode == WRITE else 'Copying' if mode == COPY else 'Moving'} {len(rows)} file(s)")
+        print(LEGEND, file=sys.stderr, flush=True)
+    if bar:
+        organizer.on_stage = lambda path, text: bar.refresh(f"{os.path.basename(path)} · {text}")
+        if organizer.prompter is not None:
+            organizer.prompter = QuietPrompter(organizer.prompter, bar)
+
+    def starting(text: str) -> None:  # "[n/N] name"
+        if bar:
+            bar.refresh(text.split("] ", 1)[-1])
+
+    def done(number: int, total: int, result) -> None:
+        block = format_result(result, root, on, number, total)
+        if bar:
+            bar.say(block, stream=out)
+            bar.update(os.path.basename(rows[number - 1]["path"]))
+        else:
+            print(block, file=out, flush=True)
+
+    def busy(names: list[str]) -> None:  # several files at once: which ones
+        if bar and names:
+            bar.refresh(" · ".join(names) + f"  ({len(names)} at once)")
+
+    if workers > 1 and rows and not organizer.pretend:
+        print(f"Working on up to {workers} files at a time (`--workers`, `write.workers`). A file that needs your answer "
+              "waits for its turn.", file=sys.stderr, flush=True)
+    try:
+        return organizer.run(rows, mode, progress=starting, on_result=done, workers=workers, on_busy=busy)
+    finally:
+        if bar:
+            bar.finish()
 
 
 def aborted_message(path: str, command: str = "write") -> str:
@@ -138,8 +217,10 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
                 except Exception as err:
                     results.append(FileResult(row["path"], FAILED, note=str(err)))
         else:
-            results = organizer.run(rows, mode, progress=progress)
-    code = report(results, out, settings.collection_path)
+            workers = args.workers if args.workers is not None else settings.write.workers
+            results = _run_files(organizer, rows, mode, out, settings.collection_path, command,
+                                 workers or auto_workers())
+    code = summary(results, out) if command != "repair" else report(results, out, settings.collection_path)
     if organizer.aborted_at:
         print(aborted_message(organizer.aborted_at, command), file=out)
     return code

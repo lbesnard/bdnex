@@ -988,3 +988,79 @@ def test_a_preview_says_when_the_destination_is_taken(lib, make_cbz, tmp_path):
     other = registered(lib, make_cbz("b.cbz"), album)
     note = Organizer(lib, settings, pretend=True).process(other, MOVE).note
     assert "destination already exists" in note
+
+
+# ----------------------------------------------------------------- several files at once
+@pytest.fixture
+def shared(tmp_path, make_cbz):
+    """A library in a real file (workers open their own connection to it), its settings, and six files to move."""
+    settings = settings_for(tmp_path, library=str(tmp_path / "shared.sqlite"))
+    library = Library.for_settings(settings)
+    rows = []
+    for n in range(1, 7):
+        info = AlbumInfo("bedetheque", f"7{n}", f"Titre {n}", series=SeriesInfo("bedetheque", "70", "Foo"), volume=n, language="fr")
+        rows.append(registered(library, make_cbz(f"in{n}.cbz", pages=3 + n), library.add_album(info)))
+    yield settings, library, rows
+    library.close()
+
+
+def test_several_files_are_worked_on_at_once_with_the_same_result_as_one_by_one(shared):
+    settings, lib, rows = shared
+    seen = []
+    results = Organizer(lib, settings, force=True).run(rows, MOVE, workers=3, on_result=lambda n, t, r: seen.append((n, t, r.outcome)))
+    assert [r.outcome for r in results] == ["moved"] * 6 and [n for n, _, _ in seen] == [1, 2, 3, 4, 5, 6]  # in order
+    assert all(r.seconds > 0 for r in results)
+    for row, result in zip(rows, results):
+        assert os.path.exists(result.dest) and not os.path.exists(row["path"])
+        assert lib.get_file(result.dest) is not None and lib.get_file(row["path"]) is None  # the library followed
+        assert "ComicInfo.xml" in zip_names(result.dest)
+    assert len(lib.batches()) == 1 and lib.batches()[0]["moves"] == 6  # one undoable run
+
+
+def test_files_with_the_same_destination_are_not_written_at_once(shared, make_cbz):
+    settings, lib, rows = shared
+    album = add_series_album(lib)
+    same = [registered(lib, make_cbz(f"same{n}.cbz", pages=3 + n), album) for n in range(3)]  # one album, three files
+    organizer = Organizer(lib, settings, force=True)
+    assert organizer._independent(same, MOVE) == set()  # all three would land on the same name
+    results = organizer.run(same, MOVE, workers=3)
+    dests = [r.dest for r in results if r.outcome == "moved"]
+    assert len(dests) == len(set(dests)) == 3 and all(os.path.exists(d) for d in dests)  # none overwrote another
+
+
+def test_a_file_that_needs_an_answer_is_done_in_the_main_process_in_order(shared):
+    import zipfile as zf
+    settings, lib, rows = shared
+    settings.write.conflict = "ask"
+    conflicting = rows[2]  # a ComicInfo.xml that disagrees with the library: a question
+    with zf.ZipFile(conflicting["path"], "a") as archive:
+        archive.writestr("ComicInfo.xml", "<ComicInfo><Title>Another title</Title><Series>Elsewhere</Series></ComicInfo>")
+    lib.refresh_file(conflicting["path"])
+    prompter = FakePrompter()
+    prompter.conflict_answer = "database"
+    results = Organizer(lib, settings, prompter=prompter).run(rows, MOVE, workers=3)
+    assert [r.outcome for r in results] == ["moved"] * 6
+    assert [asked[0] for asked in prompter.asked if asked[0] == "conflict"] == ["conflict"]  # asked once, for that file only
+    assert comicinfo_of(results[2].dest)["Title"] == "Titre 3"  # and its answer was used
+
+
+def test_the_busy_callback_names_the_files_being_worked_on(shared, monkeypatch):
+    import time
+    from bdnex.organizer import archive as arch
+    settings, lib, rows = shared
+    real = arch.write_cbz
+    monkeypatch.setattr(arch, "write_cbz", lambda *a, **k: (time.sleep(0.7), real(*a, **k))[1])  # slow, in every worker
+    names = []
+    Organizer(lib, settings, force=True).run(rows, MOVE, workers=3, on_busy=lambda n: names.append(list(n)))
+    assert names and max(len(n) for n in names) == 3 and all(x.endswith(".cbz") for n in names for x in n)
+
+
+def test_one_worker_or_a_preview_is_the_plain_serial_run(shared):
+    settings, lib, rows = shared
+    preview = Organizer(lib, settings, pretend=True).run(rows, MOVE, workers=4)
+    assert [r.outcome for r in preview] == ["pretend"] * 6 and all(os.path.exists(r["path"]) for r in rows)
+    stages = []
+    organizer = Organizer(lib, settings, force=True)
+    organizer.on_stage = lambda path, text: stages.append(text)
+    organizer.run(rows[:1], MOVE, workers=1)
+    assert stages[0].startswith("reading the archive") and "putting it in place" in stages and stages[-1] == "updating the library"

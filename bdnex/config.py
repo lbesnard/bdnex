@@ -132,6 +132,7 @@ class Write(_Section):
     corrupted: Literal["ask", "leave", "move"]
     size_tolerance: float = Field(ge=0, le=1000)
     size_change: Literal["ask", "accept", "refuse"]
+    workers: int = Field(ge=0, le=16)  # files written at once by write / move; 0: the cores less one, at most 4
 
     @field_validator("delete_original", mode="before")
     @classmethod

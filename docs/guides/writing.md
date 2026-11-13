@@ -13,6 +13,33 @@ The library database holds the metadata. Two commands push it into your files:
 matched to an album are processed (`bdnex import` first). Options: `-n/--pretend` shows what would
 happen and changes nothing, `--force` never asks.
 
+## What you see while it runs
+
+Each file goes through the same steps, and a long run shows them:
+
+1. its archive is **read** (a PDF page by page);
+2. a **new CBZ is written** next to it: the pages byte for byte, plus `ComicInfo.xml`;
+3. the new file is **checked** against the original pages, and made sure to be on the disk;
+4. it is **put in place** (renamed into the collection, for `move`);
+5. the original is **removed** (when it moved or was converted, and `write.delete_original` allows it), and the
+   **library is updated**.
+
+Nothing replaces the original until step 3 has passed. On a terminal a bar shows the file and the step it is at
+(`Nains - T02.cbz · checking the new archive against the original pages`); as soon as a file is done its result appears
+above the bar: what happened, where it went, the steps, how long it took. Without a terminal each result is just printed.
+`-v` also logs every step of every file (and `bdnex undo` takes a `move` back).
+
+### Several files at once
+
+`write` and `move` work on several files at the same time (`write.workers`, or `--workers N` for one run; `0` is the
+cores less one, at most 4, and `1` is one by one). The bar then lists the files being worked on
+(`file a.cbz · file b.cbz · file c.cbz  (3 at once)`) and the results still come in order. Files that need no answer from you
+are written in worker processes; a file that needs a decision (a ComicInfo.xml that disagrees with the library, a name
+that is taken, a missing value, a size that changed) is handed back and done in the main process, in its turn, with the
+usual question, so a question never comes from a file that is half written. Files that would land on the same name are
+never written at the same time. A preview is not parallel (it is instant). Every file is held in memory while it is worked
+on, so with big PDFs use fewer workers.
+
 ## Previewing: `-n`
 
 `bdnex write -n`, `move -n` and `repair -n` change nothing: no file is written, converted, moved or deleted, the

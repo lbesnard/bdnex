@@ -15,11 +15,13 @@ from __future__ import annotations
 import datetime
 import errno
 import logging
+import multiprocessing
 import os
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional, Protocol
+from typing import Any, Callable, Optional, Protocol
 
 from bdnex import trash
 from bdnex.config import Settings
@@ -110,12 +112,57 @@ class FileResult:
     outcome: str
     dest: Optional[str] = None
     note: str = ""
+    seconds: float = 0.0  # how long the file took
 
 
 def album_id_of(row: dict[str, Any]) -> Optional[int]:
     """Album id of a file row. ``ls --files`` rows carry it as ``id`` (the file is ``file_id``);
     ``Library.get_file`` rows carry it as ``album_id`` (and ``id`` is the file)."""
     return row["id"] if "file_id" in row else row.get("album_id")
+
+
+class Deferred(Exception):
+    """A decision is needed from the user: the file is done in the main process, where the questions are asked."""
+
+
+class _Deferring:
+    """Stands in for the prompter in a worker process: any question means "ask in the main process"."""
+
+    def __getattr__(self, name):
+        def ask(*args, **kwargs):
+            raise Deferred(name)
+        return ask
+
+
+_WORKER: Optional["Organizer"] = None  # the organizer of this worker process (see :func:`_init_worker`)
+_STATE = None  # shared memory, one byte per file: 0 waiting, 1 being worked on, 2 done (set before the workers are forked)
+
+
+def _init_worker(settings, force: bool, batch: str) -> None:
+    global _WORKER
+    library = Library.for_settings(settings)  # its own connection: a connection is not shared with a forked process
+    _WORKER = Organizer(library, settings, prompter=None if force else _Deferring(), force=force)
+    _WORKER.batch = batch
+
+
+def _work(task):
+    """One file in a worker: its result, or ``None`` when the main process has to do it (a question, an abort)."""
+    index, row, mode = task
+    _STATE[index] = 1
+    try:
+        return _WORKER.process(row, mode)
+    except (Deferred, WriteAborted):
+        return None
+    except Exception as err:
+        logger.exception(f"{row['path']} failed")
+        return FileResult(row["path"], FAILED, note=str(err))
+    finally:
+        _STATE[index] = 2
+
+
+def auto_workers() -> int:
+    """How many files are worked on at once when nothing says: the cores less one, at most 4 (a file is held in memory)."""
+    return max(1, min(4, (os.cpu_count() or 2) - 1))
 
 
 JUNK_FILES = {".DS_Store", "Thumbs.db", "thumbs.db", "desktop.ini", "Desktop.ini", ".directory"}
@@ -131,22 +178,104 @@ class Organizer:
         self.pretend = pretend
         self.force = force
         self.batch = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")  # what `bdnex undo` takes back together
+        self.on_stage: Optional[Callable[[str, str], None]] = None  # (file, what is happening), for a live display
+        self._current = ""
 
     # ------------------------------------------------------------------ run
-    def run(self, rows: list[dict[str, Any]], mode: str, progress=None) -> list[FileResult]:
+    def run(self, rows: list[dict[str, Any]], mode: str, progress=None, on_result=None, workers: int = 1,
+            on_busy=None) -> list[FileResult]:
+        """Process the files in order. ``progress(text)`` is told which file starts, ``on_result(number, total, result)``
+        gets each result as soon as it is known (so a long run shows what it does, not only at the end).
+
+        With ``workers`` > 1 files that need no answer from you are worked on in several processes at once, and
+        ``on_busy(names)`` is told, about twice a second, which ones are being worked on. A file that needs a decision
+        (a conflict, a name clash, a missing value, a size change) is done here, in order, with the real questions."""
+        if workers > 1 and len(rows) > 1 and not self.pretend and "fork" in multiprocessing.get_all_start_methods():
+            return self._run_parallel(rows, mode, progress, on_result, workers, on_busy)
         results = []
         for number, row in enumerate(rows, start=1):
             if progress:
                 progress(f"[{number}/{len(rows)}] {os.path.basename(row['path'])}")
             try:
-                results.append(self.process(row, mode))
+                result = self.process(row, mode)
             except WriteAborted:
                 self.aborted_at = row["path"]
                 break
             except Exception as err:  # one file must not stop the batch
                 logger.exception(f"{row['path']} failed")
-                results.append(FileResult(row["path"], FAILED, note=str(err)))
+                result = FileResult(row["path"], FAILED, note=str(err))
+            results.append(result)
+            if on_result:
+                on_result(number, len(rows), result)
         return results
+
+    def _independent(self, rows: list[dict[str, Any]], mode: str) -> set[int]:
+        """The positions of the files that can be worked on without looking at each other: their destinations are all
+        different (and not the place another file is leaving), and finding them needs no question."""
+        probe = Organizer(self.library, self.settings, prompter=_Deferring(), force=self.force)
+        planned: dict[int, str] = {}
+        for index, row in enumerate(rows):
+            if album_id_of(row) is None or row.get("corrupted") or not os.path.exists(row["path"]):
+                continue  # the main process explains these
+            try:
+                dest = probe._destination(row["path"], row["format"], album_id_of(row), mode, bool(row.get("spare")))
+            except Exception:  # a question, or a template problem: the main process deals with it
+                continue
+            planned[index] = dest if isinstance(dest, str) else row["path"]
+        taken: dict[str, int] = {}
+        for index, dest in planned.items():
+            taken[dest] = taken.get(dest, 0) + 1
+        leaving = {os.path.abspath(row["path"]) for row in rows}
+        return {index for index, dest in planned.items()
+                if taken[dest] == 1 and (dest == rows[index]["path"] or os.path.abspath(dest) not in leaving)}
+
+    def _run_parallel(self, rows, mode, progress, on_result, workers, on_busy) -> list[FileResult]:
+        from concurrent.futures import ProcessPoolExecutor
+        from concurrent.futures import TimeoutError as Waiting
+
+        global _STATE
+        parallel = self._independent(rows, mode)
+        results: list[FileResult] = []
+        context = multiprocessing.get_context("fork")
+        _STATE = context.Array("b", len(rows), lock=False)  # which files are being worked on, as the workers see it
+        executor = ProcessPoolExecutor(max_workers=workers, mp_context=context,
+                                       initializer=_init_worker, initargs=(self.settings, self.force, self.batch))
+        futures = {index: executor.submit(_work, (index, rows[index], mode)) for index in sorted(parallel)}
+        try:
+            for index, row in enumerate(rows):
+                number = index + 1
+                if progress:
+                    progress(f"[{number}/{len(rows)}] {os.path.basename(row['path'])}")
+                result = None
+                try:
+                    if index in futures:
+                        while True:
+                            try:
+                                result = futures[index].result(timeout=0.5)
+                                break
+                            except Waiting:
+                                if on_busy:
+                                    on_busy([os.path.basename(rows[i]["path"]) for i in futures if _STATE[i] == 1])
+                    if result is None:  # not independent, or a question to ask: here, in order
+                        result = self.process(row, mode)
+                except WriteAborted:
+                    self.aborted_at = row["path"]
+                    break
+                except Exception as err:
+                    logger.exception(f"{row['path']} failed")
+                    result = FileResult(row["path"], FAILED, note=str(err))
+                results.append(result)
+                if on_result:
+                    on_result(number, len(rows), result)
+        finally:
+            executor.shutdown(wait=True, cancel_futures=True)  # the files already started finish; the rest are not begun
+        return results
+
+    def _stage(self, text: str) -> None:
+        """What is being done to the current file now: logged (``-v``) and shown by a live display."""
+        logger.info(f"{os.path.basename(self._current)}: {text}")
+        if self.on_stage:
+            self.on_stage(self._current, text)
 
     # ------------------------------------------------------------- one file
     def _read_only(self, path: str, mode: str) -> Optional[FileResult]:
@@ -159,6 +288,14 @@ class Organizer:
                                               "never changes it. `bdnex move --copy` copies it into the collection")
 
     def process(self, row: dict[str, Any], mode: str) -> FileResult:
+        """One file, start to end (see :meth:`_process`); the result says how long it took."""
+        started = time.monotonic()
+        self._current = row["path"]
+        result = self._process(row, mode)
+        result.seconds = time.monotonic() - started
+        return result
+
+    def _process(self, row: dict[str, Any], mode: str) -> FileResult:
         path, fmt = row["path"], row["format"]
         refused = self._read_only(path, mode)
         if refused:
@@ -183,6 +320,8 @@ class Organizer:
         dest = self._destination(path, fmt, album_id, mode, spare)
         if isinstance(dest, FileResult):
             return dest
+        if not self.pretend:
+            self._stage("reading the archive" + (" (a PDF: page by page)" if fmt == "pdf" else ""))
         entries, existing, pages = self._read(path, fmt, recovered)
         album = self.library.get_album(album_id)  # reload: a prompt may have completed it
         xml = self._resolve_xml(path, existing, comicinfo.album_to_fields(album, pages or 0), album_id)
@@ -267,6 +406,7 @@ class Organizer:
         problem = self._room_problem(dest, int(os.path.getsize(path) * ROOM_FACTOR))
         if problem:
             return FileResult(path, FAILED, note=problem)
+        delete = self._delete_wanted(path, dest, mode, converted)  # asked now, before anything is written
         try:
             self._build(dest, entries, xml, compare_to=path)
         except OSError as err:
@@ -285,6 +425,7 @@ class Organizer:
                 steps.append(f"size {human_size(os.path.getsize(path))} -> {human_size(os.path.getsize(dest))}")
 
         if converted and not same_place and mode != COPY:
+            self._stage("checking the file that is now on disk, before the original may go")
             try:  # the file as it now is on disk, read afresh, before the original may go
                 archive.verify_cbz(dest, entries, xml)
             except archive.ArchiveError as err:
@@ -293,7 +434,10 @@ class Organizer:
                                                     "the original is kept")
 
         old_row = self.library.get_file(path)
-        removed = self._dispose_source(path, dest, mode, converted)
+        if mode != COPY and not same_place:
+            self._stage("removing the original" if delete is not False else "keeping the original")
+        removed = self._dispose_source(path, dest, mode, converted, delete)
+        self._stage("updating the library")
         self._update_library(path, dest)
         self._remember_copy(path, dest, mode)
         if removed == "trash":
@@ -380,8 +524,11 @@ class Organizer:
         """Write ``dest`` through a verified temporary file; with ``compare_to``, its size must be about that file's."""
         tmp = dest + TMP_SUFFIX
         try:
+            self._stage("writing the new archive (the pages, byte for byte, and ComicInfo.xml)")
             archive.write_cbz(tmp, entries, xml)
+            self._stage("checking the new archive against the original pages")
             archive.verify_cbz(tmp, entries, xml)
+            self._stage("making sure it is on the disk")
             _flush_to_disk(tmp)
             tolerance = self.settings.write.size_tolerance
             if compare_to is not None and tolerance > 0 and os.path.exists(compare_to):
@@ -392,6 +539,7 @@ class Organizer:
             if os.path.exists(tmp):
                 os.remove(tmp)
             raise
+        self._stage("putting it in place")
         os.replace(tmp, dest)
 
     def _unrepairable(self, row, album_id, fmt, mode, recovered) -> FileResult:
@@ -575,14 +723,23 @@ class Organizer:
     def _send_to_trash(self, path: str, row: Optional[dict], reason: str) -> None:
         trash.move_to_trash(self.library, self.settings, path, reason, row=row, forget=False)
 
-    def _dispose_source(self, src: str, dest: str, mode: str, converted: bool):
+    def _delete_wanted(self, src: str, dest: str, mode: str, converted: bool) -> Optional[bool]:
+        """Is the original of a converted file to be deleted (``write.delete_original``)? Asked **before** the new file is
+        written, so that a question never comes in the middle of the work. ``None``: it is not a question here."""
+        if os.path.abspath(src) == os.path.abspath(dest) or mode == COPY or not converted:
+            return None
+        policy = self.settings.write.delete_original
+        return policy != "no" and (policy == "yes" or self._confirm(f"Delete the original {src}?"))
+
+    def _dispose_source(self, src: str, dest: str, mode: str, converted: bool, delete: Optional[bool] = None):
         """Remove the original when appropriate. Returns ``True`` if it was deleted, ``"trash"`` if it is to be
         moved to the trash (the caller does it once the library points at the new file), ``False`` if it stays."""
         if os.path.abspath(src) == os.path.abspath(dest) or mode == COPY:
             return False
-        policy = self.settings.write.delete_original
         if converted:  # a cbr/pdf replaced by its cbz: honour delete_original
-            if policy == "no" or (policy == "ask" and not self._confirm(f"Delete the original {src}?")):
+            if delete is None:
+                delete = self._delete_wanted(src, dest, mode, converted)
+            if not delete:
                 return False
             if self.settings.write.use_trash:
                 return "trash"  # moved once the library knows the new path

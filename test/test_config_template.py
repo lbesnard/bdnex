@@ -75,7 +75,9 @@ def test_what_the_user_wrote_is_kept_and_only_missing_options_are_added():
     assert "  mode: copy   # copy, please" in text and "  delete_original: 'no'" in text
     assert "import.workers" not in added and "import.mode" not in added and "write.delete_original" not in added
     assert "import.resume" in added and "write.size_tolerance" in added
-    assert text.count("workers:") == 1  # the commented one was recognised, not repeated
+    import_part = text.split("\nwrite:")[0]
+    assert import_part.count("workers:") == 1  # the commented one of `import` was recognised, not repeated
+    assert "write.workers" in added
     assert yaml.safe_load(text)["import"] == {"mode": "copy"}
 
 
