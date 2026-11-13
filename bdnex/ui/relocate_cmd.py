@@ -8,6 +8,7 @@ import sys
 
 from bdnex.library import Library
 from bdnex.ui import context
+from bdnex.ui.output import add_pretend
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -20,7 +21,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
                "paths. It touches nothing on disk. `bdnex ls --missing` lists what is not found.")
     parser.add_argument("old", help="the folder the files used to be in")
     parser.add_argument("new", help="the folder they are in now")
-    parser.add_argument("-n", "--pretend", action="store_true", help="show what would change; change nothing")
+    add_pretend(parser, "change")
     args = parser.parse_args(argv)
     settings = context.settings()
     if settings is None:

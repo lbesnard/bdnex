@@ -8,6 +8,7 @@ import sys
 
 from bdnex.library import Library
 from bdnex.ui import color, context, results
+from bdnex.ui.output import add_pretend, add_workers
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -17,9 +18,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
                "in the folders you give (default: your library folder), by size and checksum. A single copy is "
                "linked again, with its album and history. Nothing on disk is touched.")
     parser.add_argument("folders", nargs="*", help="where to look (default: your collection, `collection_path` in the configuration)")
-    parser.add_argument("-n", "--pretend", action="store_true", help="show what would be linked; change nothing")
-    parser.add_argument("--workers", type=int, metavar="N",
-                        help="files read at once (0: the cores less one; 1: one by one); default: `import.workers`")
+    add_pretend(parser, "be linked")
+    add_workers(parser, "files read")
     args = parser.parse_args(argv)
     settings = context.settings(collection=not args.folders)
     if settings is None:

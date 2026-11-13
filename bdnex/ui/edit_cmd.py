@@ -20,6 +20,7 @@ import yaml
 from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.ui import context, describe
+from bdnex.ui.output import add_pretend
 
 INT_FIELDS = {"volume": (0, 9999), "year": (0, 9999), "month": (1, 12), "day": (1, 31), "pages": (0, 99999)}
 TEXT_FIELDS = ("title", "alternate_number", "publisher", "language", "format", "isbn", "summary")
@@ -240,7 +241,7 @@ def run(argv: list[str], out=sys.stdout, editor: Callable[[str], str] = open_edi
                         help="change a field of every matching album without opening the editor; repeatable. "
                              "Lists are separated by ';': --set genres='Humour; Fantasy' --set credits.Writer='A; B'")
     parser.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
-    parser.add_argument("-n", "--pretend", action="store_true", help="show the changes, store nothing")
+    add_pretend(parser, "change")
     args = parser.parse_args(argv)
 
     settings = context.settings()

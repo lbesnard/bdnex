@@ -12,6 +12,8 @@ import os
 from dataclasses import dataclass
 from typing import Optional
 
+from bdnex.formatting import human_size
+
 from bdnex.importer import covers
 from bdnex.library.hashing import file_md5
 from bdnex.library.scan import inspect_file
@@ -93,10 +95,6 @@ def compare(existing: list[FileFacts], new: FileFacts, prefer: list[str]) -> Com
     return Comparison(new, existing, kind, KEEP_EXISTING, _why(best, new, prefer, "new"))
 
 
-def megabytes(size: int) -> str:
-    return f"{size / 1048576:.1f} MB"
-
-
 def table(comparison: Comparison, root: Optional[str] = None) -> str:
     """The text shown when asking which version to keep: each file on two lines, then what they share."""
     def shown(facts: FileFacts) -> str:
@@ -107,7 +105,7 @@ def table(comparison: Comparison, root: Optional[str] = None) -> str:
 
     def details(facts: FileFacts) -> str:
         pages = f"{facts.pages} pages" if facts.pages is not None else "pages unknown"
-        parts = [facts.format, pages, megabytes(facts.size), "damaged" if facts.corrupted else "ok"]
+        parts = [facts.format, pages, human_size(facts.size), "damaged" if facts.corrupted else "ok"]
         return " · ".join(parts + (["spare version"] if facts.spare else []))
 
     labels = [f"existing {i}" if len(comparison.existing) > 1 else "existing"

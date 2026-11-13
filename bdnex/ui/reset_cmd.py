@@ -6,8 +6,10 @@ import argparse
 import datetime
 import sys
 
+from bdnex.formatting import human_size
 from bdnex.library import Library
 from bdnex.ui import context
+from bdnex.ui.output import add_pretend
 
 LABELS = (("files", "files"), ("albums", "albums"), ("series", "series"), ("people", "people"),
           ("genres", "genres"), ("publishers", "publishers"), ("import_log", "import log entries"))
@@ -20,7 +22,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                "library, with your `bdnex edit` changes and the import history. Kept: the sitemaps "
                "and every album / series page and cover already fetched, so the next import needs "
                "no network for them. Your comic files are not touched.")
-    parser.add_argument("-n", "--pretend", action="store_true", help="show what would be deleted; change nothing")
+    add_pretend(parser, "be deleted")
     parser.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
     parser.add_argument("--no-backup", action="store_true",
                         help="do not copy the database to <library>.before-reset-<date> first")
@@ -36,8 +38,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
         for key, label in LABELS:
             print(f"  {counts[key]:>7} {label}", file=out)
         kept = ", ".join(f"{n} {kind}" for kind, (n, _) in sorted(cache.items())) or "nothing"
-        megabytes = sum(size for _, size in cache.values()) / 1048576
-        print(f"Kept: the downloaded data ({kept}; {megabytes:.1f} MB) and your comic files.", file=out)
+        size = human_size(sum(size for _, size in cache.values()))
+        print(f"Kept: the downloaded data ({kept}; {size}) and your comic files.", file=out)
         if args.pretend:
             return 0
         if not any(counts.values()):

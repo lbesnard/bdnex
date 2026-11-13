@@ -7,8 +7,9 @@ import sys
 
 from bdnex import trash
 from bdnex.library import Library
-from bdnex.versions import megabytes
+from bdnex.formatting import human_size
 from bdnex.ui import context
+from bdnex.ui.output import add_pretend
 
 
 def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
@@ -27,7 +28,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     parser.add_argument("--empty", action="store_true", help="delete the trashed files for good")
     parser.add_argument("--older-than", type=int, metavar="DAYS", help="with --empty: only what was trashed that long ago")
     parser.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
-    parser.add_argument("-n", "--pretend", action="store_true", help="show what would be done; change nothing")
+    add_pretend(parser)
     args = parser.parse_args(argv)
     if (args.place or args.reimport) and args.restore is None:
         parser.error("--place and --reimport go with --restore ID")
@@ -42,11 +43,11 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
         entries = library.trash_entries(args.older_than if args.empty else None)
         if not args.empty:
             for entry in entries:
-                print(f"{entry['id']:>4}  {entry['trashed'][:16]}  {megabytes(entry['size'] or 0):>9}  {entry['path']}", file=out)
+                print(f"{entry['id']:>4}  {entry['trashed'][:16]}  {human_size(entry['size'] or 0):>9}  {entry['path']}", file=out)
                 print(f"      {entry['reason']}", file=out)
             where = settings.trash_path
             total = sum(e["size"] or 0 for e in entries)
-            print(f"\n{len(entries)} file(s), {megabytes(total)} in {where}" if entries
+            print(f"\n{len(entries)} file(s), {human_size(total)} in {where}" if entries
                   else f"The trash is empty ({where}).", file=out)
             if entries:
                 print("`bdnex trash --restore ID` puts one back; `bdnex trash --empty` deletes them for good.", file=out)
@@ -56,7 +57,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
             print("Nothing to empty.", file=out)
             return 0
         total = sum(e["size"] or 0 for e in entries)
-        print(f"{len(entries)} file(s), {megabytes(total)}" + (f", trashed more than {args.older_than} days ago"
+        print(f"{len(entries)} file(s), {human_size(total)}" + (f", trashed more than {args.older_than} days ago"
                                                            if args.older_than is not None else ""), file=out)
         if args.pretend:
             return 0
@@ -68,7 +69,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                 print("Nothing changed.", file=out)
                 return 1
         count, freed = trash.empty(library, entries)
-        print(f"Deleted {count} file(s), freed {megabytes(freed)}.", file=out)
+        print(f"Deleted {count} file(s), freed {human_size(freed)}.", file=out)
     return 0
 
 

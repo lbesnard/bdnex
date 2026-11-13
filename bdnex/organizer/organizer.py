@@ -25,6 +25,7 @@ from typing import Any, Callable, Optional, Protocol
 
 from bdnex import trash
 from bdnex.config import Settings
+from bdnex.formatting import human_size
 from bdnex.library import Library
 from bdnex.organizer import archive, comicinfo, template
 from bdnex.versions import compare, facts_of
@@ -76,14 +77,6 @@ class SizeChanged(archive.ArchiveError):
     def __init__(self, before: int, after: int):
         super().__init__(f"{human_size(before)} became {human_size(after)}")
         self.before, self.after = before, after
-
-
-def human_size(size: int) -> str:
-    for unit in ("B", "KiB", "MiB", "GiB"):
-        if size < 1024 or unit == "GiB":
-            return f"{size:.0f} {unit}" if unit == "B" else f"{size:.1f} {unit}"
-        size /= 1024
-    return f"{size} B"
 
 
 def free_space(path: str) -> int:
