@@ -215,7 +215,8 @@ configuration before it does anything, so a mistake is reported by key, not half
 - **Rules:** every term of `paths.rules[].match` must be valid [query](queries.md) syntax (a regular expression that
   does not compile, a number that is not one).
 - **The fetcher:** `bedetheque.fetcher` must import and be callable.
-- **Sources:** `mode` is `copy` or `move`, a `name` is letters, digits, `_` and `-`, and no two sources share a name or a folder.
+- **Sources:** the collection and the sources must be separate folders (a source can not be the collection, contain it or
+  sit inside it, and sources can not be nested in each other). `mode` is `copy` or `move`, a `name` is letters, digits, `_` and `-`, and no two sources share a name or a folder.
 - **Warnings** (the command goes on): a `collection_path` that is not an existing folder (a disk that is not mounted?), a
   `fetcher_endpoint` set with no fetcher, an out-of-date `config_version`.
 

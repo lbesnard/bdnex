@@ -144,3 +144,26 @@ def test_adding_a_source_converts_the_paths_stored_under_it(tmp_path, make_cbz):
         assert lib.add_root("dl", folder)
         assert lib.conn.execute("SELECT path FROM files").fetchone()[0] == "@dl/a.cbz"
         assert lib.get_file(str(book)) is not None and not lib.add_root("dl", tmp_path / "elsewhere")
+
+
+def test_the_collection_and_the_sources_must_be_separate_folders(tmp_path):
+    from bdnex.config import ConfigError, build_settings
+
+    def settings(collection, *folders):
+        return build_settings({"config_version": 2, "collection_path": str(collection),
+                               "import": {"sources": [{"path": str(f), "name": f"s{i}"} for i, f in enumerate(folders)]}})
+
+    comics, inbox = tmp_path / "comics", tmp_path / "inbox"
+    for folder in (comics, inbox):
+        folder.mkdir()
+    settings(comics, inbox)  # fine
+    with pytest.raises(ConfigError, match="is your collection_path"):
+        settings(comics, comics)
+    with pytest.raises(ConfigError, match="collection_path .* is inside the source"):
+        settings(comics, tmp_path)
+    with pytest.raises(ConfigError, match="source 's0' .* is inside your collection_path"):
+        settings(comics, comics / "incoming")
+    with pytest.raises(ConfigError, match="are nested"):
+        settings(comics, inbox, inbox / "sub")
+    assert settings(comics, tmp_path / "comics2")  # a folder that only starts with the same letters is another folder
+    build_settings({"config_version": 2, "import": {"sources": [{"path": "/x/in"}]}})  # placeholder collection: nothing to compare

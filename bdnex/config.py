@@ -242,6 +242,34 @@ class Settings(_Section):
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True, validate_assignment=True)
 
+    @field_validator("import_")
+    @classmethod
+    def _sources_apart_from_the_collection(cls, value, info):
+        """The collection and the import sources must be separate folders: a source that is (or contains, or sits in)
+        the collection would make the collection's own files look like files still to be imported."""
+        collection = info.data.get("collection_path")
+        if not value.sources:
+            return value
+        folders = [(source.alias, source.folder) for source in value.sources]
+        if collection and collection != PLACEHOLDER_COLLECTION:
+            root = os.path.abspath(os.path.expanduser(collection)).rstrip("/")
+            for alias, folder in folders:
+                if folder == root:
+                    raise ValueError(f"source {alias!r} is your collection_path ({root}): the collection can not be "
+                                     "one of its own sources")
+                if root.startswith(folder + os.sep):
+                    raise ValueError(f"your collection_path ({root}) is inside the source {alias!r} ({folder}): "
+                                     "sources and the collection must be separate folders")
+                if folder.startswith(root + os.sep):
+                    raise ValueError(f"the source {alias!r} ({folder}) is inside your collection_path ({root}): "
+                                     "a source is a folder outside the collection")
+        for i, (alias, folder) in enumerate(folders):
+            for other_alias, other in folders[i + 1:]:
+                if folder.startswith(other + os.sep) or other.startswith(folder + os.sep):
+                    raise ValueError(f"the sources {alias!r} and {other_alias!r} are nested ({folder}, {other}): "
+                                     "give each its own folder")
+        return value
+
     @property
     def library_path(self) -> Path:
         return Path(os.path.expanduser(self.library))
