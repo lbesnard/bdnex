@@ -14,6 +14,7 @@ Provided here:
 from __future__ import annotations
 
 import importlib
+import logging
 import itertools
 import os
 import threading
@@ -25,6 +26,8 @@ from bdnex.importer.bedetheque.sitemap import source_id_from_url
 
 from bdnex.config import load_config
 
+
+logger = logging.getLogger(__name__)
 
 Fetcher = Callable[[str], bytes]
 
@@ -137,13 +140,16 @@ def flaresolverr_fetch(url: str, timeout: int = 60) -> bytes:
             "(the address of your FlareSolverr, e.g. http://localhost:8191/v1): `bdnex config --edit`")
     problems = []
     for endpoint in _order(list(endpoints)):
+        started = time.monotonic()
         try:
             content = _flaresolverr_request(endpoint, url, timeout)
         except (requests.RequestException, RuntimeError, ValueError, KeyError) as err:
             _down[endpoint] = time.monotonic()
             problems.append(f"{endpoint}: {err}")
+            logger.warning(f"{endpoint} failed ({err}): trying the next endpoint")  # a fallback is never silent
             continue
         _down.pop(endpoint, None)
+        logger.info(f"{url.rsplit('/', 1)[-1]} fetched through {endpoint} in {time.monotonic() - started:.1f}s")  # -v
         return content
     raise RuntimeError(f"no FlareSolverr endpoint could fetch {url}: " + "; ".join(problems))
 

@@ -197,3 +197,26 @@ def test_when_every_endpoint_fails_the_error_says_why_for_each(monkeypatch):
     monkeypatch.setattr("requests.post", lambda endpoint, **k: (_ for _ in ()).throw(requests.ConnectionError(f"no {endpoint}")))
     with pytest.raises(RuntimeError, match=r"no FlareSolverr endpoint.*http://a/v1.*http://b/v1"):
         flaresolverr_fetch(ONESHOT_URL)
+
+
+def test_which_endpoint_served_each_page_is_logged_and_a_fallback_is_not_silent(monkeypatch, caplog):
+    import logging
+    import requests
+    from bdnex.importer.bedetheque import fetchers
+    import itertools
+    fetchers._down.clear()
+    monkeypatch.setattr(fetchers, "_turn", itertools.count())  # the first request starts at the first endpoint
+    _config_with_endpoint(monkeypatch, ["http://down/v1", "http://up/v1"])
+
+    def post(endpoint, **k):
+        if "down" in endpoint:
+            raise requests.ConnectionError("refused")
+        return _ok()
+
+    monkeypatch.setattr("requests.post", post)
+    with caplog.at_level(logging.INFO, logger="bdnex.importer.bedetheque.fetchers"):
+        flaresolverr_fetch(ONESHOT_URL)
+    text = caplog.text
+    assert "http://down/v1 failed (refused): trying the next endpoint" in text  # shown by default (a warning)
+    assert "fetched through http://up/v1 in" in text  # which one did the work (shown with -v)
+    assert any(r.levelno == logging.WARNING for r in caplog.records) and any(r.levelno == logging.INFO for r in caplog.records)
