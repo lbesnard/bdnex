@@ -114,7 +114,7 @@ class ImportSession:
                  auto=None, steps=STEPS, progress: Optional[Callable[[str], None]] = None,
                  workers: Optional[int] = None, bar: Optional[Callable] = None,
                  cover_check: Optional[bool] = None, series: Optional[str] = None,
-                 phase: Optional[Callable[[str, str], None]] = None):
+                 phase: Optional[Callable[[str, str], None]] = None, retry_skipped: bool = False):
         self.library = library
         self.source = source
         self.settings = settings
@@ -123,6 +123,7 @@ class ImportSession:
         self.force = force
         self.steps = frozenset(steps)
         self.progress = progress or (lambda message: None)
+        self.retry_skipped = retry_skipped  # ask again about files skipped earlier (`import --skipped`)
         self.phase = phase or (lambda step, title: None)  # ("match" | "fetch", what is about to happen)
         self.bar = bar  # (total, label) -> object with update(detail) and finish(message)
         wanted = settings.import_.auto if auto is None else auto
@@ -373,7 +374,7 @@ class ImportSession:
     def _skipped_before(self, path: str) -> bool:
         """You (or the matching) skipped this file, and no new albums have been downloaded since."""
         last = self.library.last_import(path)
-        if not last or last["outcome"] != SKIPPED:
+        if self.retry_skipped or not last or last["outcome"] != SKIPPED:
             return False
         refreshed = self.library.get_meta("sitemaps_at")
         return not (refreshed and refreshed > last["at"])
@@ -389,8 +390,7 @@ class ImportSession:
                 pass
             return ImportResult(path, ALREADY, note=note)
         if kind == "remembered":
-            return ImportResult(path, SKIPPED, note="skipped earlier; `--force` looks at it again "
-                                                    "(so does `bdnex init` when it finds new albums)")
+            return ImportResult(path, SKIPPED, note="skipped earlier")
         if kind == "unmatched":
             return ImportResult(path, SKIPPED, note="not matched yet: `bdnex import --match` first")
         if kind == "already":

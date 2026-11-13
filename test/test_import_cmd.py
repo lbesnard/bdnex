@@ -235,3 +235,29 @@ def test_import_says_where_pages_come_from_when_no_fetcher_is_set(setup, capsys)
     path, tmp_path = setup
     import_cmd.run([os.path.dirname(path)], out=io.StringIO())
     assert "fetcher_endpoint` is not set" in capsys.readouterr().err
+
+
+def test_skipped_earlier_files_are_left_alone_until_asked_about_with_skipped(setup):
+    from bdnex.config import load_config
+    from bdnex.library import Library
+    path, tmp_path = setup
+    with Library.for_settings(load_config().settings) as library:
+        library.add_file(path)
+        library.set_file_album(path, None)
+        library.log_import(path, "skipped", 77.0)  # skipped at an earlier import
+    out = io.StringIO()
+    assert import_cmd.run([os.path.dirname(path)], out=out) == 0
+    text = out.getvalue()
+    assert "skipped earlier" in text and "`bdnex import --skipped`" in text  # one hint, not a note per file
+    with Library.for_settings(load_config().settings) as library:
+        assert library.get_file(path)["album_id"] is None
+    out = io.StringIO()
+    assert import_cmd.run(["--skipped"], out=out) == 0  # no folder needed: the skipped files are the files
+    assert "1 file(s): 1 complete" in out.getvalue() or "tagged" in out.getvalue() or "complete" in out.getvalue()
+    with Library.for_settings(load_config().settings) as library:
+        assert library.get_file(path)["album_id"] is not None
+
+
+def test_skipped_with_nothing_skipped_says_so(setup, capsys):
+    assert import_cmd.run(["--skipped"], out=io.StringIO()) == 1
+    assert "No file was skipped" in capsys.readouterr().err

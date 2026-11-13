@@ -33,6 +33,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="find the album of each file, from the album list (offline; run `bdnex init` first)")
     steps.add_argument("-f", "--fetch", action="store_true",
                        help="read the album pages: authors, publisher, summary, genres... (slow, politely)")
+    parser.add_argument("--skipped", "--skipped-earlier", dest="skipped", action="store_true",
+                        help="only the files you (or the matching) skipped at an earlier import, asked about again; "
+                             "`bdnex ls --unmatched` lists them")
     parser.add_argument("--sources", action="store_true",
                         help="the folders of `import.sources` in the configuration: what is new in them is copied or "
                              "moved into the collection, each source in its own mode. Added to the paths, if any")
@@ -134,6 +137,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
         return 1
     if args.as_is:
         return _record_as_is(args, settings, out)
+    if args.skipped:
+        code = _skipped_paths(args, settings)
+        if code:
+            return code
     if args.sources:
         if not settings.import_.sources:
             print("No source is configured: list folders under `import.sources` in your configuration "
@@ -173,7 +180,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
             return 1
         steps_order = [step for step in ("match", "fetch") if step in steps]
         session = ImportSession(library, source, settings, prompter=InquirerPrompter(source=source, thumbnails=settings.import_.thumbnails),
-                                pretend=args.pretend, force=args.force, auto=args.auto, steps=steps,
+                                pretend=args.pretend, force=args.force, auto=args.auto, steps=steps, retry_skipped=getattr(args, "retry_skipped", False),
                                 workers=args.workers, cover_check=args.cover_check, series=args.series, progress=progress, bar=lambda total, label: Bar(total, label),
                                 phase=lambda step, title: banner(title, steps_order.index(step) + 1, len(steps_order)))
         try:
@@ -217,6 +224,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
     order = (TAGGED, PARTIAL, ALREADY, SKIPPED, DUPLICATE, FAILED, PRETEND)
     summary = ", ".join(f"{report.count(o)} {OUTCOME_LABELS.get(o, o)}" for o in order if report.count(o))
     print(f"\n{len(report.results)} file(s): {summary or 'nothing to do'}", file=out)
+    again = sum(1 for r in report.results if r.note.startswith("skipped earlier"))
+    if again:
+        print(f"{again} file(s) were skipped at an earlier import and left alone: `bdnex import --skipped` asks about "
+              "just those again (run `bdnex init` first if new albums were added).", file=out)
     if to_review:
         print(f"{len(to_review)} file(s) have a cover that does not look like their album's: "
               "`bdnex review` shows them side by side.", file=out)
@@ -238,6 +249,24 @@ def run(argv: list[str], out=sys.stdout) -> int:
               "from there.", file=out)
         return 1
     return 1 if organize_failed or report.count(FAILED) or any(r.outcome == "failed" for r in organize_results) else 0
+
+
+def _skipped_paths(args, settings) -> int:
+    """``--skipped``: the files skipped at an earlier import (and still there) become the files to work on."""
+    if not settings.library_path.exists():
+        print(f"No library yet ({settings.library_path}): nothing was skipped.", file=sys.stderr)
+        return 1
+    with Library.for_settings(settings, readonly=True) as library:
+        rows = [row for row in library.unmatched() if row["outcome"] == "skipped"]
+    found = [row["path"] for row in rows if os.path.exists(row["path"])]
+    if not found:
+        print("No file was skipped at an earlier import" + (" (and is still there)." if rows else "."), file=sys.stderr)
+        return 1
+    print(f"--skipped: {len(found)} file(s) skipped earlier" + (f" ({len(rows) - len(found)} no longer on disk)" if len(rows) > len(found) else ""),
+          file=sys.stderr)
+    args.paths = [*args.paths, *found]
+    args.retry_skipped = True
+    return 0
 
 
 def _select_paths(args, settings) -> int:
