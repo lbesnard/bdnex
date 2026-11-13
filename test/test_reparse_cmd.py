@@ -46,8 +46,8 @@ def test_preview_lists_the_new_details_and_changes_nothing(env):
     before = stored(db, album_id)
     code, text = run("-n")
     assert code == 0 and "would update" in text and "La bibliomule de Cordoue" in text
-    assert "format: None -> 'Autre format'" in text and "Other: - -> Ferté, Ségolène" in text
-    assert "new details:" in text and "edition_info" in text and "1 would be updated" in text
+    assert "format     None → 'Autre format'" in text and "Other      - → Ferté, Ségolène" in text
+    assert "new details  " in text and "edition_info" in text and "1 would be updated" in text
     assert stored(db, album_id) == before
 
 
@@ -90,7 +90,7 @@ def test_albums_without_a_stored_page_are_reported_not_fetched(env):
         lib.add_album(AlbumInfo("bedetheque", "999", "Never fetched", url="https://www.bedetheque.com/BD-X-999.html",
                                 extra={"partial": True}))
     code, text = run()
-    assert code == 0 and "no stored page   Never fetched" in text
+    assert code == 0 and "no stored page  Never fetched" in text
     assert "1 updated" in text and "1 without a stored page" in text and helpers.FETCHED == []
 
 
@@ -134,7 +134,7 @@ def test_a_page_that_no_longer_parses_is_reported_and_the_rest_continue(env, mon
 
     monkeypatch.setattr(Bedetheque, "album_info", flaky)
     code, text = run()
-    assert code == 1 and "failed           Broken: cannot read this page" in text and "1 updated" in text
+    assert code == 1 and "failed  Broken: cannot read this page" in text and "1 updated" in text
 
 
 def test_errors(tmp_path, monkeypatch, capsys):
@@ -166,3 +166,16 @@ def test_main_dispatches_reparse(monkeypatch, tmp_path):
     with pytest.raises(SystemExit):
         ui.main(["reparse", "-n"])
     assert seen == [["-n"]]
+
+
+def test_a_change_is_drawn_old_red_new_green_and_plain_without_a_terminal():
+    from bdnex.ui.reparse_cmd import format_album, format_change
+
+    line = "title: 'A.D Grand-Rivière' -> 'Terre d election'"
+    assert format_change(line, False) == "title      'A.D Grand-Rivière' → 'Terre d election'"
+    drawn = format_change(line, True)
+    assert "\x1b[31m'A.D Grand-Rivière'" in drawn and "\x1b[32m'Terre d election'" in drawn
+    assert "\x1b[32mTitre" in format_change("new details: Titre", True)
+    assert "\x1b[33mTitre" in format_change("updated details: Titre", True)
+    block = format_album("A - T01", [line], True, 152, 313, False)
+    assert block.startswith("\n[152/313] ● would update  A - T01") and "\n    title " in block

@@ -9,10 +9,31 @@ from bdnex.config import ConfigError, load_config
 from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.library import Library
 from bdnex.library.query import QueryError
-from bdnex.ui import describe
+from bdnex.ui import color, describe
 from bdnex.ui.output import add_verbosity, progress, setup_logging
 
 OFFLINE = "bdnex.importer.registry:offline_fetch"
+DETAIL_STYLE = {"new details": "green", "updated details": "yellow", "dropped details": "red"}
+
+
+def format_change(line: str, on: bool) -> str:
+    """``title: 'A' -> 'B'`` as ``title  A → B`` (old red, new green); ``new details: X`` in the colour of its kind."""
+    field, _, rest = line.partition(": ")
+    if field in DETAIL_STYLE:
+        return f"{color.paint(field, 'dim', on)}  {color.paint(rest, DETAIL_STYLE[field], on)}"
+    old, arrow, new = rest.partition(" -> ")
+    if not arrow:
+        return color.paint(line, "dim", on)
+    return f"{color.paint(f'{field:<10}', 'cyan', on)} {color.paint(old, 'red', on)} {color.paint('→', 'dim', on)} {color.paint(new, 'green', on)}"
+
+
+def format_album(label: str, changes: list[str], pretend: bool, number: int, total: int, on: bool) -> str:
+    """One album's block: a blank line, what happens to it, then one line per change."""
+    verb = "would update" if pretend else "updated"
+    lines = [f"\n{color.paint(f'[{number}/{total}]', 'dim', on)} {color.paint('●', 'cyan', on)} "
+             f"{color.paint(verb, 'cyan', on)}  {color.paint(label, 'bold', on)}"]
+    lines += [f"    {format_change(line, on)}" for line in changes]
+    return "\n".join(lines)
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -41,6 +62,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
     offline = settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
         update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
 
+    on = color.enabled(out)
     updated = unchanged = missing = failed = 0
     with Library.for_settings(settings) as library:
         try:
@@ -58,28 +80,30 @@ def run(argv: list[str], out=sys.stdout) -> int:
             if album["source"] != source.name or not album.get("url") \
                     or library.cache_get(source.name, "album", album["url"]) is None:
                 missing += 1
-                print(f"no stored page   {describe.label(album)}", file=out)
+                print(f"\n{color.paint('● no stored page', 'yellow', on)}  {color.paint(describe.label(album), 'bold', on)}", file=out)
                 continue
             try:
                 info = source.album_info(album["url"])
                 changes = library.preview_merge(info)
             except Exception as err:  # a page that no longer parses must not stop the others
                 failed += 1
-                print(f"failed           {describe.label(album)}: {err}", file=out)
+                print(f"\n{color.paint('● failed', 'red', on)}  {color.paint(describe.label(album), 'bold', on)}: {err}", file=out)
                 continue
             if not changes:
                 unchanged += 1
                 continue
             updated += 1
-            print(f"{'would update' if args.pretend else 'updated':<16} {describe.label(album)}", file=out)
-            for line in changes:
-                print(f"    {line}", file=out)
+            print(format_album(describe.label(album), changes, args.pretend, number, len(rows), on), file=out)
             if not args.pretend:
                 library.merge_album(info)
                 library.prune_orphan_series()
     verb = "would be updated" if args.pretend else "updated"
-    print(f"\n{len(rows)} album(s): {updated} {verb}, {unchanged} unchanged, {missing} without a stored page"
-          + (f", {failed} failed" if failed else ""), file=out)
+    print(f"\n{color.rule()}\n{len(rows)} album(s): {color.paint(f'{updated} {verb}', 'cyan', on)}, "
+          f"{color.paint(f'{unchanged} unchanged', 'dim', on)}, "
+          f"{color.paint(f'{missing} without a stored page', 'yellow' if missing else 'dim', on)}"
+          + (f", {color.paint(f'{failed} failed', 'red', on)}" if failed else ""), file=out)
+    if args.pretend and updated:
+        print("Preview only: nothing was changed. Run the same command without -n to do it.", file=out)
     if updated and not args.pretend:
         print("Run `bdnex write` to put the new details into the files.", file=out)
     return 1 if failed else 0
