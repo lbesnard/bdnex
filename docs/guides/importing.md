@@ -222,6 +222,10 @@ recorded from elsewhere need `--select` (or their folder).
 
 ## The report
 
+A long import is shown in steps, each under its own heading: *Step 1/2  Matching N file(s) to albums*, then *Step 2/2  Reading N
+album page(s)* (with a progress bar), then *Result* and, when files are placed, *Files*. Progress lines are coloured on a
+terminal (counter in cyan, file names in bold, matches in green, problems in red); `NO_COLOR=1` turns it off.
+
 bdnex prints what it is doing on stderr (the match and its score, then a progress bar for the
 pages). Each file ends with a line describing what was recorded:
 

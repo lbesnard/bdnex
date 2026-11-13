@@ -13,7 +13,7 @@ from bdnex.importer.session import (ALREADY, DUPLICATE, FAILED, OUTCOME_LABELS, 
                                     ImportSession, NeedsTerminal)
 from bdnex.library import Library
 from bdnex.ui import color, describe
-from bdnex.ui.output import Bar, add_verbosity, progress, setup_logging
+from bdnex.ui.output import Bar, add_verbosity, banner, progress, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
 
@@ -153,9 +153,11 @@ def run(argv: list[str], out=sys.stdout) -> int:
             return 1
         if "match" in steps and not ensure_album_list(source, library, settings, out):
             return 1
+        steps_order = [step for step in ("match", "fetch") if step in steps]
         session = ImportSession(library, source, settings, prompter=InquirerPrompter(source=source, thumbnails=settings.import_.thumbnails),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps,
-                                workers=args.workers, cover_check=args.cover_check, series=args.series, progress=progress, bar=lambda total, label: Bar(total, label))
+                                workers=args.workers, cover_check=args.cover_check, series=args.series, progress=progress, bar=lambda total, label: Bar(total, label),
+                                phase=lambda step, title: banner(title, steps_order.index(step) + 1, len(steps_order)))
         try:
             report = session.run(args.paths)
         except NeedsTerminal:
@@ -175,6 +177,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
         else:
             organize_failed = False
 
+    if report.results:
+        banner("Result", stream=out)
     for r in report.results:
         if r.outcome == ALREADY and not args.verbose and "not fetched yet" not in r.note:
             continue  # thousands of "already imported" lines would hide the rest; the summary counts them
@@ -202,7 +206,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         print("The albums are matched but their details are not read yet: `bdnex import --fetch` does it.", file=out)
     if organize_results:
         from bdnex.ui.write_cmd import report as organizer_report
-        print("\nFiles:", file=out)
+        banner("Files", stream=out)
         organizer_report(organize_results, out)
     for note in placement_notes:
         print(note, file=out)
