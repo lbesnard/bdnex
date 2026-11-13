@@ -99,6 +99,23 @@ whenever the album is re-imported, re-cached or re-read with `bdnex reparse`; th
 values are never reported as changes. Run `bdnex write series:nains` afterwards to put the new
 values into the files.
 
+### After an edit: rename the files
+
+The folder and file names come from the album's metadata (`paths.series`, `paths.oneshot`, `paths.rules`), so a
+changed title, series, volume or author means the files are no longer where the templates put them. Once the
+library is placed, the whole round trip is:
+
+```bash
+bdnex edit series:nains --set title='New title' -y   # 1. change the library (or edit in $EDITOR)
+bdnex move -n series:nains                           # 2. preview: each file shows `from` and `to`
+bdnex move series:nains                              # 3. rename the files; the new ComicInfo.xml is written too
+```
+
+`move` works out the destination again for every file it is given. A file already in the right place says
+`stays where it is`; the others are renamed or moved, the library follows, and the folders left empty are removed
+(see [Folders left behind](writing.md)). Renaming a series with `--set series=...` moves all of its albums.
+Use `bdnex write <query>` instead if you only want the tags updated and the names left alone.
+
 ## Paths, and moving your collection
 
 The library stores the path of each file **relative to `directory`** (your comics folder in the

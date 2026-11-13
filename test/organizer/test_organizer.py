@@ -937,3 +937,17 @@ def test_a_move_keeps_a_folder_that_still_holds_something(lib, make_cbz, tmp_pat
     row = registered(lib, str(moved), add_series_album(lib))
     Organizer(lib, settings).process(row, MOVE)
     assert (old / "notes.txt").exists()
+
+
+def test_after_a_hand_edit_move_renames_the_file_and_removes_the_old_folder(lib, make_cbz, tmp_path):
+    settings = settings_for(tmp_path)
+    root = settings.require_library_directory()
+    album_id = add_series_album(lib)
+    row = registered(lib, make_cbz("a.cbz"), album_id)
+    placed = Organizer(lib, settings).process(row, MOVE)
+    old_dir = os.path.dirname(placed.dest)
+    lib.edit_album(album_id, {"title": "Totally Other Title"})
+    again = Organizer(lib, settings).process(lib.get_file(placed.dest), MOVE)
+    assert again.outcome == "moved" and "Totally Other Title" in again.dest
+    assert os.path.exists(again.dest) and not os.path.exists(placed.dest)
+    assert lib.get_file(again.dest) is not None
