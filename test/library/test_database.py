@@ -156,3 +156,33 @@ def test_a_new_or_current_library_makes_no_backup(tmp_path):
     with Library(tmp_path / "lib.sqlite"):
         pass
     assert [p.name for p in tmp_path.iterdir() if ".bak" in p.name] == []
+
+
+def test_a_read_only_library_can_be_closed_by_another_thread(tmp_path):
+    import threading
+    with Library(tmp_path / "lib.sqlite"):
+        pass
+    opened, stay, ready = {}, threading.Event(), threading.Event()
+
+    def open_it():  # stays alive while the other thread closes the library (a finished thread's id can be reused)
+        opened["lib"] = Library(tmp_path / "lib.sqlite", readonly=True)
+        ready.set()
+        stay.wait(5)
+
+    opener = threading.Thread(target=open_it)
+    opener.start()
+    ready.wait(5)
+    failures = []
+
+    def close_it():
+        try:
+            opened["lib"].close()
+        except Exception as err:
+            failures.append(err)
+
+    closer = threading.Thread(target=close_it)  # a web request is set up and torn down in different worker threads
+    closer.start()
+    closer.join()
+    stay.set()
+    opener.join()
+    assert failures == []

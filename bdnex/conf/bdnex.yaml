@@ -39,6 +39,7 @@ api:
   host: 127.0.0.1                       # `bdnex serve` listens here; anything but this machine needs a token
   port: 8765
   token: null                           # when set, requests must send `Authorization: Bearer <token>`
+  allow_changes: false                  # true: the web page can run jobs and change the library (see the docs)
 
 write:
   format_preferred: cbz                 # cbz | none: convert other formats to CBZ (per cbr / pdf below), or never convert

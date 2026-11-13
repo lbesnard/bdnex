@@ -25,7 +25,7 @@ commands:
   reparse  re-read the pages stored in the library (offline) to fill in more details
   repair   rebuild damaged archives (wrong page checksums) as clean CBZ files
   config   show or edit the configuration
-  serve    serve the library read-only over HTTP: a JSON API and a small web page
+  serve    open the library in a browser (web page and JSON API; read-only unless you allow changes)
   completion  print a tab-completion script for bash, zsh or fish
 
 Run `bdnex <command> --help` for the options of a command.

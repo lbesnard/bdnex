@@ -33,6 +33,17 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   folders follow `import.outside`; `--move` / `--copy` / `--no-move` win for one run. `import --as-is` + `--select` +
   `move` is how an existing collection is brought in.
 
+## The web page (`bdnex/api/`)
+- A FastAPI app + static files (`static/index.html`, `app.css`, `app.js`: plain JS, **no build step**, shipped in the
+  wheel; everything from the server goes through `textContent`, never `innerHTML`). Reading opens the library
+  read-only; **changing is off unless `api.allow_changes`** and then needs the token, the `X-Requested-With: bdnex`
+  header and a same-site `Origin` (`can_change` in `app.py`).
+- Tasks are `jobs.SPECS`: a fixed list that runs the CLI `run(argv, out=...)` functions in a thread, one at a time, never an
+  arbitrary command line. Options are checked (`query` = plain terms, `paths` inside the collection or a source). A real
+  run adds `--force` (nobody can answer questions yet); previews use `-n`. New web feature that writes = new spec + tests.
+- **Look at it for real**: Chromium is available. `tools/demo_library.py` builds a demo library; see the
+  `check-web-page` skill for serving it and taking screenshots. Never claim a page works from the code alone.
+
 ## Rules that are easy to forget
 - **Tests never touch the real home.** `test/conftest.py` has an autouse `isolated_home` fixture; keep it.
 - **Docs are enforced by tests** (`test/test_docs_in_sync.py`): every command, flag, config option, query field and

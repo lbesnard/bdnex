@@ -1,16 +1,51 @@
-# HTTP API and web page
+# Web page and HTTP API
 
-`bdnex serve` shows your library read-only over HTTP: a JSON API for scripts (Komga helpers, dashboards, shell
-one-liners) and a small web page to browse it. Nothing can be changed through it: import, write and edit stay in
-the command line, where the questions and the safety checks are.
+`bdnex serve` opens your library in a browser, and offers the same data as a JSON API for scripts (Komga helpers,
+dashboards, shell one-liners). By default it is **read-only**: you can look at everything, and nothing can be changed.
+For people who prefer a page to a terminal it can also **run tasks** (the same operations as the command line) once you
+allow it.
 
 ```bash
 pip install 'bdnex[api]'      # the extra: fastapi and uvicorn
-bdnex serve                   # http://127.0.0.1:8765/
+bdnex serve                   # http://127.0.0.1:8765/, read-only
+bdnex serve --allow-changes   # the page may also run tasks and answer reviews
 ```
 
-Open `http://127.0.0.1:8765/` for the web page (albums, files, series with what is missing, trash, counts) and
-`/docs` for the interactive documentation of every endpoint.
+## The page
+
+| View | What it shows |
+|---|---|
+| **Overview** | counts, files by format, albums by decade, what needs attention (to review, damaged files, albums to fetch), your sources |
+| **Albums** | a wall of covers; search with the [`bdnex ls` terms](queries.md); click a cover for the album, its credits and its files |
+| **Series** | each series with a progress bar; open one to see every volume: filled when you have it, dashed when it is missing (it opens the album's page) |
+| **Review** | the matches whose cover looked different: the file's cover next to the album's, with *Keep the match* and *Unlink* |
+| **Health** | the report of [`bdnex check`](maintaining.md), and the duplicates |
+| **Tasks** | previews and runs of the command-line operations, with their output as they run |
+| **Files**, **Trash**, **Settings** | the files (searchable), the trash, and your configuration as the page sees it |
+
+Links can carry a filter: `#/albums?q=series:nains`, `#/series?name=nains`, `#/files?q=format:pdf`.
+
+## Tasks, and what "allow changes" means
+
+Everything that changes your library or your files is a **task**: `check --fix`, record files as they are, write tags,
+move into the collection, repair, undo a move, relink. A task is one of these commands run in the background, with
+the same code as the terminal. Each has a **Preview** (changes nothing: `-n`) and **Run for real**. Only one task runs at
+a time; you can watch its output and cancel it. Questions are not asked on the page yet: a real run never asks (the
+database wins a tag conflict, a name clash gets a number, originals are kept), so look at the preview first. The
+matching of new files, which asks questions, stays in the terminal for now.
+
+Changes are off until you turn them on, with `api.allow_changes: true` in the configuration or `--allow-changes` for one
+run. When they are on:
+
+- the **token** is required for every change as soon as one is set, and `bdnex serve` refuses a network address without one;
+- a change must carry an `X-Requested-With: bdnex` header and may not come from another site (the `Origin` must be the
+  page's own address), so a web page you happen to visit cannot drive your local server;
+- tasks are a fixed list with checked options: queries are plain terms (never flags), and folders must be inside your
+  collection or your import sources;
+- the page and the terminal can both be open. Looking is always safe, but run changes from one place at a time: only the
+  page's own tasks are serialised, the command line takes no lock.
+
+Task results are kept in memory: restarting the server forgets the list of earlier runs (the work stays done).
 
 ## Options
 
@@ -19,6 +54,7 @@ Open `http://127.0.0.1:8765/` for the web page (albums, files, series with what 
 | `--host` | `api.host` (`127.0.0.1`) | address to listen on |
 | `--port` | `api.port` (`8765`) | port |
 | `--token` | `api.token` | require `Authorization: Bearer <token>` |
+| `--allow-changes` | `api.allow_changes` (`false`) | let the page run tasks and answer reviews |
 
 The server listens on this machine only. To reach it from another one (a phone, a NAS), give an address such as
 `--host 0.0.0.0` **and a token**: without one bdnex refuses to start, because the API shows your file paths. The
@@ -27,7 +63,7 @@ reverse proxy with HTTPS in front of it if it leaves your home network.
 
 ## Endpoints
 
-All of them are `GET`, JSON, and read-only. `q` takes the same terms as [`bdnex ls`](queries.md)
+JSON. The reading endpoints are `GET`; the ones that change something are marked and need `api.allow_changes`. `q` takes the same terms as [`bdnex ls`](queries.md)
 (`series:nains year:2010..2015 ^genre:humour`, quote values with spaces).
 
 | endpoint | returns |
@@ -40,9 +76,19 @@ All of them are `GET`, JSON, and read-only. `q` takes the same terms as [`bdnex 
 | `/api/trash` | files waiting in the trash |
 | `/api/stats` | counts of files, albums, series... |
 | `/api/health` | version, schema, whether a token is required |
+| `/api/overview` | the counts and state the front page shows, and whether changes are allowed |
+| `/api/series/{id}` | one series, volume by volume: owned or missing |
+| `/api/files/{id}/cover` | the first page of a file, as a small picture |
+| `/api/review` | the matches waiting for a look |
+| `POST /api/review/{file_id}` | **change:** `{"action": "keep"}` or `{"action": "unlink"}` |
+| `/api/duplicates`, `/api/check` | what `bdnex duplicates` and `bdnex check` report |
+| `/api/config` | the settings that matter to the page (no token, no fetcher address) |
+| `/api/jobs/available`, `/api/jobs`, `/api/jobs/{id}?after=` | the tasks you can start, the runs, and one run with its output from line `after` |
+| `POST /api/jobs` | start a task: `{"command": "move", "preview": true, "query": ["series:nains"]}`. A preview needs no permission; `"preview": false` is a **change** |
+| `POST /api/jobs/{id}/cancel` | **change:** ask a running task to stop |
 
-A bad query answers `400` with the reason. The database is opened read-only, so the server cannot damage it and it
-can run while an import does. After upgrading bdnex, run any other command once so the library is migrated: the
+A bad query answers `400` with the reason. Reading opens the database read-only, so looking cannot damage it and can
+happen while an import runs. After upgrading bdnex, run any other command once so the library is migrated: the
 server reports `503` instead of migrating it itself.
 
 ## Examples

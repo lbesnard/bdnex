@@ -87,7 +87,9 @@ class Library:
                 os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         self.path = path
         if readonly:
-            self.conn = sqlite3.connect(f"file:{os.path.abspath(path)}?mode=ro", uri=True)
+            # a read-only connection may be closed by another thread than the one that opened it (a web request
+            # is set up and torn down in different worker threads)
+            self.conn = sqlite3.connect(f"file:{os.path.abspath(path)}?mode=ro", uri=True, check_same_thread=False)
         else:
             self.conn = sqlite3.connect(path)
         self.conn.row_factory = sqlite3.Row
@@ -664,6 +666,10 @@ class Library:
         """Record where the album's cover is kept (a path below ``cover.dir``; ``None`` forgets it)."""
         with self.conn:
             self.conn.execute("UPDATE albums SET cover_file = ? WHERE id = ?", (cover_file, album_id))
+
+    def file_by_id(self, file_id: int) -> Optional[dict[str, Any]]:
+        row = self.conn.execute("SELECT * FROM files WHERE id = ?", (file_id,)).fetchone()
+        return self._file_row(row) if row else None
 
     def get_file(self, path) -> Optional[dict[str, Any]]:
         row = self.conn.execute("SELECT * FROM files WHERE path = ?", (self._store(path),)).fetchone()
