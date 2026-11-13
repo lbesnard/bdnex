@@ -145,6 +145,18 @@ def _init_worker(settings, force: bool, batch: str) -> None:
     _WORKER.batch = batch
 
 
+def _failure(row, err, repair: bool = False) -> "FileResult":
+    """A failed file's result. A damaged archive is expected: say so in one line, no traceback over the bar."""
+    note = str(err)
+    if isinstance(err, (archive.ArchiveError, OSError)):
+        logger.debug(f"{row['path']} failed", exc_info=True)
+        if isinstance(err, archive.ArchiveError) and not repair:
+            note += " (`bdnex repair` rebuilds a file from its readable pages)"
+    else:
+        logger.exception(f"{row['path']} failed")
+    return FileResult(row["path"], FAILED, note=note)
+
+
 def _work(task):
     """One file in a worker: its result, or ``None`` when the main process has to do it (a question, an abort)."""
     index, row, mode, repair = task
@@ -154,8 +166,7 @@ def _work(task):
     except (Deferred, WriteAborted):
         return None
     except Exception as err:
-        logger.exception(f"{row['path']} failed")
-        return FileResult(row["path"], FAILED, note=str(err))
+        return _failure(row, err, repair)
     finally:
         _STATE[index] = 2
 
@@ -202,8 +213,7 @@ class Organizer:
                 self.aborted_at = row["path"]
                 break
             except Exception as err:  # one file must not stop the batch
-                logger.exception(f"{row['path']} failed")
-                result = FileResult(row["path"], FAILED, note=str(err))
+                result = _failure(row, err, repair)
             results.append(result)
             if on_result:
                 on_result(number, len(rows), result)
@@ -265,8 +275,7 @@ class Organizer:
                     self.aborted_at = row["path"]
                     break
                 except Exception as err:
-                    logger.exception(f"{row['path']} failed")
-                    result = FileResult(row["path"], FAILED, note=str(err))
+                    result = _failure(row, err, repair)
                 results.append(result)
                 if on_result:
                     on_result(number, len(rows), result)
