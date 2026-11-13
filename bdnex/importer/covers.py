@@ -243,3 +243,23 @@ def opencv_installed() -> bool:
     except CoverUnavailable:
         return False
     return True
+
+
+MIN_COVER_SIDE = 100  # pixels: smaller is a placeholder, not a cover
+
+
+def check_cover_image(data: bytes) -> None:
+    """Raise :class:`CoverError` saying what ``data`` is when it is not a usable cover image (an error page, the
+    HTML that wraps an image, a 1-pixel placeholder...)."""
+    if not data:
+        raise CoverError("nothing was received")
+    try:
+        import pymupdf
+
+        pixmap = pymupdf.Pixmap(data)
+        width, height = pixmap.width, pixmap.height
+    except Exception:
+        start = data[:60].decode("utf-8", "replace").replace("\n", " ")
+        raise CoverError(f"{len(data)} bytes were received, which is not an image (it starts with {start!r})") from None
+    if min(width, height) < MIN_COVER_SIDE:
+        raise CoverError(f"the picture is only {width}x{height} pixels: a placeholder, not a cover")

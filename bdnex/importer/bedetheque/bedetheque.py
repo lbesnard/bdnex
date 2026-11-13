@@ -53,6 +53,15 @@ def http_fetch(url: str) -> bytes:
     return response.content
 
 
+def image_fetch(url: str) -> bytes:
+    """A cover: a plain request (the page fetcher of the configuration is made for HTML pages: a browser-based one
+    hands back the little page that wraps an image, not the image)."""
+    response = requests.get(url, headers={"User-Agent": USER_AGENT, "Referer": "https://www.bedetheque.com/"},
+                            timeout=30)
+    response.raise_for_status()
+    return response.content
+
+
 VOLUME_TIEBREAK = 10.0  # only orders the candidates; the reported score does not include it
 MAX_POSTINGS = 4000  # a word in more albums than this ('integrale') is no use to find candidates
 
@@ -73,9 +82,11 @@ class Bedetheque:
     def __init__(self, library: Library, fetch: Callable[[str], bytes] = http_fetch,
                  delay: tuple[float, float] = (3, 10), sleep: Callable[[float], None] = time.sleep,
                  sitemap_fetch: Optional[Callable[[str], bytes]] = None,
-                 sitemap_delay: tuple[float, float] = (0.5, 1.5)):
+                 sitemap_delay: tuple[float, float] = (0.5, 1.5),
+                 image_fetch: Optional[Callable[[str], bytes]] = None):
         self.library = library
         self._fetch = fetch
+        self._image_fetch = image_fetch or fetch
         self._sitemap_fetch = sitemap_fetch or fetch
         self.delay = delay
         self.sitemap_delay = sitemap_delay
@@ -95,8 +106,8 @@ class Bedetheque:
                 return cached
         self._sleep(uniform(*(self.sitemap_delay if kind == "sitemap" else self.delay)))
         logger.debug(f"Fetching {url}")
-        content = (self._sitemap_fetch if kind == "sitemap" else self._fetch)(url)
-        if kind != "sitemap" and looks_blocked(200, content):  # whichever fetcher it came from
+        content = {"sitemap": self._sitemap_fetch, "cover": self._image_fetch}.get(kind, self._fetch)(url)
+        if kind not in ("sitemap", "cover") and looks_blocked(200, content):  # whichever fetcher it came from
             raise BlockedError(f"{url}: the fetcher returned an anti-bot challenge page, not the page. "
                                "Nothing was stored.")
         if store:

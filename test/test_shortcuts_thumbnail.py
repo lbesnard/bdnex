@@ -366,3 +366,12 @@ def test_the_series_question_has_coloured_keys_like_the_match_question(monkeypat
                                           "a": InquirerPrompter.ABORT}
     names = [c["name"] for c in prompter.seen["choices"]]
     assert names[0].startswith("[Y]es") and names[2].startswith("[C]hoose") and names[3].startswith("[S]kip this folder")
+
+
+def test_two_covers_become_one_picture_side_by_side():
+    left, right = png(1, size=(200, 300)), png(2, size=(300, 300))
+    both = thumbnail.pair(left, right, height=100, gap=10)
+    import pymupdf
+    pixmap = pymupdf.Pixmap(both)
+    assert pixmap.height == 100 and pixmap.width == 67 + 10 + 100  # each scaled to the same height
+    assert thumbnail.pair(left, b"not an image") is None

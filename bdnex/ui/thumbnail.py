@@ -154,23 +154,22 @@ def prepare(image: bytes, kind: str, terminal_columns: int) -> Optional[Picture]
 
 def pair(left: bytes, right: bytes, height: int = 360, gap: int = 16) -> Optional[bytes]:
     """Two images side by side in one PNG (same height), or ``None`` when one can not be read."""
-    import io
-
-    from PIL import Image
+    import pymupdf
 
     try:
-        images = []
+        widths = []
         for data in (left, right):
-            image = Image.open(io.BytesIO(data)).convert("RGB")
-            width = max(1, round(image.width * height / image.height))
-            images.append(image.resize((width, height)))
-        canvas = Image.new("RGB", (images[0].width + gap + images[1].width, height), (40, 40, 40))
-        canvas.paste(images[0], (0, 0))
-        canvas.paste(images[1], (images[0].width + gap, 0))
-        out = io.BytesIO()
-        canvas.save(out, "PNG")
-        return out.getvalue()
-    except Exception:
+            pixmap = pymupdf.Pixmap(data)
+            widths.append(max(1, round(pixmap.width * height / pixmap.height)))
+        total = widths[0] + gap + widths[1]
+        doc = pymupdf.open()
+        page = doc.new_page(width=total, height=height)
+        page.draw_rect(page.rect, color=None, fill=(0.16, 0.16, 0.16))
+        page.insert_image(pymupdf.Rect(0, 0, widths[0], height), stream=left)
+        page.insert_image(pymupdf.Rect(widths[0] + gap, 0, total, height), stream=right)
+        return page.get_pixmap(dpi=72).tobytes("png")
+    except Exception as err:
+        logger.debug(f"no side-by-side picture: {err}")
         return None
 
 

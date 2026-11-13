@@ -27,6 +27,12 @@ def isolated_home(tmp_path_factory, monkeypatch):
     monkeypatch.delenv("BDNEX_CONFIG", raising=False)
 
 
+@pytest.fixture(autouse=True)
+def no_automatic_cover_check(monkeypatch):
+    """`cover.check: auto` must not depend on whether OpenCV happens to be installed: a test that wants the check says so."""
+    monkeypatch.setattr("bdnex.importer.covers.opencv_installed", lambda: False)
+
+
 @pytest.fixture
 def make_cbz(tmp_path):
     """Factory creating a fake CBZ with N pages (and optional ComicInfo.xml)."""

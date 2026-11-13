@@ -22,13 +22,25 @@ def _read(path):
         return fh.read()
 
 
+def _a_cover() -> bytes:
+    """A small real picture (a cover is checked to be one before it is kept)."""
+    import pymupdf
+
+    pixmap = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 240, 360), False)
+    pixmap.set_rect(pixmap.irect, (200, 120, 60))
+    return pixmap.tobytes("png")
+
+
+COVER_BYTES = _a_cover()
+
+
 class FakeWeb:
     """Replaces the network: serves fixtures and counts requests."""
 
     def __init__(self):
         self.calls = []
         self.pages = {ALBUM_URL: _read(os.path.join(_TEST_ROOT, 'mobile_redwin.html')), SERIES_URL: _read(os.path.join(_BDGEST, 'series_html/serie-47467-BD-Nains.html')),
-                      "https://www.bedetheque.com/media/Couvertures/Couv_245127.jpg": b"JPEGDATA"}
+                      "https://www.bedetheque.com/media/Couvertures/Couv_245127.jpg": COVER_BYTES}
         ns = 'xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"'
         for n, url in enumerate(sitemap.sitemap_urls(60)):
             if n < 26:  # 26 non-empty files, then the site serves empty ones

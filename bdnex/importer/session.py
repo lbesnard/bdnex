@@ -432,7 +432,10 @@ class ImportSession:
                 if not partial and (self.cover_check or self.settings.cover.download):
                     self._check_cover(result)
         except KeyboardInterrupt:
-            self.progress("Interrupted: the files stay linked; `bdnex import --fetch` reads the rest of the pages.")
+            self._covers = []  # stop means stop: no cover pass afterwards (the next `--fetch` gets them)
+            self.progress("Interrupted: the files stay linked; `bdnex import --fetch` reads the rest of the pages "
+                          "and downloads the covers that are missing.")
+            return
         finally:
             if bar:
                 bar.finish()
@@ -444,8 +447,11 @@ class ImportSession:
         waiting, self._covers = self._covers, []
         if waiting:
             self.progress(f"Getting {len(waiting)} cover(s) (one request each, politely)...")
-        for result in waiting:
-            self._check_cover(result)
+        try:
+            for result in waiting:
+                self._check_cover(result)
+        except KeyboardInterrupt:
+            self.progress("Interrupted: the other covers are downloaded by the next `bdnex import --fetch`.")
 
     def _cover_missing(self, album: dict) -> bool:
         """Should this album's cover be downloaded (``cover.download``) and is it not there?"""
@@ -469,11 +475,20 @@ class ImportSession:
         """The album's cover: the saved file, else downloaded now (and saved when ``cover.download``)."""
         kept = self._kept_cover(album)
         if kept is not None and not self.recache:
-            return kept.read_bytes()
+            data = kept.read_bytes()
+            try:
+                covers.check_cover_image(data)
+                return data
+            except covers.CoverError:  # a bad file left by an earlier run (an error page saved as a picture)
+                if not self.pretend:
+                    kept.unlink(missing_ok=True)
+                    self.library.set_cover_file(album["id"], None)
+                    album["cover_file"] = None
         fetch_image = getattr(self.source, "cover_image", None)
         if fetch_image is None or not album.get("cover_url"):
             return None
         data = fetch_image(album["cover_url"], recache=self.recache)
+        covers.check_cover_image(data)  # never keep (or compare) what is not a picture
         if data and self.settings.cover.download and not self.pretend:
             relative = covers.save_cover(self.settings.cover_path, album["source"], album["source_id"], data)
             self.library.set_cover_file(album["id"], relative)
@@ -492,7 +507,7 @@ class ImportSession:
             return
         try:
             online = self._cover_bytes(album) if (self.settings.cover.download or self.cover_check) else None
-        except self.source.fetch_errors as err:
+        except (covers.CoverError, *self.source.fetch_errors) as err:
             result.note = "; ".join(n for n in (result.note, f"cover not downloaded: {err}") if n)
             return
         if not self.cover_check or self._cover_off:

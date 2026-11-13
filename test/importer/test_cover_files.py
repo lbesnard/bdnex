@@ -2,6 +2,8 @@
 
 import os
 
+from bdnex.importer.source import Candidate
+
 from bdnex.importer.bedetheque import Bedetheque
 from helpers import ALBUM_URL, FakeWeb
 
@@ -69,3 +71,20 @@ def test_save_cover_names_the_file_by_its_content(tmp_path):
     assert covers.save_cover(tmp_path, "bedetheque", "12", b"\x89PNG....") == "bedetheque/12.png"
     assert covers.save_cover(tmp_path, "bedetheque", "../x", b"JPEG") == "bedetheque/.._x.jpg"
     assert covers.find_cover(tmp_path, "bedetheque", "12") == "bedetheque/12.png"
+
+
+def test_interrupting_the_page_loop_does_not_start_a_cover_pass(tmp_path, monkeypatch):
+    web = web_with_cover()
+    env = env_for(web, check=False, download=True)
+    path = cbz_with_cover(tmp_path, FILE, 1)
+    env.session.run([path])
+    os.remove(next((env.session.settings.cover_path / "bedetheque").iterdir()))  # a complete album lacking its cover
+    web.calls.clear()
+    env.session.steps = frozenset(["fetch"])
+    env.session._covers = [object()]  # work waiting for the cover pass
+    def interrupted(*a, **k):
+        raise KeyboardInterrupt
+    monkeypatch.setattr(env.session, "_album_for", interrupted)
+    env.session._pending = [(type("R", (), {"note": "", "path": path, "score": None})(), Candidate("1", "https://www.bedetheque.com/BD-X-1.html", "x"), "")]
+    env.session._fetch_pending()
+    assert env.session._covers == [] and COVER_URL not in web.calls

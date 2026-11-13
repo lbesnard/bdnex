@@ -111,10 +111,11 @@ def test_the_flag_turns_it_on_for_one_run(tmp_path):
 
 
 def test_a_cover_that_is_not_an_image_is_noted_not_fatal(tmp_path):
-    web = FakeWeb()  # the fixture's "cover" is the bytes b"JPEGDATA"
+    web = FakeWeb()
+    web.pages[COVER_URL] = b"<html><body><img src='x'></body></html>"  # what a browser-based fetcher hands back
     env = env_for(web, Prompter())
     result = env.session.run([cbz_with_cover(tmp_path, FILE, 1)]).results[0]
-    assert result.outcome == TAGGED and "cover not compared" in result.note
+    assert result.outcome == TAGGED and "cover not downloaded" in result.note and "not an image" in result.note
 
 
 def test_without_opencv_the_import_goes_on_and_says_why(tmp_path, monkeypatch):

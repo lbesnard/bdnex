@@ -178,3 +178,14 @@ def test_a_cover_is_found_whatever_the_extension_says(tmp_path):
     assert covers.front_cover(str(zipped), "cbr") == png(2)
     shutil.copy(zipped, tmp_path / "x.pdf")
     assert covers.front_cover(str(tmp_path / "x.pdf"), "pdf") == png(2)
+
+
+def test_only_a_real_picture_passes_for_a_cover():
+    import pytest
+    from bdnex.importer import covers
+    covers.check_cover_image(jpeg(art(1)))
+    html = b'<html><head><meta name="viewport" content="width=device-width"></head><body><img src="x.jpg"></body></html>'
+    with pytest.raises(covers.CoverError, match="not an image.*<html>"):
+        covers.check_cover_image(html)
+    with pytest.raises(covers.CoverError, match="nothing"):
+        covers.check_cover_image(b"")
