@@ -91,6 +91,7 @@ class Bedetheque:
         self._image_fetch = image_fetch or fetch
         self.parallel = parallel  # album pages fetched at once (see `prefetch`)
         self.active = 0       # pages being fetched right now (waiting the polite delay included)
+        self._fetching: list[str] = []  # their addresses, in the order they started
         self.downloaded = 0   # pages fetched since `prefetch` started
         self._stats = threading.Lock()
         self._sitemap_fetch = sitemap_fetch or fetch
@@ -128,12 +129,20 @@ class Bedetheque:
     def _tracked_download(self, url: str) -> bytes:
         with self._stats:
             self.active += 1
+            self._fetching.append(url)
         try:
             return self._download("album", url)
         finally:
             with self._stats:
                 self.active -= 1
                 self.downloaded += 1
+                self._fetching.remove(url)
+
+    def fetching_now(self) -> list[str]:
+        """The short names of the pages being fetched right now (``Abaddon-Shadmi-Tome-1-Abaddon``), oldest first."""
+        with self._stats:
+            urls = list(self._fetching)
+        return [re.sub(r"-\d+$", "", re.sub(r"\.html$", "", re.sub(r"^BD-", "", url.rsplit("/", 1)[-1]))) for url in urls]
 
     def prefetch(self, urls: list[str], workers: Optional[int] = None, recache: bool = False, tick=None):
         """Download album pages ``workers`` at a time. Yields ``(url, error or None)`` in the order of ``urls``; each page
@@ -149,6 +158,7 @@ class Bedetheque:
 
         workers = max(1, workers or self.parallel)
         self.active = self.downloaded = 0
+        self._fetching = []
         todo = [u for u in urls if recache or self.library.cache_get(SOURCE, "album", u) is None]
         wanted = set(todo)
         executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="bdnex-page")

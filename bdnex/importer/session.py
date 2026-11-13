@@ -481,9 +481,12 @@ class ImportSession:
         current = [""]  # the page the bar is on
 
         def busy(name: str) -> str:
-            """What the bar says: the page it waits for, and how many are being fetched at the same time."""
-            active = getattr(self.source, "active", 0)
-            return f"{name}  ({active} being fetched, {getattr(self.source, 'downloaded', 0)} of {len(pending)} fetched)" if arriving is not None else name
+            """What the bar says: with several pages at once, the titles being fetched and how many are done."""
+            if arriving is None:
+                return name
+            titles = getattr(self.source, "fetching_now", lambda: [])()
+            done = getattr(self.source, "downloaded", 0)
+            return (" · ".join(titles) if titles else name) + f"  ({done} of {len(pending)} fetched)"
 
         if workers > 1 and hasattr(self.source, "prefetch") and not self.pretend:
             self.progress(f"Fetching {workers} pages at a time.")

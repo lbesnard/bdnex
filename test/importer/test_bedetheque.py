@@ -386,3 +386,16 @@ def test_prefetch_lets_a_display_follow_what_is_being_fetched(lib):
         pass
     assert ticks and max(seen) == 3  # the three were being fetched together while the first was awaited
     assert source.downloaded == 3 and source.active == 0
+
+
+def test_the_titles_being_fetched_are_known_while_they_are_fetched(lib):
+    import time
+    seen = []
+    source = Bedetheque(lib, fetch=lambda url: (time.sleep(0.8), b"<html>x</html>")[1], sleep=lambda s: None, parallel=3)
+    urls = ["https://www.bedetheque.com/BD-Abaddon-Shadmi-Tome-1-Abaddon-189520.html",
+            "https://www.bedetheque.com/BD-Ada-Baldi-Ada-77.html",
+            "https://www.bedetheque.com/BD-1984-Derrien-Torregrossa-1984-413225.html"]
+    for _ in source.prefetch(urls, 3, tick=lambda: seen.append(source.fetching_now())):
+        pass
+    assert seen and sorted(seen[0]) == ["1984-Derrien-Torregrossa-1984", "Abaddon-Shadmi-Tome-1-Abaddon", "Ada-Baldi-Ada"]
+    assert source.fetching_now() == []  # nothing is being fetched once they are all in

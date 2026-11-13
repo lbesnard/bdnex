@@ -101,6 +101,17 @@ class Bar:
             return f"{color.paint(self.label, 'bold', True)} [{bar}] {pct:>3}%  {self.done}/{self.total}{eta}  {detail}".rstrip()
         return f"{self.label} [{bar}] {pct:>3}%  {self.done}/{self.total}{eta}  {detail}".rstrip()
 
+    def _fit(self, text: str) -> str:
+        """On a terminal, cut the line to its width (an ellipsis at the end), so that it is always one line."""
+        import shutil
+
+        width = shutil.get_terminal_size((100, 20)).columns - 1
+        visible = re.sub(r"\x1b\[[0-9;]*m", "", text)
+        if len(visible) <= width:
+            return text
+        plain = visible[:max(1, width - 1)] + "…"
+        return plain  # the colours of a line that long are not worth keeping
+
     def update(self, detail: str = "", step: int = 1) -> None:
         self.done += step
         if self.done > self.total:
@@ -108,7 +119,7 @@ class Bar:
             self.exact = False
         text = self.line(detail)
         if self.tty:
-            print("\r\x1b[K" + text, end="", file=self.stream, flush=True)
+            print("\r\x1b[K" + self._fit(text), end="", file=self.stream, flush=True)
             self._shown = True
         elif self.percent() // 10 > self._last_decile or self.total <= 10:
             self._last_decile = self.percent() // 10
@@ -117,7 +128,7 @@ class Bar:
     def refresh(self, detail: str = "") -> None:
         """Redraw the line with new text, without counting a step (a terminal only)."""
         if self.tty:
-            print("\r\x1b[K" + self.line(detail), end="", file=self.stream, flush=True)
+            print("\r\x1b[K" + self._fit(self.line(detail)), end="", file=self.stream, flush=True)
             self._shown = True
 
     def finish(self, message: str = "") -> None:
