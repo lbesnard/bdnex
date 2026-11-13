@@ -153,3 +153,20 @@ def test_inspect_distinguishes_damaged_from_unreadable(make_damaged_cbz, tmp_pat
     junk.write_bytes(b"hello")
     info = inspect_file(junk)
     assert info.corrupted and not info.readable and info.problem
+
+
+def test_relink_finds_a_file_moved_outside_bdnex_by_its_content(lib, make_cbz, tmp_path):
+    original = make_cbz("a.cbz", pages=3)
+    lib.add_file(original)
+    other = make_cbz("b.cbz", pages=5)
+    lib.add_file(other)
+    moved = tmp_path / "elsewhere" / "renamed.cbz"
+    moved.parent.mkdir()
+    os.rename(original, moved)
+    os.remove(other)
+    result = lib.relink([str(tmp_path)], apply=False)
+    assert result["found"] == [(original, str(moved))] and result["lost"] == [other]
+    assert lib.get_file(str(moved)) is None  # a preview changes nothing
+    lib.relink([str(tmp_path)])
+    assert lib.get_file(str(moved)) is not None and lib.get_file(original) is None
+    assert [r["path"] for r in lib.missing_files()] == [other]
