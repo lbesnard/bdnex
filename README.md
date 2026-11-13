@@ -9,7 +9,7 @@ BDneX is a French comics tagger and library manager. **Documentation: <https://b
 > database change often, **with breaking changes at any time and no deprecation period**. Some upgrades
 > convert the database in place, after which an older bdnex refuses to open it.
 >
-> Until there is a 1.0 release: **back up your library database before upgrading** (`bdnex config --defaults`
+> Until there is a 1.0 release: **back up your library database before upgrading** (bdnex also keeps `bdnex.sqlite.bak-v<N>` when an upgrade changes it) (`bdnex config --defaults`
 > shows where it is), pin the version you install, and read the release notes. bdnex only changes your comic
 > files when you ask it to (`write`, `move`, `repair`, or an import that places files); keep a backup of your
 > collection as well.

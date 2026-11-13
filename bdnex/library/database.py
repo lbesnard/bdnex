@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import sqlite3
+import sys
 from typing import Any, Iterable, Optional
 
 from bdnex.library.hashing import file_md5
@@ -79,11 +80,32 @@ class Library:
         if current > SCHEMA_VERSION:
             raise SchemaTooNewError(
                 f"{self.path} has schema v{current}, this bdnex only knows v{SCHEMA_VERSION}")
+        if current and current < SCHEMA_VERSION:
+            self._back_up(current)
         for version in range(current, SCHEMA_VERSION):
             logger.info(f"Migrating library schema to v{version + 1}")
             with self.conn:
                 self.conn.executescript("BEGIN;" + MIGRATIONS[version])
                 self.conn.execute(f"PRAGMA user_version = {version + 1}")
+
+    def _back_up(self, version: int) -> None:
+        """Before an upgrade changes the file for good (an older bdnex can not open it any more), keep a copy:
+        ``<library>.bak-v<version>``. One copy per version; an existing one is never overwritten."""
+        if self.path == ":memory:":
+            return
+        target = f"{self.path}.bak-v{version}"
+        if os.path.exists(target):
+            return
+        try:
+            copy = sqlite3.connect(target)
+            with copy:
+                self.conn.backup(copy)
+            copy.close()
+        except (sqlite3.Error, OSError) as err:  # a copy that fails must not make the library unusable
+            logger.warning(f"could not back up {self.path} before upgrading it: {err}")
+            return
+        print(f"bdnex: your library (schema v{version}) is being upgraded to v{SCHEMA_VERSION}; the old one is kept "
+              f"as {target}", file=sys.stderr)
 
     # ------------------------------------------------------------------ paths
     def _store(self, path) -> str:
