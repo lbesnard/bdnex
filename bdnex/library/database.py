@@ -509,6 +509,12 @@ class Library:
                 "DELETE FROM series WHERE id NOT IN (SELECT series_id FROM albums WHERE series_id IS NOT NULL)"
             ).rowcount
 
+    def series_of_album(self, album_id: int) -> Optional[tuple[str, str]]:
+        """``(the series' identity at its source, its name)`` for an album of a series; ``None`` for a one-shot."""
+        row = self.conn.execute("SELECT s.source_id, s.name FROM albums a JOIN series s ON s.id = a.series_id WHERE a.id = ?",
+                                (album_id,)).fetchone()
+        return (row["source_id"], row["name"]) if row else None
+
     def files_for_album(self, album_id: int) -> list[dict[str, Any]]:
         return sorted((self._file_row(r) for r in self.conn.execute(
             "SELECT * FROM files WHERE album_id = ?", (album_id,))), key=lambda r: r["path"])

@@ -205,3 +205,88 @@ def test_ticking_nothing_matches_each_file_by_itself_and_ends(make_cbz):
     env = env_for(Nothing())
     env.session.run([os.path.dirname(files[0])])
     assert len(env.session.prompter.series_asked) == 1 and len(env.session.prompter.match_asked) == 3
+
+
+# ------------------------------------------- an album picked by hand for one file is offered for the rest of the folder
+class Following(Prompter):
+    """Picks the first candidate for the first file, and answers the follow-up question as told."""
+
+    def __init__(self, answer="series"):
+        super().__init__()
+        self.answer, self.followups = answer, []
+
+    def confirm_same_series(self, folder, paths, proposal, first):
+        self.followups.append((folder, [os.path.basename(p) for p in paths], proposal.name, first))
+        return self.answer
+
+
+MIXED = ("Foo - T01.cbz", "Mystery - T02.cbz", "Mystery - T03.cbz")  # only the first one names its series
+
+
+@pytest.fixture
+def no_vote(monkeypatch):
+    """The folder's files do not vote for a series (so the folder is not proposed as one): the case this is for."""
+    from bdnex.importer import folders as folder_logic
+    monkeypatch.setattr(folder_logic, "propose_series", lambda *a, **k: None)
+
+
+def test_picking_an_album_by_hand_offers_its_series_for_the_other_files(make_cbz, no_vote):
+    files = folder(make_cbz, "Mixed", *MIXED)
+    env = env_for(Following("series"))
+    env.session.run([os.path.dirname(files[0])])
+    prompter = env.session.prompter
+    assert len(prompter.followups) == 1
+    _, offered, series, first = prompter.followups[0]
+    assert offered == ["Mystery - T02.cbz", "Mystery - T03.cbz"] and series == "Foo" and first == "Foo - T01.cbz"
+    assert [linked(env, f) for f in files] == [("Foo", 1), ("Foo", 2), ("Foo", 3)]  # the others went by volume
+    assert prompter.match_asked == ["Foo - T01.cbz"]  # and were not asked about one by one
+
+
+def test_saying_no_matches_the_others_one_by_one_and_asks_only_once(make_cbz, no_vote):
+    files = folder(make_cbz, "Mixed", *MIXED)
+    env = env_for(Following("each"))
+    env.session.run([os.path.dirname(files[0])])
+    prompter = env.session.prompter
+    assert len(prompter.followups) == 1 and len(prompter.match_asked) == 3  # every file got the usual question
+
+
+def test_skipping_the_folder_from_the_offer_skips_the_other_files(make_cbz, no_vote):
+    files = folder(make_cbz, "Mixed", *MIXED)
+    env = env_for(Following("skip"))
+    report = env.session.run([os.path.dirname(files[0])])
+    assert [r.outcome for r in report.results][1:] == ["skipped", "skipped"]
+    assert linked(env, files[1]) is None and linked(env, files[2]) is None
+
+
+def test_going_back_takes_the_offered_series_back_too(make_cbz, no_vote):
+    from bdnex.importer.session import GoBack
+    files = folder(make_cbz, "Mixed", *MIXED, "Zzz - Special.cbz")  # the last one is not in the offer: it is asked about
+
+    class Back(Following):
+        def __init__(self):
+            super().__init__("series")
+            self.asked_about = []
+
+        def choose_match(self, path, matches):
+            self.asked_about.append(os.path.basename(path))
+            if len(self.asked_about) == 2:
+                raise GoBack(path)  # at the question about the special: back to the file before it
+            return super().choose_match(path, matches)
+
+    env = env_for(Back())
+    env.session.run([os.path.dirname(files[0])])
+    prompter = env.session.prompter
+    assert prompter.asked_about[:3] == ["Foo - T01.cbz", "Zzz - Special.cbz", "Foo - T01.cbz"]
+    assert len(prompter.followups) == 2  # offered, taken back with the choice it came from, offered again
+    assert [linked(env, f) for f in files[:3]] == [("Foo", 1), ("Foo", 2), ("Foo", 3)]
+
+
+def test_a_one_shot_or_a_folder_already_taken_for_a_series_gets_no_offer(make_cbz):
+    files = folder(make_cbz, "Foo", *OBVIOUS)
+    env = env_for(Following())
+    env.session.run([os.path.dirname(files[0])])
+    assert env.session.prompter.followups == []  # the folder was assumed a series: nothing to offer
+    files = folder(make_cbz, "Mixed2", *MIXED)
+    env = env_for(Following(), mode="never")
+    env.session.run([os.path.dirname(files[0])])
+    assert env.session.prompter.followups == []  # `--no-series`: every file by itself

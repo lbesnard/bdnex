@@ -166,6 +166,20 @@ def _album_in_series(source, key: str, name: str, volume: int, own: list[Match])
     return best[0] if best else None
 
 
+def propose_for_series(source, key: str, name: str, paths: list[str],
+                       matches: dict[str, list[Match]]) -> Optional[SeriesProposal]:
+    """The album of one given series for each file, by volume number: what to offer for the rest of a folder once the
+    user has picked an album of that series for one of its files. ``None`` when no file finds its volume."""
+    volumes = {path: title_and_volume(path)[1] for path in paths}
+    numbered = [path for path in paths if volumes[path] is not None]
+    proposal = SeriesProposal(name, key, with_volume=len(numbered), total=len(paths))
+    for path in numbered:
+        found = _album_in_series(source, key, name, volumes[path], matches.get(path, []))
+        if found is not None:
+            proposal.mapping[path] = found
+    return proposal if proposal.mapping else None
+
+
 def folder_name(paths: list[str]) -> str:
     return os.path.basename(os.path.dirname(paths[0]))
 

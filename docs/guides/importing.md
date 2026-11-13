@@ -131,6 +131,12 @@ series (`100 Bullets` T01 matching `Stray Bullets`). A series that shares no wor
 never suggested. Files with no volume (specials) are matched one by one as usual, and answering *No* matches every
 file by itself.
 
+**You picked an album by hand.** When a folder was not taken for a series (its files did not agree on one), but you pick
+an album of a series for one of its files, bdnex offers that series for the **other files of the folder**: it looks for
+the album of the same series with each file's volume number, and asks once, with the same answers as *Is this one
+series?* (yes, no, choose which files, skip the folder). **Back** takes the offer back together with your choice. It is
+not offered after `--no-series`, `--auto=all`, or for a one-shot.
+
 **A folder that holds two series** (say `Achille Talon` volumes plus a sub-series, or a few unrelated books): at
 *Is this one series?* choose *Choose which files belong to it*. A list of the folder's files opens; the ones the
 series was found in, and that are named like most of them, start ticked, **Space** ticks or unticks, **Enter** confirms. The ticked files become that
