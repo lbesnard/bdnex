@@ -180,7 +180,7 @@ class Settings(_Section):
         if not self.directory or self.directory == PLACEHOLDER_DIRECTORY:
             raise ConfigError(
                 "`directory` is not set in your bdnex config: edit it "
-                f"(`bdnex config --edit`) and set it to your comics folder.")
+                "(`bdnex config --edit`) and set it to your comics folder.")
         return Path(os.path.expanduser(self.directory))
 
 
@@ -279,7 +279,7 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
                 errors.append(f"{key}: no longer used since config_version {removed_in}: delete it"
                               if removed_in else f"{key}: unknown option (typo?)")
     if stale:
-        ignored = f" Delete the ignored keys listed below, then" if unknown else ""
+        ignored = " Delete the ignored keys listed below, then" if unknown else ""
         warnings.insert(0, (
             f"your config is stale (config_version {version}, current {CONFIG_VERSION}).{ignored} "
             f"set `config_version: {CONFIG_VERSION}` once you have checked it against "

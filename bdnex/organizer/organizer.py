@@ -83,10 +83,6 @@ def human_size(size: int) -> str:
     return f"{size} B"
 
 
-class NoRoom(archive.ArchiveError):
-    """There is not enough free space to write safely."""
-
-
 def free_space(path: str) -> int:
     """Bytes free on the disk that holds ``path`` (or the nearest existing parent of it)."""
     folder = os.path.abspath(path)
@@ -159,13 +155,16 @@ class Organizer:
         if not os.path.exists(path):
             return FileResult(path, FAILED, note="file not found")
         write = self.settings.write
+        spare = bool(row.get("spare"))
+        left_as_is = None
         if fmt != "cbz" and write.format_preferred == "none":
-            return FileResult(path, SKIPPED, note=f"{fmt} left as it is (write.format_preferred: none): "
-                                                  "only a CBZ can be tagged without converting it")
-        if fmt == "cbr" and write.cbr == "skip":
-            return FileResult(path, SKIPPED, note="cbr skipped (write.cbr: skip)")
-        if fmt == "pdf" and write.pdf == "skip":
-            return FileResult(path, SKIPPED, note="pdf skipped (write.pdf: skip)")
+            left_as_is = f"{fmt} left as it is (write.format_preferred: none): only a CBZ can be tagged without converting it"
+        elif fmt == "cbr" and write.cbr == "skip":
+            left_as_is = "cbr skipped (write.cbr: skip)"
+        elif fmt == "pdf" and write.pdf == "skip":
+            left_as_is = "pdf skipped (write.pdf: skip)"
+        if left_as_is:  # no tags can be written, but `move` can still put the file where it belongs
+            return self._move_as_is(path, fmt, album_id, mode, spare, left_as_is)
 
         repaired_pages: list[str] = []
         recovered = None
@@ -175,7 +174,6 @@ class Organizer:
                 return self._unrepairable(row, album_id, fmt, mode, recovered)
             repaired_pages = recovered.repaired
 
-        spare = bool(row.get("spare"))
         dest = self._destination(path, fmt, album_id, mode, spare)
         if isinstance(dest, FileResult):
             return dest
@@ -220,7 +218,8 @@ class Organizer:
             else:
                 steps.append(f"{'copy' if mode == COPY else 'move'} to {dest}")
         if self.pretend:
-            where = "" if not same_place else "; stays where it is"
+            where = "; stays where it is" if same_place else (
+                "; the destination already exists (you would be asked what to do)" if os.path.exists(dest) else "")
             return FileResult(path, PRETEND, dest, "would: " + "; ".join(steps) + where)
 
         if not same_place and os.path.exists(dest):
@@ -371,28 +370,39 @@ class Organizer:
                 choice = self.prompter.corrupted_action(path, problems, can_move)
         if choice != "move" or not can_move:
             return FileResult(path, SKIPPED, note=note + " (left as it is)")
-        dest = self._destination(path, fmt, album_id, mode)
+        return self._move_as_is(path, fmt, album_id, mode, bool(row.get("spare")), note)
+
+    def _move_as_is(self, path: str, fmt: str, album_id: int, mode: str, spare: bool, why: str) -> FileResult:
+        """Put a file we can not tag (damaged, or left in its format by the config) where it belongs, byte for
+        byte and with its own extension. A tags-only run (`write`) just leaves it."""
+        if mode == WRITE:
+            return FileResult(path, SKIPPED, note=why)
+        dest = self._destination(path, fmt, album_id, mode, spare, as_is=True)
         if isinstance(dest, FileResult):
             return dest
+        if os.path.abspath(dest) == os.path.abspath(path):
+            return FileResult(path, UNCHANGED, dest, why + " (already in place)")
         if self.pretend:
-            return FileResult(path, PRETEND, dest, note + f" (would be moved as it is to {dest})")
-        if os.path.abspath(dest) != os.path.abspath(path) and os.path.exists(dest):
-            dest = self._resolve_collision(dest)
+            return FileResult(path, PRETEND, dest, f"would: move as it is, no tags written ({why})")
+        if os.path.exists(dest):
+            dest, became_spare = self._resolve_collision(dest, path, mode, spare)
             if dest is None:
                 return FileResult(path, SKIPPED, note="destination exists")
+            spare = spare or became_spare
         os.makedirs(os.path.dirname(dest), exist_ok=True)
         if mode == COPY:
             shutil.copy2(path, dest)
-        elif os.path.abspath(dest) != os.path.abspath(path):
+        else:
             shutil.move(path, dest)
         self._update_library(path, dest)
+        if spare:
+            self.library.set_file_fields(dest, spare=1)
         if mode == MOVE:
             self._prune_empty_dirs(path)
-        return FileResult(path, COPIED if mode == COPY else MOVED, dest,
-                          note + " (moved as it is: no tags written)")
+        return FileResult(path, COPIED if mode == COPY else MOVED, dest, why + " (moved as it is: no tags written)")
 
     # -------------------------------------------------------------- helpers
-    def _destination(self, path: str, fmt: str, album_id: int, mode: str, spare: bool = False):
+    def _destination(self, path: str, fmt: str, album_id: int, mode: str, spare: bool = False, as_is: bool = False):
         if mode == WRITE:
             return path if fmt == "cbz" else os.path.splitext(path)[0] + ".cbz"
 
@@ -410,9 +420,10 @@ class Organizer:
         if not rendered.parts:
             return FileResult(path, SKIPPED, note="the path template is empty")
         *folders, name = rendered.parts
+        extension = f".{fmt}" if as_is else ".cbz"  # an untouched file keeps what it is
         if spare:  # an extra version of the album: same name, in the spare versions folder
-            return str(root.joinpath(self.settings.duplicates.versions_dir, *folders, name + ".cbz"))
-        return str(root.joinpath(*folders, name + ".cbz"))
+            return str(root.joinpath(self.settings.duplicates.versions_dir, *folders, name + extension))
+        return str(root.joinpath(*folders, name + extension))
 
     def _missing(self, field: str, album_id: int, album: dict) -> Optional[str]:
         policy = self.settings.paths.missing_field
