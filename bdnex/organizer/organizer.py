@@ -154,42 +154,24 @@ class Organizer:
             return FileResult(path, SKIPPED, note="not matched to an album: run `bdnex import`")
         if not os.path.exists(path):
             return FileResult(path, FAILED, note="file not found")
-        write = self.settings.write
         spare = bool(row.get("spare"))
-        left_as_is = None
-        if fmt != "cbz" and write.format_preferred == "none":
-            left_as_is = f"{fmt} left as it is (write.format_preferred: none): only a CBZ can be tagged without converting it"
-        elif fmt == "cbr" and write.cbr == "skip":
-            left_as_is = "cbr skipped (write.cbr: skip)"
-        elif fmt == "pdf" and write.pdf == "skip":
-            left_as_is = "pdf skipped (write.pdf: skip)"
+        left_as_is = self._left_as_is(fmt)
         if left_as_is:  # no tags can be written, but `move` can still put the file where it belongs
             return self._move_as_is(path, fmt, album_id, mode, spare, left_as_is)
 
-        repaired_pages: list[str] = []
         recovered = None
         if row.get("corrupted"):  # try to repair first; ask what to do if that fails
             recovered = archive.read_entries_lenient(path, fmt)
             if not recovered.ok:
                 return self._unrepairable(row, album_id, fmt, mode, recovered)
-            repaired_pages = recovered.repaired
+        repaired_pages = recovered.repaired if recovered else []
 
         dest = self._destination(path, fmt, album_id, mode, spare)
         if isinstance(dest, FileResult):
             return dest
+        entries, existing, pages = self._read(path, fmt, recovered)
         album = self.library.get_album(album_id)  # reload: a prompt may have completed it
-
-        if recovered is not None:
-            entries, existing = recovered.entries, recovered.comicinfo
-            pages = archive.page_count(entries)
-        elif self.pretend:  # a preview does not read the pictures: that is what makes it instant
-            entries = None
-            existing, pages = archive.peek(path, fmt)
-        else:
-            entries, existing = archive.read_entries(path, fmt, write.pdf_mode, write.pdf_dpi, write.pdf_render_format)
-            pages = archive.page_count(entries)
-        new_fields = comicinfo.album_to_fields(album, pages or 0)
-        xml = self._resolve_xml(path, existing, new_fields, album_id)
+        xml = self._resolve_xml(path, existing, comicinfo.album_to_fields(album, pages or 0), album_id)
         if isinstance(xml, FileResult):
             return xml
 
@@ -198,30 +180,68 @@ class Organizer:
         if same_place and not converted and xml == existing and not repaired_pages:
             return FileResult(path, UNCHANGED, dest, "ComicInfo.xml already up to date")
 
+        steps = self._plan(fmt, entries, xml != existing, repaired_pages, dest, mode, same_place)
+        if self.pretend:
+            where = "; stays where it is" if same_place else (
+                "; the destination already exists (you would be asked what to do)" if os.path.exists(dest) else "")
+            return FileResult(path, PRETEND, dest, "would: " + "; ".join(steps) + where)
+        return self._carry_out(row, mode, dest, entries, xml, steps, converted, same_place, spare)
+
+    def _left_as_is(self, fmt: str) -> Optional[str]:
+        """Why a file of this format gets no tags (``None``: it is tagged)."""
+        write = self.settings.write
+        if fmt != "cbz" and write.format_preferred == "none":
+            return f"{fmt} left as it is (write.format_preferred: none): only a CBZ can be tagged without converting it"
+        if fmt == "cbr" and write.cbr == "skip":
+            return "cbr skipped (write.cbr: skip)"
+        if fmt == "pdf" and write.pdf == "skip":
+            return "pdf skipped (write.pdf: skip)"
+        return None
+
+    def _read(self, path: str, fmt: str, recovered):
+        """``(entries, existing ComicInfo.xml, page count)``. A preview does not read the pictures (that is what
+        makes it instant): ``entries`` is then ``None``."""
+        write = self.settings.write
+        if recovered is not None:
+            return recovered.entries, recovered.comicinfo, archive.page_count(recovered.entries)
+        if self.pretend:
+            existing, pages = archive.peek(path, fmt)
+            return None, existing, pages
+        entries, existing = archive.read_entries(path, fmt, write.pdf_mode, write.pdf_dpi, write.pdf_render_format)
+        return entries, existing, archive.page_count(entries)
+
+    def _plan(self, fmt, entries, xml_changes: bool, repaired_pages, dest: str, mode: str, same_place: bool) -> list[str]:
+        """What is going to be done, in words (the report line of a real run, and of a preview)."""
         steps = [f"repair {len(repaired_pages)} page(s) with a wrong checksum"] if repaired_pages else []
-        steps += [f"convert {fmt} -> cbz"] if converted else []
-        drawn = [number for number, entry in enumerate(entries or [], start=1) if entry.rendered]
-        if entries is None:
-            if fmt == "pdf":
-                steps.append("pages are checked on the real run (extracted untouched when possible)")
-        elif drawn:
-            steps.append(f"{len(drawn)} of {len(entries)} page(s) had to be drawn, not extracted "
-                         f"(page {', '.join(map(str, drawn[:8]))}{'...' if len(drawn) > 8 else ''})")
-        elif fmt == "pdf":
-            decoded = sum(1 for entry in entries if entry.decoded)
-            steps.append(f"all {len(entries)} pages extracted untouched" if not decoded else
-                         f"all {len(entries)} pages extracted without loss ({decoded} saved as PNG, same pixels)")
-        steps.append("write ComicInfo.xml" if xml != existing else "keep ComicInfo.xml")
+        if fmt != "cbz":
+            steps.append(f"convert {fmt} -> cbz")
+        steps += self._page_notes(fmt, entries)
+        steps.append("write ComicInfo.xml" if xml_changes else "keep ComicInfo.xml")
         if not same_place:
             if mode == WRITE:  # the converted file sits next to the original: nothing moves
                 steps.append(f"save as {os.path.basename(dest)} (same folder)")
             else:
                 steps.append(f"{'copy' if mode == COPY else 'move'} to {dest}")
-        if self.pretend:
-            where = "; stays where it is" if same_place else (
-                "; the destination already exists (you would be asked what to do)" if os.path.exists(dest) else "")
-            return FileResult(path, PRETEND, dest, "would: " + "; ".join(steps) + where)
+        return steps
 
+    @staticmethod
+    def _page_notes(fmt: str, entries) -> list[str]:
+        """How a PDF's pages were (or will be) taken out: untouched, or drawn."""
+        if fmt != "pdf":
+            return []
+        if entries is None:
+            return ["pages are checked on the real run (extracted untouched when possible)"]
+        drawn = [number for number, entry in enumerate(entries, start=1) if entry.rendered]
+        if drawn:
+            return [f"{len(drawn)} of {len(entries)} page(s) had to be drawn, not extracted "
+                    f"(page {', '.join(map(str, drawn[:8]))}{'...' if len(drawn) > 8 else ''})"]
+        decoded = sum(1 for entry in entries if entry.decoded)
+        return [f"all {len(entries)} pages extracted untouched" if not decoded else
+                f"all {len(entries)} pages extracted without loss ({decoded} saved as PNG, same pixels)"]
+
+    def _carry_out(self, row, mode, dest, entries, xml, steps, converted, same_place, spare) -> FileResult:
+        """Write the new archive safely, then deal with the original and the library."""
+        path = row["path"]
         if not same_place and os.path.exists(dest):
             dest, became_spare = self._resolve_collision(dest, path, mode, spare)
             if dest is None:
@@ -263,13 +283,12 @@ class Organizer:
         self._update_library(path, dest)
         if removed == "trash":
             self._send_to_trash(path, old_row, f"converted to {os.path.basename(dest)}")
+            steps.append("original moved to the trash")
         if spare and not row.get("spare"):
             self.library.set_file_fields(dest, spare=1)
         if removed and mode == MOVE:
             self._prune_empty_dirs(path)
         outcome = {WRITE: WRITTEN, MOVE: MOVED, COPY: COPIED}[mode]
-        if removed == "trash":
-            steps.append("original moved to the trash")
         return FileResult(path, outcome, dest, "; ".join(steps) + ("" if removed or same_place else " (original kept)"))
 
     # --------------------------------------------------------------- repairing
