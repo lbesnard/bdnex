@@ -61,6 +61,17 @@ def test_asking_goes_through_the_keys_and_abort_stops_the_run(monkeypatch):
     assert seen["keys"] == {"d": "database", "s": "skip", "a": prompter.ABORT}
 
 
+def test_conflict_question_offers_the_rest_of_the_queue_on_its_own_key(monkeypatch):
+    prompter = InquirerPrompter()
+    seen = {}
+    monkeypatch.setattr(prompter, "_select", lambda message, choices, fragments=None, shortcuts=None:
+                        seen.update(keys=shortcuts, names=[c["name"] for c in choices]) or prompter.SKIP)
+    monkeypatch.setattr(prompter, "_need_terminal", lambda: None)
+    prompter.conflict("/x.cbz", [])
+    assert seen["keys"]["w"] == "database_all" and seen["keys"]["d"] == "database"
+    assert any("[W]ins" in name and "rest of the queue" in name for name in seen["names"])
+
+
 def test_each_real_question_builds_without_a_key_clash(monkeypatch):
     """Every question of the prompter is asked once with a fake `_select`: a repeated key raises."""
     prompter = InquirerPrompter()

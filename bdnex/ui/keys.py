@@ -37,6 +37,7 @@ ACTIONS: dict[str, Action] = {
     "search": Action("e", "Enter a search in the album list...", "cyan", "choose"),
     "url": Action("u", "Type the album's URL...", "cyan", "choose"),
     "database": Action("d", "Database wins (overwrite the file's values)", "green", "choose"),
+    "database_all": Action("w", "Database wins for the rest of the queue (no more questions)", "green", "choose"),
     "file": Action("k", "Keep the file as it is (the library takes its values)", "red", "choose"),
     "replace": Action("r", "Replace", "red", "choose"),
     "keep_existing": Action("e", "Keep the existing file", "cyan", "choose"),

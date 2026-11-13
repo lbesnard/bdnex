@@ -46,7 +46,8 @@ CREDIT_ROLES = {"authors": "Writer", "writer": "Writer", "penciller": "Penciller
 
 class Prompter(Protocol):
     def conflict(self, path: str, diff_lines: list[str]) -> str:
-        """The file's ComicInfo.xml differs from the database: ``database``, ``file`` or ``skip``."""
+        """The file's ComicInfo.xml differs from the database: ``database``, ``database_all`` (this one and every
+        later one of the run), ``file``, ``fields`` or ``skip``."""
 
     def confirm(self, message: str) -> bool: ...
 
@@ -184,6 +185,7 @@ class Organizer:
         self.batch = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")  # what `bdnex undo` takes back together
         self.on_stage: Optional[Callable[[str, str], None]] = None  # (file, what is happening), for a live display
         self._current = ""
+        self._database_wins = False  # "database wins for the rest of the queue" was answered
 
     # ------------------------------------------------------------------ run
     def run(self, rows: list[dict[str, Any]], mode: str, progress=None, on_result=None, workers: int = 1,
@@ -663,7 +665,7 @@ class Organizer:
         if not diff:
             return existing
         choice = self.settings.write.conflict
-        if self.force:
+        if self.force or self._database_wins:
             choice = "database"
         elif choice == "ask":
             if self.pretend:
@@ -672,6 +674,8 @@ class Organizer:
                 choice = "file"
             else:
                 choice = self.prompter.conflict(path, diff)
+                if choice == "database_all":  # also the files that come after this one
+                    self._database_wins, choice = True, "database"
         if choice == "fields":
             decide = getattr(self.prompter, "resolve_fields", None)
             chosen = decide(path, diff, old_fields, new_fields) if decide else new_fields

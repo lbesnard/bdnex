@@ -520,6 +520,7 @@ class InquirerPrompter:
         print("\n" + diffview.conflict_text(path, diff_lines, enabled()))
         return self._ask("Which one wins?", [
             {"action": "database", "value": "database"},
+            {"action": "database_all", "value": "database_all", "label": "Database wins, here and for the rest of the queue"},
             {"action": "file", "value": "file"},
             {"action": "choose", "value": "fields", "label": "Choose field by field (or type your own value)"},
             {"action": "skip", "value": "skip"}])

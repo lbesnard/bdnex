@@ -162,7 +162,9 @@ around its first difference with its length before and after. Colours appear on 
 `NO_COLOR=1` turns them off and `FORCE_COLOR=1` forces them. Set it to `database` or `file` to decide
 once, or use `--force` (the database wins where it has a value).
 
-The question offers four answers: **Database**, **File**, **Field by field** and **Skip this file**.
+The question offers five answers: **Database**, **Database wins for the rest of the queue** (`W`: this file and every
+later conflict of the run, with no more questions; the next run asks again), **File**, **Field by field** and
+**Skip this file**. To never be asked, set `write.conflict: database`.
 *Field by field* goes through the differences one at a time: take the database's value, the file's, or type
 your own (a summary, a list of writers separated by commas, a year...).
 
