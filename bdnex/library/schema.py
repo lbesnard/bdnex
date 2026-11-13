@@ -169,4 +169,18 @@ MIGRATIONS = [
     """
     ALTER TABLE files ADD COLUMN review TEXT;
     """,
+    # --- version 8 -------------------------------------------------------
+    # Files that were moved or renamed by `move`, per run (`batch`), so that `bdnex undo` can put them back.
+    # Paths are stored the way `files.path` is.
+    """
+    CREATE TABLE operations (
+        id       INTEGER PRIMARY KEY,
+        batch    TEXT NOT NULL,
+        old_path TEXT NOT NULL,
+        new_path TEXT NOT NULL,
+        at       TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        undone   INTEGER NOT NULL DEFAULT 0
+    );
+    CREATE INDEX idx_operations_batch ON operations(batch);
+    """,
 ]
