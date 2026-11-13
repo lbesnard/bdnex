@@ -12,6 +12,7 @@ put in place; the checksum stored in the database is refreshed.
 
 from __future__ import annotations
 
+import datetime
 import errno
 import logging
 import os
@@ -129,6 +130,7 @@ class Organizer:
         self.aborted_at: Optional[str] = None  # the file being handled when the user aborted
         self.pretend = pretend
         self.force = force
+        self.batch = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")  # what `bdnex undo` takes back together
 
     # ------------------------------------------------------------------ run
     def run(self, rows: list[dict[str, Any]], mode: str, progress=None) -> list[FileResult]:
@@ -287,6 +289,8 @@ class Organizer:
         if spare and not row.get("spare"):
             self.library.set_file_fields(dest, spare=1)
         if removed and mode == MOVE:
+            if not converted and not same_place:
+                self.library.record_move(self.batch, path, dest)  # a plain move can be taken back
             self._prune_empty_dirs(path)
         outcome = {WRITE: WRITTEN, MOVE: MOVED, COPY: COPIED}[mode]
         return FileResult(path, outcome, dest, "; ".join(steps) + ("" if removed or same_place else " (original kept)"))
@@ -417,6 +421,7 @@ class Organizer:
         if spare:
             self.library.set_file_fields(dest, spare=1)
         if mode == MOVE:
+            self.library.record_move(self.batch, path, dest)
             self._prune_empty_dirs(path)
         return FileResult(path, COPIED if mode == COPY else MOVED, dest, why + " (moved as it is: no tags written)")
 

@@ -58,6 +58,11 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    raises the score and a different one caps it below *strong*. A second try uses the series and
    volume alone (`Loup Noir 5`): authors, years or a collection in the file name are not in the
    album's name. Those matches never count as strong.
+   **The file's own tags help.** A file that already has a `ComicInfo.xml` is read first. If its `Web` field is the
+   address of a Bédéthèque album page (bdnex writes it, and so do other tools that took it from the site), that album
+   is the first choice with a score of 100, whatever the file is called; a `Series` and a `Number` add a
+   `series number` search like those made from the name. `match.use_embedded: false` turns this off. A wrong tag
+   is not trusted blindly: the cover check still compares the covers.
 5. **Decide.** By default **you check every file**: the best match is pre-selected, you
    confirm, pick another candidate or skip. With `--auto` (or `import.auto: true`) a score
    at or above `match.strong_threshold` is applied without asking; between
@@ -275,7 +280,9 @@ bdnex import ~/comics             # later: match and fetch them, as usual
 
 `--as-is` reads each file once and stores its path, format, size, page count, checksum, whether it looks damaged,
 and what its own `ComicInfo.xml` says (series, number, title... kept as the file's own `embedded` data, apart from
-any album). It asks nothing, uses no network, and moves, converts or writes nothing. Files already in the library are
+any album). It asks nothing, uses no network, and moves, converts or writes nothing. The files are read in several processes at
+once (`import.workers`, or `--workers N`): on a big collection over a slow disk or a network share that is the part that
+takes the time. Files already in the library are
 left alone (`--force` records them again). `ls --files -l` shows the file's own metadata, and `embedded:` finds files
 by it (`bdnex ls --files embedded:nains`). Recorded files are not "skipped": the next `bdnex import` matches them.
 

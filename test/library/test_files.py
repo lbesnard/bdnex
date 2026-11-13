@@ -170,3 +170,22 @@ def test_relink_finds_a_file_moved_outside_bdnex_by_its_content(lib, make_cbz, t
     lib.relink([str(tmp_path)])
     assert lib.get_file(str(moved)) is not None and lib.get_file(original) is None
     assert [r["path"] for r in lib.missing_files()] == [other]
+
+
+def test_analysing_many_files_in_processes_gives_the_same_answers_in_order(make_cbz, tmp_path):
+    from bdnex.library.database import analyse_many
+    paths = [make_cbz(f"b{n}.cbz", pages=2 + n) for n in range(6)]
+    paths.append(str(tmp_path / "missing.cbz"))
+    serial = list(analyse_many(paths, workers=1))
+    parallel = list(analyse_many(paths, workers=3))
+    assert [p for p, _ in parallel] == paths
+    assert [(a[0].page_count, a[1]) for _, a in parallel[:-1]] == [(a[0].page_count, a[1]) for _, a in serial[:-1]]
+    assert isinstance(parallel[-1][1], Exception)  # one bad path is an answer, not a crash
+
+
+def test_add_analysed_registers_what_add_file_would(lib, make_cbz):
+    from bdnex.library.database import analyse_file
+    path = make_cbz("a.cbz", pages=4)
+    info, md5 = analyse_file(path)
+    lib.add_analysed(info, md5)
+    assert lib.get_file(path)["md5"] == md5 and lib.get_file(path)["page_count"] == 4
