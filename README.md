@@ -14,6 +14,13 @@ BDneX is a French comics tagger and library manager. **Documentation: <https://b
 > files when you ask it to (`write`, `move`, `repair`, or an import that places files); keep a backup of your
 > collection as well.
 
+> [!NOTE]
+> **About this project.** I created bdnex around 2021 as a personal tool, but I did not have the time to keep
+> developing it. I recently picked it up again and, working with [Claude](https://claude.com/claude-code)
+> (an AI coding assistant), added the features of the roadmap (library database, matching, import, write/move,
+> API and more). Much of the code is therefore AI-assisted; I review and test it, but it is young. Please keep
+> backups of your comics and report any problem you find.
+
 ### Motivation
 Contrary to music tagging, there is no agreed standard vocabulary for comics
 tagging in general. However the ComicRack standard is used by most library
