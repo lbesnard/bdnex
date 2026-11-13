@@ -10,7 +10,7 @@ import sys
 from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.organizer.organizer import Organizer
-from bdnex.ui import color
+from bdnex.ui import color, results
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -59,11 +59,11 @@ def run(argv: list[str], out=sys.stdout) -> int:
                        f"{old} is taken by another file" if os.path.exists(old) else None)
             if problem:
                 counts["skipped"] += 1
-                print(f"{color.paint('skipped', 'yellow', on)}  {os.path.basename(new)}: {problem}", file=out)
+                print(results.block("skipped", os.path.basename(new), [problem], on), file=out)
                 continue
             counts["back"] += 1
-            print(f"{color.paint('back' if not args.pretend else 'would move back', 'green', on)}  {new}\n"
-                  f"      -> {old}", file=out)
+            print(results.block("would move back" if args.pretend else "back", os.path.basename(new),
+                                [f"from  {color.paint(new, 'red', on)}", f"to    {color.paint(old, 'green', on)}"], on), file=out)
             if args.pretend:
                 continue
             os.makedirs(os.path.dirname(old), exist_ok=True)

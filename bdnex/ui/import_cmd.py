@@ -12,13 +12,9 @@ from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.importer.session import (ALREADY, DUPLICATE, FAILED, OUTCOME_LABELS, PARTIAL, PRETEND, SKIPPED, TAGGED,
                                     ImportSession, NeedsTerminal)
 from bdnex.library import Library
-from bdnex.ui import color, describe
+from bdnex.ui import color, describe, results
 from bdnex.ui.output import Bar, add_verbosity, banner, progress, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
-
-
-OUTCOME_COLOURS = {TAGGED: "green", PARTIAL: "yellow", ALREADY: "dim", SKIPPED: "yellow", DUPLICATE: "cyan",
-                   FAILED: "red", PRETEND: "dim"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -211,7 +207,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         on = color.enabled(out)
         score = color.paint_score(f"{r.score:5.1f}", r.score, on) if r.score is not None else "  -  "
         label = OUTCOME_LABELS.get(r.outcome, r.outcome)
-        print(f"{color.paint(f'{label:<9}', OUTCOME_COLOURS.get(r.outcome, 'dim'), on)} {score}  {r.path}", file=out)
+        print(f"{color.paint(f'{label:<9}', results.style(r.outcome), on)} {score}  {r.path}", file=out)
         if r.album_id is not None and r.outcome in ("tagged", "partial", "skipped", "duplicate"):
             with Library.for_settings(settings) as library:
                 album = library.get_album(r.album_id)

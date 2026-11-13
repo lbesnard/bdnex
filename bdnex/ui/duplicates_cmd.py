@@ -8,7 +8,7 @@ import sys
 from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.health import duplicates
-from bdnex.ui import color
+from bdnex.ui import color, results
 from bdnex.ui.output import progress
 
 
@@ -43,11 +43,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
         workers = resolve_workers(settings.import_.workers if args.workers is None else args.workers)
         groups = duplicates(library, compute_covers=args.covers, progress=progress if args.covers else None, workers=workers)
         for group in groups:
-            print(f"\n{color.paint('●', 'cyan', on)} {color.paint(group['why'], 'bold', on)}", file=out)
-            for row in group["files"]:
-                spare = "  (spare)" if row.get("spare") else ""
-                print(f"    {row['format']:<4} {row['page_count'] or '?':>4} pages  {_megabytes(row['size']):>9}  "
-                      f"{row['path']}{spare}", file=out)
+            lines = [f"{row['format']:<4} {row['page_count'] or '?':>4} pages  {_megabytes(row['size']):>9}  "
+                     f"{row['path']}{'  (spare)' if row.get('spare') else ''}" for row in group["files"]]
+            print(results.block("", group["why"], lines, on, "group"), file=out)
     wasted = sum(sum(f["size"] for f in g["files"]) - max(f["size"] for f in g["files"]) for g in groups if g["why"] == "identical content")
     print(f"\n{len(groups)} group(s) of files that look like the same book."
           + (f" Identical copies take {_megabytes(wasted)} too much." if wasted else "")

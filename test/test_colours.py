@@ -9,7 +9,7 @@ from InquirerPy import inquirer
 
 from bdnex.importer.matching import Match
 from bdnex.importer.source import Candidate
-from bdnex.ui import color
+from bdnex.ui import color, results
 from bdnex.ui.prompts import InquirerPrompter, colorize_choices, match_header
 from test_outside import world  # noqa: F401  (a library folder and a download folder)
 
@@ -162,7 +162,7 @@ def test_the_import_report_is_in_colour_only_when_asked_or_on_a_terminal(world, 
     assert "\x1b" not in plain and "pretend" in plain
     monkeypatch.setenv("FORCE_COLOR", "1")
     painted = do("--match", "--auto", "-n", str(downloads))[1]
-    assert "\x1b[2mpretend  " in painted  # the outcome in its colour (dim for a preview)
+    assert "\x1b[1;36mpretend  " in painted  # the outcome in its colour (cyan for a preview, as in write)
     assert re.search(r"\x1b\[38;[25];[\d;]+m100\.0\x1b\[0m", painted)  # a perfect score, on the gradient
     assert ANSI.sub("", painted) == plain  # only colour was added
     monkeypatch.setenv("NO_COLOR", "1")
@@ -172,7 +172,7 @@ def test_the_import_report_is_in_colour_only_when_asked_or_on_a_terminal(world, 
 def test_outcomes_have_a_colour_each():
     from bdnex.ui import import_cmd
 
-    assert import_cmd.OUTCOME_COLOURS.keys() >= {"tagged", "partial", "skipped", "failed", "already", "duplicate", "pretend"}
+    assert results.STYLES.keys() >= {"tagged", "partial", "skipped", "failed", "already", "duplicate", "pretend"}
 
 
 def test_progress_lines_are_tinted_only_on_a_terminal():
@@ -219,3 +219,16 @@ def test_a_progress_line_is_cut_to_the_width_of_the_terminal(monkeypatch):
     stream.truncate(0), stream.seek(0)
     bar.update("short")
     assert "short" in stream.getvalue() and "…" not in stream.getvalue()
+
+
+def test_one_table_gives_the_colour_of_every_outcome_for_every_command():
+    from bdnex.ui import results
+
+    # the words the commands print for results all resolve in the one table
+    for outcome in ("written", "moved", "copied", "repaired", "unchanged", "skipped", "failed", "pretend", "tagged",
+                    "partial", "already", "duplicate", "updated", "found", "lost", "ambiguous"):
+        assert outcome in results.STYLES, outcome
+    assert results.style("something new") == "dim"
+    block = results.block("failed", "a.cbz", ["why"], True)
+    assert "\x1b[1;31mfailed" in block and "\x1b[1ma.cbz" in block and block.endswith("    why")
+    assert results.block("", "Title", [], False, "problem") == "\n● Title"
