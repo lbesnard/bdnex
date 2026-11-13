@@ -4,7 +4,7 @@ import pytest
 
 from bdnex.importer.bedetheque import Bedetheque, parser, sitemap
 from bdnex.library import Library
-from helpers import FakeWeb
+from helpers import FakeWeb, COVER_BYTES
 
 TEST_ROOT = os.path.dirname(os.path.dirname(__file__))
 BDGEST = os.path.join(TEST_ROOT, ".local/share/bdnex/bedetheque")
@@ -133,7 +133,7 @@ def test_album_info_survives_missing_series_page(lib, web):
 
 def test_a_cover_is_not_kept_in_the_library_cache(bdt, web, lib):
     info = bdt.album_info(ALBUM_URL)
-    assert bdt.cover_image(info.cover_url) == b"JPEGDATA"  # the importer saves it as a file instead
+    assert bdt.cover_image(info.cover_url) == COVER_BYTES  # the importer saves it as a file instead
     assert lib.cache_get("bedetheque", "cover", info.cover_url) is None
 
 

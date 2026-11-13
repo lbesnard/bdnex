@@ -187,6 +187,14 @@ in `cover.dir` (`~/.local/share/bdnex/covers`), as `<source>/<album id>.jpg`. Th
 (`albums.cover_file`, the path below `cover.dir`) next to the address it came from (`cover_url`), so
 [`bdnex serve`](api.md) can show it and other tools can use it. `cover.download: false` turns this off.
 
+Covers are downloaded with a plain web request, not with the page fetcher of your configuration (a browser-based one
+returns the little HTML page that wraps an image, a few hundred bytes, not the picture). What comes back is checked:
+anything that is not an image of at least 100 pixels (an error page, a placeholder) is **not** saved, and the report
+says what was received (`cover not downloaded: 446 bytes were received, which is not an image (it starts with ...)`).
+A bad file left by an earlier run is deleted and downloaded again the next time. Each cover is downloaded right after
+its album page is read; the albums that are complete but still lack a cover are done in a second pass at the end, and
+Ctrl-C stops both.
+
 A cover that is not there yet is downloaded the next time the album goes through `bdnex import --fetch`, which
 covers albums imported before this existed (`bdnex import --fetch` on your library). A deleted cover file is
 downloaded again the same way, and a file kept after `bdnex reset` is taken up again without any request.
