@@ -328,6 +328,7 @@ class InquirerPrompter:
         from InquirerPy import inquirer
 
         return inquirer.checkbox(message=message, choices=choices, instruction="(Space ticks, Enter confirms)",
+                                 transformer=lambda picked: f"{len(picked)} file(s) ticked",
                                  raise_keyboard_interrupt=False, mandatory=False).execute()
 
     def pick_files(self, folder: str, paths: list[str], ticked: set) -> list[str]:
