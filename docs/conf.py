@@ -21,4 +21,6 @@ extensions = ["myst_parser", "sphinx.ext.autodoc", "sphinx.ext.napoleon"]
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
 exclude_patterns = ["_build"]
 html_theme = "furo"
+html_static_path = ["_static"]
+html_logo = "_static/bdnex-logo.png"  # transparent: works in the light and the dark theme
 myst_heading_anchors = 3
