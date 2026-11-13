@@ -5,7 +5,8 @@ from __future__ import annotations
 import argparse
 import sys
 
-from bdnex.config import LOCAL_HOSTS, ConfigError, load_config
+from bdnex.config import LOCAL_HOSTS
+from bdnex.ui import context
 from bdnex.ui.output import add_verbosity, setup_logging
 
 
@@ -22,10 +23,8 @@ def run(argv: list[str]) -> int:
     add_verbosity(parser)
     args = parser.parse_args(argv)
     setup_logging(args.verbose)
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
+    settings = context.settings(library=False)
+    if settings is None:
         return 1
     try:
         import uvicorn
@@ -34,8 +33,7 @@ def run(argv: list[str]) -> int:
     except ImportError:
         print("`bdnex serve` needs the API extra: pip install 'bdnex[api]'", file=sys.stderr)
         return 1
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}): run `bdnex import <folder>` first.", file=sys.stderr)
+    if not context.has_library(settings):
         return 1
     host, port = args.host or settings.api.host, args.port or settings.api.port
     token = args.token or settings.api.token

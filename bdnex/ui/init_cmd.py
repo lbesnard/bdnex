@@ -5,10 +5,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-from bdnex.config import ConfigError, load_config
 from bdnex.importer.bedetheque.fetchers import FetcherError
 from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.library import Library
+from bdnex.ui import context
 from bdnex.ui.output import Bar, add_verbosity, setup_logging
 
 EXPECTED_FILES = 56  # a guess for the progress bar on the very first download
@@ -39,10 +39,8 @@ def run(argv: list[str], out=sys.stdout, bar_stream=None) -> int:
     add_verbosity(parser)
     args = parser.parse_args(argv)
     setup_logging(args.verbose)
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
+    settings = context.settings(library=False)
+    if settings is None:
         return 1
     with Library.for_settings(settings) as library:
         try:

@@ -8,10 +8,9 @@ import string
 import sys
 from typing import Any
 
-from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.query import ALL_FIELDS, QueryError
-from bdnex.ui import describe
+from bdnex.ui import context, describe
 
 DEFAULT_ALBUM_FORMAT = "$label$flag  ($authors) [$year]  $files_label"
 DEFAULT_FILE_FORMAT = "$path  $label"
@@ -51,13 +50,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
                         help="list registered files that are no longer on disk (moved or deleted outside bdnex)")
     args = parser.parse_args(argv)
 
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
-        return 1
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}): run `bdnex import <folder>` first.", file=sys.stderr)
+    settings = context.settings()
+    if settings is None:
         return 1
 
     if args.unmatched or args.missing:
@@ -67,8 +61,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         try:
             rows = library.query(args.query, files=args.files)
         except QueryError as err:
-            print(f"bad query: {err}", file=sys.stderr)
-            return 2
+            return context.bad_query(err)
         details = _details(library, rows, args) if args.long else None
 
     if args.count:

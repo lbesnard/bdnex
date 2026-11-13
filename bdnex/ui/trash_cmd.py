@@ -6,9 +6,9 @@ import argparse
 import sys
 
 from bdnex import trash
-from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.versions import megabytes
+from bdnex.ui import context
 
 
 def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
@@ -31,13 +31,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     args = parser.parse_args(argv)
     if (args.place or args.reimport) and args.restore is None:
         parser.error("--place and --reimport go with --restore ID")
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
-        return 1
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}).", file=sys.stderr)
+    settings = context.settings()
+    if settings is None:
         return 1
 
     if args.restore is not None:

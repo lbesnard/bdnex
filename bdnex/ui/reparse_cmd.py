@@ -5,11 +5,10 @@ from __future__ import annotations
 import argparse
 import sys
 
-from bdnex.config import ConfigError, load_config
 from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.library import Library
 from bdnex.library.query import QueryError
-from bdnex.ui import color, describe, results
+from bdnex.ui import color, context, describe, results
 from bdnex.ui.output import add_verbosity, progress, setup_logging
 
 OFFLINE = "bdnex.importer.registry:offline_fetch"
@@ -46,13 +45,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
     args = parser.parse_args(argv)
     setup_logging(args.verbose)
 
-    try:
-        settings = load_config().settings
-    except ConfigError as err:
-        print(err, file=sys.stderr)
-        return 1
-    if not settings.library_path.exists():
-        print(f"No library yet ({settings.library_path}): run `bdnex import <folder>` first.", file=sys.stderr)
+    settings = context.settings()
+    if settings is None:
         return 1
     # the source is built with a fetcher that can not reach the network, whatever the configuration says,
     # and without the politeness delays (nothing is requested, so there is nothing to be polite about)
@@ -69,8 +63,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
             print(err, file=sys.stderr)
             return 1
         except QueryError as err:
-            print(f"bad query: {err}", file=sys.stderr)
-            return 2
+            return context.bad_query(err)
         for number, row in enumerate(rows, start=1):
             album = library.get_album(row["id"])
             progress(f"[{number}/{len(rows)}] {describe.label(album)}")
