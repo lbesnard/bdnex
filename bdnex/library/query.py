@@ -61,7 +61,8 @@ def register_functions(conn) -> None:
 TEXT_FIELDS = {"title": "a.title", "series": "s.name", "publisher": "pub.name", "isbn": "a.isbn",
                "language": "a.language", "summary": "a.summary", "kind": "a.kind",
                "url": "a.url", "source": "a.source"}
-FILE_TEXT_FIELDS = {"path": "f.path", "filename": "basename(f.path)", "format": "f.format", "md5": "f.md5"}
+FILE_TEXT_FIELDS = {"path": "f.path", "filename": "basename(f.path)", "format": "f.format", "md5": "f.md5",
+                    "embedded": "COALESCE(f.embedded, '')"}
 NUMERIC_FIELDS = {"year": "a.year", "volume": "a.volume", "pages": "a.pages", "rating": "a.rating"}
 FILE_NUMERIC_FIELDS = {"size": "f.size", "filepages": "f.page_count", "cover": "f.cover_score"}
 BOOL_FIELDS = {"partial": "COALESCE(json_extract(a.extra, '$.partial'), 0)",

@@ -107,6 +107,8 @@ class Library:
         record = dict(row)
         if "path" in record and record["path"] is not None:
             record["path"] = self._resolve(record["path"])
+        if isinstance(record.get("embedded"), str):
+            record["embedded"] = json.loads(record["embedded"])
         return record
 
     def _adopt_root(self) -> None:
@@ -493,16 +495,17 @@ class Library:
         with self.conn:
             self.conn.execute(
                 """INSERT INTO files(path, album_id, md5, size, format, page_count,
-                                     corrupted, has_metadata, mtime)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     corrupted, has_metadata, mtime, embedded)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(path) DO UPDATE SET
                        album_id = COALESCE(excluded.album_id, files.album_id),
                        md5 = excluded.md5, size = excluded.size, format = excluded.format,
                        page_count = excluded.page_count, corrupted = excluded.corrupted,
                        has_metadata = excluded.has_metadata, mtime = excluded.mtime,
-                       checked = CURRENT_TIMESTAMP""",
+                       embedded = excluded.embedded, checked = CURRENT_TIMESTAMP""",
                 (self._store(info.path), album_id, md5, info.size, info.format, info.page_count,
-                 int(info.corrupted), int(info.has_metadata), info.mtime))
+                 int(info.corrupted), int(info.has_metadata), info.mtime,
+                 json.dumps(info.embedded, ensure_ascii=False) if info.embedded else None))
         return self.conn.execute("SELECT id FROM files WHERE path = ?",
                                  (self._store(info.path),)).fetchone()["id"]
 
