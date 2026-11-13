@@ -130,3 +130,29 @@ def test_deleting_album_keeps_file(lib, make_cbz):
     with lib.conn:
         lib.conn.execute("DELETE FROM albums WHERE id = ?", (album_id,))
     assert lib.get_file(path)["album_id"] is None
+
+
+def test_an_upgrade_keeps_a_copy_of_the_old_library(tmp_path):
+    import sqlite3
+    from bdnex.library.schema import MIGRATIONS
+    path = tmp_path / "lib.sqlite"
+    old = sqlite3.connect(path)
+    for statement in MIGRATIONS[:4]:
+        old.executescript(statement)
+    old.execute("PRAGMA user_version = 4")
+    old.execute("INSERT INTO publishers(name) VALUES ('Soleil')")
+    old.commit()
+    old.close()
+    with Library(path) as lib:
+        assert lib.schema_version == len(MIGRATIONS)
+    copy = sqlite3.connect(tmp_path / "lib.sqlite.bak-v4")
+    assert copy.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert copy.execute("SELECT name FROM publishers").fetchone()[0] == "Soleil"
+
+
+def test_a_new_or_current_library_makes_no_backup(tmp_path):
+    with Library(tmp_path / "lib.sqlite"):
+        pass
+    with Library(tmp_path / "lib.sqlite"):
+        pass
+    assert [p.name for p in tmp_path.iterdir() if ".bak" in p.name] == []

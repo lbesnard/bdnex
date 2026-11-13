@@ -165,6 +165,13 @@ and what is not found stays in `ls --missing`. Nothing on disk is touched.
 `bdnex ls --files` and `path:` queries match the **stored** form, so `path:Series/Nains`
 works for files in the tree, whatever `directory` is.
 
+## Upgrades keep a copy
+
+When a new bdnex has to change the structure of your library (the schema version), it first copies the database to
+`<library>.bak-v<old version>` (for example `bdnex.sqlite.bak-v6`) and says so. An older bdnex cannot open the
+upgraded file; to go back, put the copy in place of `bdnex.sqlite`. There is one copy per version, never overwritten,
+and nothing is copied when the library is already current. Delete the copies when you no longer need them.
+
 ## Starting from scratch
 
 ```bash
