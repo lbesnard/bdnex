@@ -115,3 +115,21 @@ def test_spare_versions_are_not_duplicates_of_their_album(env):
         lib.add_file(b, album)
         lib.set_file_fields(b, spare=1)
         assert [g for g in duplicates(lib) if g["why"] == "same album"] == []
+
+
+def test_cover_hashes_are_worked_out_in_several_processes_and_stored(env, make_image_pdf):
+    db, settings, make_cbz = env
+    with Library(db) as lib:
+        album = lib.add_album(AlbumInfo("bedetheque", "1", "Un", language="fr"))
+        paths = [make_image_pdf(f"p{n}.pdf", pages=1)[0] for n in range(5)]
+        for path in paths:
+            lib.add_file(path, album)
+        lib.set_file_fields(paths[0], spare=0)
+        serial = duplicates(lib, compute_covers=True, workers=1)
+        hashes = {path: lib.get_file(path)["cover_hash"] for path in paths}
+        assert all(hashes.values()), "every file got the hash of its first page, stored in the library"
+        lib.conn.execute("UPDATE files SET cover_hash = NULL")
+        lib.conn.commit()
+        parallel = duplicates(lib, compute_covers=True, workers=3)
+        assert {path: lib.get_file(path)["cover_hash"] for path in paths} == hashes  # the same hashes
+        assert [g["why"] for g in parallel] == [g["why"] for g in serial]

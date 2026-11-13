@@ -44,7 +44,11 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 - **Look at it for real**: Chromium is available. `tools/demo_library.py` builds a demo library; see the
   `check-web-page` skill for serving it and taking screenshots. Never claim a page works from the code alone.
 
-## Several files at once (`Organizer.run(workers=)`)
+## Several files at once (`Organizer.run(workers=)`, `bdnex/parallel.py`)
+- `parallel.map_ordered(function, items, workers)` is the helper for read-only work (hashing, reading first pages): forked processes,
+  results in order, an exception is the item's result. It must not touch a database; the caller stores the results.
+- `write`, `move` and `repair` use `Organizer.run(workers=, repair=)`; `duplicates --covers`, `relink` and `import --as-is`
+  use `map_ordered`.
 - Workers are forked processes with their own `Library` connection (a connection is never shared; an in-memory library
   can not be used with workers). A worker holds a `_Deferring` prompter: any question raises `Deferred` **before anything is
   written**, and the main process redoes that file with the real prompter, in order. So a question must always be asked

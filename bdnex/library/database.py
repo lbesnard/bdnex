@@ -36,25 +36,12 @@ def analyse_file(path):
     return info, file_md5(info.path)
 
 
-def _analyse_safely(path):
-    try:
-        return analyse_file(path)
-    except Exception as err:  # reported for this file; the others go on
-        return err
-
-
 def analyse_many(paths: list, workers: int = 1):
     """``(path, (FileInfo, md5) or an Exception)`` for each path, in order. With ``workers`` > 1 the files are
     read in several processes at once (a big collection on a slow disk is mostly waiting)."""
-    import multiprocessing
-    from concurrent.futures import ProcessPoolExecutor
+    from bdnex.parallel import map_ordered
 
-    if workers > 1 and len(paths) > 3 and "fork" in multiprocessing.get_all_start_methods():
-        with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("fork")) as pool:
-            yield from zip(paths, pool.map(_analyse_safely, paths, chunksize=1))
-    else:
-        for path in paths:
-            yield path, _analyse_safely(path)
+    yield from map_ordered(analyse_file, paths, workers)
 
 
 class Library:
@@ -823,7 +810,7 @@ class Library:
         rows = (self._file_row(r) for r in self.conn.execute("SELECT * FROM files"))
         return sorted((r for r in rows if not os.path.exists(r["path"])), key=lambda r: r["path"])
 
-    def relink(self, folders: list[str], apply: bool = True) -> dict[str, Any]:
+    def relink(self, folders: list[str], apply: bool = True, workers: int = 1) -> dict[str, Any]:
         """Find files that were moved or renamed outside bdnex: look in ``folders`` for a file with the same
         content (size, then md5) as each missing one and point the library at it. Returns
         ``{"found": [(old, new)], "lost": [old...], "ambiguous": [(old, [new...])]}``; a file whose copy is
@@ -834,15 +821,21 @@ class Library:
             by_size.setdefault(row["size"], []).append(row)
         registered = {row["path"] for row in (self._file_row(r) for r in self.conn.execute("SELECT path FROM files"))}
         candidates: dict[str, list[str]] = {}  # md5 -> paths on disk
+        same_size = []
         for folder in folders:
             for path in iter_comic_files(os.path.abspath(os.path.expanduser(folder))):
                 if path in registered:
                     continue
                 try:
                     if os.path.getsize(path) in by_size:
-                        candidates.setdefault(file_md5(path), []).append(path)
+                        same_size.append(path)
                 except OSError:
                     continue
+        from bdnex.parallel import map_ordered
+
+        for path, digest in map_ordered(file_md5, same_size, workers):  # only files of a size a missing one had are read
+            if not isinstance(digest, Exception):
+                candidates.setdefault(digest, []).append(path)
         result: dict[str, Any] = {"found": [], "lost": [], "ambiguous": []}
         for row in missing:
             paths = sorted(set(candidates.get(row["md5"], [])))

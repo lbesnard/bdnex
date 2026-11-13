@@ -149,7 +149,7 @@ def fix(library: Library, settings, findings: list[Finding]) -> list[str]:
 
 
 # --------------------------------------------------------------------------- duplicates
-def duplicates(library: Library, compute_covers: bool = False, progress=None) -> list[dict[str, Any]]:
+def duplicates(library: Library, compute_covers: bool = False, progress=None, workers: int = 1) -> list[dict[str, Any]]:
     """Groups of files that look like the same book: ``{"why": ..., "files": [rows]}``.
 
     * ``identical``: the same bytes (checksum) at several paths;
@@ -159,12 +159,18 @@ def duplicates(library: Library, compute_covers: bool = False, progress=None) ->
     """
     rows = [library._file_row(r) for r in library.conn.execute("SELECT * FROM files")]
     if compute_covers:
-        for number, row in enumerate(rows, start=1):
-            if not row.get("cover_hash") and os.path.exists(row["path"]):
-                if progress:
-                    progress(f"[{number}/{len(rows)}] {os.path.basename(row['path'])}")
-                value = covers.library_cover_hash(library, row["path"])
-                row["cover_hash"] = covers.format_hash(value) if value is not None else None
+        missing = [row for row in rows if not row.get("cover_hash") and os.path.exists(row["path"])]
+        from bdnex.parallel import map_ordered
+
+        # the first page of each file is read in several processes at once; the library is written here, in order
+        hashes = map_ordered(lambda row: covers.path_cover_hash(row["path"], row["format"]), missing, workers)
+        for number, (row, value) in enumerate(hashes, start=1):
+            if progress:
+                progress(f"[{number}/{len(missing)}] {os.path.basename(row['path'])}")
+            if isinstance(value, Exception) or value is None:
+                continue
+            library.set_file_fields(row["path"], cover_hash=covers.format_hash(value))
+            row["cover_hash"] = covers.format_hash(value)
     groups: list[dict[str, Any]] = []
     seen: set[frozenset] = set()
 
