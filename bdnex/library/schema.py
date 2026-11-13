@@ -183,4 +183,24 @@ MIGRATIONS = [
     );
     CREATE INDEX idx_operations_batch ON operations(batch);
     """,
+    # --- version 9 -------------------------------------------------------
+    # Import sources (folders whose files are copied or moved into the collection). A file under one is stored as
+    # `@<alias>/<path below it>`: moving the folder is one UPDATE of `roots.path` (`bdnex relocate`). `origins`
+    # remembers where a copied file came from, so a second import of the source skips what was already copied.
+    """
+    CREATE TABLE roots (
+        alias TEXT PRIMARY KEY,
+        path  TEXT NOT NULL UNIQUE,
+        added TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE origins (
+        file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+        origin  TEXT NOT NULL,           -- the path it was copied from, stored like `files.path`
+        size    INTEGER,                 -- of the source file when it was copied
+        mtime   REAL,
+        copied  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX idx_origins_origin ON origins(origin);
+    """,
 ]

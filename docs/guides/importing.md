@@ -7,7 +7,7 @@ you ask for it with `-W`, `--move` or `--copy`.
 
 ```bash
 bdnex init                       # once: download the album list the names are matched against
-bdnex import                     # your library folder (`collection_path` in the configuration)
+bdnex import                     # your collection (`collection_path` in the configuration)
 bdnex import ~/comics            # a folder, recursively
 bdnex import album.cbz other.cbz
 bdnex import -n ~/comics         # --pretend: show what would happen, change nothing
@@ -166,24 +166,63 @@ export BDNEX_THUMBNAILS=kitty
   `-n`, never asks, so it shows nothing). When nothing appears, no
   character is printed either: a failing picture never stops an import.
 
-### Files from outside your library folder
+### Your collection, and where new files come from
 
-You can import from any folder, such as `~/Downloads`. A file under `collection_path` is left where it is
-(`bdnex move` can still tidy its name). A file **outside** it follows `import.outside`:
+bdnex keeps one **collection**: the folder `collection_path` in the configuration, which it organises with your
+`paths` templates. Comics reach it in two ways.
+
+**1. A collection you already have.** Point `collection_path` at it, then:
+
+```bash
+bdnex import --as-is              # record every file where it is (nothing is changed)
+bdnex import --select tagged:false   # match and fetch them
+bdnex move                        # reorganise the folders from the templates (-n to preview, `bdnex undo` to go back)
+```
+
+**2. Folders new files arrive in** (a download folder, a NAS inbox): list them as **sources**.
+
+```yaml
+collection_path: ~/Comics
+import:
+  sources:
+    - {path: ~/Downloads/comics, mode: move}              # emptied as the files are placed
+    - {path: /mnt/nas/inbox, mode: copy, name: nas}       # read-only: the originals are never touched
+```
+
+```bash
+bdnex import --sources        # what is new in every source: matched, tagged, then copied or moved into the collection
+bdnex import .                # the current folder: a source (or inside one) follows its mode, with no question
+bdnex import ~/some/folder    # any other folder: see "other folders" below
+```
+
+- **Where files end up:** in the collection, in the folder your templates give, with their tags written. The library then
+  tracks the copy (or the moved file), under the collection root, with a relative path.
+- **`mode: move`** moves the files and removes the source folders it empties. **`mode: copy`** leaves the originals
+  exactly as they were: bdnex never writes, converts, moves or deletes a file under a `copy` source (`write`, `repair`
+  and a plain `move` refuse it and say why; `bdnex move --copy` copies it in).
+- **Importing a source twice is safe.** Each copy remembers the file it came from (path, size, date). The next
+  `import --sources` reports `already copied to …` and does nothing; a file that was **changed at the source** after it
+  was copied is reported and left alone (your edited copy is not overwritten), and `--force` imports it again.
+- **Where the library keeps a source.** A file recorded in place under a source (`--as-is`, or before it is placed) is
+  stored as `@name/path below the source`, and the source's real folder is in the library once. If the folder moves,
+  `bdnex relocate OLD NEW` updates that one record (see [Paths](maintaining.md)); give a source a `name` so it keeps its
+  identity if you rename the folder.
+- **Flags win over the configuration for one run:** `--move` and `--copy` apply to every imported file, `--no-move`
+  leaves the files from sources and other folders where they are.
+
+**Other folders** (not in `import.sources`, outside the collection) follow `import.outside`:
 
 | `import.outside` | What happens |
 |---|---|
 | `ask` (default) | one question per run: move them, copy them, or leave them |
-| `move` | tags are written, the file is renamed from your templates and moved into the library |
+| `move` | tags are written, the file is renamed from your templates and moved into the collection |
 | `copy` | the same, and the original stays where it was |
 | `leave` | nothing is touched |
 
-`--move` and `--copy` apply to every imported file; `--no-move` leaves the outside ones where they are for
-this run. Files that were left are **staged**: the library remembers the full path they came from, and
-`bdnex move staged:true` places them whenever you like (`bdnex ls --files staged:true` lists them).
-Without a terminal to ask on, `ask` leaves them. With `import.mode: copy|move` everything is placed and
-nothing is asked. Before a file is moved in, it is compared with the files the album already has: see
-[Duplicates, versions and the trash](versions.md).
+Files that were left are **staged**: the library remembers the full path they came from, and `bdnex move staged:true`
+places them whenever you like (`bdnex ls --files staged:true` lists them). Without a terminal to ask on, `ask` leaves
+them. With `import.mode: copy|move` everything is placed and nothing is asked. Before a file is moved in, it is
+compared with the files the album already has: see [Duplicates, versions and the trash](versions.md).
 
 ### Covers as files
 

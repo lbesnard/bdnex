@@ -16,3 +16,6 @@ description: Add or change a bdnex command, flag, config option, query field or 
 - **Query field / table / migration**: `bdnex/library/schema.py` (new migration, never edit an old one), `query.py`
   fields, and the docs (`queries.md`, `maintaining.md`).
 - Run `uv run pytest -q test/test_docs_in_sync.py` until green.
+
+A path-like option is named for what it holds (`collection_path`, `cover.dir`); a renamed option goes in
+`config.RENAMED_KEYS` (the old name keeps working with a warning and `bdnex config --update` renames it in the file).

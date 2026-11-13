@@ -1,7 +1,8 @@
 # bdnex
 
 A beets-like library manager for French comics (Bédéthèque): SQLite library, `import` (match + fetch), `ls`,
-`write`/`move`/`repair`, `edit`, `reparse`, `reset`, `relocate`, `relink`, `review`, `trash`, `series`, `serve`,
+`write`/`move`/`repair`, `edit`, `reparse`, `reset`, `relocate`, `relink`, `review`, `undo`, `check`, `duplicates`, `trash`,
+`series`, `serve`,
 `completion`; `import --as-is` records files first, `--select` re-imports by query. Docs: Sphinx in `docs/`
 (Read the Docs). Python via **uv**; run things with `uv run`.
 
@@ -16,6 +17,21 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 - `bdnex/api/`: `bdnex serve`, a read-only FastAPI app plus one static page (`static/index.html`); extra `bdnex[api]`.
 - `bdnex/config.py` + `bdnex/conf/bdnex.yaml` (every option and its default, also the source of the commented
   user file: `config_template.py`).
+
+## The collection and its sources (a core idea: keep it straight)
+- **One collection**: `collection_path` (was `directory`; the old key still works with a warning). bdnex organises it
+  with the `paths` templates; the library tracks the files in it with **relative** paths.
+- **Sources** (`import.sources`: `path`, `mode` copy|move, `name`) are where new files arrive. A file under one is
+  stored as `@alias/relative` (table `roots` holds the real folder once, so `bdnex relocate OLD NEW` is one UPDATE);
+  any other outside file keeps its absolute path. Always go through `Library._store` / `_resolve`, never build stored
+  paths by hand. A collection folder whose name starts with `@` is stored as `./@…`.
+- **A `copy` source is read-only**: `Organizer._read_only` refuses write/repair/move on files under it (only
+  `COPY` is allowed). Never add a code path that modifies, moves, converts or deletes such a file.
+- **Copies remember their origin** (`origins` table: source path, size, mtime): `import` skips what was already copied
+  (`already copied to …`) and reports, but never re-copies, a file that changed at the source.
+- `bdnex import .` / `--sources`: a path under a source follows that source's mode with no question; other outside
+  folders follow `import.outside`; `--move` / `--copy` / `--no-move` win for one run. `import --as-is` + `--select` +
+  `move` is how an existing collection is brought in.
 
 ## Rules that are easy to forget
 - **Tests never touch the real home.** `test/conftest.py` has an autouse `isolated_home` fixture; keep it.

@@ -118,11 +118,15 @@ Use `bdnex write <query>` instead if you only want the tags updated and the name
 
 ## Paths, and moving your collection
 
-The library stores the path of each file **relative to `collection_path`** (your comics folder in the
-configuration) when the file is under it, and the full path otherwise. A comic imported from
-somewhere else (`import.mode: in_place`) keeps working; it just keeps its absolute path.
+The library stores each file's path in one of three forms:
 
-Moving the whole collection is therefore one edit:
+| Where the file is | Stored as |
+|---|---|
+| under `collection_path` | the path **relative to it** |
+| under an [import source](importing.md) | `@name/path below the source`, with the source's folder recorded once |
+| anywhere else | the full path |
+
+**Moving the whole collection** is one edit:
 
 ```bash
 mv ~/comics /mnt/nas/comics
@@ -130,23 +134,34 @@ bdnex config --edit              # collection_path: /mnt/nas/comics
 bdnex ls --missing               # nothing listed: every file was found
 ```
 
-Nothing in the database is rewritten. If you point `collection_path` at the wrong place, the files
-show up in `bdnex ls --missing` (and nothing is lost): fix `collection_path` and they are found again.
+**Moving a source folder** is one command, and it does not touch your configuration:
 
-- **First start after upgrading.** The first command that runs with your `collection_path` set stores
-  the paths under it relative to it, once. A library with relative paths cannot be opened
-  without `collection_path`; bdnex says so and stops. An older bdnex refuses the database (schema v2).
-- **Files outside `collection_path`.** Moved folders outside it, or paths you want to change one by
-  one, are handled by `bdnex relocate`:
+```bash
+mv ~/Downloads/comics /mnt/nas/new-downloads
+bdnex relocate ~/Downloads/comics /mnt/nas/new-downloads   # updates the one record of that source
+bdnex config --edit              # and the path of the source in import.sources, so the two agree
+```
+
+If the configuration and the library disagree about where a source is, bdnex warns at the next command and tells you
+the `relocate` line to run. Nothing in the rest of the database is rewritten, and `relocate` reads and writes nothing
+on disk.
+
+- **`collection_path` never rewrites the database.** If it points at the wrong place, the files show up in
+  `bdnex ls --missing` (and nothing is lost): fix `collection_path` and they are found again.
+- **First start after upgrading.** The first command that runs with your `collection_path` set stores the paths under it
+  relative to it, once. A library with relative paths cannot be opened without `collection_path`; bdnex says so and stops.
+  An older bdnex refuses the database (schema v2).
+- **Other files outside the collection** (full paths, not in a source): moved folders, or paths you want to change one
+  by one, are handled by the same command:
 
 ```bash
 bdnex relocate -n /old/folder /new/folder        # preview: paths affected, how many found
 bdnex relocate /old/folder /new/folder           # rewrite them (files and import log)
 ```
 
-`relocate` only rewrites paths; it reads, hashes and touches nothing on disk. It refuses to
-run if a new path is already registered, and only matches whole folders (`/comics` does not
-rewrite `/comics2`). A path that lands under `collection_path` is stored relative.
+For these, `relocate` rewrites the stored paths; it refuses to run if a new path is already registered, and only matches
+whole folders (`/comics` does not rewrite `/comics2`). A path that lands under `collection_path` or a source is stored in
+that form.
 
 ### Files moved or renamed by hand: `bdnex relink`
 

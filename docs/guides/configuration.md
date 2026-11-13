@@ -70,6 +70,7 @@ import:
   workers: 0                             # background matching processes; 0 = CPU cores - 1, 1 = none
   lookahead: 100                         # files matched ahead of the one you are reviewing
   outside: ask                           # files from outside `collection_path`: ask | move | copy | leave
+  sources: []                            # folders new files come from, each copied or moved in: see below
   thumbnails: auto                       # a picture of the file's first page beside the match question: auto | kitty | iterm2 | never
   series: ask                            # several files in a folder: ask | always (assume a series) | never (match each file alone)
   resume: true                           # a file already linked to an album is not matched again (`--force` redoes it)
@@ -182,6 +183,25 @@ or that is not a function is reported by key (`bedetheque.fetcher: module 'x' ha
 Sitemap files wait `bedetheque.sitemap_delay` (default 0.5 to 1.5 s) between downloads; album pages wait
 `bedetheque.delay` (3 to 10 s). How a fetcher obtains a page, and respecting the site's terms of use, is up to you.
 
+## Import sources
+
+`collection_path` is the one folder bdnex organises. `import.sources` lists the folders new comics arrive in; each has a
+`path`, a `mode` and, optionally, a `name`:
+
+```yaml
+import:
+  sources:
+    - {path: ~/Downloads/comics, mode: move}
+    - {path: /mnt/nas/inbox, mode: copy, name: nas}
+```
+
+- **`mode: copy`** (the default): the originals are never modified. **`mode: move`**: the files are moved in and
+  the folders they empty are removed.
+- **`name`** is how the library refers to the folder (`@nas/…`); it defaults to the folder's name, and two sources
+  must not end up with the same one. Set it so renaming the folder does not change it.
+- `bdnex import --sources` imports what is new in all of them; `bdnex import <folder>` inside one follows its mode.
+  See [Importing](importing.md) for the details, and [Paths](maintaining.md) for `bdnex relocate`.
+
 ## How the configuration is checked
 
 Every command (except `bdnex config` and `completion`, which cope with a broken file) reads and checks the whole
@@ -195,6 +215,7 @@ configuration before it does anything, so a mistake is reported by key, not half
 - **Rules:** every term of `paths.rules[].match` must be valid [query](queries.md) syntax (a regular expression that
   does not compile, a number that is not one).
 - **The fetcher:** `bedetheque.fetcher` must import and be callable.
+- **Sources:** `mode` is `copy` or `move`, a `name` is letters, digits, `_` and `-`, and no two sources share a name or a folder.
 - **Warnings** (the command goes on): a `collection_path` that is not an existing folder (a disk that is not mounted?), a
   `fetcher_endpoint` set with no fetcher, an out-of-date `config_version`.
 

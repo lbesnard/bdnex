@@ -149,8 +149,20 @@ class Organizer:
         return results
 
     # ------------------------------------------------------------- one file
+    def _read_only(self, path: str, mode: str) -> Optional[FileResult]:
+        """A file in a source that is only ever copied is never changed, moved or deleted: ``None`` if the operation
+        is allowed, else the result that says why not."""
+        source = self.settings.source_for(path)
+        if source is None or source.mode != "copy" or mode == COPY:
+            return None
+        return FileResult(path, SKIPPED, note=f"in the read-only source {source.alias!r} (import.sources, mode copy): bdnex "
+                                              "never changes it. `bdnex move --copy` copies it into the collection")
+
     def process(self, row: dict[str, Any], mode: str) -> FileResult:
         path, fmt = row["path"], row["format"]
+        refused = self._read_only(path, mode)
+        if refused:
+            return refused
         album_id = album_id_of(row)
         if album_id is None:
             return FileResult(path, SKIPPED, note="not matched to an album: run `bdnex import`")
@@ -283,6 +295,7 @@ class Organizer:
         old_row = self.library.get_file(path)
         removed = self._dispose_source(path, dest, mode, converted)
         self._update_library(path, dest)
+        self._remember_copy(path, dest, mode)
         if removed == "trash":
             self._send_to_trash(path, old_row, f"converted to {os.path.basename(dest)}")
             steps.append("original moved to the trash")
@@ -299,6 +312,9 @@ class Organizer:
     def repair(self, row: dict[str, Any]) -> FileResult:
         """Rebuild a damaged CBZ/CBR as a clean CBZ, keeping its ComicInfo.xml and pages untouched."""
         path, fmt = row["path"], row["format"]
+        refused = self._read_only(path, WRITE)
+        if refused:
+            return refused
         if not os.path.exists(path):
             return FileResult(path, FAILED, note="file not found")
         if not row.get("corrupted"):
@@ -418,6 +434,7 @@ class Organizer:
         else:
             shutil.move(path, dest)
         self._update_library(path, dest)
+        self._remember_copy(path, dest, mode)
         if spare:
             self.library.set_file_fields(dest, spare=1)
         if mode == MOVE:
@@ -571,6 +588,16 @@ class Organizer:
                 return "trash"  # moved once the library knows the new path
         os.remove(src)
         return True
+
+    def _remember_copy(self, source: str, dest: str, mode: str) -> None:
+        """A copy remembers where it came from (and how that file looked), so that importing the source again skips it."""
+        if mode != COPY or os.path.abspath(source) == os.path.abspath(dest):
+            return
+        try:
+            stat = os.stat(source)
+            self.library.record_origin(dest, source, stat.st_size, stat.st_mtime)
+        except (OSError, KeyError) as err:  # a record that fails must not undo a good copy
+            logger.warning(f"could not record where {dest} was copied from: {err}")
 
     def _prune_empty_dirs(self, old_path: str) -> None:
         """Remove the folder a file left when nothing but system leftovers (.DS_Store...) remain in it, and the

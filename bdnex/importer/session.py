@@ -348,6 +348,9 @@ class ImportSession:
     def _classify(self, path: str) -> tuple[str, Optional[dict]]:
         """``match`` (find its album), ``fetch`` (read its album's page), ``already`` (done),
         ``remembered`` (skipped earlier) or ``unmatched`` (nothing to fetch for it yet)."""
+        copied = None if self.force else self.library.get_origin(path)
+        if copied is not None:  # this file was copied into the collection by an earlier import
+            return "copied", copied
         known = self.library.get_file(path)
         album = self.library.get_album(known["album_id"]) if known and known["album_id"] is not None else None
         if album is not None:
@@ -376,6 +379,15 @@ class ImportSession:
         return not (refreshed and refreshed > last["at"])
 
     def _without_matching(self, path: str, kind: str, album: Optional[dict], defer_fetch: bool) -> ImportResult:
+        if kind == "copied":
+            note = f"already copied to {album['path']}"
+            try:
+                stat = os.stat(path)
+                if stat.st_size != album["size"] or abs(stat.st_mtime - (album["mtime"] or 0)) > 2:
+                    note += " (it changed at the source since: left alone; `--force` imports it again)"
+            except OSError:
+                pass
+            return ImportResult(path, ALREADY, note=note)
         if kind == "remembered":
             return ImportResult(path, SKIPPED, note="skipped earlier; `--force` looks at it again "
                                                     "(so does `bdnex init` when it finds new albums)")

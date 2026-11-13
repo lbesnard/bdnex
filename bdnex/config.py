@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import copy
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
@@ -60,6 +61,22 @@ class Match(_Section):
     medium_threshold: float = Field(ge=0, le=100)
 
 
+class Source(_Section):
+    """A folder whose comics are copied or moved into the collection (``import.sources``)."""
+    path: str = Field(min_length=1)
+    mode: Literal["copy", "move"] = "copy"
+    name: Optional[str] = Field(default=None, pattern=r"^[A-Za-z0-9_-]+$")  # how the library calls it
+
+    @property
+    def alias(self) -> str:
+        return self.name or (re.sub(r"[^A-Za-z0-9_-]+", "-", os.path.basename(os.path.expanduser(self.path).rstrip("/"))
+                                    ).strip("-").lower() or "source")
+
+    @property
+    def folder(self) -> str:
+        return os.path.abspath(os.path.expanduser(self.path)).rstrip("/")
+
+
 class Import(_Section):
     mode: Literal["in_place", "copy", "move"]
     resume: bool
@@ -69,6 +86,18 @@ class Import(_Section):
     outside: Literal["ask", "move", "copy", "leave"]
     series: Literal["ask", "always", "never"]
     thumbnails: Literal["auto", "kitty", "iterm2", "never"]
+    sources: list[Source]
+
+    @field_validator("sources")
+    @classmethod
+    def _distinct_sources(cls, value):
+        aliases = [source.alias for source in value]
+        if len(set(aliases)) != len(aliases):
+            raise ValueError("two sources have the same name (the folder's name by default): give one a `name`")
+        folders = [source.folder for source in value]
+        if len(set(folders)) != len(folders):
+            raise ValueError("a source is listed twice")
+        return value
 
 
 class Duplicates(_Section):
@@ -232,6 +261,16 @@ class Settings(_Section):
         if self.collection_path and self.collection_path != PLACEHOLDER_COLLECTION:
             return Path(os.path.expanduser(self.collection_path)) / self.trash.dir
         return self.library_path.parent / "trash"
+
+    def source_for(self, path: str) -> Optional["Source"]:
+        """The configured source a path is under (``None``: it is not under one)."""
+        absolute = os.path.abspath(os.path.expanduser(str(path)))
+        best = None
+        for source in self.import_.sources:
+            if absolute == source.folder or absolute.startswith(source.folder + os.sep):
+                if best is None or len(source.folder) > len(best.folder):
+                    best = source
+        return best
 
     def require_collection(self) -> Path:
         """The managed library root; refuses the untouched placeholder."""
