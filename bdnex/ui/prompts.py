@@ -303,11 +303,25 @@ class InquirerPrompter:
         answer = self._select("Is this one series?", [
             {"name": f"Yes: match them by volume number in \"{proposal.name}\"", "value": "series"},
             {"name": "No: match each file by itself", "value": "each"},
+            {"name": "Choose which files belong to it (the others are looked at as another series)", "value": "choose"},
             {"name": "Skip this folder (none of its files is imported now)", "value": "skip"},
             {"name": "Abort the import (what is decided is kept; run it again to continue)", "value": self.ABORT}])
         if answer == self.ABORT:
             raise ImportAborted(folder)
         return answer
+
+    def _checkbox(self, message: str, choices: list):
+        from InquirerPy import inquirer
+
+        return inquirer.checkbox(message=message, choices=choices, instruction="(Space ticks, Enter confirms)",
+                                 raise_keyboard_interrupt=False, mandatory=False).execute()
+
+    def pick_files(self, folder: str, paths: list[str], ticked: set) -> list[str]:
+        """Tick the files of a folder that belong to one series. The ones the series was found in start ticked."""
+        self._need_terminal()
+        choices = [{"name": os.path.basename(path), "value": path, "enabled": path in ticked} for path in paths]
+        picked = self._checkbox(f"Which of these {len(paths)} files belong to the series?", choices)
+        return list(picked or [])
 
     # -- searching the whole album list
     def search(self, path: str) -> Optional[Candidate]:

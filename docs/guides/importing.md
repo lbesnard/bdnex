@@ -121,6 +121,13 @@ series (`100 Bullets` T01 matching `Stray Bullets`). A series that shares no wor
 never suggested. Files with no volume (specials) are matched one by one as usual, and answering *No* matches every
 file by itself.
 
+**A folder that holds two series** (say `Achille Talon` volumes plus a sub-series, or a few unrelated books): at
+*Is this one series?* choose *Choose which files belong to it*. A list of the folder's files opens; the ones the
+series was found in start ticked, **Space** ticks or unticks, **Enter** confirms. The ticked files become that
+series. The others are looked at as the next series (the same question again, for them only), and so on until
+nothing is left; at any step you can say *No* (each file by itself) or *Skip this folder*. Ticking nothing matches
+each file by itself.
+
 `--series` (or `import.series: always`) assumes a series for every multi-file folder without asking;
 `--no-series` (`import.series: never`) matches every file alone. A preview, `--auto=all` and a run without a
 terminal never ask: they match file by file.
