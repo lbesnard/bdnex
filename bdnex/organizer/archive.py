@@ -175,13 +175,30 @@ def _decode_picture(doc, xref) -> Optional[tuple[str, bytes, bool]]:
         return None
 
 
+def _is_photographic(images) -> bool:
+    """A page with a JPEG, or any picture of more than one bit that is not a palette, has tones: a PNG of it is huge.
+    Pages of 1-bit scans, palette pictures or plain vector art have none and are best as PNG."""
+    return any("DCT" in str(im[8]) or (im[4] > 1 and im[5] != "Indexed") for im in images)
+
+
+def _source_dpi(page) -> Optional[float]:
+    """The resolution of the sharpest picture on the page (its pixels per inch), ``None`` if there is none."""
+    best = 0.0
+    for info in page.get_image_info():
+        inches = abs(info["bbox"][2] - info["bbox"][0]) / 72
+        if inches > 0:
+            best = max(best, info["width"] / inches)
+    return best or None
+
+
 def _pdf_render_page(page, dpi: int, render_format: str) -> tuple[str, bytes]:
-    """A page drawn as an image. ``auto``: JPEG when the page is made of JPEG pictures (a PNG of those would be
-    many times bigger for the same look), PNG for anything else (text, vector art)."""
+    """A page drawn as an image. ``auto``: JPEG when the page holds photographic pictures (a PNG of those is many
+    times bigger for the same look), PNG for anything else (1-bit scans, text, vector art). Never drawn at a higher
+    resolution than its pictures have: that only makes the file bigger."""
     if render_format == "auto":
-        images = page.get_images(full=True)
-        render_format = "jpeg" if images and all("DCT" in str(im[8]) for im in images) else "png"
-    pixmap = page.get_pixmap(dpi=dpi)
+        render_format = "jpeg" if _is_photographic(page.get_images(full=True)) else "png"
+    source = _source_dpi(page)
+    pixmap = page.get_pixmap(dpi=min(dpi, round(source)) if source and source >= 72 else dpi)
     if render_format == "jpeg":
         if pixmap.alpha:
             import pymupdf
