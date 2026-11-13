@@ -7,6 +7,7 @@ once an album is cached no further request is made unless ``recache`` is set.
 from __future__ import annotations
 
 import logging
+import threading
 import re
 import time
 from random import uniform
@@ -89,6 +90,9 @@ class Bedetheque:
         self._fetch = fetch
         self._image_fetch = image_fetch or fetch
         self.parallel = parallel  # album pages fetched at once (see `prefetch`)
+        self.active = 0       # pages being fetched right now (waiting the polite delay included)
+        self.downloaded = 0   # pages fetched since `prefetch` started
+        self._stats = threading.Lock()
         self._sitemap_fetch = sitemap_fetch or fetch
         self.delay = delay
         self.sitemap_delay = sitemap_delay
@@ -121,16 +125,30 @@ class Bedetheque:
                                "Nothing was stored.")
         return content
 
-    def prefetch(self, urls: list[str], workers: Optional[int] = None, recache: bool = False):
+    def _tracked_download(self, url: str) -> bytes:
+        with self._stats:
+            self.active += 1
+        try:
+            return self._download("album", url)
+        finally:
+            with self._stats:
+                self.active -= 1
+                self.downloaded += 1
+
+    def prefetch(self, urls: list[str], workers: Optional[int] = None, recache: bool = False, tick=None):
         """Download album pages ``workers`` at a time. Yields ``(url, error or None)`` in the order of ``urls``; each page
         is stored in the library by the calling thread as it is yielded, so the caller then finds it in the cache.
 
         Every request waits ``delay`` first, in its own thread: several workers fetch faster, not more politely.
+        ``tick()`` is called about twice a second while the next page is awaited, so that a progress display can show
+        what is going on (``active`` and ``downloaded`` count the pages being fetched and fetched so far).
         """
         from collections import deque
         from concurrent.futures import ThreadPoolExecutor
+        from concurrent.futures import TimeoutError as Waiting
 
         workers = max(1, workers or self.parallel)
+        self.active = self.downloaded = 0
         todo = [u for u in urls if recache or self.library.cache_get(SOURCE, "album", u) is None]
         wanted = set(todo)
         executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="bdnex-page")
@@ -143,7 +161,7 @@ class Bedetheque:
                 url = next(queue, None)
                 if url is None:
                     return
-                waiting.append((url, executor.submit(self._download, "album", url)))
+                waiting.append((url, executor.submit(self._tracked_download, url)))
 
         try:
             top_up()
@@ -156,7 +174,14 @@ class Bedetheque:
                     head, future = waiting.popleft()
                     top_up()
                     try:
-                        self.library.cache_put(SOURCE, "album", head, future.result())
+                        while True:
+                            try:
+                                content = future.result(timeout=0.5)
+                                break
+                            except Waiting:
+                                if tick:
+                                    tick()
+                        self.library.cache_put(SOURCE, "album", head, content)
                         results[head] = None
                     except Exception as err:  # this page failed; the others go on
                         results[head] = err

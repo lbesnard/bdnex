@@ -430,7 +430,7 @@ def test_pages_are_fetched_several_at_a_time_when_the_source_says_so(web, make_c
     web.pages[env.lib.get_album(first.album_id)["url"]] = web.pages[ALBUM_URL]  # the page the sitemap points at
     seen = []
     real = env.source.prefetch
-    env.source.prefetch = lambda urls, workers, recache=False: seen.append((list(urls), workers)) or real(urls, workers, recache)
+    env.source.prefetch = lambda urls, workers, recache=False, **kw: seen.append((list(urls), workers)) or real(urls, workers, recache, **kw)
     messages = []
     env.session.progress = messages.append
     env.session.steps = frozenset(["fetch"])
@@ -442,7 +442,7 @@ def test_pages_are_fetched_several_at_a_time_when_the_source_says_so(web, make_c
 def test_a_page_that_the_endpoints_could_not_fetch_is_reported_for_its_file(web, make_cbz):
     env, path, first = partial_env(web, make_cbz)
     env.source.parallel = 2
-    env.source.prefetch = lambda urls, workers, recache=False: iter([(urls[0], OSError("every endpoint is down"))])
+    env.source.prefetch = lambda urls, workers, recache=False, **kw: iter([(urls[0], OSError("every endpoint is down"))])
     env.session.steps = frozenset(["fetch"])
     result = env.session.run([path]).results[0]
     assert result.outcome == PARTIAL and "page not fetched: every endpoint is down" in result.note

@@ -168,7 +168,9 @@ bedetheque:
   They are used **round-robin**, and when one fails the next is tried; one that failed is left alone for a minute as long
   as another works. With more than one, album pages are also fetched **in parallel**, as many at a time as there are
   endpoints (or `bedetheque.parallel`, 1 to 16). Each request still waits `bedetheque.delay` first, so several endpoints
-  mean the album pages come faster, not more politely: use that only with servers that can take it.
+  mean the album pages come faster, not more politely: use that only with servers that can take it. The progress bar names
+  the page it is waiting for and how many are being fetched at the same time: `(3 being fetched, 4 of 7 fetched)`; it
+  advances page by page, in order, because each page is handled as soon as it is the next one.
 
   ```yaml
   bedetheque:
