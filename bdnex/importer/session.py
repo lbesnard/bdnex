@@ -112,7 +112,8 @@ class ImportSession:
                  prompter: Optional[Prompter] = None, pretend: bool = False, force: bool = False,
                  auto=None, steps=STEPS, progress: Optional[Callable[[str], None]] = None,
                  workers: Optional[int] = None, bar: Optional[Callable] = None,
-                 cover_check: Optional[bool] = None, series: Optional[str] = None):
+                 cover_check: Optional[bool] = None, series: Optional[str] = None,
+                 phase: Optional[Callable[[str, str], None]] = None):
         self.library = library
         self.source = source
         self.settings = settings
@@ -121,6 +122,7 @@ class ImportSession:
         self.force = force
         self.steps = frozenset(steps)
         self.progress = progress or (lambda message: None)
+        self.phase = phase or (lambda step, title: None)  # ("match" | "fetch", what is about to happen)
         self.bar = bar  # (total, label) -> object with update(detail) and finish(message)
         wanted = settings.import_.auto if auto is None else auto
         self.auto = "all" if wanted == "all" else "strong" if wanted in (True, "strong") else None
@@ -171,6 +173,8 @@ class ImportSession:
         history: list[int] = []  # positions of the files the user was asked about, to go back to them
         skipped_folders: set[str] = set()  # folders the user chose to skip
         position = 0
+        if "match" in self.steps:
+            self.phase("match", f"Matching {len(files)} file(s) to albums")
         while position < len(files):
             path = files[position]
             kind = kinds[path][0]
@@ -400,6 +404,8 @@ class ImportSession:
         if not pending:
             self._check_covers()
             return
+        self.phase("fetch", f"Reading {len(pending)} album page(s): authors, publisher, summary... "
+                            "(one polite request each, Ctrl-C stops and `bdnex import --fetch` resumes)")
         bar = self.bar(len(pending), "Album pages") if self.bar else None
         if bar is None:
             self.progress(f"Fetching {len(pending)} album page(s) (Ctrl-C stops; `bdnex import --fetch` resumes)...")

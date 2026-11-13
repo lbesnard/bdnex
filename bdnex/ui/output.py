@@ -3,13 +3,45 @@
 from __future__ import annotations
 
 import logging
+import re
 import sys
 import time
 
 
+def _tint(message: str, on: bool) -> str:
+    """Colour the kinds of progress line the commands print (only on a terminal)."""
+    from bdnex.ui import color
+
+    if not on:
+        return message
+    counter = re.match(r"^(\[\d+/\d+\]|\[page \d+/\d+\]) (.*)$", message)
+    if counter:
+        return f"{color.paint(counter.group(1), 'cyan', on)} {color.paint(counter.group(2), 'bold', on)}"
+    stripped = message.lstrip()
+    for prefix, style in (("match:", "green"), ("Series folder", "cyan_bold"), ("page unavailable", "red"),
+                          ("page read", "dim"), ("fetching the album page", "dim"), ("album already complete", "dim"),
+                          ("Interrupted", "yellow"), ("Resuming", "yellow"), ("Back to", "yellow")):
+        if stripped.startswith(prefix):
+            return message[:len(message) - len(stripped)] + color.paint(stripped, style, on)
+    return message
+
+
 def progress(message: str) -> None:
     """A live status line on stderr (stdout stays clean for the final report)."""
-    print(message, file=sys.stderr, flush=True)
+    from bdnex.ui import color
+
+    print(_tint(message, color.enabled(sys.stderr)), file=sys.stderr, flush=True)
+
+
+def banner(title: str, step: int = 0, steps: int = 0, stream=None) -> None:
+    """A heading between the phases of a long command: a rule, ``Step 2/3  title``, and a blank line."""
+    from bdnex.ui import color
+
+    stream = stream or sys.stderr
+    on = color.enabled(stream)
+    label = f"Step {step}/{steps}" if steps > 1 else ""
+    head = f"{color.paint(label, 'cyan_bold', on)}  " if label else ""
+    print(f"\n{color.paint(color.rule(), 'dim', on)}\n{head}{color.paint(title, 'bold', on)}\n", file=stream, flush=True)
 
 
 def add_verbosity(parser) -> None:
@@ -62,6 +94,11 @@ class Bar:
             left = (self._clock() - self._start) / self.done * max(0, self.total - self.done)
             eta = f"  about {human_duration(left)} left" if left >= 1 else ""
         bar = "█" * filled + "░" * (self.width - filled)
+        if self.tty:
+            from bdnex.ui import color
+
+            bar = color.paint("█" * filled, "green", True) + color.paint("░" * (self.width - filled), "dim", True)
+            return f"{color.paint(self.label, 'bold', True)} [{bar}] {pct:>3}%  {self.done}/{self.total}{eta}  {detail}".rstrip()
         return f"{self.label} [{bar}] {pct:>3}%  {self.done}/{self.total}{eta}  {detail}".rstrip()
 
     def update(self, detail: str = "", step: int = 1) -> None:

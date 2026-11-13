@@ -173,3 +173,21 @@ def test_outcomes_have_a_colour_each():
     from bdnex.ui import import_cmd
 
     assert import_cmd.OUTCOME_COLOURS.keys() >= {"tagged", "partial", "skipped", "failed", "already", "duplicate", "pretend"}
+
+
+def test_progress_lines_are_tinted_only_on_a_terminal():
+    from bdnex.ui import output
+    plain = "    match: BD-Foo-Tome-1-9.html (series \"Foo\")"
+    assert output._tint(plain, False) == plain
+    assert "\x1b[32m" in output._tint(plain, True)  # a match is green
+    counted = output._tint("[3/10] Foo T03.cbz", True)
+    assert "\x1b[36m[3/10]" in counted and "\x1b[1mFoo T03.cbz" in counted
+
+
+def test_a_banner_names_the_step(capsys):
+    from bdnex.ui import output
+    output.banner("Matching 5 file(s) to albums", 1, 2)
+    err = capsys.readouterr().err
+    assert "Step 1/2  Matching 5 file(s) to albums" in err and "─" in err
+    output.banner("Result")
+    assert "Step" not in capsys.readouterr().err
