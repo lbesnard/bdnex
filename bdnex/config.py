@@ -143,6 +143,19 @@ class Bedetheque(_Section):
     fetcher: Optional[str] = None
     fetcher_endpoint: Optional[str] = None
 
+    @field_validator("fetcher")
+    @classmethod
+    def _fetcher_exists(cls, value):
+        """``package.module:function`` must lead to a function that can be imported and called."""
+        if value:
+            from bdnex.importer.bedetheque.fetchers import FetcherError, load_fetcher
+
+            try:
+                load_fetcher(value)
+            except (FetcherError, TypeError) as err:
+                raise ValueError(str(err)) from None
+        return value
+
 
 class Settings(_Section):
     config_version: int = Field(ge=0)

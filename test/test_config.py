@@ -167,8 +167,8 @@ def test_fetcher_spec_must_be_callable(conf_path, monkeypatch):
     module.value = 3
     monkeypatch.setitem(sys.modules, "not_callable_mod", module)
     write(conf_path, {"config_version": 2, "bedetheque": {"fetcher": "not_callable_mod:value"}})
-    with pytest.raises(TypeError):
-        build_fetcher(load_config().settings)
+    with pytest.raises(ConfigError, match="bedetheque.fetcher: .*not callable"):  # caught when the config is read
+        load_config()
 
 
 def test_plugin_runs_with_configured_fetcher(conf_path):
@@ -277,7 +277,7 @@ def test_stale_warning_tells_you_to_delete_the_ignored_keys_first(conf_path):
 
 
 def test_endpoint_without_a_fetcher_is_called_out(conf_path):
-    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher_endpoint": "http://localhost:1"}})
+    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher": None, "fetcher_endpoint": "http://localhost:1"}})
     warnings = load_config().warnings
     assert len(warnings) == 1 and "fetcher_endpoint is set but bedetheque.fetcher is not" in warnings[0]
 
@@ -301,3 +301,25 @@ def test_an_unquoted_yes_or_no_in_the_yaml_file_is_accepted(tmp_path, written, e
 def test_other_wrong_values_are_still_reported(tmp_path):
     with pytest.raises(ConfigError, match="delete_original"):
         build_settings({"config_version": 2, "directory": str(tmp_path), "write": {"delete_original": "maybe"}})
+
+
+def test_the_fetcher_must_exist():
+    import pytest
+    from bdnex.config import ConfigError
+    for bad, message in (("no_colon", "package.module:function"), ("no.such.module:fn", "can not import"),
+                         ("bdnex.importer.bedetheque:nothing_here", "no function"), ("os:sep", "not callable")):
+        with pytest.raises(ConfigError, match=message):
+            build_settings({"config_version": 2, "bedetheque": {"fetcher": bad}})
+    settings, warnings, _ = build_settings({"config_version": 2, "bedetheque": {"fetcher": "os.path:exists"}})
+    assert settings.bedetheque.fetcher == "os.path:exists" and warnings == []
+    assert build_settings({"config_version": 2, "bedetheque": {"fetcher": None}})[0].bedetheque.fetcher is None
+
+
+def test_flaresolverr_is_the_default_fetcher_and_needs_an_endpoint_to_be_used():
+    from bdnex.importer.bedetheque.fetchers import DEFAULT_FETCHER, uses_saved_pages
+    settings = build_settings({"config_version": 2})[0]
+    assert settings.bedetheque.fetcher == DEFAULT_FETCHER and uses_saved_pages(settings)  # no address: saved pages
+    with_endpoint = build_settings({"config_version": 2, "bedetheque": {"fetcher_endpoint": "http://localhost:8191/v1"}})[0]
+    assert not uses_saved_pages(with_endpoint)
+    own = build_settings({"config_version": 2, "bedetheque": {"fetcher": "os.path:exists"}})[0]
+    assert not uses_saved_pages(own)  # a fetcher of your own is used as it is

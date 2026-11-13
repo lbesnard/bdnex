@@ -73,9 +73,19 @@ def build_fetcher(settings) -> Fetcher:
     ``pages_dir`` are used.
     """
     section = settings.bedetheque
-    if not section.fetcher:
+    if uses_saved_pages(settings):
         return DirectoryFetcher(settings.pages_dir)
     return load_fetcher(section.fetcher)
+
+
+DEFAULT_FETCHER = "bdnex.importer.bedetheque:flaresolverr_fetch"
+
+
+def uses_saved_pages(settings) -> bool:
+    """Are album pages read from ``pages_dir``? Yes without a fetcher, and when the default fetcher (FlareSolverr)
+    has no address to talk to."""
+    section = settings.bedetheque
+    return not section.fetcher or (section.fetcher == DEFAULT_FETCHER and not section.fetcher_endpoint)
 
 
 def flaresolverr_fetch(url: str, timeout: int = 60) -> bytes:
@@ -89,6 +99,10 @@ def flaresolverr_fetch(url: str, timeout: int = 60) -> bytes:
     loaded = load_config()           # creates the file on first run, validates, merges defaults
     settings = loaded.settings
     endpoint = settings.bedetheque.fetcher_endpoint               # raw string from the yaml, e.g. "~/comics"
+    if not endpoint:
+        raise FetcherError(
+            "bedetheque.fetcher is flaresolverr_fetch but bedetheque.fetcher_endpoint is not set in your config "
+            "(the address of your FlareSolverr, e.g. http://localhost:8191/v1): `bdnex config --edit`")
 
     payload = {
             "cmd": "request.get",

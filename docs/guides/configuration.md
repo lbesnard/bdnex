@@ -151,19 +151,36 @@ See [Metadata source plugins](../dev/plugins.md).
 
 ## Page fetching (Bédéthèque)
 
-By default bdnex reads album pages you saved from your browser into
-`bedetheque.pages_dir`. To supply pages another way, name a function that takes a
-URL and returns the page as bytes:
+bdnex needs the album pages of Bédéthèque, which sit behind an anti-bot protection. A **fetcher** is a function that
+takes a URL and returns the page as bytes; `bedetheque.fetcher` names it as `package.module:function`. The default is
+`bdnex.importer.bedetheque:flaresolverr_fetch`, which asks a [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)
+server whose address you give:
 
 ```yaml
 bedetheque:
-  fetcher: "package.module:function"
-  fetcher_endpoint: "http://localhost:8191"   # free string, only your function reads it
+  fetcher_endpoint: "http://localhost:8191/v1"   # your FlareSolverr
 ```
 
-bedetheque's sitemap files wait `bedetheque.sitemap_delay` (default 0.5 to 1.5 s) between downloads;
-album pages wait `bedetheque.delay` (3 to 10 s). bdnex does nothing with `fetcher_endpoint`. A fetcher can read it with
-`load_config().settings.bedetheque.fetcher_endpoint`.
+- **No `fetcher_endpoint`:** the default fetcher has nothing to talk to, so album pages are read from the pages you
+  saved from your browser into `bedetheque.pages_dir` (under any name ending with the album id, e.g. `245127.html`).
+  `bdnex import` says so once, at the start.
+- **Your own fetcher:** write a function `def fetch(url: str) -> bytes` and name it, with whatever it needs in
+  `fetcher_endpoint` (a free string; a fetcher can read it with `load_config().settings.bedetheque.fetcher_endpoint`):
+
+  ```yaml
+  bedetheque:
+    fetcher: "my_package.my_module:fetch"
+    fetcher_endpoint: "http://localhost:8191"
+  ```
+
+- **`fetcher: null`** always reads the saved pages.
+
+The setting is **checked when the configuration is read**: a module that can not be imported, a name that is not in it
+or that is not a function is reported by key (`bedetheque.fetcher: module 'x' has no function 'y'`, with a hint when the
+`:` is in the wrong place), before anything runs. Covers are never fetched by it: they are plain image downloads.
+
+Sitemap files wait `bedetheque.sitemap_delay` (default 0.5 to 1.5 s) between downloads; album pages wait
+`bedetheque.delay` (3 to 10 s). How a fetcher obtains a page, and respecting the site's terms of use, is up to you.
 
 ## `yes` and `no` in YAML
 

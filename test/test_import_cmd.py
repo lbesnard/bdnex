@@ -229,3 +229,9 @@ def test_select_works_on_library_files_that_match_a_query(setup):
     assert import_cmd.run(["--select", "tagged:false"], out=out) == 1  # nothing is left to select
     assert import_cmd.run(["--fetch", "--force", "--select", f"title:={title}"], out=io.StringIO()) == 0
     assert import_cmd.run(["--select", "title::("], out=io.StringIO()) == 2
+
+
+def test_import_says_where_pages_come_from_when_no_fetcher_is_set(setup, capsys):
+    path, tmp_path = setup
+    import_cmd.run([os.path.dirname(path)], out=io.StringIO())
+    assert "fetcher_endpoint` is not set" in capsys.readouterr().err
