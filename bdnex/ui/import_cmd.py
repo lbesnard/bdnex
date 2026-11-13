@@ -34,6 +34,10 @@ def build_parser() -> argparse.ArgumentParser:
                        help="find the album of each file, from the album list (offline; run `bdnex init` first)")
     steps.add_argument("-f", "--fetch", action="store_true",
                        help="read the album pages: authors, publisher, summary, genres... (slow, politely)")
+    parser.add_argument("--as-is", action="store_true",
+                        help="only record the files: name, path, format, size, pages, checksum and what their own "
+                             "ComicInfo.xml says. No matching, no network, nothing moved or written. "
+                             "`bdnex import` (matching) can be run on them later")
     parser.add_argument("--force", action="store_true",
                         help="redo the selected steps for files that are already done (rematch, read the pages again)")
     parser.add_argument("--auto", choices=["strong", "all"], default=None, metavar="[=all]",
@@ -122,6 +126,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
     except ConfigError as err:
         print(err, file=sys.stderr)
         return 1
+    if args.as_is:
+        return _record_as_is(args, settings, out)
     if "match" in steps and not args.paths:  # no folder given: look at the library folder of the configuration
         try:
             args.paths = [str(settings.require_library_directory())]
@@ -199,6 +205,57 @@ def run(argv: list[str], out=sys.stdout) -> int:
               "from there.", file=out)
         return 1
     return 1 if organize_failed or report.count(FAILED) or any(r.outcome == "failed" for r in organize_results) else 0
+
+
+def _record_as_is(args, settings, out) -> int:
+    """``--as-is``: put the files in the library without matching them to an album."""
+    from bdnex.library.scan import COMIC_EXTENSIONS, iter_comic_files
+
+    paths = args.paths
+    if not paths:
+        try:
+            paths = [str(settings.require_library_directory())]
+        except ConfigError as err:
+            print(f"Give the files or folders to record, e.g. `bdnex import --as-is ~/comics`: {err}", file=sys.stderr)
+            return 2
+        print(f"No folder given: recording your library folder, {paths[0]}", file=sys.stderr)
+    files = []
+    for path in paths:
+        if not os.path.exists(path):
+            print(f"{path!r} is not an existing file or folder", file=sys.stderr)
+        elif os.path.isdir(path):
+            files.extend(iter_comic_files(path))
+        elif path.lower().endswith(COMIC_EXTENSIONS):
+            files.append(os.path.abspath(path))
+    counts = {"recorded": 0, "known": 0, "failed": 0, "with ComicInfo.xml": 0, "damaged": 0}
+    with Library.for_settings(settings, readonly=args.pretend) as library:
+        for number, path in enumerate(files, start=1):
+            progress(f"[{number}/{len(files)}] {os.path.basename(path)}")
+            known = library.get_file(path)
+            if known and not args.force:
+                counts["known"] += 1
+                continue
+            counts["recorded"] += 1
+            if args.pretend:
+                continue
+            try:
+                library.add_file(path)
+                row = library.get_file(path)
+                counts["with ComicInfo.xml"] += bool(row["embedded"])
+                counts["damaged"] += bool(row["corrupted"])
+                library.log_import(path, "registered")
+            except Exception as err:  # one bad file must not stop the batch
+                counts["recorded"] -= 1
+                counts["failed"] += 1
+                print(f"{path}: {err}", file=sys.stderr)
+    verb = "would be recorded" if args.pretend else "recorded"
+    print(f"\n{len(files)} file(s): {counts['recorded']} {verb}, {counts['known']} already in the library, "
+          f"{counts['failed']} failed", file=out)
+    if not args.pretend and counts["recorded"]:
+        print(f"{counts['with ComicInfo.xml']} have a ComicInfo.xml of their own, {counts['damaged']} look damaged. "
+              "They are not matched yet: `bdnex ls --files tagged:false` lists them, and `bdnex import` (without "
+              "--as-is) matches and fetches them whenever you like.", file=out)
+    return 1 if counts["failed"] else 0
 
 
 def _outside(rows, root) -> tuple[list, list]:

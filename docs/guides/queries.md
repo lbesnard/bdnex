@@ -47,7 +47,7 @@ A word before a colon that is not a field name (as in `Tintin: Le Lotus`) is sea
   `url`, `source`, `genre`, `author` (any credit), `writer`, `penciller`, `inker`, `colorist`, `letterer`, `coverartist`.
 - **Numbers:** `year`, `volume`, `pages`, `rating`, `files` (files per album; `files:0` finds albums without a file).
 - **Yes/no:** `complete` (the album page was read; `partial` is its opposite).
-- **File fields:** `path`, `filename`, `format` (`cbz`, `cbr`, `pdf`), `md5`, `size`, `filepages` (pages of the file),
+- **File fields:** `path`, `filename`, `format` (`cbz`, `cbr`, `pdf`), `md5`, `embedded` (what the file's own `ComicInfo.xml` says), `size`, `filepages` (pages of the file),
   `corrupted`, `metadata` (file already has a `ComicInfo.xml`), `tagged` (only with `--files`),
   `spare` (an extra version of its album), `staged` (imported but not moved into the library yet) and
   `cover` (similarity of its cover with the album's, 0-100; `cover:..40` finds the doubtful ones).

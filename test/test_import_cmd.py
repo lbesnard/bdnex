@@ -176,3 +176,39 @@ def test_a_stray_character_argument_is_named_in_the_error(setup):
     out = io.StringIO()
     assert import_cmd.run(["\u2502"], out=out) == 1
     assert "'\u2502' is not an existing file or folder" in out.getvalue()
+
+
+def test_as_is_records_files_without_matching_or_touching_them(setup, make_cbz):
+    path, tmp_path = setup
+    folder = os.path.dirname(path)
+    before = {name: os.path.getmtime(os.path.join(folder, name)) for name in os.listdir(folder) if name.endswith(".cbz")}
+    out = io.StringIO()
+    assert import_cmd.run(["--as-is", folder], out=out) == 0
+    assert "1 recorded" in out.getvalue()
+    from bdnex.config import load_config
+    from bdnex.library import Library
+    with Library.for_settings(load_config().settings) as library:
+        row = library.get_file(path)
+        assert row["album_id"] is None and row["md5"] and row["format"] == "cbz"
+        assert library.last_import(path)["outcome"] == "registered"
+        assert library.stats()["albums"] == 0
+    assert before == {name: os.path.getmtime(os.path.join(folder, name)) for name in os.listdir(folder) if name.endswith(".cbz")}
+    again = io.StringIO()
+    import_cmd.run(["--as-is", folder], out=again)
+    assert "1 already in the library" in again.getvalue()
+    assert import_cmd.run([folder], out=io.StringIO()) == 0  # and a normal import matches them afterwards
+    with Library.for_settings(load_config().settings) as library:
+        assert library.get_file(path)["album_id"] is not None
+
+
+def test_as_is_keeps_what_the_file_says_about_itself(setup, make_cbz):
+    import zipfile
+    path, tmp_path = setup
+    with zipfile.ZipFile(path, "a") as zf:
+        zf.writestr("ComicInfo.xml", "<ComicInfo><Series>Nains</Series><Number>3</Number><Title>Foo</Title></ComicInfo>")
+    import_cmd.run(["--as-is", os.path.dirname(path)], out=io.StringIO())
+    from bdnex.config import load_config
+    from bdnex.library import Library
+    with Library.for_settings(load_config().settings) as library:
+        assert library.get_file(path)["embedded"] == {"Series": "Nains", "Number": "3", "Title": "Foo"}
+        assert [r["path"] for r in library.query(["embedded:nains"], files=True)] == [path]

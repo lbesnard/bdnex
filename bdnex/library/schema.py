@@ -153,4 +153,9 @@ MIGRATIONS = [
     """
     ALTER TABLE series ADD COLUMN extra TEXT NOT NULL DEFAULT '{}';
     """,
+    # --- version 5 -------------------------------------------------------
+    # What the file itself says (its ComicInfo.xml, as JSON), kept apart from the album it is linked to.
+    """
+    ALTER TABLE files ADD COLUMN embedded TEXT;
+    """,
 ]
