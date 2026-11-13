@@ -323,3 +323,55 @@ def test_the_edition_note_reaches_comicinfo_notes():
     notes = comicinfo.album_to_fields(album)["Notes"]
     assert notes.splitlines() == ["ISBN: 9782505078647", 'Édition: Noté "Première édition". Couverture toilée.']
     assert comicinfo.build_xml(comicinfo.album_to_fields(album))  # still valid against the schema
+
+
+def _album_urls(count):
+    return [f"https://www.bedetheque.com/BD-Serie-Tome-{n}-Titre-{1000 + n}.html" for n in range(1, count + 1)]
+
+
+def test_prefetch_fetches_several_pages_at_once_and_keeps_the_order(lib):
+    import threading
+    import time
+    state = {"now": 0, "most": 0}
+    lock = threading.Lock()
+
+    def fetch(url):
+        with lock:
+            state["now"] += 1
+            state["most"] = max(state["most"], state["now"])
+        time.sleep(0.05)
+        with lock:
+            state["now"] -= 1
+        return b"<html>" + url.encode() + b"</html>"
+
+    source = Bedetheque(lib, fetch=fetch, sleep=lambda s: None, parallel=3)
+    urls = _album_urls(7)
+    results = list(source.prefetch(urls, 3))
+    assert [url for url, _ in results] == urls and all(error is None for _, error in results)
+    assert 2 <= state["most"] <= 3  # several at once, never more than asked
+    assert all(lib.cache_get("bedetheque", "album", url) is not None for url in urls)  # stored by the caller's thread
+    state["most"] = 0
+    assert [e for _, e in source.prefetch(urls, 3)] == [None] * 7 and state["most"] == 0  # all cached: nothing fetched
+
+
+def test_prefetch_reports_a_failed_page_and_goes_on(lib):
+    urls = _album_urls(5)
+
+    def fetch(url):
+        if "Tome-3-" in url:
+            raise OSError("endpoint down")
+        return b"<html>ok</html>"
+
+    source = Bedetheque(lib, fetch=fetch, sleep=lambda s: None, parallel=2)
+    results = dict(source.prefetch(urls, 2))
+    assert isinstance(results[urls[2]], OSError) and [results[u] for u in urls if u != urls[2]] == [None] * 4
+    assert lib.cache_get("bedetheque", "album", urls[2]) is None and lib.cache_get("bedetheque", "album", urls[3]) is not None
+
+
+def test_closing_prefetch_early_stops_asking_for_more_pages(lib):
+    fetched = []
+    source = Bedetheque(lib, fetch=lambda url: fetched.append(url) or b"<html>x</html>", sleep=lambda s: None)
+    stream = source.prefetch(_album_urls(40), 2)
+    next(stream)
+    stream.close()
+    assert len(fetched) < 40  # the window ahead is small, and the rest was cancelled

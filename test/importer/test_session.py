@@ -421,3 +421,29 @@ def test_a_missing_argument_is_reported_as_typed(env, tmp_path):
     report = env.session.run([stray])
     assert report.results[0].path == stray and repr(stray) in report.results[0].note
     assert env.web.calls == []
+
+
+def test_pages_are_fetched_several_at_a_time_when_the_source_says_so(web, make_cbz):
+    env, path, first = partial_env(web, make_cbz)
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    env.source.parallel = 3
+    web.pages[env.lib.get_album(first.album_id)["url"]] = web.pages[ALBUM_URL]  # the page the sitemap points at
+    seen = []
+    real = env.source.prefetch
+    env.source.prefetch = lambda urls, workers, recache=False: seen.append((list(urls), workers)) or real(urls, workers, recache)
+    messages = []
+    env.session.progress = messages.append
+    env.session.steps = frozenset(["fetch"])
+    assert env.session.run([path]).results[0].outcome == TAGGED
+    assert seen and seen[0][1] == 3 and any("3 pages at a time" in m for m in messages)
+    env.lib.close()
+
+
+def test_a_page_that_the_endpoints_could_not_fetch_is_reported_for_its_file(web, make_cbz):
+    env, path, first = partial_env(web, make_cbz)
+    env.source.parallel = 2
+    env.source.prefetch = lambda urls, workers, recache=False: iter([(urls[0], OSError("every endpoint is down"))])
+    env.session.steps = frozenset(["fetch"])
+    result = env.session.run([path]).results[0]
+    assert result.outcome == PARTIAL and "page not fetched: every endpoint is down" in result.note
+    env.lib.close()

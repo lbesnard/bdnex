@@ -151,9 +151,9 @@ def test_fetcher_spec_resolves_to_the_function(conf_path):
 
 
 def test_fetcher_endpoint_is_optional_and_readable(conf_path):
-    assert load_config().settings.bedetheque.fetcher_endpoint is None
+    assert load_config().settings.bedetheque.fetcher_endpoint == []
     write(conf_path, {"config_version": 2, "bedetheque": {"fetcher_endpoint": "http://localhost:8191"}})
-    assert load_config().settings.bedetheque.fetcher_endpoint == "http://localhost:8191"
+    assert load_config().settings.bedetheque.fetcher_endpoint == ["http://localhost:8191"]
 
 
 def test_fetcher_endpoint_must_be_a_string(conf_path):
@@ -388,3 +388,15 @@ def test_config_update_renames_the_old_option_in_the_file(conf_path, capsys, tmp
     assert f"collection_path: {tmp_path}" in text and "\ndirectory:" not in text and "cbr: skip" in text
     assert "Renamed the option directory -> collection_path" in capsys.readouterr().out
     assert load_config(conf_path).warnings == []
+
+
+def test_fetcher_endpoint_is_one_address_or_a_list():
+    one = build_settings({"config_version": 2, "bedetheque": {"fetcher_endpoint": "http://a/v1"}})[0].bedetheque
+    assert one.fetcher_endpoint == ["http://a/v1"] and one.parallel is None
+    many = build_settings({"config_version": 2, "bedetheque": {"fetcher_endpoint": ["http://a/v1", "http://b/v1"],
+                                                               "parallel": 4}})[0].bedetheque
+    assert many.fetcher_endpoint == ["http://a/v1", "http://b/v1"] and many.parallel == 4
+    with pytest.raises(ConfigError, match="listed twice"):
+        build_settings({"config_version": 2, "bedetheque": {"fetcher_endpoint": ["http://a/v1", "http://a/v1"]}})
+    with pytest.raises(ConfigError, match="parallel"):
+        build_settings({"config_version": 2, "bedetheque": {"parallel": 0}})

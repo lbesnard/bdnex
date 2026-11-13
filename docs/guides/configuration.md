@@ -122,6 +122,7 @@ bedetheque:
   delay: [3, 10]                         # seconds waited before each album / series page request
   sitemap_delay: [0.5, 1.5]              # seconds waited between sitemap files
   pages_dir: ~/.local/share/bdnex/pages  # where album pages saved from your browser are looked up
+  parallel: null                         # album pages fetched at once; empty: one per fetcher_endpoint
 ```
 
 ## Other templates for some albums: `paths.rules`
@@ -163,11 +164,26 @@ bedetheque:
   fetcher_endpoint: "http://localhost:8191/v1"   # your FlareSolverr
 ```
 
+- **Several endpoints:** `fetcher_endpoint` may be a list (it was a single string before; a single string still works).
+  They are used **round-robin**, and when one fails the next is tried; one that failed is left alone for a minute as long
+  as another works. With more than one, album pages are also fetched **in parallel**, as many at a time as there are
+  endpoints (or `bedetheque.parallel`, 1 to 16). Each request still waits `bedetheque.delay` first, so several endpoints
+  mean the album pages come faster, not more politely: use that only with servers that can take it.
+
+  ```yaml
+  bedetheque:
+    fetcher_endpoint:
+      - "http://flare1:8191/v1"
+      - "http://flare2:8191/v1"
+    parallel: 2            # optional: defaults to the number of endpoints
+  ```
+
 - **No `fetcher_endpoint`:** the default fetcher has nothing to talk to, so album pages are read from the pages you
   saved from your browser into `bedetheque.pages_dir` (under any name ending with the album id, e.g. `245127.html`).
   `bdnex import` says so once, at the start.
 - **Your own fetcher:** write a function `def fetch(url: str) -> bytes` and name it, with whatever it needs in
-  `fetcher_endpoint` (a free string; a fetcher can read it with `load_config().settings.bedetheque.fetcher_endpoint`):
+  `fetcher_endpoint` (free strings, kept as a list; a fetcher reads them with `load_config().settings.bedetheque.fetcher_endpoint`, a
+  list even when you wrote one address):
 
   ```yaml
   bedetheque:

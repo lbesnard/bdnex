@@ -83,10 +83,11 @@ class Bedetheque:
                  delay: tuple[float, float] = (3, 10), sleep: Callable[[float], None] = time.sleep,
                  sitemap_fetch: Optional[Callable[[str], bytes]] = None,
                  sitemap_delay: tuple[float, float] = (0.5, 1.5),
-                 image_fetch: Optional[Callable[[str], bytes]] = None):
+                 image_fetch: Optional[Callable[[str], bytes]] = None, parallel: int = 1):
         self.library = library
         self._fetch = fetch
         self._image_fetch = image_fetch or fetch
+        self.parallel = parallel  # album pages fetched at once (see `prefetch`)
         self._sitemap_fetch = sitemap_fetch or fetch
         self.delay = delay
         self.sitemap_delay = sitemap_delay
@@ -104,15 +105,63 @@ class Bedetheque:
                 cached = None
             if cached is not None:
                 return cached
+        content = self._download(kind, url)
+        if store:
+            self.library.cache_put(SOURCE, kind, url, content)
+        return content
+
+    def _download(self, kind: str, url: str) -> bytes:
+        """One real request, after the polite wait. Touches no database: it can run in a worker thread."""
         self._sleep(uniform(*(self.sitemap_delay if kind == "sitemap" else self.delay)))
         logger.debug(f"Fetching {url}")
         content = {"sitemap": self._sitemap_fetch, "cover": self._image_fetch}.get(kind, self._fetch)(url)
         if kind not in ("sitemap", "cover") and looks_blocked(200, content):  # whichever fetcher it came from
             raise BlockedError(f"{url}: the fetcher returned an anti-bot challenge page, not the page. "
                                "Nothing was stored.")
-        if store:
-            self.library.cache_put(SOURCE, kind, url, content)
         return content
+
+    def prefetch(self, urls: list[str], workers: Optional[int] = None, recache: bool = False):
+        """Download album pages ``workers`` at a time. Yields ``(url, error or None)`` in the order of ``urls``; each page
+        is stored in the library by the calling thread as it is yielded, so the caller then finds it in the cache.
+
+        Every request waits ``delay`` first, in its own thread: several workers fetch faster, not more politely.
+        """
+        from collections import deque
+        from concurrent.futures import ThreadPoolExecutor
+
+        workers = max(1, workers or self.parallel)
+        todo = [u for u in urls if recache or self.library.cache_get(SOURCE, "album", u) is None]
+        wanted = set(todo)
+        executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="bdnex-page")
+        waiting: deque = deque()
+        queue = iter(todo)
+        window = workers * 3  # how many are submitted ahead: bounds the pages held in memory
+
+        def top_up():
+            while len(waiting) < window:
+                url = next(queue, None)
+                if url is None:
+                    return
+                waiting.append((url, executor.submit(self._download, "album", url)))
+
+        try:
+            top_up()
+            results: dict[str, Optional[Exception]] = {}
+            for url in urls:
+                if url not in wanted:
+                    yield url, None  # already in the library
+                    continue
+                while url not in results:  # the pages come back in the order they were asked for
+                    head, future = waiting.popleft()
+                    top_up()
+                    try:
+                        self.library.cache_put(SOURCE, "album", head, future.result())
+                        results[head] = None
+                    except Exception as err:  # this page failed; the others go on
+                        results[head] = err
+                yield url, results.pop(url)
+        finally:
+            executor.shutdown(wait=False, cancel_futures=True)
 
     # --------------------------------------------------------------- sitemaps
     def update_sitemaps(self, recache: bool = False,

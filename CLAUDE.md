@@ -53,7 +53,9 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   the user's, untracked, never committed.
 - `flaresolverr_fetch` (`bedetheque.fetcher`, `fetcher_endpoint`) is the default page fetcher and the user's own code:
   do not change what it does or run it against the site, and never put their endpoint address in the repo. The config
-  validates that `bedetheque.fetcher` imports and is callable. Covers do not use it (plain request).
+  validates that `bedetheque.fetcher` imports and is callable. `fetcher_endpoint` is a list (a string is one item): used
+  round-robin with fallback, and pages are fetched `parallel` at a time (`Bedetheque.prefetch`: network in worker
+  threads, SQLite only in the calling thread). Covers do not use it (plain request).
 - Do not modify the user's real database or comics. Work on copies in the session scratchpad.
 - PRs target `main`. **Do not stack**: a PR based on another branch is merged into that branch, not into `main`, and its
   work never ships (it happened twice). Branch from `origin/main`; if two changes touch the same code, merge the first
