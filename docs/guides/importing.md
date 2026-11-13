@@ -327,6 +327,19 @@ takes the time. Files already in the library are
 left alone (`--force` records them again). `ls --files -l` shows the file's own metadata, and `embedded:` finds files
 by it (`bdnex ls --files embedded:nains`). Recorded files are not "skipped": the next `bdnex import` matches them.
 
+### Asking again about skipped files: `--skipped`
+
+A file you (or the matching) skipped is remembered, and a normal `bdnex import` leaves it alone ("skipped earlier") until
+`bdnex init` brings new albums. To look at just those files again, whatever the albums list says:
+
+```bash
+bdnex ls --unmatched          # what was skipped (or failed)
+bdnex import --skipped        # ask about those files again; `--skipped-earlier` is the same
+```
+
+Only the files skipped at an earlier import (and still on disk) are matched, so a library of thousands is not gone
+through again. The report of a normal import ends with the number of skipped files and this command.
+
 ### Importing files that are already in the library: `--select`
 
 `bdnex import <folder>` works on the files of a folder. To work on files the library already knows, select them with
