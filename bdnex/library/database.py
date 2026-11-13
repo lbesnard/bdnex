@@ -862,6 +862,33 @@ class Library:
         with self.conn:
             self.conn.execute("DELETE FROM trash WHERE id = ?", (trash_id,))
 
+    # ------------------------------------------------------------- moves (undo)
+    def record_move(self, batch: str, old_path, new_path) -> None:
+        with self.conn:
+            self.conn.execute("INSERT INTO operations(batch, old_path, new_path) VALUES (?, ?, ?)",
+                              (batch, self._store(old_path), self._store(new_path)))
+
+    def batches(self) -> list[dict[str, Any]]:
+        """The runs that moved files, newest first: ``batch``, ``at``, ``moves`` and ``undone`` counts."""
+        rows = self.conn.execute(
+            "SELECT batch, MIN(at) AS at, COUNT(*) AS moves, SUM(undone) AS undone FROM operations "
+            "GROUP BY batch ORDER BY MAX(id) DESC")
+        return [dict(row) for row in rows]
+
+    def moves_of(self, batch: str, pending_only: bool = True) -> list[dict[str, Any]]:
+        """The moves of one run, newest first (the order to take them back in), with absolute paths."""
+        sql = "SELECT * FROM operations WHERE batch = ?" + (" AND undone = 0" if pending_only else "") + " ORDER BY id DESC"
+        moves = []
+        for row in self.conn.execute(sql, (batch,)):
+            move = dict(row)
+            move["old_path"], move["new_path"] = self._resolve(move["old_path"]), self._resolve(move["new_path"])
+            moves.append(move)
+        return moves
+
+    def mark_undone(self, operation_id: int) -> None:
+        with self.conn:
+            self.conn.execute("UPDATE operations SET undone = 1 WHERE id = ?", (operation_id,))
+
     # ------------------------------------------------------------------- meta
     def get_meta(self, key: str) -> Optional[str]:
         row = self.conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()

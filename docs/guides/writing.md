@@ -37,6 +37,24 @@ A file that already sits where it belongs says `stays where it is`, and `bdnex w
 `bdnex import` can do it in one go: `-W/--write`, `--move` or `--copy`, or set `import.mode`
 (`in_place`, `copy`, `move`) in the configuration.
 
+## Taking a move back: `bdnex undo`
+
+Every `bdnex move` (or `import --move`) run remembers the files it renamed or moved, under a name made of its date and
+time.
+
+```bash
+bdnex undo            # the runs, newest first: how many files each moved
+bdnex undo last -n    # preview: where each file would go back to
+bdnex undo last       # move them back, in the library too (or `bdnex undo 20261114-093012`)
+```
+
+Files go back to the exact path they came from, and the folders the move had made are removed again. A file whose old
+place has been taken by another file, or that is gone from where `move` put it, is skipped and reported.
+
+What `undo` cannot take back: the tags that were written into a file (it keeps them; `write` changes a file in place
+and does not keep the old one), a CBR or PDF that was converted (the original waits in the [trash](versions.md#the-trash),
+`bdnex trash --restore`), and copies (`--copy` leaves the originals where they are).
+
 ## Folders left behind
 
 After `move` (or `import --move`) the folder a file left is removed when only system leftovers (`.DS_Store`,

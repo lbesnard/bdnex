@@ -18,6 +18,7 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 | `source_cache` | every page and sitemap fetched, **stored as received**, by source: a re-import never hits the website, and `bdnex reparse` can rebuild the albums from it offline |
 | `import_log` | outcome and score of each import, used for resume and for remembered skips |
 | `trash` | files that were replaced: where they were, the album, checksum, size, why, and where they are now |
+| `operations` | files `move` renamed or moved, per run (`batch`): old and new path (stored like `files.path`), when, and whether `bdnex undo` took it back |
 | `staged_files` | files imported without being moved into the library folder, with the path they came from |
 | `meta` | small values: that paths are stored relative, when the album list last grew |
 
