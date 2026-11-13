@@ -193,15 +193,43 @@ downloaded again the same way, and a file kept after `bdnex reset` is taken up a
 
 ### Checking covers
 
-`bdnex import --cover-check` (or `cover.check: true`) compares the front cover of each file with the
-album's cover, with SIFT features, which cope with different sizes, crops and compression. It needs
-OpenCV: `pip install 'bdnex[cover]'` (`uv tool install 'bdnex[cover]'`). The similarity (0-100) is kept
-with the file. Below `cover.match_percentage` (40 by default), a terminal run asks whether to keep the
-match or unlink it; unattended runs keep it and say so. List the doubtful ones with
-`bdnex ls --files cover:..40`.
+With OpenCV installed (`pip install 'bdnex[cover]'`, or `uv tool install 'bdnex[cover]'`), the front cover of each
+file is compared with the album's cover (SIFT features, which cope with different sizes, crops and compression)
+after its page is read. That is `cover.check: auto`; `true` insists on it (and says when OpenCV is missing),
+`false` turns it off, and `--cover-check` / `--no-cover-check` decide for one run. The comparison uses the saved
+cover file, so it costs no request of its own. The similarity (0-100) is kept with the file.
 
-The comparison uses the saved cover file (no further request). It is off by default; a file whose album is already
-complete gets its cover compared the first time you run `bdnex import --fetch --cover-check`.
+Below `cover.match_percentage` (40 by default) the match is doubtful:
+
+- on a terminal, with questions allowed, you are asked at once whether to keep the match or unlink it;
+- in a run that does not ask (`--auto=all`, no terminal), the match is kept and the file is **flagged for review**.
+
+Go through the flagged files later with [`bdnex review`](#reviewing-doubtful-matches-bdnex-review). A file whose album
+is already complete gets its cover compared the first time it goes through `bdnex import --fetch`.
+`bdnex ls --files cover:..40` lists the doubtful ones by score, `review:true` the flagged ones.
+
+### Reviewing doubtful matches: `bdnex review`
+
+```bash
+bdnex import --auto=all ~/comics     # match, read the pages, save and compare the covers: doubtful ones are flagged
+bdnex review                         # go through the flagged files, one by one
+bdnex review series:nains            # only some of them (same terms as `bdnex ls --files`)
+bdnex review --list                  # just list them, and why
+```
+
+Each flagged file is shown with the file's cover on the left and the album's cover on the right (in one picture, when
+the terminal can show pictures; see the thumbnails above), and you choose:
+
+| Key | Does |
+|---|---|
+| **K** | keep the match: it is right, the flag goes |
+| **U** | unlink the file from this album (it is remembered as skipped) |
+| **R** | match it again: after the list, the usual match question is asked for these files |
+| **S** | skip: it stays flagged for another time |
+| **A** | abort the review; what was decided is kept |
+
+A flag also goes when the file is linked to another album. `bdnex import` ends with a line telling how many files wait
+for a review.
 
 ### The album list: `bdnex init`
 

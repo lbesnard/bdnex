@@ -85,7 +85,7 @@ trash:
 cover:
   download: true                         # keep each album's cover as a file in `dir` (linked from the library)
   dir: ~/.local/share/bdnex/covers       # where the cover files are kept
-  check: false                           # compare each file's cover with its album's (bdnex[cover])
+  check: auto                            # compare each file's cover with its album's: auto (when OpenCV is installed) | true | false
   match_percentage: 40                   # similarity (0-100) from which a cover is trusted
 
 api:

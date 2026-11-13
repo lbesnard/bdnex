@@ -498,6 +498,8 @@ class Library:
                                      corrupted, has_metadata, mtime, embedded)
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(path) DO UPDATE SET
+                       review = CASE WHEN excluded.album_id IS NOT NULL AND excluded.album_id IS NOT files.album_id
+                                     THEN NULL ELSE files.review END,
                        album_id = COALESCE(excluded.album_id, files.album_id),
                        md5 = excluded.md5, size = excluded.size, format = excluded.format,
                        page_count = excluded.page_count, corrupted = excluded.corrupted,
@@ -508,6 +510,15 @@ class Library:
                  json.dumps(info.embedded, ensure_ascii=False) if info.embedded else None))
         return self.conn.execute("SELECT id FROM files WHERE path = ?",
                                  (self._store(info.path),)).fetchone()["id"]
+
+    def flag_review(self, path, reason: str) -> None:
+        """Mark a file for `bdnex review`, with the reason."""
+        with self.conn:
+            self.conn.execute("UPDATE files SET review = ? WHERE path = ?", (reason, self._store(path)))
+
+    def clear_review(self, path) -> None:
+        with self.conn:
+            self.conn.execute("UPDATE files SET review = NULL WHERE path = ?", (self._store(path),))
 
     def set_cover_file(self, album_id: int, cover_file: Optional[str]) -> None:
         """Record where the album's cover is kept (a path below ``cover.dir``; ``None`` forgets it)."""
@@ -536,7 +547,7 @@ class Library:
 
     def set_file_album(self, path, album_id: Optional[int]) -> None:
         with self.conn:
-            self.conn.execute("UPDATE files SET album_id = ? WHERE path = ?",
+            self.conn.execute("UPDATE files SET album_id = ?, review = NULL WHERE path = ?",
                               (album_id, self._store(path)))
 
     def remove_file(self, path) -> None:

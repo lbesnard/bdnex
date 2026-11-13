@@ -68,7 +68,7 @@ FILE_NUMERIC_FIELDS = {"size": "f.size", "filepages": "f.page_count", "cover": "
 BOOL_FIELDS = {"partial": "COALESCE(json_extract(a.extra, '$.partial'), 0)",
                "complete": "(1 - COALESCE(json_extract(a.extra, '$.partial'), 0))"}  # its page was read
 FILE_BOOL_FIELDS = {"corrupted": "f.corrupted", "tagged": "(f.album_id IS NOT NULL)",
-                    "metadata": "f.has_metadata", "spare": "f.spare",
+                    "metadata": "f.has_metadata", "spare": "f.spare", "review": "(f.review IS NOT NULL)",
                     "staged": "EXISTS (SELECT 1 FROM staged_files sf WHERE sf.file_id = f.id)"}
 
 ALL_FIELDS = sorted({*TEXT_FIELDS, *FILE_TEXT_FIELDS, *NUMERIC_FIELDS, *FILE_NUMERIC_FIELDS, *BOOL_FIELDS,
@@ -234,7 +234,7 @@ ALBUM_COLUMNS = """a.id AS id, a.kind, s.name AS series, a.volume, a.alternate_n
        (SELECT group_concat(name, ', ') FROM (SELECT g.name FROM album_genres ag
             JOIN genres g ON g.id = ag.genre_id WHERE ag.album_id = a.id ORDER BY g.name)) AS genres"""
 FILE_COLUMNS = ("f.id AS file_id, f.path, f.format, f.size, f.md5, f.corrupted, f.page_count, f.has_metadata, "
-                "f.spare, f.cover_score")
+                "f.embedded, f.review, f.spare, f.cover_score")
 FROM_JOINS = """
 LEFT JOIN series s ON s.id = a.series_id
 LEFT JOIN publishers pub ON pub.id = a.publisher_id

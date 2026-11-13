@@ -15,7 +15,7 @@ import copy
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import Any, Literal, Optional, Union
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -81,7 +81,7 @@ class Trash(_Section):
 class Cover(_Section):
     download: bool
     dir: str = Field(min_length=1)
-    check: bool
+    check: Union[bool, Literal["auto"]]  # auto: whenever OpenCV is installed
     match_percentage: float = Field(ge=0, le=100)
 
 

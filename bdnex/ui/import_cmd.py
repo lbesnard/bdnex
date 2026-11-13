@@ -176,6 +176,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
             organize_failed = True
         else:
             organize_failed = False
+        to_review = library.query(["review:true"], files=True)  # all of them, whichever run flagged them
 
     if report.results:
         banner("Result", stream=out)
@@ -198,6 +199,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
     order = (TAGGED, PARTIAL, ALREADY, SKIPPED, DUPLICATE, FAILED, PRETEND)
     summary = ", ".join(f"{report.count(o)} {OUTCOME_LABELS.get(o, o)}" for o in order if report.count(o))
     print(f"\n{len(report.results)} file(s): {summary or 'nothing to do'}", file=out)
+    if to_review:
+        print(f"{len(to_review)} file(s) have a cover that does not look like their album's: "
+              "`bdnex review` shows them side by side.", file=out)
     if report.count(ALREADY) and not args.verbose:
         print("(`-v` lists the files that were already imported; `--force` redoes them.)", file=out)
     if report.count(PARTIAL) and "fetch" in steps:

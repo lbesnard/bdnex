@@ -152,6 +152,28 @@ def prepare(image: bytes, kind: str, terminal_columns: int) -> Optional[Picture]
     return Picture(png, kind, columns, rows, terminal_columns)
 
 
+def pair(left: bytes, right: bytes, height: int = 360, gap: int = 16) -> Optional[bytes]:
+    """Two images side by side in one PNG (same height), or ``None`` when one can not be read."""
+    import io
+
+    from PIL import Image
+
+    try:
+        images = []
+        for data in (left, right):
+            image = Image.open(io.BytesIO(data)).convert("RGB")
+            width = max(1, round(image.width * height / image.height))
+            images.append(image.resize((width, height)))
+        canvas = Image.new("RGB", (images[0].width + gap + images[1].width, height), (40, 40, 40))
+        canvas.paste(images[0], (0, 0))
+        canvas.paste(images[1], (images[0].width + gap, 0))
+        out = io.BytesIO()
+        canvas.save(out, "PNG")
+        return out.getvalue()
+    except Exception:
+        return None
+
+
 def redraw(picture: Picture, terminal_columns: int, up: int, tmux: bool = False) -> str:
     """After a resize: delete the old picture and draw it again at the right edge, ``up`` rows above the cursor.
 

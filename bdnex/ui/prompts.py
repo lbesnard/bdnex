@@ -290,6 +290,54 @@ class InquirerPrompter:
             import logging
             logging.getLogger(__name__).debug(f"no thumbnail for {path}: {err}")
 
+    def _draw_image(self, image: bytes) -> None:
+        """Draw an image (bytes) on the right of the question, as for the match question."""
+        kind = thumbnail.protocol(self.thumbnails)
+        if kind is None:
+            return
+        try:
+            thumbnail.clear(kind)
+            self._drawn = kind
+            picture = thumbnail.prepare(image, kind, shutil.get_terminal_size((80, 24)).columns)
+            if picture is not None:
+                thumbnail.draw(picture)
+                self._picture = picture
+        except Exception as err:  # a picture is a help, never a reason for the question to fail
+            import logging
+            logging.getLogger(__name__).debug(f"no picture: {err}")
+
+    def review_file(self, position: str, path: str, album: str, reason: str,
+                    file_cover: Optional[bytes], album_cover: Optional[bytes]) -> str:
+        """A match whose cover looked different: ``keep`` | ``unlink`` | ``rematch`` | ``skip``.
+        The two covers are drawn side by side (the file's on the left) when the terminal can show pictures."""
+        self._need_terminal()
+        on = color.enabled()
+        print(f"\n{color.paint(color.rule(), 'dim', on)}")
+        print(f"{color.paint(position, 'cyan', on)}  {color.paint(os.path.basename(os.path.dirname(path)) + '/' + os.path.basename(path), 'bold', on)}")
+        print(f"  matched as   {color.paint(album, 'cyan_bold', on)}")
+        print(f"  why flagged  {color.paint(reason, 'yellow', on)}")
+        if file_cover and album_cover:
+            print(f"  {color.paint('left: the file', 'dim', on)}   {color.paint('right: the album on the site', 'dim', on)}")
+            both = thumbnail.pair(file_cover, album_cover)
+            if both:
+                self._draw_image(both)
+        elif not album_cover:
+            print(f"  {color.paint('the album cover is not downloaded yet: `bdnex import --fetch` gets it', 'dim', on)}")
+        rows = [("K", "eep the match (it is right)", "keep", "fg:ansigreen"),
+                ("U", "nlink the file from this album", "unlink", "fg:ansiyellow"),
+                ("R", "ematch: choose the album again", "rematch", "fg:ansicyan"),
+                ("S", "kip: leave it flagged for later", "skip", "fg:ansiblue"),
+                ("A", "bort the review (what is decided is kept)", self.ABORT, "fg:ansired")]
+        try:
+            answer = self._select("What about this file?", [{"name": f"[{k}]{rest}", "value": value} for k, rest, value, _ in rows],
+                                  [shortcut(k, rest, tone) if on else None for k, rest, _, tone in rows],
+                                  {k.lower(): value for k, _, value, _ in rows})
+        finally:
+            self._clear_thumbnail()
+        if answer == self.ABORT:
+            raise ImportAborted(path)
+        return answer
+
     def _clear_thumbnail(self) -> None:
         self._picture = None
         kind, self._drawn = getattr(self, "_drawn", None), None

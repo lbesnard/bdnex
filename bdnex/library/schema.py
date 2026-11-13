@@ -164,4 +164,9 @@ MIGRATIONS = [
     """
     ALTER TABLE albums ADD COLUMN cover_file TEXT;
     """,
+    # --- version 7 -------------------------------------------------------
+    # A file whose match should be looked at by hand (`bdnex review`): why, in words. NULL: nothing to review.
+    """
+    ALTER TABLE files ADD COLUMN review TEXT;
+    """,
 ]
