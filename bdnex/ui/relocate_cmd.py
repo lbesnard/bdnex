@@ -13,10 +13,11 @@ from bdnex.library import Library
 def run(argv: list[str], out=sys.stdout) -> int:
     parser = argparse.ArgumentParser(
         prog="bdnex relocate", description=__doc__,
-        epilog="Paths under `collection_path` are stored relative to it: after moving the whole collection, just "
-               "change `collection_path`. `relocate` is for files stored with their full path (outside "
-               "`collection_path`): it rewrites the stored paths and touches nothing on disk. "
-               "`bdnex ls --missing` lists what is not found.")
+        epilog="Files under `collection_path` are stored relative to it: after moving the whole collection, just "
+               "change `collection_path`. A folder listed in `import.sources` is one record in the library: "
+               "`relocate OLD NEW` with its old path updates that record and its files follow (then change the path in "
+               "`import.sources` too). For other files stored with their full path, `relocate` rewrites the stored "
+               "paths. It touches nothing on disk. `bdnex ls --missing` lists what is not found.")
     parser.add_argument("old", help="the folder the files used to be in")
     parser.add_argument("new", help="the folder they are in now")
     parser.add_argument("-n", "--pretend", action="store_true", help="show what would change; change nothing")
@@ -30,8 +31,14 @@ def run(argv: list[str], out=sys.stdout) -> int:
         print(f"No library yet ({settings.library_path}).", file=sys.stderr)
         return 1
 
-    with Library.for_settings(settings) as library:
+    with Library.for_settings(settings, sync_sources=False) as library:  # the sources are about to change
         result = library.relocate(args.old, args.new, apply=not args.pretend)
+    if result.get("source"):
+        verb = "Would point" if args.pretend else "Pointed"
+        print(f"{verb} the source {result['source']!r} at {os.path.abspath(os.path.expanduser(args.new))}: its "
+              f"{result['files']} file(s) follow, nothing else is rewritten.", file=out)
+        print("Make `import.sources` in your configuration say the same (`bdnex config --edit`).", file=out)
+        return 0
     if result["collisions"]:
         print("Nothing changed: these paths are already registered:", file=sys.stderr)
         for path in result["collisions"][:10]:

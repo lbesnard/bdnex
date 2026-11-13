@@ -63,6 +63,11 @@ def check(library: Library, settings) -> list[Finding]:
     if series:
         found.append(Finding("empty-series", f"{len(series)} series have no album", series[:SHOWN], fixable=True))
 
+    gone_sources = [f"{alias}: {folder}" for alias, folder in library.roots.items() if not os.path.isdir(folder)]
+    if gone_sources:
+        found.append(Finding("source-missing", f"{len(gone_sources)} import source folder(s) do not exist", gone_sources[:SHOWN],
+                             "the folder moved? `bdnex relocate OLD NEW`; or a disk that is not mounted"))
+
     covers_dir = settings.cover_path
     kept = {row["cover_file"] for row in conn.execute("SELECT cover_file FROM albums WHERE cover_file IS NOT NULL")}
     lost = sorted(name for name in kept if not (covers_dir / name).exists())

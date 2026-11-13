@@ -33,6 +33,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="find the album of each file, from the album list (offline; run `bdnex init` first)")
     steps.add_argument("-f", "--fetch", action="store_true",
                        help="read the album pages: authors, publisher, summary, genres... (slow, politely)")
+    parser.add_argument("--sources", action="store_true",
+                        help="the folders of `import.sources` in the configuration: what is new in them is copied or "
+                             "moved into the collection, each source in its own mode. Added to the paths, if any")
     parser.add_argument("-s", "--select", action="append", default=[], metavar="TERM",
                         help="work on the files already in the library that match this `bdnex ls --files` term "
                              "(repeatable, all must match): `--select tagged:false`, `--select 'author:uderzo'`. "
@@ -131,6 +134,12 @@ def run(argv: list[str], out=sys.stdout) -> int:
         return 1
     if args.as_is:
         return _record_as_is(args, settings, out)
+    if args.sources:
+        if not settings.import_.sources:
+            print("No source is configured: list folders under `import.sources` in your configuration "
+                  "(`bdnex config --edit`).", file=sys.stderr)
+            return 2
+        args.paths = [*args.paths, *(source.folder for source in settings.import_.sources)]
     if args.select:
         code = _select_paths(args, settings)
         if code:
@@ -349,8 +358,19 @@ def _place(args, settings, library, report, prompter=None):
     from bdnex.organizer.organizer import COPY, MOVE, WRITE, Organizer
 
     rows = [row for row in (library.get_file(r.path) for r in report.results if r.outcome in ("tagged", "partial")) if row]
-    outside, inside = _outside(rows, library.root)
     plan, leave, notes = [], [], []
+    from_sources = []  # rows under a configured source: that source's mode decides, unless a flag does
+    if not (args.move or args.copy):
+        from_sources = [row for row in rows if settings.source_for(row["path"])]
+        rows = [row for row in rows if not settings.source_for(row["path"])]
+    if args.no_move:
+        leave += from_sources
+    else:
+        for mode_name, chosen_mode in (("copy", COPY), ("move", MOVE)):
+            group = [row for row in from_sources if settings.source_for(row["path"]).mode == mode_name]
+            if group:
+                plan.append((group, chosen_mode))
+    outside, inside = _outside(rows, library.root)
     configured = {"copy": COPY, "move": MOVE}.get(settings.import_.mode)
     if args.move or args.copy or (configured and not args.no_move):
         plan.append((rows, MOVE if args.move else COPY if args.copy else configured))

@@ -13,3 +13,6 @@ description: Add a column or table to the bdnex library database without breakin
 4. Tests: `test/library/` for the method, and a test that the new value survives what rewrites the row
    (`add_file` upserts, `reset`, `merge_album`).
 5. In the PR body: "schema vN: back up the database first, an older bdnex will refuse it".
+6. A column or table that stores a **file path** must go through `Library._store` / `_resolve` (relative to the
+   collection, `@alias/…` under an import source, absolute otherwise) and be listed in `Library.add_root`, which rewrites
+   the paths already stored under a folder when it becomes a source. `Library.relocate` and `bdnex check` should know it too.

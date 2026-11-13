@@ -68,12 +68,16 @@ class Library:
     """
 
     @classmethod
-    def for_settings(cls, settings, readonly=False) -> "Library":
+    def for_settings(cls, settings, readonly=False, sync_sources=True) -> "Library":
         """The library of a loaded configuration (its database and its ``collection_path``)."""
         from bdnex.config import PLACEHOLDER_COLLECTION
 
         root = settings.collection_path if settings.collection_path not in ("", PLACEHOLDER_COLLECTION) else None
-        return cls(settings.library_path, root=root, readonly=readonly)
+        library = cls(settings.library_path, root=root, readonly=readonly)
+        if settings.import_.sources and not readonly and sync_sources:  # files under a source are stored as @alias/…
+            for problem in library.sync_sources([(source.alias, source.folder) for source in settings.import_.sources]):
+                print(f"warning: {problem}", file=sys.stderr)
+        return library
 
     def __init__(self, path=":memory:", root=None, readonly=False):
         """``readonly``: open the file read-only, changing nothing (no migration, no path rewriting); for servers."""
@@ -98,8 +102,10 @@ class Library:
                 raise SchemaTooNewError(
                     f"{self.path} has schema v{found}, this bdnex needs v{SCHEMA_VERSION}: "
                     "run any other bdnex command once (for example `bdnex ls -c`) to update it")
+            self._load_roots()
             return
         self._migrate()
+        self._load_roots()
         self._adopt_root()
 
     # ------------------------------------------------------------------ setup
@@ -136,22 +142,103 @@ class Library:
               f"as {target}", file=sys.stderr)
 
     # ------------------------------------------------------------------ paths
+    def _load_roots(self) -> None:
+        self.roots: dict[str, str] = {row["alias"]: row["path"] for row in self.conn.execute("SELECT alias, path FROM roots")}
+
     def _store(self, path) -> str:
-        """The form of ``path`` kept in the database: relative to the root when under it."""
+        """The form of ``path`` kept in the database: relative to the collection when under it, ``@alias/…`` when
+        under a registered source, absolute otherwise."""
         absolute = os.path.abspath(os.path.expanduser(str(path)))
         if self.root and absolute.startswith(self.root + os.sep):
-            return absolute[len(self.root) + 1:]
+            relative = absolute[len(self.root) + 1:]
+            return "./" + relative if relative.startswith("@") else relative  # '@' is the mark of a source
+        for alias, folder in sorted(self.roots.items(), key=lambda item: -len(item[1])):
+            if absolute.startswith(folder + os.sep):
+                return f"@{alias}/{absolute[len(folder) + 1:]}"
         return absolute
 
     def _resolve(self, stored: str) -> str:
         """The absolute path of a stored one."""
         if os.path.isabs(stored):
             return stored
+        if stored.startswith("@"):
+            alias, _, relative = stored[1:].partition("/")
+            if alias not in self.roots:
+                raise LibraryRootError(f"a file is stored under the source {alias!r}, which is not registered "
+                                       "(`import.sources` in the configuration)")
+            return os.path.join(self.roots[alias], relative)
+        if stored.startswith("./"):
+            stored = stored[2:]
         if not self.root:
             raise LibraryRootError(
                 "this library stores paths relative to your comics folder, but `collection_path` is not set "
                 "in the configuration (`bdnex config --edit`)")
         return os.path.join(self.root, stored)
+
+    # ------------------------------------------------------------- sources (roots)
+    def add_root(self, alias: str, path) -> bool:
+        """Register a source folder under ``alias``; paths already stored under it become ``@alias/…``.
+        Returns ``False`` when the alias is registered for another folder (nothing changes: `bdnex relocate`)."""
+        folder = os.path.abspath(os.path.expanduser(str(path))).rstrip("/")
+        known = self.roots.get(alias)
+        if known is not None:
+            return known == folder
+        if folder in self.roots.values():  # registered under another name (the folder was renamed): the same source
+            return True
+        with self.conn:
+            self.conn.execute("INSERT INTO roots(alias, path) VALUES (?, ?)", (alias, folder))
+            prefix = folder + os.sep
+            for table, column in (("files", "path"), ("import_log", "path"), ("trash", "path"),
+                                  ("staged_files", "origin"), ("origins", "origin")):
+                for row in self.conn.execute(f"SELECT rowid AS rid, {column} AS value FROM {table} "
+                                             f"WHERE substr({column}, 1, ?) = ?", (len(prefix), prefix)).fetchall():
+                    try:
+                        self.conn.execute(f"UPDATE {table} SET {column} = ? WHERE rowid = ?",
+                                          (f"@{alias}/{row['value'][len(prefix):]}", row["rid"]))
+                    except sqlite3.IntegrityError:
+                        logger.warning(f"{row['value']} is registered twice; left as it was")
+        self._load_roots()
+        return True
+
+    def sync_sources(self, sources: list[tuple[str, str]]) -> list[str]:
+        """Register the configured sources ``[(alias, path)]``. Returns a warning per source whose alias is already
+        registered for another folder (it was moved: `bdnex relocate OLD NEW`)."""
+        problems = []
+        for alias, path in sources:
+            if not self.add_root(alias, path):
+                problems.append(f"the source {alias!r} is registered at {self.roots[alias]} but your configuration says "
+                                f"{os.path.abspath(os.path.expanduser(path))}: if the folder moved, run "
+                                f"`bdnex relocate {self.roots[alias]} {path}`")
+        return problems
+
+    def root_of(self, path) -> Optional[str]:
+        """The alias of the registered source a path is under (``None``: not under one)."""
+        absolute = os.path.abspath(os.path.expanduser(str(path)))
+        for alias, folder in sorted(self.roots.items(), key=lambda item: -len(item[1])):
+            if absolute == folder or absolute.startswith(folder + os.sep):
+                return alias
+        return None
+
+    # ------------------------------------------------------------ origins (copies)
+    def record_origin(self, path, origin, size: int, mtime: float) -> None:
+        """``path`` is a copy of ``origin`` (a file as it was then: size and date)."""
+        row = self.get_file(path)
+        if row is None:
+            raise KeyError(f"{path} is not in the library")
+        with self.conn:
+            self.conn.execute("INSERT OR REPLACE INTO origins(file_id, origin, size, mtime) VALUES (?, ?, ?, ?)",
+                              (row["id"], self._store(origin), size, mtime))
+
+    def get_origin(self, origin) -> Optional[dict[str, Any]]:
+        """What was copied from this source path: ``{"path": where the copy is now, "size", "mtime", "copied"}``."""
+        row = self.conn.execute(
+            "SELECT f.path AS path, o.size, o.mtime, o.copied FROM origins o JOIN files f ON f.id = o.file_id "
+            "WHERE o.origin = ?", (self._store(origin),)).fetchone()
+        if row is None:
+            return None
+        found = dict(row)
+        found["path"] = self._resolve(found["path"])
+        return found
 
     def _file_row(self, row) -> dict[str, Any]:
         record = dict(row)
@@ -164,7 +251,7 @@ class Library:
     def _adopt_root(self) -> None:
         """Store the paths under the root relative to it; refuse relative ones without a root."""
         if not self.root:
-            if self.conn.execute("SELECT 1 FROM files WHERE path NOT LIKE '/%' LIMIT 1").fetchone():
+            if self.conn.execute("SELECT 1 FROM files WHERE path NOT LIKE '/%' AND path NOT LIKE '@%' LIMIT 1").fetchone():
                 self.conn.close()
                 raise LibraryRootError(
                     "this library stores paths relative to your comics folder, but `collection_path` is not set "
@@ -774,6 +861,14 @@ class Library:
         is false.
         """
         old, new = os.path.abspath(os.path.expanduser(old)), os.path.abspath(os.path.expanduser(new))
+        for alias, folder in self.roots.items():  # a registered source: its files follow one changed row
+            if folder == old.rstrip("/"):
+                if apply:
+                    with self.conn:
+                        self.conn.execute("UPDATE roots SET path = ? WHERE alias = ?", (new.rstrip("/"), alias))
+                    self._load_roots()
+                count = self.conn.execute("SELECT COUNT(*) FROM files WHERE path LIKE ?", (f"@{alias}/%",)).fetchone()[0]
+                return {"files": count, "log": 0, "collisions": [], "moved": [], "source": alias}
 
         def rewrite(path: str) -> Optional[str]:
             if path == old:
