@@ -67,24 +67,29 @@ def test_a_cover_file_survives_a_reset_and_is_reused(tmp_path):
     assert env.lib.get_album(env.lib.get_file(path)["album_id"])["cover_file"]
 
 
-def test_save_cover_names_the_file_by_its_content(tmp_path):
-    assert covers.save_cover(tmp_path, "bedetheque", "12", b"\x89PNG....") == "bedetheque/12.png"
-    assert covers.save_cover(tmp_path, "bedetheque", "../x", b"JPEG") == "bedetheque/.._x.jpg"
-    assert covers.find_cover(tmp_path, "bedetheque", "12") == "bedetheque/12.png"
+def test_each_cover_has_a_folder_of_its_own(tmp_path):
+    assert covers.save_cover(tmp_path, "bedetheque", "12", b"\x89PNG....") == "bedetheque/12/cover.png"
+    assert covers.find_cover(tmp_path, "bedetheque", "12") == "bedetheque/12/cover.png"
+    odd = covers.save_cover(tmp_path, "bedetheque", "../x", b"JPEG")
+    assert odd.startswith("bedetheque/") and odd.count("/") == 2 and not odd.split("/")[1].startswith(".")
+    assert covers.save_cover(tmp_path, "bedetheque", "..x", b"JPEG") != odd  # a changed name never collides with another
+    assert covers.cover_folder("bedetheque", "7") != covers.cover_folder("other", "7")
 
 
-def test_interrupting_the_page_loop_does_not_start_a_cover_pass(tmp_path, monkeypatch):
-    web = web_with_cover()
-    env = env_for(web, check=False, download=True)
+def test_covers_saved_by_earlier_versions_move_into_their_folders(tmp_path):
+    env = env_for(web_with_cover(), check=False, download=True)
     path = cbz_with_cover(tmp_path, FILE, 1)
     env.session.run([path])
-    os.remove(next((env.session.settings.cover_path / "bedetheque").iterdir()))  # a complete album lacking its cover
-    web.calls.clear()
-    env.session.steps = frozenset(["fetch"])
-    env.session._covers = [object()]  # work waiting for the cover pass
-    def interrupted(*a, **k):
-        raise KeyboardInterrupt
-    monkeypatch.setattr(env.session, "_album_for", interrupted)
-    env.session._pending = [(type("R", (), {"note": "", "path": path, "score": None})(), Candidate("1", "https://www.bedetheque.com/BD-X-1.html", "x"), "")]
-    env.session._fetch_pending()
-    assert env.session._covers == [] and COVER_URL not in web.calls
+    album = env.lib.get_album(env.lib.get_file(path)["album_id"])
+    root = env.session.settings.cover_path
+    new = root / album["cover_file"]
+    old = root / "bedetheque" / f"{album['source_id']}.jpg"  # where the earlier layout kept it
+    os.replace(new, old)
+    env.lib.set_cover_file(album["id"], f"bedetheque/{album['source_id']}.jpg")
+    messages = []
+    env.session.progress = messages.append
+    env.session.run([path])
+    again = env.lib.get_album(album["id"])
+    assert again["cover_file"] == f"bedetheque/{album['source_id']}/cover.jpg"
+    assert (root / again["cover_file"]).read_bytes() == jpeg(art(1)) and not old.exists()
+    assert any("folder per album" in m for m in messages)

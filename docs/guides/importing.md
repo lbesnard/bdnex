@@ -188,7 +188,9 @@ nothing is asked. Before a file is moved in, it is compared with the files the a
 ### Covers as files
 
 When an album's page is read, its cover is also downloaded (one more polite request) and kept as a real image file
-in `cover.dir` (`~/.local/share/bdnex/covers`), as `<source>/<album id>.jpg`. The library links it from the album
+in `cover.dir` (`~/.local/share/bdnex/covers`), in a folder of its own: `<source>/<album id>/cover.jpg`. The album id is
+unique within a source, so the name is too, and the folder has room for more pictures of the album later. Covers saved by
+earlier versions as `<source>/<album id>.jpg` are moved into their folders by the next import (or `bdnex check --fix`). The library links it from the album
 (`albums.cover_file`, the path below `cover.dir`) next to the address it came from (`cover_url`), so
 [`bdnex serve`](api.md) can show it and other tools can use it. `cover.download: false` turns this off.
 

@@ -158,6 +158,10 @@ class ImportSession:
         if "match" in self.steps and not self.source.is_ready():
             self.progress(f"Preparing the {self.source.name} source (first run only, may take a minute)...")
             self.source.prepare(progress=self.progress)
+        if not self.pretend:
+            moved = covers.migrate_flat_covers(self.library, self.settings.cover_path)
+            if moved:
+                self.progress(f"Moved {moved} cover file(s) into a folder per album (a change of bdnex).")
         self._announce_resume()
         files.sort(key=lambda path: (os.path.dirname(path), path))  # the files of a folder together
         kinds = {path: self._classify(path) for path in files}

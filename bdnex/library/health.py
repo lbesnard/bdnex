@@ -76,6 +76,13 @@ def check(library: Library, settings) -> list[Finding]:
             found.append(Finding("cover-orphans", f"{len(orphans)} cover file(s) belong to no album", orphans[:SHOWN],
                                  "kept on purpose after `bdnex reset` (they are reused); delete them by hand if unwanted"))
 
+    flat = [str(p.relative_to(covers_dir)) for p in covers_dir.glob("*/*")
+            if p.is_file() and p.suffix.lower() in covers.IMAGE_EXTENSIONS] if covers_dir.is_dir() else []
+    if flat:
+        found.append(Finding("cover-layout", f"{len(flat)} cover file(s) are in the old layout (one folder for all)",
+                             flat[:SHOWN], "they are moved into a folder per album by the next import, or by `--fix`",
+                             fixable=True))
+
     dead = [f"#{e['id']} {e['path']}" for e in library.trash_entries() if not Path(e["trash_path"]).exists()]
     if dead:
         found.append(Finding("trash-dead", f"{len(dead)} trash record(s) point to a file that is gone", dead[:SHOWN],
@@ -114,6 +121,8 @@ def fix(library: Library, settings, findings: list[Finding]) -> list[str]:
     keys = {f.key for f in findings if f.fixable}
     if "empty-series" in keys:
         done.append(f"removed {library.prune_orphan_series()} empty series")
+    if "cover-layout" in keys:
+        done.append(f"moved {covers.migrate_flat_covers(library, settings.cover_path)} cover file(s) into a folder per album")
     if "cover-missing" in keys:
         with library.conn:
             count = library.conn.execute("SELECT cover_file FROM albums WHERE cover_file IS NOT NULL").fetchall()

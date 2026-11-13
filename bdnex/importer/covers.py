@@ -208,14 +208,33 @@ def image_extension(data: bytes) -> str:
     return ".jpg"
 
 
+IMAGE_EXTENSIONS = (".jpg", ".png", ".webp", ".gif")
+
+
+def _safe(name: str) -> str:
+    """A folder or file name made of ``name``. A name that had to be changed gets a short hash, so that two
+    different ones never end up alike."""
+    import hashlib
+
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", str(name)).strip(".") or "x"
+    if cleaned == str(name) and not cleaned.startswith("."):
+        return cleaned
+    return f"{cleaned}-{hashlib.sha1(str(name).encode('utf-8')).hexdigest()[:8]}"
+
+
+def cover_folder(source: str, source_id: str) -> str:
+    """Where an album's cover lives below ``cover.dir``: ``<source>/<album id>`` (a folder of its own, with room for
+    more pictures of the album later). The album id is unique per source, so the folder is too."""
+    return f"{_safe(source)}/{_safe(source_id)}"
+
+
 def save_cover(directory, source: str, source_id: str, data: bytes) -> str:
-    """Write a cover below ``directory`` as ``<source>/<id>.<ext>`` (through a temporary file) and return that
-    relative path."""
+    """Write a cover below ``directory`` as ``<source>/<album id>/cover.<ext>`` (through a temporary file) and return
+    that relative path."""
     import os
     from pathlib import Path
 
-    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(source_id)) or "cover"
-    relative = f"{re.sub(r'[^A-Za-z0-9._-]+', '_', source)}/{safe}{image_extension(data)}"
+    relative = f"{cover_folder(source, source_id)}/cover{image_extension(data)}"
     target = Path(directory) / relative
     target.parent.mkdir(parents=True, exist_ok=True)
     tmp = target.with_name(target.name + ".part")
@@ -228,12 +247,39 @@ def find_cover(directory, source: str, source_id: str) -> Optional[str]:
     """The relative path of a cover saved earlier for this album, if the file is still there."""
     from pathlib import Path
 
-    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", str(source_id)) or "cover"
-    folder = Path(directory) / re.sub(r"[^A-Za-z0-9._-]+", "_", source)
-    for extension in (".jpg", ".png", ".webp", ".gif"):
-        if (folder / f"{stem}{extension}").exists():
-            return f"{folder.name}/{stem}{extension}"
+    folder = cover_folder(source, source_id)
+    for extension in IMAGE_EXTENSIONS:
+        if (Path(directory) / folder / f"cover{extension}").exists():
+            return f"{folder}/cover{extension}"
     return None
+
+
+def migrate_flat_covers(library, directory) -> int:
+    """Move covers saved by earlier versions (``<source>/<id>.<ext>``) into their own folders
+    (``<source>/<id>/cover.<ext>``) and point the albums at the new place. Returns how many were moved."""
+    import os
+    from pathlib import Path
+
+    root = Path(directory)
+    if not root.is_dir():
+        return 0
+    moved = 0
+    for source_dir in [p for p in root.iterdir() if p.is_dir()]:
+        for old in sorted(source_dir.iterdir()):
+            if not old.is_file() or old.suffix.lower() not in IMAGE_EXTENSIONS:
+                continue
+            new_relative = f"{source_dir.name}/{_safe(old.stem)}/cover{old.suffix.lower()}"
+            target = root / new_relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                old.unlink()  # the new place already has one: the old copy is only in the way
+            else:
+                os.replace(old, target)
+            library.conn.execute("UPDATE albums SET cover_file = ? WHERE cover_file = ?",
+                                 (new_relative, f"{source_dir.name}/{old.name}"))
+            moved += 1
+    library.conn.commit()
+    return moved
 
 
 def opencv_installed() -> bool:

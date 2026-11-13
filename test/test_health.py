@@ -56,7 +56,7 @@ def test_check_finds_the_usual_problems(env, tmp_path):
         lib.add_trash("/x/a.cbr", str(tmp_path / "trash" / "a.cbr"), "converted")
         found = check(lib, settings)
     assert keys(found) >= {"missing", "changed", "unmatched", "review", "albums-without-file", "cover-missing",
-                           "cover-orphans", "trash-dead", "leftovers"}
+                           "cover-orphans", "trash-dead", "leftovers", "cover-layout"}  # orphan.jpg: the old flat layout
     assert [f for f in found if f.key == "missing"][0].items == [gone]
 
 
