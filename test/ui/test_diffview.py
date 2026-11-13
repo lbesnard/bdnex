@@ -112,18 +112,7 @@ def test_paint():
 def test_the_conflict_prompt_prints_the_readable_diff(monkeypatch, capsys, clean_env):
     from bdnex.ui.prompts import InquirerPrompter
 
-    class Answer:
-        def __init__(self, **kw):
-            self.kw = kw
-
-        def register_kb(self, *keys):
-            return lambda handler: handler
-
-        def execute(self):
-            return "database"
-
-    import InquirerPy.inquirer as inquirer
-    monkeypatch.setattr(inquirer, "select", lambda **kw: Answer(**kw))
+    monkeypatch.setattr(InquirerPrompter, "_select", lambda self, *args, **kw: "database")
     assert InquirerPrompter().conflict("/x/book.cbz", changes()) == "database"
     out = capsys.readouterr().out
     assert "/x/book.cbz" in out and "  ~ Writer" in out and "      + Lupano, Wilfrid" in out

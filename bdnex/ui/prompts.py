@@ -209,7 +209,7 @@ class InquirerPrompter:
         bind_open(prompt, ("c-o", "o", "O") if shortcuts else ("c-o",))
         if shortcuts:
             bind_shortcuts(prompt, shortcuts)
-        if fragments:
+        if fragments and any(fragments):
             colorize_choices(prompt, fragments)
         return prompt.execute()
 
