@@ -132,6 +132,35 @@ each file by itself.
 `--no-series` (`import.series: never`) matches every file alone. A preview, `--auto=all` and a run without a
 terminal never ask: they match file by file.
 
+### Thumbnails when bdnex runs on a server (SSH)
+
+The picture is drawn by **your local terminal**, not by the server. bdnex sends the image through the SSH
+connection as an escape sequence (a few tens of KB per file), so it works when bdnex runs on a remote machine, as
+long as the terminal you type in can show pictures: Ghostty, kitty, WezTerm or iTerm2.
+
+The only catch is detection. bdnex guesses the terminal from environment variables (`TERM_PROGRAM`,
+`KITTY_WINDOW_ID`...) that SSH does not carry to the server, so tell it once, on the server:
+
+```bash
+# ~/.config/bdnex/bdnex.yaml on the server
+import:
+  thumbnails: kitty        # Ghostty, kitty, WezTerm: kitty    iTerm2: iterm2
+
+# or, for one session (it wins over the setting)
+export BDNEX_THUMBNAILS=kitty
+```
+
+- If you run bdnex inside **tmux on the server**, add `set -g allow-passthrough on` to the server's `tmux.conf`
+  (tmux 3.3 or later), as for a local tmux. If your local terminal also runs tmux, it needs the same line.
+- **GNU screen** and **mosh** do not pass the picture on: no thumbnail, nothing breaks.
+- The terminal must be at least 100 columns wide; a narrower one shows no picture.
+- The picture is made on the server from the file's first page, so bdnex needs PyMuPDF there (installed with it) and
+  the archive tools for CBR (`unrar`).
+- To check that it works, run the diagnostic of the repository
+  (`python tools/thumbcheck.py some/file.cbz`) or import a small folder and look at the first question (a preview,
+  `-n`, never asks, so it shows nothing). When nothing appears, no
+  character is printed either: a failing picture never stops an import.
+
 ### Files from outside your library folder
 
 You can import from any folder, such as `~/Downloads`. A file under `directory` is left where it is
