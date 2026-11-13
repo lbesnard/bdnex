@@ -40,7 +40,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
     on = color.enabled(out)
     for old, new in result["found"]:
         print(results.block("would link" if args.pretend else "linked", os.path.basename(old),
-                            [f"was   {color.paint(old, 'red', on)}", f"now   {color.paint(new, 'green', on)}"], on, "found"), file=out)
+                            [f"was   {color.paint(old, 'red', on)}", f"now   {color.paint(new, 'green', on)}"], on,
+                            "would do" if args.pretend else "found"), file=out)
     for old, copies in result["ambiguous"]:
         print(results.block("several copies", os.path.basename(old), [*copies, color.paint("left alone", "dim", on)], on,
                             "ambiguous"), file=out)
