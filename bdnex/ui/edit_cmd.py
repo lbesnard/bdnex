@@ -13,7 +13,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 import yaml
 

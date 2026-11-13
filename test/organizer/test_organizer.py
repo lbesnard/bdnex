@@ -951,3 +951,40 @@ def test_after_a_hand_edit_move_renames_the_file_and_removes_the_old_folder(lib,
     assert again.outcome == "moved" and "Totally Other Title" in again.dest
     assert os.path.exists(again.dest) and not os.path.exists(placed.dest)
     assert lib.get_file(again.dest) is not None
+
+
+def test_move_still_places_a_file_that_is_left_in_its_format(lib, make_cbz, tmp_path):
+    settings = settings_for(tmp_path)
+    settings.write.format_preferred = "none"
+    root = settings.require_library_directory()
+    src = tmp_path / "inbox" / "x.cbr"
+    src.parent.mkdir()
+    src.write_bytes(b"Rar!\x1a\x07\x00" + b"\0" * 64)  # looks like a RAR; it is never opened
+    row = registered(lib, str(src), add_series_album(lib))
+    assert row["format"] == "cbr"
+    assert Organizer(lib, settings).process(row, WRITE).outcome == "skipped"  # `write` has nothing to do
+    result = Organizer(lib, settings).process(row, MOVE)
+    assert result.outcome == "moved" and result.dest.endswith(".cbr")  # its own extension: still a RAR
+    assert os.path.exists(result.dest) and not src.exists()
+    assert lib.get_file(result.dest)["format"] == "cbr"
+
+
+def test_a_damaged_file_moved_as_it_is_into_a_taken_name_does_not_crash(lib, make_cbz, tmp_path):
+    settings = settings_for(tmp_path)
+    settings.write.corrupted = "move"
+    album = add_series_album(lib)
+    first = Organizer(lib, settings).process(registered(lib, make_cbz("a.cbz"), album), MOVE)
+    bad = tmp_path / "bad.cbz"
+    bad.write_bytes(b"not an archive")
+    row = {**registered(lib, str(bad), album), "corrupted": 1}
+    result = Organizer(lib, settings, force=True).process(row, MOVE)
+    assert result.outcome in ("moved", "skipped") and os.path.exists(first.dest)
+
+
+def test_a_preview_says_when_the_destination_is_taken(lib, make_cbz, tmp_path):
+    settings = settings_for(tmp_path)
+    album = add_series_album(lib)
+    first = Organizer(lib, settings).process(registered(lib, make_cbz("a.cbz"), album), MOVE)
+    other = registered(lib, make_cbz("b.cbz"), album)
+    note = Organizer(lib, settings, pretend=True).process(other, MOVE).note
+    assert "destination already exists" in note
