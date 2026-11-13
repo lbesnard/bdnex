@@ -90,8 +90,12 @@ never ran in a test crashed that way), `uv run python -m compileall -q bdnex` (P
 
 ## Conventions
 - Comments say *why*; keep docs and code in plain, short English. French only for album data.
-- Prompts: InquirerPy is wrapped by thin `_select/_text/_fuzzy/_checkbox` methods so tests can script them. Every
-  question lists its keys as `[K]ey` with colour, like the match question; write-side questions end with `[A]bort`.
+- Prompts: InquirerPy is wrapped by thin `_select/_text/_fuzzy/_checkbox` methods so tests can script them. **Keys,
+  labels and colours live in one table, `bdnex/ui/keys.py` (`ACTIONS`)**: a question lists the actions it offers
+  (`_pick` / `_ask` entries `{"action": "skip", "value": ...}`, `label=` to reword), never hand-written `[K]` text or
+  colours. `skip` is always `S`, `skip_folder` `F`, `back` `B`, `abort` `A` (red, last); green = safe, yellow = put
+  off, red = destructive or stop. A new answer = a new row there (and the keys table in `docs/guides/importing.md`);
+  `build` raises when a question uses a key twice. Write-side questions end with `[A]bort` (`_ask` adds it).
 - Tests: autouse fixtures isolate HOME and switch the automatic cover check off; `FakeWeb` (test/helpers.py) serves
   fixtures and a real picture. A bug found by reading code gets a test that fails without the fix.
 - Long commands show their phases with `banner()` and tint progress lines (`ui/output.py`); plain text in a pipe.

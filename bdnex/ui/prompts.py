@@ -15,7 +15,7 @@ from bdnex.importer.matching import Match, query_from_filename
 from bdnex.importer.session import GoBack, ImportAborted, NeedsTerminal, SkipFolder
 from bdnex.importer.source import Candidate
 from bdnex.library.query import fold
-from bdnex.ui import color, thumbnail
+from bdnex.ui import color, keys as ui_keys, thumbnail
 
 
 def display_name(candidate: Candidate) -> str:
@@ -52,56 +52,6 @@ def bind_shortcuts(prompt, keys: dict) -> None:
 
 
 Fragments = list  # of (prompt_toolkit style, text)
-
-# the colour of an answer, by its value (the others are cyan): the same meaning as the colours of the match question
-TONES = {"skip": "fg:ansiyellow", "leave": "fg:ansiyellow", "refuse": "fg:ansiyellow", "no": "fg:ansiyellow",
-         "database": "fg:ansigreen", "db": "fg:ansigreen", "yes": "fg:ansigreen", "accept": "fg:ansigreen",
-         "file": "fg:ansired", "replace": "fg:ansired", "__abort__": "fg:ansired"}
-RESERVED_KEYS = {"o"}  # `o` opens a page in the match question
-
-
-def keyed_choices(choices: list, on: bool = True):
-    """Choices with their key in brackets, the pieces to colour them and the ``{key: value}`` map.
-
-    A name that already holds ``[K]`` keeps it; else the choice's ``key`` (or the first unused letter, at the
-    start of a word when possible) is put in brackets.
-    """
-    taken = set(RESERVED_KEYS)
-    for choice in choices:
-        found = re.search(r"\[(\w)\]", choice["name"])
-        if found:
-            taken.add(found.group(1).lower())
-    out, fragments, keys = [], [], {}
-    for choice in choices:
-        name = choice["name"]
-        found = re.search(r"\[(\w)\]", name)
-        if found:
-            at = found.start()
-        else:
-            wanted = [choice["key"]] if choice.get("key") else [c for c in name.lower() if c.isalpha()]
-            at = None
-            for letter in wanted:
-                if letter in taken:
-                    continue
-                starts = [m.start() for m in re.finditer(rf"(?i)\b{re.escape(letter)}", name)]
-                spot = starts[0] if starts else name.lower().find(letter)
-                if spot >= 0:
-                    at = spot
-                    taken.add(letter)
-                    break
-            if at is not None:
-                name = f"{name[:at]}[{name[at]}]{name[at + 1:]}"
-        item = dict(choice, name=name)
-        out.append(item)
-        found = re.search(r"\[(\w)\]", name)
-        if not found:
-            fragments.append(None)
-            continue
-        keys[found.group(1).lower()] = choice["value"]
-        tone = TONES.get(choice["value"], "fg:ansicyan")
-        fragments.append([(tone, name[:found.start()])] + shortcut(found.group(1), name[found.end():], tone) if on else None)
-    return out, fragments, keys
-
 
 def colorize_choices(prompt, fragments: list) -> None:
     """Draw the name of each choice in pieces of different colours.
@@ -213,6 +163,11 @@ class InquirerPrompter:
             colorize_choices(prompt, fragments)
         return prompt.execute()
 
+    def _pick(self, message: str, entries: list):
+        """Ask a question made of :data:`bdnex.ui.keys.ACTIONS` and answers of its own: keys, colours, Enter."""
+        choices, fragments, keys = ui_keys.build(entries, color.enabled(), shortcut)
+        return self._select(message, choices, fragments, keys)
+
     @staticmethod
     def _hint(shortcuts: Optional[dict]) -> str:
         """The line under the question: what the keys do."""
@@ -258,17 +213,20 @@ class InquirerPrompter:
             add(f"[{number}] {m.score:5.1f}  {slug}", m.candidate,
                 shortcut(str(number), "", "") + [("", " "), (f"fg:{color.score_hex(m.score)} bold", f"{m.score:5.1f}"),
                                                  ("", f"  {slug}")], str(number))
+        offered = []
         if self.source is not None:
-            add("[E]nter a search in the album list...", self.SEARCH, shortcut("E", "nter a search in the album list...", "fg:ansicyan"), "e")
+            offered.append({"action": "search", "value": self.SEARCH})
         if hasattr(self.source, "candidate_from_url"):
-            add("Type the album's [U]RL...", self.URL,
-                [("fg:ansicyan", "Type the album's ")] + shortcut("U", "RL...", "fg:ansicyan"), "u")
-        add("[S]kip this file", self.SKIP, shortcut("S", "kip this file", "fg:ansiyellow"), "s")
-        add("Skip the whole [F]older (every file of it still to come)", self.SKIP_FOLDER,
-            [("fg:ansiyellow", "Skip the whole "), *shortcut("F", "older (every file of it still to come)", "fg:ansiyellow")], "f")
-        add("[B]ack to the previous file", self.PREVIOUS, shortcut("B", "ack to the previous file", "fg:ansiblue"), "b")
-        add("[A]bort the import (what is decided is kept; run it again to continue)", self.ABORT,
-            shortcut("A", "bort the import (what is decided is kept; run it again to continue)", "fg:ansired"), "a")
+            offered.append({"action": "url", "value": self.URL, "label": "Type the album's URL..."})
+        offered += [{"action": "skip", "value": self.SKIP},
+                    {"action": "skip_folder", "value": self.SKIP_FOLDER},
+                    {"action": "back", "value": self.PREVIOUS},
+                    {"action": "abort", "value": self.ABORT,
+                     "label": "Abort the import (what is decided is kept; run it again to continue)"}]
+        more, more_fragments, more_keys = ui_keys.build(offered, on, shortcut)
+        choices += more
+        fragments += more_fragments
+        keys.update(more_keys)
         print(match_header(path, on))
         self._thumbnail(path)
         try:
@@ -301,11 +259,9 @@ class InquirerPrompter:
 
     def confirm_found(self, candidate: Candidate) -> bool:
         """The album picked in the search: check it (O opens its page) before it is used."""
-        answer = self._select(
-            f"Use {display_name(candidate)}?",
-            [{"name": "[Y]es, use this album", "value": candidate},
-             {"name": "[N]o, back to the list", "value": self.NO}],
-            None, {"y": candidate, "n": self.NO})
+        answer = self._pick(f"Use {display_name(candidate)}?", [
+            {"action": "yes", "value": candidate, "label": "Yes, use this album"},
+            {"action": "no", "value": self.NO, "label": "No, back to the list"}])
         return answer != self.NO
 
     def ask_url(self) -> Optional[Candidate]:
@@ -372,15 +328,13 @@ class InquirerPrompter:
                 self._draw_image(both)
         elif not album_cover:
             print(f"  {color.paint('the album cover is not downloaded yet: `bdnex import --fetch` gets it', 'dim', on)}")
-        rows = [("K", "eep the match (it is right)", "keep", "fg:ansigreen"),
-                ("U", "nlink the file from this album", "unlink", "fg:ansiyellow"),
-                ("R", "ematch: choose the album again", "rematch", "fg:ansicyan"),
-                ("S", "kip: leave it flagged for later", "skip", "fg:ansiblue"),
-                ("A", "bort the review (what is decided is kept)", self.ABORT, "fg:ansired")]
         try:
-            answer = self._select("What about this file?", [{"name": f"[{k}]{rest}", "value": value} for k, rest, value, _ in rows],
-                                  [shortcut(k, rest, tone) if on else None for k, rest, _, tone in rows],
-                                  {k.lower(): value for k, _, value, _ in rows})
+            answer = self._pick("What about this file?", [
+                {"action": "keep", "value": "keep"},
+                {"action": "unlink", "value": "unlink"},
+                {"action": "rematch", "value": "rematch"},
+                {"action": "skip", "value": "skip", "label": "Skip: leave it flagged for later"},
+                {"action": "abort", "value": self.ABORT, "label": "Abort the review (what is decided is kept)"}])
         finally:
             self._clear_thumbnail()
         if answer == self.ABORT:
@@ -406,17 +360,14 @@ class InquirerPrompter:
 
     def _series_choice(self, folder: str, proposal) -> str:
         """The keys of the series question: ``series``, ``each``, ``choose`` or ``skip`` (Abort raises)."""
-        on = color.enabled()
-        abort = "bort the import (what is decided is kept; run it again to continue)"
-        rows = [  # (key, rest of the label after the key, value, colour)
-            ("Y", f"es: match them by volume number in \"{proposal.name}\"", "series", "fg:ansigreen"),
-            ("N", "o: match each file by itself", "each", "fg:ansiyellow"),
-            ("C", "hoose which files belong to it (the others are looked at as another series)", "choose", "fg:ansicyan"),
-            ("S", "kip this folder (none of its files is imported now)", "skip", "fg:ansiyellow"),
-            ("A", abort, self.ABORT, "fg:ansired")]
-        choices = [{"name": f"[{key}]{rest}", "value": value} for key, rest, value, _ in rows]
-        fragments = [shortcut(key, rest, tone) if on else None for key, rest, _, tone in rows]
-        answer = self._select("Is this one series?", choices, fragments, {key.lower(): value for key, _, value, _ in rows})
+        answer = self._pick("Is this one series?", [
+            {"action": "yes", "value": "series", "label": f"Yes: match them by volume number in \"{proposal.name}\""},
+            {"action": "no", "value": "each", "label": "No: match each file by itself"},
+            {"action": "choose", "value": "choose",
+             "label": "Choose which files belong to it (the others are looked at as another series)"},
+            {"action": "skip", "value": "skip", "label": "Skip this folder (none of its files is imported now)"},
+            {"action": "abort", "value": self.ABORT,
+             "label": "Abort the import (what is decided is kept; run it again to continue)"}])
         if answer == self.ABORT:
             raise ImportAborted(folder)
         return answer
@@ -494,16 +445,11 @@ class InquirerPrompter:
                 return answer  # None (Ctrl-C): back to the words
 
     def duplicate_action(self, path: str, others: list[str], what: str) -> str:
-        from InquirerPy import inquirer
-
         self._need_terminal()
-
-        return inquirer.select(
-            message=f"{what}: {path}\n  already: {', '.join(others)}",
-            choices=[{"name": "Skip", "value": "skip"},
-                     {"name": "Keep both", "value": "keep_both"},
-                     {"name": "Replace (the new file becomes the album's file)", "value": "replace"}],
-        ).execute()
+        return self._pick(f"{what}: {path}\n  already: {', '.join(others)}", [
+            {"action": "skip", "value": "skip", "label": "Skip"},
+            {"action": "keep_both", "value": "keep_both"},
+            {"action": "replace", "value": "replace", "label": "Replace (the new file becomes the album's file)"}])
 
     def resolve_duplicate(self, comparison, what: str, root=None) -> str:
         """Which file(s) to keep when an album already has one: ``skip`` | ``replace`` | ``keep_both``."""
@@ -514,13 +460,17 @@ class InquirerPrompter:
         intro = ("An identical file is already in the library." if what == "identical file"
                  else "This album already has a file in the library.")
         print(f"\n{comparison.new.name}\n{intro}\n{table(comparison, root)}")
-        choices = [{"name": "Keep the existing file (the new one is not imported)", "value": "skip", "key": "e"},
-                   {"name": "Keep the new file (the existing one goes to the trash)", "value": "replace", "key": "n"},
-                   {"name": "Keep both (the new one becomes a spare version)", "value": "keep_both", "key": "b"}]
-        suggested = "skip" if comparison.suggestion == KEEP_EXISTING else "replace"
-        choices.sort(key=lambda choice: choice["value"] != suggested)
-        choices[0]["name"] += "  <- suggested"
-        return self._ask("Which one do you keep?", choices)
+        return self._which_to_keep(comparison, KEEP_EXISTING, "the new one is not imported", "the new one becomes a spare version")
+
+    def _which_to_keep(self, comparison, keep_existing, existing_note: str, both_note: str) -> str:
+        """The existing file, the new one or both (``skip`` | ``replace`` | ``keep_both``); the suggested one is first."""
+        entries = [{"action": "keep_existing", "value": "skip", "label": f"Keep the existing file ({existing_note})"},
+                   {"action": "keep_new", "value": "replace", "label": "Keep the new file (the existing one goes to the trash)"},
+                   {"action": "keep_both", "value": "keep_both", "label": f"Keep both ({both_note})"}]
+        suggested = "skip" if comparison.suggestion == keep_existing else "replace"
+        entries.sort(key=lambda entry: entry["value"] != suggested)
+        entries[0]["label"] += "  <- suggested"
+        return self._ask("Which one do you keep?", entries)
 
     def resolve_collision(self, comparison, root=None) -> str:
         """The destination name is taken: ``skip`` | ``replace`` | ``keep_both`` (as a spare version)."""
@@ -528,49 +478,37 @@ class InquirerPrompter:
 
         self._need_terminal()
         print(f"\n{comparison.new.name}\nThe destination is already taken by another file.\n{table(comparison, root)}")
-        choices = [{"name": "Keep the existing file (the new one is left where it is)", "value": "skip", "key": "e"},
-                   {"name": "Keep the new file (the existing one goes to the trash)", "value": "replace", "key": "n"},
-                   {"name": "Keep both (the new one goes to the spare versions)", "value": "keep_both", "key": "b"}]
-        suggested = "skip" if comparison.suggestion == KEEP_EXISTING else "replace"
-        choices.sort(key=lambda choice: choice["value"] != suggested)
-        choices[0]["name"] += "  <- suggested"
-        return self._ask("Which one do you keep?", choices)
+        return self._which_to_keep(comparison, KEEP_EXISTING, "the new one is left where it is", "the new one goes to the spare versions")
 
     def cover_mismatch(self, path: str, album: str, score: float, threshold: float) -> str:
         """The file's cover does not look like the album's: ``keep`` the match or ``unlink`` it."""
-        from InquirerPy import inquirer
-
         self._need_terminal()
-        return inquirer.select(
-            message=f"The cover of {os.path.basename(path)} looks little like the cover of {album} "
-                    f"({score:.0f}% < {threshold:.0f}%).",
-            choices=[{"name": "Keep this match", "value": "keep"},
-                     {"name": "Unlink it (it will be looked at again at the next import --force)", "value": "unlink"}],
-        ).execute()
+        return self._pick(
+            f"The cover of {os.path.basename(path)} looks little like the cover of {album} "
+            f"({score:.0f}% < {threshold:.0f}%).",
+            [{"action": "keep", "value": "keep", "label": "Keep this match"},
+             {"action": "unlink", "value": "unlink",
+              "label": "Unlink it (it will be looked at again at the next import --force)"}])
 
     def choose_placement(self, count: int, directory: str) -> str:
         """What to do with files imported from outside the library folder: ``move`` | ``copy`` | ``leave``."""
-        from InquirerPy import inquirer
-
-        return inquirer.select(
-            message=f"{count} imported file(s) are outside your collection ({directory}). What now?",
-            choices=[{"name": "Move them into the library (tags are written, names follow your templates)", "value": "move"},
-                     {"name": "Copy them into the library (the originals stay where they are)", "value": "copy"},
-                     {"name": "Leave them where they are (`bdnex move staged:true` places them later)", "value": "leave"}],
-        ).execute()
+        return self._pick(f"{count} imported file(s) are outside your collection ({directory}). What now?", [
+            {"action": "move", "value": "move",
+             "label": "Move them into the library (tags are written, names follow your templates)"},
+            {"action": "copy", "value": "copy", "label": "Copy them into the library (the originals stay where they are)"},
+            {"action": "leave", "value": "leave",
+             "label": "Leave them where they are (`bdnex move staged:true` places them later)"}])
 
     # -- write / move
-    def _ask(self, message: str, choices: list):
+    def _ask(self, message: str, entries: list):
         """A question of the write / move run: its answers, then **[A]bort the run** (key ``a``).
 
-        Every answer gets a key (``[S]kip``) and a colour, like the match question; a choice may name its own
-        ``key``, else one is picked from its words.
+        ``entries`` are :func:`bdnex.ui.keys.build` entries: every answer has the key and colour of its action.
         """
         from bdnex.organizer.organizer import WriteAborted
 
-        abort = {"name": "[A]bort the run (what is done stays; run it again to continue)", "value": self.ABORT}
-        choices, fragments, keys = keyed_choices([*choices, abort], color.enabled())
-        answer = self._select(message, choices, fragments, keys)
+        abort = {"action": "abort", "value": self.ABORT, "label": "Abort the run (what is done stays; run it again to continue)"}
+        answer = self._pick(message, [*entries, abort])
         if answer == self.ABORT:
             raise WriteAborted()
         return answer
@@ -581,10 +519,10 @@ class InquirerPrompter:
 
         print("\n" + diffview.conflict_text(path, diff_lines, enabled()))
         return self._ask("Which one wins?", [
-            {"name": "Database (overwrite the file's values)", "value": "database"},
-            {"name": "File (keep its ComicInfo.xml as it is; the library takes its values)", "value": "file"},
-            {"name": "[C]hoose field by field (or type your own value)", "value": "fields"},
-            {"name": "Skip this file", "value": "skip"}])
+            {"action": "database", "value": "database"},
+            {"action": "file", "value": "file"},
+            {"action": "choose", "value": "fields", "label": "Choose field by field (or type your own value)"},
+            {"action": "skip", "value": "skip"}])
 
     def resolve_fields(self, path: str, changes: list, file_fields: dict, db_fields: dict) -> Optional[dict]:
         """For each difference: the database's value, the file's, or one typed by hand (default: the database's)."""
@@ -596,11 +534,11 @@ class InquirerPrompter:
         for number, change in enumerate(changes, start=1):
             mine, theirs = db_fields.get(change.field), file_fields.get(change.field)
             short_db, short_file, _ = excerpts(mine, theirs)
-            choices = [{"name": f"Database: {short_db}", "value": "db"}]
+            choices = [{"action": "database", "value": "db", "label": f"Database: {short_db}", "key": "d"}]
             if theirs is not None:
-                choices.append({"name": f"File:     {short_file}", "value": "file"})
-            choices.append({"name": "Type a value...", "value": "edit"})
-            choices.append({"name": "Skip this file", "value": "skip"})
+                choices.append({"action": "file", "value": "file", "label": f"File:     {short_file}", "key": "f"})
+            choices.append({"label": "Type a value...", "value": "edit", "key": "t", "tone": "cyan"})
+            choices.append({"action": "skip", "value": "skip"})
             answer = self._ask(f"[{number}/{len(changes)}] {change.field}", choices)
             if answer == "skip":
                 return None
@@ -611,7 +549,7 @@ class InquirerPrompter:
         return chosen
 
     def confirm(self, message: str, default: bool = False) -> bool:
-        choices = [{"name": "[Y]es", "value": "yes"}, {"name": "[N]o", "value": "no"}]
+        choices = [{"action": "yes", "value": "yes"}, {"action": "no", "value": "no"}]
         choices.sort(key=lambda choice: choice["value"] != ("yes" if default else "no"))
         return self._ask(message, choices) == "yes"
 
@@ -623,9 +561,9 @@ class InquirerPrompter:
 
     def collision(self, dest: str) -> str:
         return self._ask(f"Destination exists: {dest}", [
-            {"name": "Skip", "value": "skip"},
-            {"name": "Keep both (add a number)", "value": "keep_both"},
-            {"name": "Replace", "value": "replace"}])
+            {"action": "skip", "value": "skip", "label": "Skip"},
+            {"action": "keep_both", "value": "keep_both", "label": "Keep both (add a number)"},
+            {"action": "replace", "value": "replace"}])
 
     def size_action(self, path: str, before: int, after: int, tolerance: float) -> str:
         from bdnex.organizer.organizer import human_size
@@ -633,14 +571,14 @@ class InquirerPrompter:
         print(f"\n{path}\nThe new archive is {human_size(after)}, the original {human_size(before)} "
               f"(more than {tolerance:g}% apart). Every page is in it, byte for byte.")
         return self._ask("What now?", [
-            {"name": "Refuse it: keep the original untouched", "value": "refuse"},
-            {"name": "Accept the new archive", "value": "accept"}])
+            {"action": "refuse", "value": "refuse"},
+            {"action": "accept", "value": "accept"}])
 
     def corrupted_action(self, path: str, problems: list[str], can_move: bool) -> str:
         print(f"\n{path}\nThe archive is damaged and could not be repaired:")
         for line in problems:
             print(f"  - {line}")
-        choices = [{"name": "Leave it as it is", "value": "leave"}]
+        choices = [{"action": "leave", "value": "leave"}]
         if can_move:
-            choices.append({"name": "Move it anyway (as it is, no tags written)", "value": "move"})
+            choices.append({"action": "move", "value": "move", "label": "Move it anyway (as it is, no tags written)"})
         return self._ask("What now?", choices)

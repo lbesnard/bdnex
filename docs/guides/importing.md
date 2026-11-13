@@ -76,7 +76,8 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    colours for scores and outcomes.
    **Keys, as in beets.** Every line shows its key in brackets, highlighted: `[1]`..`[9]` pick a candidate,
    **E** enters a search, **U** types the address of the album's page, **S** skips the file, **F** skips the whole folder (the files of it still to come are not asked about; they are remembered as skipped, and `--force` looks at them again), **B** goes back to the previous file, **A** aborts the import.
-   Upper or lower case, no Enter needed; the arrows and Enter work as usual. **O** (or Ctrl-O) opens the page of
+   Upper or lower case, no Enter needed; the arrows and Enter work as usual. The same keys and colours are used by
+   every question of every command (see [the keys](#the-keys-of-every-question)). **O** (or Ctrl-O) opens the page of
    the highlighted album in your browser.
    **Back** undoes what was decided for the previous file (its link in the library, a file moved to the trash or
    to `_versions/`) and asks about it again, so a wrong key press is not final; press it again to go further
@@ -436,3 +437,25 @@ bdnex reparse series:nains  # only some albums (same terms as `bdnex ls`)
 - Albums that are only matched (their page was never fetched) have no stored page: they are reported, and
   `bdnex import --fetch` is how to complete them.
 - It changes the library, not your files: run `bdnex write` afterwards to put new details into them.
+
+
+## The keys of every question
+
+All questions of bdnex (import, review, write, move, repair) take their keys and colours from one table, so
+the same answer is the same key everywhere. Press the highlighted letter, in either case, or use the arrows and Enter.
+
+| Key | Answer | Colour |
+| --- | --- | --- |
+| `S` | skip this file (or this folder, in the series question) | yellow |
+| `F` | skip the whole folder (match question) | yellow |
+| `B` | back to the previous file | blue |
+| `A` | abort: what is decided is kept, run it again to continue | red, always last |
+| `Y` / `N` | yes / no | green / yellow |
+| `K` | keep the match (review), or keep the file as it is (conflicts) | green / red |
+| `L` | unlink the file from the album (review); leave it as it is (damaged archive, outside files) | yellow |
+| `D` | the database wins (conflicts) | green |
+| `E` / `U` | enter a search / type the address of the album | cyan |
+| `R`, `C`, `M` | rematch, choose (files, fields), move | cyan |
+
+A key is the same in every question where its answer exists, and a question never uses one key twice. Green is the safe
+answer, yellow puts it off, red is destructive or stops the run. `NO_COLOR=1` turns the colours off, the keys stay.
