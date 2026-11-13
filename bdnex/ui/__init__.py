@@ -17,6 +17,7 @@ commands:
   trash    list, restore or empty the files that were replaced
   reset    empty the library (albums, files, edits), keep the downloaded sitemaps and pages
   relocate tell the library that your comics folder moved
+  relink   find files that were moved or renamed outside bdnex, by their content
   reparse  re-read the pages stored in the library (offline) to fill in more details
   repair   rebuild damaged archives (wrong page checksums) as clean CBZ files
   config   show or edit the configuration
@@ -102,6 +103,9 @@ def _main(argv):
     if argv and argv[0] == "relocate":
         from bdnex.ui.relocate_cmd import run as run_relocate
         sys.exit(run_relocate(argv[1:]))
+    if argv and argv[0] == "relink":
+        from bdnex.ui.relink_cmd import run as run_relink
+        sys.exit(run_relink(argv[1:]))
     if argv and argv[0] == "reparse":
         from bdnex.ui.reparse_cmd import run as run_reparse
         sys.exit(run_reparse(argv[1:]))
