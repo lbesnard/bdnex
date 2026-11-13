@@ -148,3 +148,50 @@ def test_the_files_ticked_at_first_are_the_ones_named_like_most_of_the_series():
     from bdnex.importer.folders import likely_members, name_shape
     assert name_shape(paths[0]).startswith("les impetueuses") and name_shape(paths[2]) == "tome"
     assert likely_members(proposal, paths) == set(paths[2:])
+
+
+# ---------------------------------------------------- a series whose title is made of numbers
+def numbered_catalogue(tmp_path):
+    from bdnex.importer.bedetheque import sitemap
+    slugs = [f"BD-14-18-Tome-{n}-Un-titre-{n}-{500 + n}.html" for n in range(1, 10)]
+    slugs += [f"BD-666-Tome-{n}-Autre-{n}-{700 + n}.html" for n in range(1, 4)]
+    slugs += ["BD-14-14-545606.html", "BD-R-15-Tome-2-188321.html", "BD-12-ans-Tome-14-356646.html",
+              "BD-Gen-Tome-14-Gen-13-14-15815.html", "BD-I-s-Tome-14-I-s-14-21663.html"]  # what the matcher used to pick
+    src = Bedetheque(Library(tmp_path / "n.sqlite"))
+    src._index = [Candidate(sitemap.source_id_from_url(s), "https://www.bedetheque.com/" + s,
+                            sitemap.normalise_slug("https://www.bedetheque.com/" + s),
+                            sitemap.volume_from_url("https://www.bedetheque.com/" + s)) for s in slugs]
+    return src
+
+
+def test_a_title_made_of_numbers_gives_its_numbers_to_the_title_and_one_to_the_volume():
+    from bdnex.importer.matching import numeric_title, volumes_for
+    assert numeric_title("14 18 2".split()) == (["14", "18"], 2)
+    assert numeric_title("666 1".split()) == (["666"], 1)
+    assert numeric_title("100 bullets 1".split()) == ([], None)  # a lone leading number: the title has words
+    assert numeric_title("tome 2".split()) == ([], None)
+    assert volumes_for("/c/14-18/14-18 - T02.pdf") == [2]  # not [14, 18, 2]
+    assert volumes_for("/c/Nains/Nains - T03.cbz") == [3]
+    assert title_and_volume("/c/14-18/14-18 - T05.pdf") == (["14", "18"], 5)
+    assert title_and_volume("/c/666/666 - 01 - (Froideva_-Tacito).cbr") == (["666"], 1)
+
+
+def test_a_numeric_title_is_found_by_its_numbers_with_the_right_volume_first(tmp_path):
+    from bdnex.importer.matching import find_matches
+    src = numbered_catalogue(tmp_path)
+    matches = find_matches(src, "/lib/Series/14-18/14-18 - T02.pdf")
+    best = matches[0]
+    assert best.candidate.url.endswith("BD-14-18-Tome-2-Un-titre-2-502.html") and best.score >= 85  # the series, not "14-14"
+    assert "BD-14-14-545606.html" not in [m.candidate.url.rsplit("/", 1)[-1] for m in matches[:1]]
+    three = find_matches(src, "/lib/Series/666/666 - 03 - (Froideva_-Tacito).cbr")
+    assert three[0].candidate.url.endswith("BD-666-Tome-3-Autre-3-703.html")
+
+
+def test_a_folder_of_a_numeric_series_is_taken_for_a_series(tmp_path):
+    from bdnex.importer.matching import find_matches
+    src = numbered_catalogue(tmp_path)
+    paths = [f"/lib/Series/14-18/14-18 - T0{i}.pdf" for i in range(2, 9)] + ["/lib/Series/14-18/14-18 - T09.cbz"]
+    assert classify(paths) == SERIES
+    proposal = propose_series(src, paths, {path: find_matches(src, path) for path in paths})
+    assert proposal is not None and proposal.name == "14 18" and proposal.solid
+    assert [proposal.mapping[p].volume for p in paths] == [2, 3, 4, 5, 6, 7, 8, 9]
