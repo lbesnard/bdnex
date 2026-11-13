@@ -52,6 +52,7 @@ class _Section(BaseModel):
 
 
 class Match(_Section):
+    use_embedded: bool
     strong_threshold: float = Field(ge=0, le=100)
     medium_threshold: float = Field(ge=0, le=100)
 

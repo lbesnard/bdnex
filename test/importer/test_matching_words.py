@@ -122,3 +122,21 @@ def test_a_series_score_is_capped_even_if_the_title_query_also_listed_the_album(
             return [(wrong, 95.0 if query == "Ombres 2" else 40.0)]
 
     assert find_matches(Stub(), "/c/Ombres/Ombres 02_Rollin_Fr.pdf")[0].score < 90
+
+
+def test_a_file_that_names_its_album_matches_it_first(tmp_path):
+    import zipfile
+    from bdnex.importer.bedetheque import Bedetheque
+    from bdnex.importer.matching import find_matches
+    from bdnex.library import Library
+    source = Bedetheque(Library(":memory:"), fetch=lambda url: b"", sleep=lambda s: None)
+    source._index = []
+    path = tmp_path / "completely unrelated name.cbz"
+    url = "https://www.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("ComicInfo.xml", f"<ComicInfo><Series>Nains</Series><Number>1</Number><Web>{url}</Web></ComicInfo>")
+        archive.writestr("1.jpg", b"x")
+    matches = find_matches(source, str(path))
+    assert matches[0].candidate.url == url and matches[0].score == 100.0
+    source.use_embedded = False
+    assert find_matches(source, str(path)) == []  # without the tags nothing in the name leads anywhere

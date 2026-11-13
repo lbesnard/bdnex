@@ -127,3 +127,18 @@ def inspect_file(path) -> FileInfo:
     return FileInfo(path=path, format=fmt, size=stat.st_size, mtime=stat.st_mtime,
                     page_count=page_count, corrupted=corrupted, has_metadata=has_metadata,
                     readable=readable, problem=problem, embedded=embedded)
+
+
+def read_embedded(path) -> Optional[dict]:
+    """The simple fields of a file's own ComicInfo.xml (``None``: no such file, no ComicInfo.xml, or unreadable)."""
+    try:
+        fmt = detect_format(path)
+        if fmt == "cbz":
+            with zipfile.ZipFile(path) as archive:
+                return _embedded(archive, archive.namelist())
+        if fmt == "cbr":
+            with rarfile.RarFile(path) as archive:
+                return _embedded(archive, archive.namelist())
+    except Exception as err:
+        logger.debug(f"{path}: no readable ComicInfo.xml ({err})")
+    return None
