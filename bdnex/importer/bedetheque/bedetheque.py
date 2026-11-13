@@ -62,6 +62,7 @@ def image_fetch(url: str) -> bytes:
     return response.content
 
 
+NUMERIC_TITLE_SCORE = 82.0  # an album titled with exactly the numbers of the file name
 VOLUME_TIEBREAK = 10.0  # only orders the candidates; the reported score does not include it
 MAX_POSTINGS = 4000  # a word in more albums than this ('integrale') is no use to find candidates
 
@@ -314,6 +315,33 @@ class Bedetheque:
         query = sitemap.remove_common_words(name)
         hits = process.extract(query, [c.name for c in index], scorer=fuzz.ratio, limit=limit)
         return [(index[pos], score) for _, score, pos in hits]
+
+    def _numeric_titles(self) -> dict[tuple[str, ...], list[int]]:
+        """Albums whose title is made only of small numbers (``14-18``, ``666``): numbers -> positions in the index.
+
+        Such a title has no word to find it by, and small numbers are not indexed (they are volumes). The title is what
+        stands before ``-Tome-N`` in the page address (or all of it, for an album with no volume).
+        """
+        if getattr(self, "_numeric", None) is None:
+            numeric: dict[tuple[str, ...], list[int]] = {}
+            for pos, cand in enumerate(self._load_index()):
+                slug = re.sub(r"\.html$", "", cand.url.rsplit("/", 1)[-1])
+                slug = re.sub(r"^BD-", "", slug)
+                head = re.split(r"-Tome-\d", slug, maxsplit=1)[0] if "-Tome-" in slug else re.sub(r"-\d+$", "", slug)
+                tokens = head.split("-")
+                if tokens and all(t.isdigit() and len(t) <= 3 for t in tokens):
+                    numeric.setdefault(tuple(t.lstrip("0") or "0" for t in tokens), []).append(pos)
+            self._numeric = numeric
+        return self._numeric
+
+    def numeric_title_candidates(self, numbers: list[str], limit: int = 20) -> list[tuple[Candidate, float]]:
+        """The albums titled with exactly these numbers (``["14", "18"]``: the series ``14-18``), a good score each: the
+        title is a perfect match, the volume is for the caller to check."""
+        index = self._load_index()
+        key = tuple(n.lstrip("0") or "0" for n in numbers)
+        found = [index[pos] for pos in self._numeric_titles().get(key, [])]
+        found.sort(key=lambda c: (c.volume is None, c.volume or 0))
+        return [(cand, NUMERIC_TITLE_SCORE) for cand in found[:limit]]
 
     # ------------------------------------------------------------------ pages
     def album_info(self, url: str, recache: bool = False) -> AlbumInfo:

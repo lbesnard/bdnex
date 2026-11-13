@@ -6,6 +6,7 @@ import os
 import re
 from dataclasses import dataclass, replace
 from enum import Enum
+from typing import Optional
 
 from bdnex.importer.source import Candidate
 
@@ -85,7 +86,7 @@ def series_queries(path: str) -> list[str]:
     series and the volume are reliable. Their matches are capped at :data:`SERIES_QUERY_CAP`.
     """
     query = query_from_filename(path)
-    wanted = volumes_in(query)
+    wanted = volumes_for(path)
     if not wanted:
         return []
     folder = query_from_filename(os.path.dirname(path) + ".x") if os.path.dirname(path) else ""
@@ -102,6 +103,36 @@ def series_queries(path: str) -> list[str]:
     return queries
 
 
+def small_number(token: str) -> Optional[int]:
+    """The volume a token can stand for: ``3``, ``03``, ``V3``, ``#3`` (numbers of more than three digits are years)."""
+    marked = re.fullmatch(r"[v#]0*(\d{1,3})", token)
+    if marked:
+        return int(marked.group(1))
+    return int(token) if token.isdigit() and len(token) <= 3 else None
+
+
+def numeric_title(tokens: list[str]) -> tuple[list[str], Optional[int]]:
+    """When a name opens with numbers, which of them are the title and which is the volume: ``(title numbers, volume)``.
+
+    ``14 18 2`` (from ``14-18 - T02``) is the series ``14-18``, volume 2; ``666 1`` is ``666``, volume 1. A single leading
+    number is left alone (``100 bullets 1``: the title has words, the caller reads the volume). ``([], None)`` when the
+    name does not open with at least two numbers.
+    """
+    run = 0
+    while run < len(tokens) and small_number(tokens[run]) is not None:
+        run += 1
+    if run < 2:
+        return [], None
+    return tokens[:run - 1], small_number(tokens[run - 1])
+
+
+def volumes_for(path: str) -> list[int]:
+    """The volume number(s) a file name asks for: the one after a numeric title (``14-18 - T02``: 2, not 14, 18 and 2),
+    else every number that looks like a volume."""
+    title, volume = numeric_title(query_from_filename(path).lower().split())
+    return [volume] if title and volume is not None else volumes_in(query_from_filename(path))
+
+
 def volumes_in(query: str) -> list[int]:
     """Numbers that look like volume numbers in a file name (``T01``, ``Tome 3``, ``- 2 -``)."""
     found = [int(n) for n in re.findall(r"(?:\bt|\btome\s*|\bvol\.?\s*|\b#)\s*0*(\d{1,3})\b", query, re.I)]
@@ -110,9 +141,9 @@ def volumes_in(query: str) -> list[int]:
     return found
 
 
-def rerank(query: str, hits: list[tuple[Candidate, float]]) -> list[Match]:
-    """Adjust title scores with the volume number found in the file name."""
-    wanted = volumes_in(query)
+def rerank(query: str, hits: list[tuple[Candidate, float]], wanted: Optional[list[int]] = None) -> list[Match]:
+    """Adjust title scores with the volume number found in the file name (``wanted``: the volumes already worked out)."""
+    wanted = volumes_in(query) if wanted is None else wanted
     matches = []
     for cand, base in hits:
         score = base
@@ -136,6 +167,11 @@ def find_matches(source, path: str, limit: int = 5) -> list[Match]:
     """
     best: dict[str, tuple] = {}  # source_id -> (candidate, best score, found by a series query)
     named, extra = embedded_hint(source, path)
+    title_numbers, _ = numeric_title(query_from_filename(path).lower().split())
+    by_number = getattr(source, "numeric_title_candidates", None)
+    if title_numbers and by_number:  # a title made of numbers (14-18, 666) has no word to look an album up by
+        for cand, score in by_number(title_numbers, limit=limit * 4):
+            best[cand.source_id] = (cand, score, False)
     for text, by_series in ([(t, False) for t in queries_for(path)] + [(t, True) for t in series_queries(path)]
                             + [(t, True) for t in extra]):
         for cand, score in source.candidates(text, limit=limit):
@@ -143,7 +179,7 @@ def find_matches(source, path: str, limit: int = 5) -> list[Match]:
                 best[cand.source_id] = (cand, score, by_series)
     series_only = {sid for sid, (_, _, by_series) in best.items() if by_series}
     hits = sorted(((c, sc) for c, sc, _ in best.values()), key=lambda hit: hit[1], reverse=True)[:limit + 3]
-    matches = rerank(query_from_filename(path), hits)  # volumes are read from the file name only
+    matches = rerank(query_from_filename(path), hits, volumes_for(path))  # volumes are read from the file name only
     matches = [replace(m, score=min(m.score, SERIES_QUERY_CAP)) if m.candidate.source_id in series_only else m
                for m in matches]
     matches = sorted(matches, key=lambda m: m.score, reverse=True)

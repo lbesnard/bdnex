@@ -119,6 +119,11 @@ the folder as a whole (as beets does with an album folder). It looks at the file
 | the **same book** in several files (`X.cbr` and `X.pdf`, or the same volume twice with a near-identical name) | not a series: these are versions, handled by the [duplicate question](versions.md) |
 | anything else (some files without a volume, unrelated titles...) | **asks**, listing the files: *Is this one series?* |
 
+**Titles made of numbers** (`14-18`, `666`): a name that opens with two or more numbers is read as the title's numbers
+followed by the volume (`14-18 - T02` is the series *14-18*, volume 2, not volumes 14, 18 and 2). Such a series has no
+word to look it up by, so bdnex looks for albums titled with exactly those numbers, then checks the volume. Four-digit
+titles (`1984`, `2021`) are years in a file name and matched by their words as usual.
+
 For a series, the files **vote**: each file votes for the series that has an album with its volume among its own best
 matches, and the series with most votes wins when at least half of the files agree. Every file is then given
 the album of that series with its volume number, which also pulls in files whose own best match was another

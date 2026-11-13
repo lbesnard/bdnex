@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-from bdnex.importer.matching import Match, query_from_filename
+from bdnex.importer.matching import Match, numeric_title, query_from_filename, small_number
 from bdnex.importer.source import Candidate
 from bdnex.library.query import fold
 
@@ -29,27 +29,19 @@ def title_and_volume(path: str) -> tuple[list[str], Optional[int]]:
     """The words of a file name (accents and case folded) and its volume number, if it has one.
 
     A number that opens the name and is followed by another one belongs to the title
-    (``100 Bullets - 01`` is volume 1), and numbers of more than three digits are years.
+    (``100 Bullets - 01`` is volume 1), and numbers of more than three digits are years. A title made of numbers
+    keeps them as words (``14-18 - T01``: the words are ``14 18``, the volume 1).
     """
     tokens = fold(query_from_filename(path)).split()
-
-    def number(token: str) -> Optional[int]:
-        marked = re.fullmatch(r"[v#]0*(\d{1,3})", token)  # V3, #3
-        if marked:
-            return int(marked.group(1))
-        return int(token) if token.isdigit() and len(token) <= 3 else None
-
-    numbers = [(position, number(token)) for position, token in enumerate(tokens) if number(token) is not None]
-    volume = None
-    if numbers:
-        volume = numbers[1][1] if numbers[0][0] == 0 and len(numbers) > 1 else numbers[0][1]
-    title_numbers = 0
-    positions = [position for position, _ in numbers]
-    if positions[:3] == [0, 1, 2]:
-        # ``14-18 - T01``: the title is made of numbers, and the volume is the last one
-        title_numbers, volume = 2, numbers[2][1]
+    numbers = [(position, small_number(token)) for position, token in enumerate(tokens) if small_number(token) is not None]
+    title, volume = numeric_title(tokens)
+    title_numbers = len(title)
+    if not title_numbers:
+        volume = None
+        if numbers:
+            volume = numbers[1][1] if numbers[0][0] == 0 and len(numbers) > 1 else numbers[0][1]
     words = [token for position, token in enumerate(tokens)
-             if position < title_numbers or (not token.isdigit() and number(token) is None)]
+             if position < title_numbers or (not token.isdigit() and small_number(token) is None)]
     return words, volume
 
 
@@ -154,7 +146,13 @@ def _plausible(series_name: str, paths: list[str]) -> bool:
     known = words(os.path.basename(os.path.dirname(paths[0])))
     for path in paths:
         known |= set(title_and_volume(path)[0])
-    return bool(words(series_name) & known)
+    if words(series_name) & known:
+        return True
+    # a series titled with numbers (14-18, 666) shares no word: its numbers must be the ones the files open with
+    numbers = [t for t in fold(series_name).replace("-", " ").replace(".", " ").split() if t.isdigit()]
+    if numbers and len(numbers) == len(fold(series_name).replace("-", " ").replace(".", " ").split()):
+        return all(title_and_volume(path)[0][:len(numbers)] == numbers for path in paths)
+    return False
 
 
 def _album_in_series(source, key: str, name: str, volume: int, own: list[Match]) -> Optional[Candidate]:
