@@ -53,6 +53,55 @@ def bind_shortcuts(prompt, keys: dict) -> None:
 
 Fragments = list  # of (prompt_toolkit style, text)
 
+# the colour of an answer, by its value (the others are cyan): the same meaning as the colours of the match question
+TONES = {"skip": "fg:ansiyellow", "leave": "fg:ansiyellow", "refuse": "fg:ansiyellow", "no": "fg:ansiyellow",
+         "database": "fg:ansigreen", "db": "fg:ansigreen", "yes": "fg:ansigreen", "accept": "fg:ansigreen",
+         "file": "fg:ansired", "replace": "fg:ansired", "__abort__": "fg:ansired"}
+RESERVED_KEYS = {"o"}  # `o` opens a page in the match question
+
+
+def keyed_choices(choices: list, on: bool = True):
+    """Choices with their key in brackets, the pieces to colour them and the ``{key: value}`` map.
+
+    A name that already holds ``[K]`` keeps it; else the choice's ``key`` (or the first unused letter, at the
+    start of a word when possible) is put in brackets.
+    """
+    taken = set(RESERVED_KEYS)
+    for choice in choices:
+        found = re.search(r"\[(\w)\]", choice["name"])
+        if found:
+            taken.add(found.group(1).lower())
+    out, fragments, keys = [], [], {}
+    for choice in choices:
+        name = choice["name"]
+        found = re.search(r"\[(\w)\]", name)
+        if found:
+            at = found.start()
+        else:
+            wanted = [choice["key"]] if choice.get("key") else [c for c in name.lower() if c.isalpha()]
+            at = None
+            for letter in wanted:
+                if letter in taken:
+                    continue
+                starts = [m.start() for m in re.finditer(rf"(?i)\b{re.escape(letter)}", name)]
+                spot = starts[0] if starts else name.lower().find(letter)
+                if spot >= 0:
+                    at = spot
+                    taken.add(letter)
+                    break
+            if at is not None:
+                name = f"{name[:at]}[{name[at]}]{name[at + 1:]}"
+        item = dict(choice, name=name)
+        out.append(item)
+        found = re.search(r"\[(\w)\]", name)
+        if not found:
+            fragments.append(None)
+            continue
+        keys[found.group(1).lower()] = choice["value"]
+        tone = TONES.get(choice["value"], "fg:ansicyan")
+        fragments.append([(tone, name[:found.start()])] + shortcut(found.group(1), name[found.end():], tone) if on else None)
+    return out, fragments, keys
+
 
 def colorize_choices(prompt, fragments: list) -> None:
     """Draw the name of each choice in pieces of different colours.
@@ -160,7 +209,7 @@ class InquirerPrompter:
         bind_open(prompt, ("c-o", "o", "O") if shortcuts else ("c-o",))
         if shortcuts:
             bind_shortcuts(prompt, shortcuts)
-        if fragments:
+        if fragments and any(fragments):
             colorize_choices(prompt, fragments)
         return prompt.execute()
 
@@ -465,9 +514,9 @@ class InquirerPrompter:
         intro = ("An identical file is already in the library." if what == "identical file"
                  else "This album already has a file in the library.")
         print(f"\n{comparison.new.name}\n{intro}\n{table(comparison, root)}")
-        choices = [{"name": "Keep the existing file (the new one is not imported)", "value": "skip"},
-                   {"name": "Keep the new file (the existing one goes to the trash)", "value": "replace"},
-                   {"name": "Keep both (the new one becomes a spare version)", "value": "keep_both"}]
+        choices = [{"name": "Keep the existing file (the new one is not imported)", "value": "skip", "key": "e"},
+                   {"name": "Keep the new file (the existing one goes to the trash)", "value": "replace", "key": "n"},
+                   {"name": "Keep both (the new one becomes a spare version)", "value": "keep_both", "key": "b"}]
         suggested = "skip" if comparison.suggestion == KEEP_EXISTING else "replace"
         choices.sort(key=lambda choice: choice["value"] != suggested)
         choices[0]["name"] += "  <- suggested"
@@ -479,9 +528,9 @@ class InquirerPrompter:
 
         self._need_terminal()
         print(f"\n{comparison.new.name}\nThe destination is already taken by another file.\n{table(comparison, root)}")
-        choices = [{"name": "Keep the existing file (the new one is left where it is)", "value": "skip"},
-                   {"name": "Keep the new file (the existing one goes to the trash)", "value": "replace"},
-                   {"name": "Keep both (the new one goes to the spare versions)", "value": "keep_both"}]
+        choices = [{"name": "Keep the existing file (the new one is left where it is)", "value": "skip", "key": "e"},
+                   {"name": "Keep the new file (the existing one goes to the trash)", "value": "replace", "key": "n"},
+                   {"name": "Keep both (the new one goes to the spare versions)", "value": "keep_both", "key": "b"}]
         suggested = "skip" if comparison.suggestion == KEEP_EXISTING else "replace"
         choices.sort(key=lambda choice: choice["value"] != suggested)
         choices[0]["name"] += "  <- suggested"
@@ -512,16 +561,16 @@ class InquirerPrompter:
 
     # -- write / move
     def _ask(self, message: str, choices: list):
-        """A question of the write / move run: its answers, then **[A]bort the run** (key ``a``)."""
-        from InquirerPy import inquirer
+        """A question of the write / move run: its answers, then **[A]bort the run** (key ``a``).
 
+        Every answer gets a key (``[S]kip``) and a colour, like the match question; a choice may name its own
+        ``key``, else one is picked from its words.
+        """
         from bdnex.organizer.organizer import WriteAborted
 
-        choices = [*choices, {"name": "[A]bort the run (what is done stays; run it again to continue)",
-                              "value": self.ABORT}]
-        prompt = inquirer.select(message=message, choices=choices)
-        bind_shortcuts(prompt, {"a": self.ABORT})
-        answer = prompt.execute()
+        abort = {"name": "[A]bort the run (what is done stays; run it again to continue)", "value": self.ABORT}
+        choices, fragments, keys = keyed_choices([*choices, abort], color.enabled())
+        answer = self._select(message, choices, fragments, keys)
         if answer == self.ABORT:
             raise WriteAborted()
         return answer
@@ -534,7 +583,7 @@ class InquirerPrompter:
         return self._ask("Which one wins?", [
             {"name": "Database (overwrite the file's values)", "value": "database"},
             {"name": "File (keep its ComicInfo.xml as it is; the library takes its values)", "value": "file"},
-            {"name": "Field by field (choose, or type your own value)", "value": "fields"},
+            {"name": "[C]hoose field by field (or type your own value)", "value": "fields"},
             {"name": "Skip this file", "value": "skip"}])
 
     def resolve_fields(self, path: str, changes: list, file_fields: dict, db_fields: dict) -> Optional[dict]:
