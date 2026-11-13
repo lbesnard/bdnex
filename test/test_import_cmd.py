@@ -212,3 +212,20 @@ def test_as_is_keeps_what_the_file_says_about_itself(setup, make_cbz):
     with Library.for_settings(load_config().settings) as library:
         assert library.get_file(path)["embedded"] == {"Series": "Nains", "Number": "3", "Title": "Foo"}
         assert [r["path"] for r in library.query(["embedded:nains"], files=True)] == [path]
+
+
+def test_select_works_on_library_files_that_match_a_query(setup):
+    path, tmp_path = setup
+    folder = os.path.dirname(path)
+    import_cmd.run(["--as-is", folder], out=io.StringIO())
+    assert import_cmd.run(["--select", "tagged:false"], out=io.StringIO()) == 0  # no path: the unmatched ones
+    from bdnex.config import load_config
+    from bdnex.library import Library
+    with Library.for_settings(load_config().settings) as library:
+        album = library.get_file(path)["album_id"]
+        assert album is not None
+        title = library.get_album(album)["title"]
+    out = io.StringIO()
+    assert import_cmd.run(["--select", "tagged:false"], out=out) == 1  # nothing is left to select
+    assert import_cmd.run(["--fetch", "--force", "--select", f"title:={title}"], out=io.StringIO()) == 0
+    assert import_cmd.run(["--select", "title::("], out=io.StringIO()) == 2

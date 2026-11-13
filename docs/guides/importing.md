@@ -196,6 +196,23 @@ any album). It asks nothing, uses no network, and moves, converts or writes noth
 left alone (`--force` records them again). `ls --files -l` shows the file's own metadata, and `embedded:` finds files
 by it (`bdnex ls --files embedded:nains`). Recorded files are not "skipped": the next `bdnex import` matches them.
 
+### Importing files that are already in the library: `--select`
+
+`bdnex import <folder>` works on the files of a folder. To work on files the library already knows, select them with
+the [query language](queries.md) of `bdnex ls --files`:
+
+```bash
+bdnex import --select tagged:false                    # match + fetch everything recorded with --as-is
+bdnex import --select tagged:false --select 'embedded:nains'   # terms are ANDed
+bdnex import --fetch --force --select author:uderzo   # read the pages of an author's albums again
+bdnex import --match --force --select 'series:/^(antares|centaure)$/'   # ask again about these albums
+bdnex import -n --select format:pdf                   # a preview of what would be done
+```
+
+`--select` can be repeated and combined with paths; the steps and options (`--match`, `--fetch`, `--force`,
+`--auto`, `--move`...) are the same as for a folder. A bare `bdnex import` looks at your library folder only, so files
+recorded from elsewhere need `--select` (or their folder).
+
 ## The report
 
 bdnex prints what it is doing on stderr (the match and its score, then a progress bar for the
