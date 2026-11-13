@@ -48,7 +48,7 @@ class ConfigError(Exception):
 
 
 class _Section(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)  # a value changed later is checked too
 
 
 class Match(_Section):
@@ -127,11 +127,45 @@ class PathRule(_Section):
     def _one_or_many(cls, value):
         return [value] if isinstance(value, str) else value
 
+    @field_validator("match")
+    @classmethod
+    def _terms_parse(cls, value):
+        """Every term must be valid `bdnex ls` syntax (a bad regular expression, an unknown number...)."""
+        from bdnex.library.query import QueryError, compile_query
+
+        try:
+            compile_query(value)
+        except QueryError as err:
+            raise ValueError(f"{err}") from None
+        return value
+
+    @field_validator("template")
+    @classmethod
+    def _known_variables(cls, value):
+        return _check_template(value)
+
+
+def _check_template(value: str) -> str:
+    """A path template may only use the variables bdnex has (``$series``, ``$title``...)."""
+    from bdnex.organizer.template import FIELD_NAMES, unknown_fields
+
+    unknown = unknown_fields(value)
+    if unknown:
+        raise ValueError(f"unknown variable(s) {', '.join('$' + name for name in unknown)} in {value!r}; "
+                         f"the known ones are {', '.join('$' + name for name in FIELD_NAMES)}")
+    return value
+
 
 class Paths(_Section):
     oneshot: str
     series: str
     rules: list[PathRule]
+
+    @field_validator("oneshot", "series")
+    @classmethod
+    def _known_variables(cls, value):
+        return _check_template(value)
+
     missing_field: Literal["ask", "placeholder", "skip"]
     placeholder: str
 
@@ -174,7 +208,7 @@ class Settings(_Section):
     plugins: dict[str, dict[str, Any]] = Field(default_factory=dict)
     bedetheque: Bedetheque
 
-    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    model_config = ConfigDict(extra="forbid", populate_by_name=True, validate_assignment=True)
 
     @property
     def library_path(self) -> Path:
@@ -310,6 +344,10 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
     merged["config_version"] = version
     try:
         settings = Settings.model_validate(merged)
+        if settings.directory and settings.directory != PLACEHOLDER_DIRECTORY \
+                and not os.path.isdir(os.path.expanduser(settings.directory)):
+            warnings.append(f"`directory` ({settings.directory}) is not an existing folder: create it, or fix it "
+                            "with `bdnex config --edit` (a disk that is not mounted?)")
         if settings.bedetheque.fetcher_endpoint and not settings.bedetheque.fetcher:
             warnings.append(
                 "bedetheque.fetcher_endpoint is set but bedetheque.fetcher is not, so nothing uses it: "

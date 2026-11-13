@@ -182,6 +182,25 @@ or that is not a function is reported by key (`bedetheque.fetcher: module 'x' ha
 Sitemap files wait `bedetheque.sitemap_delay` (default 0.5 to 1.5 s) between downloads; album pages wait
 `bedetheque.delay` (3 to 10 s). How a fetcher obtains a page, and respecting the site's terms of use, is up to you.
 
+## How the configuration is checked
+
+Every command (except `bdnex config` and `completion`, which cope with a broken file) reads and checks the whole
+configuration before it does anything, so a mistake is reported by key, not halfway through a run:
+
+- **Types and ranges:** `import.workers: -1`, `match.strong_threshold: 500` or `write.delete_original: maybe` are errors.
+- **Unknown keys** (a typo such as `imprt:`) are errors; keys an older bdnex used are warnings.
+- **Path templates:** `paths.oneshot`, `paths.series` and every `paths.rules[].template` may only use the variables
+  bdnex knows (`$kind $series $title $volume $language $year $publisher $isbn $genre $authors $writer $penciller
+  $colorist`). `$autor` is refused with the list of the right ones.
+- **Rules:** every term of `paths.rules[].match` must be valid [query](queries.md) syntax (a regular expression that
+  does not compile, a number that is not one).
+- **The fetcher:** `bedetheque.fetcher` must import and be callable.
+- **Warnings** (the command goes on): a `directory` that is not an existing folder (a disk that is not mounted?), a
+  `fetcher_endpoint` set with no fetcher, an out-of-date `config_version`.
+
+`bdnex config --edit` checks the file again as soon as you leave the editor and tells you what is wrong, so you do not
+find out at the next command. Values changed by the program after loading are checked too.
+
 ## `yes` and `no` in YAML
 
 YAML reads an unquoted `yes` or `no` as true or false. For `write.delete_original: yes | no` bdnex accepts both

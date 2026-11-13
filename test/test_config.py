@@ -269,7 +269,8 @@ def test_a_real_typo_still_says_typo(conf_path):
         load_config()
 
 
-def test_stale_warning_tells_you_to_delete_the_ignored_keys_first(conf_path):
+def test_stale_warning_tells_you_to_delete_the_ignored_keys_first(conf_path, tmp_path):
+    os.makedirs(os.path.expanduser("~/c"))
     write(conf_path, {"config_version": 1, "bdnex": {"share_path": "y"}, "directory": "~/c"})
     first, second = load_config().warnings
     assert "Delete the ignored keys" in first and "set `config_version: 2`" in first
@@ -323,3 +324,48 @@ def test_flaresolverr_is_the_default_fetcher_and_needs_an_endpoint_to_be_used():
     assert not uses_saved_pages(with_endpoint)
     own = build_settings({"config_version": 2, "bedetheque": {"fetcher": "os.path:exists"}})[0]
     assert not uses_saved_pages(own)  # a fetcher of your own is used as it is
+
+
+def test_a_path_template_with_a_typo_is_refused():
+    with pytest.raises(ConfigError, match=r"paths.series: .*unknown variable\(s\) \$autor"):
+        build_settings({"config_version": 2, "paths": {"series": "Series/$autor/$title"}})
+    with pytest.raises(ConfigError, match=r"paths.rules.0.template: .*\$serie\b"):
+        build_settings({"config_version": 2, "paths": {"rules": [{"match": "series:x", "template": "A/$serie"}]}})
+    build_settings({"config_version": 2, "paths": {"series": "S/${series}/$series - T$volume:02 - $title"}})  # fine
+
+
+def test_a_rule_with_a_bad_query_is_refused():
+    with pytest.raises(ConfigError, match=r"paths.rules.0.match: .*bad regular expression"):
+        build_settings({"config_version": 2, "paths": {"rules": [{"match": ["title::("], "template": "A/$title"}]}})
+    with pytest.raises(ConfigError, match=r"paths.rules.0.match: .*not a number"):
+        build_settings({"config_version": 2, "paths": {"rules": [{"match": "year:abc..", "template": "A"}]}})
+
+
+def test_template_variables_match_what_an_album_provides():
+    from bdnex.organizer import template
+    album = {"kind": "series", "series": "S", "title": "T", "credits": {}, "genres": []}
+    assert tuple(template.fields_for(album)) == template.FIELD_NAMES
+
+
+def test_a_value_set_later_is_checked_too():
+    settings = build_settings({"config_version": 2})[0]
+    with pytest.raises(Exception, match="format_preferred"):
+        settings.write.format_preferred = "maybe"
+    settings.write.format_preferred = "none"
+    assert settings.write.format_preferred == "none"
+
+
+def test_a_missing_directory_is_warned_about(tmp_path):
+    _, warnings, _ = build_settings({"config_version": 2, "directory": str(tmp_path / "unmounted")})
+    assert any("not an existing folder" in w for w in warnings)
+    _, none, _ = build_settings({"config_version": 2, "directory": str(tmp_path)})
+    assert none == []
+
+
+def test_editing_the_config_checks_what_was_saved(conf_path, monkeypatch, capsys):
+    from bdnex.ui import config_cmd
+    write(conf_path, {"config_version": 2})
+    monkeypatch.setenv("EDITOR", "true")
+    assert config_cmd._edit(conf_path) == 0 and "configuration is valid" in capsys.readouterr().err
+    write(conf_path, {"config_version": 2, "match": {"strong_threshold": 500}})
+    assert config_cmd._edit(conf_path) == 1 and "strong_threshold" in capsys.readouterr().err
