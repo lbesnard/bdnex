@@ -6,6 +6,7 @@ import collections
 import json
 import logging
 import re
+import unicodedata
 from datetime import datetime
 from typing import Any, Optional
 
@@ -56,6 +57,31 @@ def _meta(soup, prop):
     return (node.get("content") if node.name == "meta" else node.get_text(" ", strip=True)) or None
 
 
+def _plain(text: str) -> str:
+    """Letters and digits only, no accents, lower case: to compare an address with a title."""
+    decomposed = unicodedata.normalize("NFD", text.lower())
+    return re.sub(r"[\W_]+", "", "".join(c for c in decomposed if not unicodedata.combining(c)))
+
+
+def _title_from_address(soup, album_url: str) -> str:
+    """``BD-Aama-Tome-2-La-multitude-invisible-172621.html`` -> ``La multitude invisible``, or ``""``.
+
+    The address has no accents, so the page is searched for the same words with them (picture titles, links); the
+    words of the address are the fallback. An album with no title in its address (``…-Tome-1-19623.html``) has none.
+    """
+    match = re.search(r"-Tome-\d+-(.+?)-\d+\.html$", album_url)
+    if not match:
+        return ""
+    words = match.group(1).replace("-", " ")
+    wanted = _plain(words)
+    for node in soup.find_all(["img", "a"]):
+        for text in (node.get("alt"), node.get("title"), node.get_text(" ", strip=True)):
+            text = re.sub(r"^Couverture de\s+", "", (text or "").strip())
+            if text and _plain(text) == wanted:
+                return text
+    return words
+
+
 def _parse_album_page_desktop(html: str, album_url: str) -> tuple[dict[str, Any], Optional[str]]:
     soup = BeautifulSoup(html, "lxml")
     header = soup.select_one("section.bdt-ah") or soup
@@ -69,6 +95,9 @@ def _parse_album_page_desktop(html: str, album_url: str) -> tuple[dict[str, Any]
         series_href = link["href"] if link else None
         if fields["Titre"]:
             fields["Série"] = fields["Titre"]
+            album_title = _title_from_address(soup, album_url)
+            if album_title:  # the <h1> is the series; the album's own title is only in the address
+                fields["Titre"] = album_title
 
     ident = header.select_one(".bdt-ah-idbel")
     match = re.search(r"-(\d+)\.html$", album_url)
