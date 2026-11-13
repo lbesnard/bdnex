@@ -52,7 +52,19 @@ def run(argv: list[str]) -> int:
 
 def _edit(path) -> int:
     editor = os.environ.get("VISUAL") or os.environ.get("EDITOR") or "vi"
-    return subprocess.call(shlex.split(editor) + [str(path)])
+    code = subprocess.call(shlex.split(editor) + [str(path)])
+    if code == 0:  # check what was saved now, not at the next command
+        from bdnex.config import ConfigError, load_config
+
+        try:
+            loaded = load_config()
+        except ConfigError as err:
+            print(f"\nThe file you saved has a problem:\n{err}\nRun `bdnex config --edit` again to fix it.", file=sys.stderr)
+            return 1
+        for warning in loaded.warnings:
+            print(f"warning: {warning}", file=sys.stderr)
+        print("The configuration is valid.", file=sys.stderr)
+    return code
 
 
 def _update(path) -> int:

@@ -50,6 +50,15 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+FIELD_NAMES = ("kind", "series", "title", "volume", "language", "year", "publisher", "isbn", "genre", "authors",
+               "writer", "penciller", "colorist")  # what `fields_for` provides (a test keeps the two together)
+
+
+def unknown_fields(template: str) -> list[str]:
+    """The ``$variables`` of a template that bdnex does not know (a typo, usually)."""
+    return sorted({name for name in template_fields(template) if name not in FIELD_NAMES})
+
+
 def template_fields(template: str) -> list[str]:
     return [m.group("b") or m.group("n") for m in VAR.finditer(template)]
 

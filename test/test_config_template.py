@@ -118,8 +118,8 @@ def test_a_section_the_file_lacks_is_appended_commented():
 
 
 # ------------------------------------------------------------- the file still loads, whatever is commented
-def test_a_section_whose_options_are_all_commented_out_is_not_an_error():
-    user = yaml.safe_load("config_version: 2\ndirectory: /c\nmatch:\n  # strong_threshold: 90\nwrite:\n")
+def test_a_section_whose_options_are_all_commented_out_is_not_an_error(tmp_path):
+    user = yaml.safe_load(f"config_version: 2\ndirectory: {tmp_path}\nmatch:\n  # strong_threshold: 90\nwrite:\n")
     assert user["match"] is None and user["write"] is None
     settings, warnings, _ = build_settings(user)
     assert settings.match.strong_threshold == 90 and warnings == []
