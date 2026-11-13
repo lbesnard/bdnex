@@ -29,6 +29,34 @@ class LibraryRootError(RuntimeError):
     """The database holds paths relative to the library folder, but no folder is configured."""
 
 
+def analyse_file(path):
+    """``(FileInfo, md5)`` of a comic file: the slow part of registering it (the whole file is read twice). It
+    touches no database, so it can run in another process."""
+    info = inspect_file(path)
+    return info, file_md5(info.path)
+
+
+def _analyse_safely(path):
+    try:
+        return analyse_file(path)
+    except Exception as err:  # reported for this file; the others go on
+        return err
+
+
+def analyse_many(paths: list, workers: int = 1):
+    """``(path, (FileInfo, md5) or an Exception)`` for each path, in order. With ``workers`` > 1 the files are
+    read in several processes at once (a big collection on a slow disk is mostly waiting)."""
+    import multiprocessing
+    from concurrent.futures import ProcessPoolExecutor
+
+    if workers > 1 and len(paths) > 3 and "fork" in multiprocessing.get_all_start_methods():
+        with ProcessPoolExecutor(max_workers=workers, mp_context=multiprocessing.get_context("fork")) as pool:
+            yield from zip(paths, pool.map(_analyse_safely, paths, chunksize=1))
+    else:
+        for path in paths:
+            yield path, _analyse_safely(path)
+
+
 class Library:
     """Open (and create / migrate if needed) a bdnex library database.
 
@@ -512,8 +540,11 @@ class Library:
     # ----------------------------------------------------------------- files
     def add_file(self, path, album_id: Optional[int] = None) -> int:
         """Inspect, hash and register a file (update it if the path is known)."""
-        info = inspect_file(path)
-        md5 = file_md5(info.path)
+        info, md5 = analyse_file(path)
+        return self.add_analysed(info, md5, album_id)
+
+    def add_analysed(self, info, md5: str, album_id: Optional[int] = None) -> int:
+        """Register a file that was already inspected and hashed (see :func:`analyse_file`)."""
         with self.conn:
             self.conn.execute(
                 """INSERT INTO files(path, album_id, md5, size, format, page_count,

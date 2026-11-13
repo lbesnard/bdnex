@@ -275,7 +275,9 @@ bdnex import ~/comics             # later: match and fetch them, as usual
 
 `--as-is` reads each file once and stores its path, format, size, page count, checksum, whether it looks damaged,
 and what its own `ComicInfo.xml` says (series, number, title... kept as the file's own `embedded` data, apart from
-any album). It asks nothing, uses no network, and moves, converts or writes nothing. Files already in the library are
+any album). It asks nothing, uses no network, and moves, converts or writes nothing. The files are read in several processes at
+once (`import.workers`, or `--workers N`): on a big collection over a slow disk or a network share that is the part that
+takes the time. Files already in the library are
 left alone (`--force` records them again). `ls --files -l` shows the file's own metadata, and `embedded:` finds files
 by it (`bdnex ls --files embedded:nains`). Recorded files are not "skipped": the next `bdnex import` matches them.
 

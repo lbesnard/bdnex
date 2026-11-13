@@ -70,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     series.add_argument("--no-series", dest="series", action="store_const", const="never",
                         help="match every file by itself, never as a folder")
     parser.add_argument("--workers", type=int, metavar="N",
-                        help="processes matching file names in the background (0 = CPU cores - 1, 1 = none; "
+                        help="processes matching file names in the background, and reading the files for --as-is (0 = CPU cores - 1, 1 = none; "
                              "default: `import.workers`)")
     add_verbosity(parser)
     legacy = parser.add_argument_group("old names (still work)")
@@ -265,25 +265,31 @@ def _record_as_is(args, settings, out) -> int:
             files.append(os.path.abspath(path))
     counts = {"recorded": 0, "known": 0, "failed": 0, "with ComicInfo.xml": 0, "damaged": 0}
     with Library.for_settings(settings, readonly=args.pretend) as library:
-        for number, path in enumerate(files, start=1):
-            progress(f"[{number}/{len(files)}] {os.path.basename(path)}")
-            known = library.get_file(path)
-            if known and not args.force:
+        todo = []
+        for path in files:
+            if library.get_file(path) and not args.force:
                 counts["known"] += 1
-                continue
-            counts["recorded"] += 1
-            if args.pretend:
-                continue
-            try:
-                library.add_file(path)
-                row = library.get_file(path)
-                counts["with ComicInfo.xml"] += bool(row["embedded"])
-                counts["damaged"] += bool(row["corrupted"])
+            else:
+                todo.append(path)
+        if args.pretend:
+            counts["recorded"] = len(todo)
+        else:
+            from bdnex.importer.pipeline import resolve_workers
+            from bdnex.library.database import analyse_many
+
+            workers = resolve_workers(settings.import_.workers if args.workers is None else args.workers)
+            for number, (path, analysed) in enumerate(analyse_many(todo, workers), start=1):
+                progress(f"[{number}/{len(todo)}] {os.path.basename(path)}")
+                if isinstance(analysed, Exception):  # one bad file must not stop the batch
+                    counts["failed"] += 1
+                    print(f"{path}: {analysed}", file=sys.stderr)
+                    continue
+                info, md5 = analysed
+                library.add_analysed(info, md5)
                 library.log_import(path, "registered")
-            except Exception as err:  # one bad file must not stop the batch
-                counts["recorded"] -= 1
-                counts["failed"] += 1
-                print(f"{path}: {err}", file=sys.stderr)
+                counts["recorded"] += 1
+                counts["with ComicInfo.xml"] += bool(info.embedded)
+                counts["damaged"] += bool(info.corrupted)
     verb = "would be recorded" if args.pretend else "recorded"
     print(f"\n{len(files)} file(s): {counts['recorded']} {verb}, {counts['known']} already in the library, "
           f"{counts['failed']} failed", file=out)
