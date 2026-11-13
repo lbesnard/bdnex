@@ -60,6 +60,7 @@ directory: ~/comics                      # library root (required); file paths a
 library: ~/.local/share/bdnex/bdnex.sqlite
 
 match:
+  use_embedded: true                     # a file's own ComicInfo.xml (its album's web address, series and number) helps to match it
   strong_threshold: 90                   # applied without asking when import.auto is true
   medium_threshold: 70                   # between medium and strong: ask
 

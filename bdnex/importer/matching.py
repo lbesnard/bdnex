@@ -135,7 +135,9 @@ def find_matches(source, path: str, limit: int = 5) -> list[Match]:
     above :data:`SERIES_QUERY_CAP` since nothing confirms the title.
     """
     best: dict[str, tuple] = {}  # source_id -> (candidate, best score, found by a series query)
-    for text, by_series in [(t, False) for t in queries_for(path)] + [(t, True) for t in series_queries(path)]:
+    named, extra = embedded_hint(source, path)
+    for text, by_series in ([(t, False) for t in queries_for(path)] + [(t, True) for t in series_queries(path)]
+                            + [(t, True) for t in extra]):
         for cand, score in source.candidates(text, limit=limit):
             if cand.source_id not in best or score > best[cand.source_id][1]:
                 best[cand.source_id] = (cand, score, by_series)
@@ -144,7 +146,31 @@ def find_matches(source, path: str, limit: int = 5) -> list[Match]:
     matches = rerank(query_from_filename(path), hits)  # volumes are read from the file name only
     matches = [replace(m, score=min(m.score, SERIES_QUERY_CAP)) if m.candidate.source_id in series_only else m
                for m in matches]
-    return sorted(matches, key=lambda m: m.score, reverse=True)[:limit]
+    matches = sorted(matches, key=lambda m: m.score, reverse=True)
+    if named is not None:  # the file itself names its album: that is the first choice, whatever the file name says
+        matches = [Match(named, 100.0, 100.0)] + [m for m in matches if m.candidate.source_id != named.source_id]
+    return matches[:limit]
+
+
+def embedded_hint(source, path: str):
+    """What the file's own ComicInfo.xml says about its album: ``(candidate or None, extra queries)``.
+
+    A ``Web`` field with the address of an album page (bdnex writes it) names the album exactly; a ``Series`` and a
+    ``Number`` give a ``series number`` query like those made from the file name. ``match.use_embedded: false``
+    switches this off.
+    """
+    if not getattr(source, "use_embedded", True):
+        return None, []
+    from bdnex.library.scan import read_embedded
+
+    embedded = read_embedded(path)
+    if not embedded:
+        return None, []
+    from_url = getattr(source, "candidate_from_url", None)
+    named = from_url(embedded.get("Web", "")) if from_url else None
+    series, number = embedded.get("Series"), embedded.get("Number") or embedded.get("Volume")
+    extra = [f"{series} {number}"] if series and number and str(number).isdigit() else []
+    return named, extra
 
 
 def recommend(score: float, strong: float, medium: float) -> Recommendation:

@@ -5,6 +5,7 @@ directory: /path/to/comics/library      # root of the managed library (placehold
 library: ~/.local/share/bdnex/bdnex.sqlite
 
 match:
+  use_embedded: true                    # a file's own ComicInfo.xml (its album's web address, series and number) helps to match it
   strong_threshold: 90                  # title score (0-100): applied without asking
   medium_threshold: 70                  # between medium and strong: ask; below: no match
 

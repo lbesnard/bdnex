@@ -9,9 +9,11 @@ from bdnex.importer.source import Candidate
 def create_source(library, settings):
     """Factory used by the plugin registry (``source: bedetheque``)."""
     section = settings.bedetheque
-    return Bedetheque(library, fetch=build_fetcher(settings), sitemap_fetch=http_fetch,
-                      image_fetch=image_fetch,
-                      delay=tuple(section.delay), sitemap_delay=tuple(section.sitemap_delay))
+    source = Bedetheque(library, fetch=build_fetcher(settings), sitemap_fetch=http_fetch,
+                        image_fetch=image_fetch,
+                        delay=tuple(section.delay), sitemap_delay=tuple(section.sitemap_delay))
+    source.use_embedded = settings.match.use_embedded
+    return source
 
 
 __all__ = ["Bedetheque", "BlockedError", "Candidate", "DirectoryFetcher", "FetcherError", "build_fetcher", "create_source",
