@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/_static/bdnex-logo.png" alt="BDneX" width="420">
+</p>
+
 ![BDneX](https://github.com/lbesnard/bdnex/actions/workflows/ci.yml/badge.svg)
 [![codecov](https://codecov.io/gh/lbesnard/bdnex/branch/main/graph/badge.svg?token=V9WJWRCTK5)](https://codecov.io/gh/lbesnard/bdnex)
 [![Documentation Status](https://readthedocs.org/projects/bdnex/badge/?version=latest)](https://bdnex.readthedocs.io/en/latest/)
