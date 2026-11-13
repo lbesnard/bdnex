@@ -145,6 +145,27 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
     return code
 
 
+def place(settings, path: str, out=sys.stdout) -> int:
+    """Move one registered file to where its album belongs (`bdnex move`, for a single file)."""
+    try:
+        settings.require_library_directory()
+    except ConfigError as err:
+        print(err, file=sys.stderr)
+        return 1
+    with Library.for_settings(settings) as library:
+        row = library.get_file(path)
+        if row is None:
+            print(f"{path} is not in the library.", file=sys.stderr)
+            return 1
+        organizer = Organizer(library, settings, prompter=InquirerPrompter())
+        try:
+            results = [organizer.process(row, MOVE)]
+        except WriteAborted:
+            print(aborted_message(path, "move"), file=out)
+            return 1
+    return report(results, out, settings.directory)
+
+
 def run_write(argv: list[str], out=sys.stdout) -> int:
     return run("write", argv, out)
 

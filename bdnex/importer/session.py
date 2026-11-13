@@ -44,6 +44,10 @@ class GoBack(RuntimeError):
     """The user wants to take the previous decision back and make it again."""
 
 
+class SkipFolder(RuntimeError):
+    """The user wants to skip this file and every other one still to come from its folder."""
+
+
 class NeedsTerminal(RuntimeError):
     """A question has to be asked but there is nobody to ask: the import stops instead of failing file by file."""
 
@@ -165,6 +169,7 @@ class ImportSession:
         self._pending = []
         base = len(report.results)  # results of the files before this loop (paths that do not exist)
         history: list[int] = []  # positions of the files the user was asked about, to go back to them
+        skipped_folders: set[str] = set()  # folders the user chose to skip
         position = 0
         while position < len(files):
             path = files[position]
@@ -174,6 +179,8 @@ class ImportSession:
             self._asked = False
             try:
                 matches = None
+                if kind == "match" and os.path.dirname(path) in skipped_folders:
+                    raise SkipFolder(path)
                 if kind == "match":
                     group = groups[os.path.dirname(path)]
                     if len(group) > 1 and self.series_mode != "never" and os.path.dirname(path) not in decided:
@@ -192,9 +199,13 @@ class ImportSession:
                 for undone in reversed(report.results[base + position:]):
                     self._undo(undone)
                 del report.results[base + position:]
+                skipped_folders.discard(os.path.dirname(files[position]))  # asked about again
                 chosen.pop(files[position], None)  # a file the folder had decided is asked about on its own
                 self.progress(f"Back to {os.path.basename(files[position])}: what was decided from there is taken back.")
                 continue
+            except SkipFolder:
+                skipped_folders.add(os.path.dirname(path))
+                result = self._skip_file(path, "folder skipped")
             except ImportAborted:
                 report.aborted_at, report.total = path, len(files)
                 break  # this file stays undecided: it is asked about again next time
@@ -218,6 +229,15 @@ class ImportSession:
             return report
         self._fetch_pending()
         return report
+
+    def _skip_file(self, path: str, note: str) -> ImportResult:
+        """Leave a file out without asking (remembered like any other skip; `--force` looks at it again)."""
+        self._journal = Journal()
+        self._log(path, SKIPPED)
+        journal, self._journal = self._journal, None
+        result = ImportResult(path, SKIPPED, note=note)
+        result.journal = journal
+        return result
 
     # ------------------------------------------------------------ aborting and resuming
     ABORT_KEY = "import_aborted"
@@ -266,7 +286,10 @@ class ImportSession:
         if proposal is None:
             return {}
         if not (kind == folders.SERIES and proposal.solid) and self.series_mode != "always":
-            if self._ask_series(paths, proposal) != "series":
+            answer = self._ask_series(paths, proposal)
+            if answer == "skip":
+                raise SkipFolder(paths[0])
+            if answer != "series":
                 return {}
         else:
             self.progress(f"Series folder {folders.folder_name(paths)}: {len(paths)} files, "
@@ -453,7 +476,7 @@ class ImportSession:
         self._journal = Journal()
         try:
             result = self._import_matched(path, matches, defer_fetch, chosen)
-        except (GoBack, ImportAborted):
+        except (GoBack, ImportAborted, SkipFolder):
             self._undo_journal(self._journal, path)  # the question was not answered: leave nothing behind
             raise
         finally:

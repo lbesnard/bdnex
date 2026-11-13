@@ -61,6 +61,16 @@ So a reader such as Komga, pointed at your library folder minus `_versions`, see
 versions stay in the library: `bdnex ls --files spare:true` lists them, and `bdnex move` puts a spare
 version back into `_versions` and a main file back in the tree. Tags are written to all of them.
 
+## Fixing a bad import
+
+- **A file was linked to the wrong album:** `bdnex import --match --force --move path/to/file` asks again, relinks
+  the file and moves it where the new album belongs (the old folder is removed if it is left empty).
+- **The duplicate question sent the wrong file to the trash:** `bdnex trash` lists it; `bdnex trash --restore ID` puts
+  it back where it was and registers it. Add `--place` to move it to where its album belongs, or `--reimport` to also
+  choose its album again (the same as the line above, on the restored file).
+- **A whole folder was skipped by mistake:** `bdnex import --force folder` looks at the skipped files again.
+- **Metadata is wrong, the match is right:** [`bdnex edit`](maintaining.md), then `bdnex move`.
+
 ## The trash
 
 Whatever is replaced goes to `trash.dir` (`.bdnex-trash` in your library folder), in a dated sub-folder,
@@ -70,6 +80,8 @@ format and why it was trashed. Scans of your library folder never look inside hi
 ```bash
 bdnex trash                        # list: id, date, size, original path, reason
 bdnex trash --restore 3            # put it back (beside the original name if that is taken) and register it
+bdnex trash --restore 3 --place    # restore it, then move it where its album belongs (as `bdnex move`)
+bdnex trash --restore 3 --reimport # restore it, match it again (you pick the album) and move it into the tree
 bdnex trash --empty -n             # preview: how many files, how much space
 bdnex trash --empty                # delete them for good, with their records (asks first)
 bdnex trash --empty --older-than 30 -y

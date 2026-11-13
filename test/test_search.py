@@ -88,11 +88,12 @@ def test_the_source_lists_its_albums_for_searching(tmp_path):
 def test_the_search_choice_is_offered_only_when_there_is_something_to_search():
     plain = Scripted(None, selects=[lambda ch: ch[0]["value"]])
     assert plain.choose_match(FILE, matches()) == ABEILLES
-    assert [c["value"] for c in plain.shown[0][1]] == [ABEILLES, OMBRES, InquirerPrompter.SKIP, InquirerPrompter.PREVIOUS, InquirerPrompter.ABORT]
+    assert [c["value"] for c in plain.shown[0][1]] == [ABEILLES, OMBRES, InquirerPrompter.SKIP, InquirerPrompter.SKIP_FOLDER, InquirerPrompter.PREVIOUS, InquirerPrompter.ABORT]
     with_source = Scripted(Source(), selects=[InquirerPrompter.SKIP])
     with_source.choose_match(FILE, matches())
     labels = [c["name"] for c in with_source.shown[0][1]]
-    assert labels[-4:-1] == ["[E]nter a search in the album list...", "[S]kip this file", "[B]ack to the previous file"]
+    assert labels[-5:-1] == ["[E]nter a search in the album list...", "[S]kip this file", "Skip the whole [F]older (every file of it still to come)",
+                            "[B]ack to the previous file"]
     assert labels[-1].startswith("[A]bort the import")
 
 
