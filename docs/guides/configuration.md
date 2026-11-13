@@ -83,6 +83,8 @@ trash:
   dir: .bdnex-trash                      # replaced files wait here, inside `directory`
 
 cover:
+  download: true                         # keep each album's cover as a file in `dir` (linked from the library)
+  dir: ~/.local/share/bdnex/covers       # where the cover files are kept
   check: false                           # compare each file's cover with its album's (bdnex[cover])
   match_percentage: 40                   # similarity (0-100) from which a cover is trusted
 

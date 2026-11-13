@@ -79,6 +79,8 @@ class Trash(_Section):
 
 
 class Cover(_Section):
+    download: bool
+    dir: str = Field(min_length=1)
     check: bool
     match_percentage: float = Field(ge=0, le=100)
 
@@ -163,6 +165,11 @@ class Settings(_Section):
     @property
     def library_path(self) -> Path:
         return Path(os.path.expanduser(self.library))
+
+    @property
+    def cover_path(self) -> Path:
+        """Where album covers are kept as files (``cover.dir``)."""
+        return Path(os.path.expanduser(self.cover.dir))
 
     @property
     def pages_dir(self) -> Path:
