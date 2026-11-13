@@ -170,7 +170,9 @@ bedetheque:
   endpoints (or `bedetheque.parallel`, 1 to 16). Each request still waits `bedetheque.delay` first, so several endpoints
   mean the album pages come faster, not more politely: use that only with servers that can take it. The progress bar names
   the page it is waiting for and how many are being fetched at the same time: `(3 being fetched, 4 of 7 fetched)`; it
-  advances page by page, in order, because each page is handled as soon as it is the next one.
+  advances page by page, in order, because each page is handled as soon as it is the next one. To see which endpoint
+  served each page, run `bdnex import -v`: every page logs `… fetched through http://flare2:8191/v1 in 3.2s`, and a
+  failing endpoint is reported (even without `-v`) as `… failed (…): trying the next endpoint`.
 
   ```yaml
   bedetheque:
