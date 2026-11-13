@@ -18,6 +18,8 @@ commands:
   reset    empty the library (albums, files, edits), keep the downloaded sitemaps and pages
   relocate tell the library that your comics folder moved
   review   look at the matches whose cover looked different, one by one
+  check    is the library consistent with itself and with the disk? (--fix settles the safe things)
+  duplicates  the same book in several files
   undo     put back the files a `move` run renamed
   relink   find files that were moved or renamed outside bdnex, by their content
   reparse  re-read the pages stored in the library (offline) to fill in more details
@@ -108,6 +110,12 @@ def _main(argv):
     if argv and argv[0] == "review":
         from bdnex.ui.review_cmd import run as run_review
         sys.exit(run_review(argv[1:]))
+    if argv and argv[0] == "check":
+        from bdnex.ui.check_cmd import run as run_check
+        sys.exit(run_check(argv[1:]))
+    if argv and argv[0] == "duplicates":
+        from bdnex.ui.duplicates_cmd import run as run_duplicates
+        sys.exit(run_duplicates(argv[1:]))
     if argv and argv[0] == "undo":
         from bdnex.ui.undo_cmd import run as run_undo
         sys.exit(run_undo(argv[1:]))

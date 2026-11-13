@@ -165,6 +165,38 @@ and what is not found stays in `ls --missing`. Nothing on disk is touched.
 `bdnex ls --files` and `path:` queries match the **stored** form, so `path:Series/Nains`
 works for files in the tree, whatever `directory` is.
 
+## Is the library healthy? `bdnex check`
+
+```bash
+bdnex check          # a report; changes nothing
+bdnex check --fix    # also settles what is safe
+```
+
+`check` looks at the database itself (integrity, links between tables), at the files it points to (missing from disk;
+changed in size since they were recorded; without an album; waiting for [`bdnex review`](importing.md)), at albums
+with no file and series with no album, at cover files (an album pointing to one that is gone, files that belong to no
+album), at the [trash](versions.md#the-trash) (records whose file is gone) and at temporary files left by an interrupted
+write. Each finding says what to do about it. It exits with status 1 when it finds something, so it can run from a
+script.
+
+`--fix` only does what cannot lose anything, and marks it `[fixable]` in the report: remove empty series, forget cover
+files that are gone (the next `bdnex import --fetch` downloads them), remove dead trash records, and delete the
+temporary files. Files, albums and covers that exist are never touched.
+
+## The same book twice: `bdnex duplicates`
+
+```bash
+bdnex duplicates            # identical files, and albums with several (non-spare) files
+bdnex duplicates --covers   # also files whose first pages look alike (reads each file once)
+```
+
+It only reports, in groups: *identical content* (same checksum at several paths, with the space they waste), *same
+album* (several files linked to one album that are not marked as spare versions) and, with `--covers`, *similar
+cover*. Deciding is done by [`bdnex import`](versions.md), which compares the files and asks, and by
+`bdnex trash` for what was replaced.
+
+||||||| 9f8bd96
+
 ## Upgrades keep a copy
 
 When a new bdnex has to change the structure of your library (the schema version), it first copies the database to
