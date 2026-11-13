@@ -151,6 +151,15 @@ def run(argv: list[str], out=sys.stdout) -> int:
         except (UnknownSource, FetcherError, TypeError) as err:
             print(f"{err}\nCheck `source` and `bedetheque.fetcher` in your configuration (`bdnex config --edit`).", file=sys.stderr)
             return 1
+        from bdnex.importer.bedetheque.fetchers import uses_saved_pages
+
+        if "fetch" in steps and uses_saved_pages(settings) and not args.pretend:
+            why = ("no `bedetheque.fetcher` is set" if not settings.bedetheque.fetcher
+                   else "`bedetheque.fetcher_endpoint` is not set for the default fetcher (FlareSolverr)")
+            print(f"note: {why}, so album pages are read from {settings.pages_dir}: save each page there as "
+                  "<album id>.html. Pages that are not there are reported as not fetched. To fetch pages, set "
+                  "`bedetheque.fetcher_endpoint` (or your own `bedetheque.fetcher`): `bdnex config --edit`.",
+                  file=sys.stderr)
         if "match" in steps and not ensure_album_list(source, library, settings, out):
             return 1
         steps_order = [step for step in ("match", "fetch") if step in steps]

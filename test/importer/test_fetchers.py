@@ -137,3 +137,13 @@ def test_missing_function_in_an_existing_module():
 
 def test_fetcher_error_is_still_a_value_error():
     assert issubclass(FetcherError, ValueError)  # code and tests that expect ValueError keep working
+
+
+def test_flaresolverr_without_an_endpoint_says_what_to_set(tmp_path, monkeypatch):
+    import pytest, yaml
+    from bdnex.importer.bedetheque import FetcherError, flaresolverr_fetch
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(yaml.safe_dump({"config_version": 2}))
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    with pytest.raises(FetcherError, match="fetcher_endpoint is not set"):
+        flaresolverr_fetch("https://www.bedetheque.com/BD-X-1.html")

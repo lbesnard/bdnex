@@ -77,14 +77,16 @@ that comes from the page (`$authors` in the default one-shot template) asks for 
 1. **Save them from your browser** (Ctrl+S, "Web page, HTML only") into `bedetheque.pages_dir`
    (`~/.local/share/bdnex/pages` by default), under any name that ends with the album id
    (`BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html`, or just `245127.html`), then run `bdnex import --fetch`.
-2. **Point bdnex at your own function**, which takes a URL and returns the page as bytes, and keep its address
-   (or whatever it needs) in the configuration:
+2. **Use a fetcher**: a function that takes a URL and returns the page as bytes. The default,
+   `bdnex.importer.bedetheque:flaresolverr_fetch`, asks a FlareSolverr server whose address you give; or name your own:
 
    ```yaml
    bedetheque:
-     fetcher: "package.module:function"        # your function: url -> page bytes
-     fetcher_endpoint: "http://localhost:8191" # a free string; only your function reads it
+     fetcher_endpoint: "http://localhost:8191/v1"             # the default fetcher: your FlareSolverr
+     # fetcher: "package.module:function"                     # or your own function: url -> page bytes
    ```
+
+   bdnex checks when it reads the configuration that the function exists.
 
    How that function obtains a page is up to you, and so is respecting the site's terms of use.
 

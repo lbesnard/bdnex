@@ -24,8 +24,9 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 - **Never commit the user's private fetcher address** (it lives in their own `~/.config/bdnex/bdnex.yaml`). Check
   `git diff --cached` before every commit, and never `git add -A` / `git add .`: add paths explicitly. `TODO.md` is
   the user's, untracked, never committed.
-- The page fetcher for the anti-bot protection is the user's own function (`bedetheque.fetcher`,
-  `fetcher_endpoint`). Do not write, run or document it; the README only says a user-supplied fetcher is needed.
+- `flaresolverr_fetch` (`bedetheque.fetcher`, `fetcher_endpoint`) is the default page fetcher and the user's own code:
+  do not change what it does or run it against the site, and never put their endpoint address in the repo. The config
+  validates that `bedetheque.fetcher` imports and is callable. Covers do not use it (plain request).
 - Do not modify the user's real database or comics. Work on copies in the session scratchpad.
 - PRs target `main`. **Do not stack**: a PR based on another branch is merged into that branch, not into `main`, and its
   work never ships (it happened twice). Branch from `origin/main`; if two changes touch the same code, merge the first
