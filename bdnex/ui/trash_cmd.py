@@ -18,11 +18,19 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                "here (to `trash.dir` in your library folder), never deleted. Emptying the trash deletes the files "
                "and their records for good.")
     parser.add_argument("--restore", type=int, metavar="ID", help="put that file back where it came from")
+    after = parser.add_mutually_exclusive_group()
+    after.add_argument("--place", action="store_true",
+                       help="with --restore: then move it to where its album belongs (as `bdnex move` does)")
+    after.add_argument("--reimport", action="store_true",
+                       help="with --restore: then match it again (you choose the album, the old link is replaced) "
+                            "and move it into the library tree, as `bdnex import --match --force --move` does")
     parser.add_argument("--empty", action="store_true", help="delete the trashed files for good")
     parser.add_argument("--older-than", type=int, metavar="DAYS", help="with --empty: only what was trashed that long ago")
     parser.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
     parser.add_argument("-n", "--pretend", action="store_true", help="show what would be done; change nothing")
     args = parser.parse_args(argv)
+    if (args.place or args.reimport) and args.restore is None:
+        parser.error("--place and --reimport go with --restore ID")
     try:
         settings = load_config().settings
     except ConfigError as err:
@@ -32,22 +40,10 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
         print(f"No library yet ({settings.library_path}).", file=sys.stderr)
         return 1
 
-    with Library.for_settings(settings) as library:
-        if args.restore is not None:
-            entry = library.get_trash(args.restore)
-            if entry is None:
-                print(f"No trash entry {args.restore} (`bdnex trash` lists them).", file=sys.stderr)
-                return 1
-            if args.pretend:
-                print(f"Would restore {entry['path']}", file=out)
-                return 0
-            restored = trash.restore(library, args.restore)
-            if restored is None:
-                print("That file is no longer in the trash folder; its record was removed.", file=sys.stderr)
-                return 1
-            print(f"Restored {restored}", file=out)
-            return 0
+    if args.restore is not None:
+        return _restore(args, settings, out)
 
+    with Library.for_settings(settings) as library:
         entries = library.trash_entries(args.older_than if args.empty else None)
         if not args.empty:
             for entry in entries:
@@ -78,4 +74,30 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                 return 1
         count, freed = trash.empty(library, entries)
         print(f"Deleted {count} file(s), freed {megabytes(freed)}.", file=out)
+    return 0
+
+
+def _restore(args, settings, out) -> int:
+    with Library.for_settings(settings) as library:
+        entry = library.get_trash(args.restore)
+        if entry is None:
+            print(f"No trash entry {args.restore} (`bdnex trash` lists them).", file=sys.stderr)
+            return 1
+        if args.pretend:
+            print(f"Would restore {entry['path']}", file=out)
+            return 0
+        restored = trash.restore(library, args.restore)
+    if restored is None:
+        print("That file is no longer in the trash folder; its record was removed.", file=sys.stderr)
+        return 1
+    print(f"Restored {restored}", file=out)
+    # the library is closed again: the follow-up commands open it themselves
+    if args.reimport:
+        from bdnex.ui import import_cmd
+
+        return import_cmd.run([restored, "--match", "--force", "--move"], out)
+    if args.place:
+        from bdnex.ui import write_cmd
+
+        return write_cmd.place(settings, restored, out)
     return 0

@@ -113,4 +113,4 @@ def test_the_match_question_offers_to_abort_and_aborting_raises(monkeypatch):
     with pytest.raises(ImportAborted):
         prompter.choose_match("/c/a.cbz", [])
     names = [c["name"] for c in prompter.choices]
-    assert names[-3] == "[S]kip this file" and names[-1].startswith("[A]bort the import")
+    assert names[-4] == "[S]kip this file" and names[-1].startswith("[A]bort the import")

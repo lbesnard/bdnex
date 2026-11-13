@@ -161,3 +161,23 @@ def test_a_preview_cannot_go_back_and_undoes_nothing(make_cbz):
     env = env_for(Script(GoBack), pretend=True)
     report = env.session.run([os.path.dirname(a)])
     assert report.aborted_at is None and len(report.results) == 2
+
+
+def test_skipping_a_folder_skips_its_remaining_files_without_asking(make_cbz):
+    from bdnex.importer.session import SkipFolder
+    a, b, c = files(make_cbz, A, B, C)
+    env = env_for(Script(SkipFolder))  # one question only: the other two files are never asked about
+    report = env.session.run([os.path.dirname(a)])
+    assert env.session.prompter.asked == [os.path.basename(a)]
+    assert [r.outcome for r in report.results] == ["skipped"] * 3
+    assert all("folder skipped" in r.note for r in report.results)
+    assert env.lib.stats()["albums"] == 0
+
+
+def test_going_back_after_a_folder_skip_asks_again(make_cbz):
+    from bdnex.importer.session import SkipFolder
+    a, b = files(make_cbz, A, B)
+    env = env_for(Script(0, SkipFolder, GoBack, 0, 1))
+    # a picked; b: skip folder... then nothing to go back from; scripted GoBack comes at the next question
+    env.session.run([os.path.dirname(a)])
+    assert volume_of(env, a) is not None

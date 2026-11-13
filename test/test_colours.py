@@ -126,7 +126,7 @@ def test_each_score_has_its_own_colour_and_the_other_entries_theirs(monkeypatch)
     styles = [score_style(pieces) for pieces in prompter.fragments[:2]]
     assert styles == [f"fg:{color.score_hex(91.0)} bold", f"fg:{color.score_hex(28.0)} bold"] and styles[0] != styles[1]
     # search, skip, back, abort: cyan, yellow, blue, red
-    assert [p[0][0] for p in prompter.fragments[2:]] == ["fg:ansicyan", "fg:ansiyellow", "fg:ansiblue", "fg:ansired"]
+    assert [p[0][0] for p in prompter.fragments[2:]] == ["fg:ansicyan", "fg:ansiyellow", "fg:ansiyellow", "fg:ansiblue", "fg:ansired"]
     assert prompter.choices[0]["name"] == "[1]  91.0  BD-Bibliomule-de-Cordoue-1.html"
 
 

@@ -236,3 +236,11 @@ def test_empty_older_than_keeps_recent_files(cmd):
     root, _ = cmd
     code, text = run(["--empty", "--older-than", "30", "-y"])
     assert "Nothing to empty" in text and len(list((root / ".bdnex-trash").rglob("*.cbz"))) == 1
+
+
+def test_trash_place_and_reimport_need_restore():
+    import pytest
+    from bdnex.ui import trash_cmd
+    for flag in ("--place", "--reimport"):
+        with pytest.raises(SystemExit):
+            trash_cmd.run([flag])

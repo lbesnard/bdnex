@@ -70,12 +70,12 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    terminal only: `NO_COLOR=1` turns it off, `FORCE_COLOR=1` forces it. The report at the end of the run uses the same
    colours for scores and outcomes.
    **Keys, as in beets.** Every line shows its key in brackets, highlighted: `[1]`..`[9]` pick a candidate,
-   **E** enters a search, **U** types the address of the album's page, **S** skips the file, **B** goes back to the previous file, **A** aborts the import.
+   **E** enters a search, **U** types the address of the album's page, **S** skips the file, **F** skips the whole folder (the files of it still to come are not asked about; they are remembered as skipped, and `--force` looks at them again), **B** goes back to the previous file, **A** aborts the import.
    Upper or lower case, no Enter needed; the arrows and Enter work as usual. **O** (or Ctrl-O) opens the page of
    the highlighted album in your browser.
    **Back** undoes what was decided for the previous file (its link in the library, a file moved to the trash or
    to `_versions/`) and asks about it again, so a wrong key press is not final; press it again to go further
-   back. It does not cross the question *is this folder one series?*, which is asked once per folder.
+   back. It does not cross the question *is this folder one series?*, which is asked once per folder, and which also offers to skip the folder.
    **A thumbnail of the file's first page** is drawn on the far right of the question when the terminal can show
    images (kitty, Ghostty, WezTerm, iTerm2) and is at least 100 columns wide, to help the choice. Inside tmux it is drawn when
    `set -g allow-passthrough on` is set and the terminal around it is Ghostty or kitty (tmux support is best effort).

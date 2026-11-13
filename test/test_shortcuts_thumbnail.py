@@ -57,14 +57,15 @@ def test_every_line_names_its_key_beets_style(monkeypatch):
     prompter, _ = ask(monkeypatch, answer=InquirerPrompter.SKIP)
     names = [c["name"] for c in prompter.seen["choices"]]
     assert names[:2] == ["[1]  90.0  BD-Un-1.html", "[2]  50.0  BD-Deux-2.html"]
-    assert names[2:] == ["[E]nter a search in the album list...", "[S]kip this file", "[B]ack to the previous file",
+    assert names[2:] == ["[E]nter a search in the album list...", "[S]kip this file", "Skip the whole [F]older (every file of it still to come)",
+                         "[B]ack to the previous file",
                          "[A]bort the import (what is decided is kept; run it again to continue)"]
 
 
 def test_the_keys_answer_with_the_value_of_their_line(monkeypatch):
     prompter, _ = ask(monkeypatch, answer=InquirerPrompter.SKIP)
     assert prompter.seen["shortcuts"] == {"1": A, "2": B, "e": InquirerPrompter.SEARCH, "s": InquirerPrompter.SKIP,
-                                          "b": InquirerPrompter.PREVIOUS, "a": InquirerPrompter.ABORT}
+                                          "f": InquirerPrompter.SKIP_FOLDER, "b": InquirerPrompter.PREVIOUS, "a": InquirerPrompter.ABORT}
 
 
 def test_no_search_key_when_there_is_nothing_to_search(monkeypatch):

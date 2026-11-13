@@ -12,7 +12,7 @@ import webbrowser
 from typing import Optional
 
 from bdnex.importer.matching import Match, query_from_filename
-from bdnex.importer.session import GoBack, ImportAborted, NeedsTerminal
+from bdnex.importer.session import GoBack, ImportAborted, NeedsTerminal, SkipFolder
 from bdnex.importer.source import Candidate
 from bdnex.library.query import fold
 from bdnex.ui import color, thumbnail
@@ -136,6 +136,7 @@ class InquirerPrompter:
     SKIP = "__skip__"
     PREVIOUS = "__previous__"
     ABORT = "__abort__"
+    SKIP_FOLDER = "__skip_folder__"
     SEARCH = "__search__"
     URL = "__url__"
     NO = "__no__"
@@ -204,6 +205,8 @@ class InquirerPrompter:
             add("Type the album's [U]RL...", self.URL,
                 [("fg:ansicyan", "Type the album's ")] + shortcut("U", "RL...", "fg:ansicyan"), "u")
         add("[S]kip this file", self.SKIP, shortcut("S", "kip this file", "fg:ansiyellow"), "s")
+        add("Skip the whole [F]older (every file of it still to come)", self.SKIP_FOLDER,
+            [("fg:ansiyellow", "Skip the whole "), *shortcut("F", "older (every file of it still to come)", "fg:ansiyellow")], "f")
         add("[B]ack to the previous file", self.PREVIOUS, shortcut("B", "ack to the previous file", "fg:ansiblue"), "b")
         add("[A]bort the import (what is decided is kept; run it again to continue)", self.ABORT,
             shortcut("A", "bort the import (what is decided is kept; run it again to continue)", "fg:ansired"), "a")
@@ -223,6 +226,8 @@ class InquirerPrompter:
                 raise GoBack(path)
             if answer == self.SKIP:
                 return None
+            if answer == self.SKIP_FOLDER:
+                raise SkipFolder(path)
             if answer == self.SEARCH:
                 found = self.search(path)
                 if found is not None and self.confirm_found(found):
@@ -298,6 +303,7 @@ class InquirerPrompter:
         answer = self._select("Is this one series?", [
             {"name": f"Yes: match them by volume number in \"{proposal.name}\"", "value": "series"},
             {"name": "No: match each file by itself", "value": "each"},
+            {"name": "Skip this folder (none of its files is imported now)", "value": "skip"},
             {"name": "Abort the import (what is decided is kept; run it again to continue)", "value": self.ABORT}])
         if answer == self.ABORT:
             raise ImportAborted(folder)
