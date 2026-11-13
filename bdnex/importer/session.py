@@ -428,6 +428,11 @@ class ImportSession:
         bar = self.bar(len(pending), "Album pages") if self.bar else None
         if bar is None:
             self.progress(f"Fetching {len(pending)} album page(s) (Ctrl-C stops; `bdnex import --fetch` resumes)...")
+        workers = getattr(self.source, "parallel", 1)
+        arriving = None
+        if workers > 1 and hasattr(self.source, "prefetch") and not self.pretend:
+            self.progress(f"Fetching {workers} pages at a time.")
+            arriving = self.source.prefetch([candidate.url for _, candidate, _ in pending], workers, recache=self.recache)
         try:
             for number, (result, candidate, damaged) in enumerate(pending, start=1):
                 name = candidate.url.rsplit("/", 1)[-1]
@@ -436,6 +441,10 @@ class ImportSession:
                 else:
                     self.progress(f"[page {number}/{len(pending)}] {name}")
                 try:
+                    if arriving is not None:
+                        _, failure = next(arriving)  # the page is in the library now (or why it is not)
+                        if failure is not None:
+                            raise failure
                     album_id, partial, note = self._album_for(candidate)
                 except Exception as err:
                     logger.exception(f"{candidate.url} failed")
@@ -453,6 +462,8 @@ class ImportSession:
                           "and downloads the covers that are missing.")
             return
         finally:
+            if arriving is not None and hasattr(arriving, "close"):
+                arriving.close()  # stops the pages still being fetched
             if bar:
                 bar.finish()
         self._check_covers()

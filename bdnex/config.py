@@ -207,7 +207,26 @@ class Bedetheque(_Section):
     sitemap_delay: tuple[float, float]
     pages_dir: str
     fetcher: Optional[str] = None
-    fetcher_endpoint: Optional[str] = None
+    fetcher_endpoint: list[str] = Field(default_factory=list)  # one address, or several (spread out, with fallback)
+    parallel: Optional[int] = Field(default=None, ge=1, le=16)  # pages fetched at once; empty: one per endpoint
+
+    @field_validator("fetcher_endpoint", mode="before")
+    @classmethod
+    def _one_or_many_endpoints(cls, value):
+        """``fetcher_endpoint`` may be one address or a list; nothing at all is an empty list."""
+        if value is None:
+            return []
+        return [value] if isinstance(value, str) else value
+
+    @field_validator("fetcher_endpoint")
+    @classmethod
+    def _endpoints_are_addresses(cls, value):
+        for endpoint in value:
+            if not endpoint.strip():
+                raise ValueError("an endpoint can not be empty")
+        if len(set(value)) != len(value):
+            raise ValueError("an endpoint is listed twice")
+        return value
 
     @field_validator("fetcher")
     @classmethod

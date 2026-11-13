@@ -14,7 +14,10 @@ Provided here:
 from __future__ import annotations
 
 import importlib
+import itertools
 import os
+import threading
+import time
 from typing import Callable
 import requests
 
@@ -88,38 +91,62 @@ def uses_saved_pages(settings) -> bool:
     return not section.fetcher or (section.fetcher == DEFAULT_FETCHER and not section.fetcher_endpoint)
 
 
-def flaresolverr_fetch(url: str, timeout: int = 60) -> bytes:
-    """Fetch a webpage using a FlareSolverr instance.
-    
-    Args:
-        url: The target URL to fetch.
-        endpoint: The FlareSolverr API endpoint.
-        timeout: Request timeout in seconds.
-    """
-    loaded = load_config()           # creates the file on first run, validates, merges defaults
-    settings = loaded.settings
-    endpoint = settings.bedetheque.fetcher_endpoint               # raw string from the yaml, e.g. "~/comics"
-    if not endpoint:
-        raise FetcherError(
-            "bedetheque.fetcher is flaresolverr_fetch but bedetheque.fetcher_endpoint is not set in your config "
-            "(the address of your FlareSolverr, e.g. http://localhost:8191/v1): `bdnex config --edit`")
+_turn = itertools.count()     # which endpoint starts the next request: the load is spread round-robin
+_turn_lock = threading.Lock()
+_down: dict[str, float] = {}  # endpoint -> when it last failed
+DOWN_FOR = 60.0               # seconds an endpoint that failed is left alone while the others work
 
+
+def _order(endpoints: list[str]) -> list[str]:
+    """The endpoints in the order to try for one request: round-robin start, those that failed recently last."""
+    with _turn_lock:
+        start = next(_turn) % len(endpoints)
+        rotated = endpoints[start:] + endpoints[:start]
+        now = time.monotonic()
+        healthy = [e for e in rotated if now - _down.get(e, -DOWN_FOR) >= DOWN_FOR]
+        return healthy + [e for e in rotated if e not in healthy]
+
+
+def _flaresolverr_request(endpoint: str, url: str, timeout: int) -> bytes:
     payload = {
-            "cmd": "request.get",
-            "url": url,
-            "maxTimeout": timeout * 1000  # FlareSolverr expects milliseconds
-        }
-    
+        "cmd": "request.get",
+        "url": url,
+        "maxTimeout": timeout * 1000  # FlareSolverr expects milliseconds
+    }
     response = requests.post(endpoint, json=payload, timeout=timeout + 10)
     response.raise_for_status()
-    
     data = response.json()
     if data.get("status") == "ok":
         # FlareSolverr returns the page HTML inside solution.response
-        html_content = data["solution"]["response"]
-        return html_content.encode("utf-8")
-    else:
-        raise RuntimeError(f"FlareSolverr failed to fetch {url}: {data.get('message')}")
+        return data["solution"]["response"].encode("utf-8")
+    raise RuntimeError(f"FlareSolverr failed to fetch {url}: {data.get('message')}")
+
+
+def flaresolverr_fetch(url: str, timeout: int = 60) -> bytes:
+    """Fetch a webpage using FlareSolverr.
+
+    ``bedetheque.fetcher_endpoint`` may list several FlareSolverr servers: requests are spread over them round-robin,
+    and when one fails the next is tried (a server that failed is left for a minute, as long as another works).
+    """
+    settings = load_config().settings  # creates the file on first run, validates, merges defaults
+    endpoints = settings.bedetheque.fetcher_endpoint
+    endpoints = [endpoints] if isinstance(endpoints, str) else list(endpoints or [])
+    if not endpoints:
+        raise FetcherError(
+            "bedetheque.fetcher is flaresolverr_fetch but bedetheque.fetcher_endpoint is not set in your config "
+            "(the address of your FlareSolverr, e.g. http://localhost:8191/v1): `bdnex config --edit`")
+    problems = []
+    for endpoint in _order(list(endpoints)):
+        try:
+            content = _flaresolverr_request(endpoint, url, timeout)
+        except (requests.RequestException, RuntimeError, ValueError, KeyError) as err:
+            _down[endpoint] = time.monotonic()
+            problems.append(f"{endpoint}: {err}")
+            continue
+        _down.pop(endpoint, None)
+        return content
+    raise RuntimeError(f"no FlareSolverr endpoint could fetch {url}: " + "; ".join(problems))
+
 
 class DirectoryFetcher:
     """Serve album pages that were saved from a browser into ``directory``.

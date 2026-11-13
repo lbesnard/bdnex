@@ -70,4 +70,5 @@ bedetheque:
   sitemap_delay: [0.5, 1.5]             # seconds slept between sitemap files (about 55 plain XML files)
   pages_dir: ~/.local/share/bdnex/pages # where saved album pages are looked up
   fetcher: bdnex.importer.bedetheque:flaresolverr_fetch   # "package.module:function": url -> page bytes (write your own)
-  fetcher_endpoint: null                # the address your fetcher uses (FlareSolverr: http://localhost:8191/v1); empty: saved pages
+  fetcher_endpoint: null                # the address your fetcher uses (FlareSolverr: http://localhost:8191/v1), or a list of them; empty: saved pages
+  parallel: null                        # album pages fetched at once; empty: one per endpoint

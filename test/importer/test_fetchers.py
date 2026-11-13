@@ -147,3 +147,53 @@ def test_flaresolverr_without_an_endpoint_says_what_to_set(tmp_path, monkeypatch
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     with pytest.raises(FetcherError, match="fetcher_endpoint is not set"):
         flaresolverr_fetch("https://www.bedetheque.com/BD-X-1.html")
+
+
+def _ok(html="<html>page</html>"):
+    class Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"status": "ok", "solution": {"response": html}}
+    return Resp()
+
+
+def test_several_endpoints_share_the_requests_round_robin(monkeypatch):
+    from bdnex.importer.bedetheque import fetchers
+    fetchers._down.clear()
+    _config_with_endpoint(monkeypatch, ["http://a/v1", "http://b/v1", "http://c/v1"])
+    used = []
+    monkeypatch.setattr("requests.post", lambda endpoint, **k: used.append(endpoint) or _ok())
+    for _ in range(6):
+        flaresolverr_fetch(ONESHOT_URL)
+    assert sorted(used) == ["http://a/v1"] * 2 + ["http://b/v1"] * 2 + ["http://c/v1"] * 2  # each took its share
+
+
+def test_a_failing_endpoint_falls_back_to_the_next_and_is_left_alone_for_a_while(monkeypatch):
+    import requests
+    from bdnex.importer.bedetheque import fetchers
+    fetchers._down.clear()
+    _config_with_endpoint(monkeypatch, ["http://down/v1", "http://up/v1"])
+    used = []
+
+    def post(endpoint, **k):
+        used.append(endpoint)
+        if "down" in endpoint:
+            raise requests.ConnectionError("refused")
+        return _ok()
+
+    monkeypatch.setattr("requests.post", post)
+    for _ in range(4):
+        assert flaresolverr_fetch(ONESHOT_URL) == b"<html>page</html>"
+    assert used.count("http://down/v1") == 1 and used.count("http://up/v1") == 4  # tried once, then left for a minute
+
+
+def test_when_every_endpoint_fails_the_error_says_why_for_each(monkeypatch):
+    import requests
+    from bdnex.importer.bedetheque import fetchers
+    fetchers._down.clear()
+    _config_with_endpoint(monkeypatch, ["http://a/v1", "http://b/v1"])
+    monkeypatch.setattr("requests.post", lambda endpoint, **k: (_ for _ in ()).throw(requests.ConnectionError(f"no {endpoint}")))
+    with pytest.raises(RuntimeError, match=r"no FlareSolverr endpoint.*http://a/v1.*http://b/v1"):
+        flaresolverr_fetch(ONESHOT_URL)
