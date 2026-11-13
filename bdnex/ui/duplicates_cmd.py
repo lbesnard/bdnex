@@ -24,6 +24,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
                "when it meets one, and `bdnex trash` holds what was replaced.")
     parser.add_argument("--covers", action="store_true",
                         help="also compare the first pages of every file (reads each file once; slow on a big library)")
+    parser.add_argument("--workers", type=int, metavar="N",
+                        help="files read at once with --covers (0: the cores less one; 1: one by one); default: `import.workers`")
     args = parser.parse_args(argv)
     try:
         settings = load_config().settings
@@ -36,7 +38,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
 
     on = color.enabled(out)
     with Library.for_settings(settings, readonly=not args.covers) as library:
-        groups = duplicates(library, compute_covers=args.covers, progress=progress if args.covers else None)
+        from bdnex.importer.pipeline import resolve_workers
+
+        workers = resolve_workers(settings.import_.workers if args.workers is None else args.workers)
+        groups = duplicates(library, compute_covers=args.covers, progress=progress if args.covers else None, workers=workers)
         for group in groups:
             print(f"\n{color.paint('●', 'cyan', on)} {color.paint(group['why'], 'bold', on)}", file=out)
             for row in group["files"]:

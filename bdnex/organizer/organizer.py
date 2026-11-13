@@ -147,10 +147,10 @@ def _init_worker(settings, force: bool, batch: str) -> None:
 
 def _work(task):
     """One file in a worker: its result, or ``None`` when the main process has to do it (a question, an abort)."""
-    index, row, mode = task
+    index, row, mode, repair = task
     _STATE[index] = 1
     try:
-        return _WORKER.process(row, mode)
+        return _WORKER.repair(row) if repair else _WORKER.process(row, mode)
     except (Deferred, WriteAborted):
         return None
     except Exception as err:
@@ -183,7 +183,7 @@ class Organizer:
 
     # ------------------------------------------------------------------ run
     def run(self, rows: list[dict[str, Any]], mode: str, progress=None, on_result=None, workers: int = 1,
-            on_busy=None) -> list[FileResult]:
+            on_busy=None, repair: bool = False) -> list[FileResult]:
         """Process the files in order. ``progress(text)`` is told which file starts, ``on_result(number, total, result)``
         gets each result as soon as it is known (so a long run shows what it does, not only at the end).
 
@@ -191,13 +191,13 @@ class Organizer:
         ``on_busy(names)`` is told, about twice a second, which ones are being worked on. A file that needs a decision
         (a conflict, a name clash, a missing value, a size change) is done here, in order, with the real questions."""
         if workers > 1 and len(rows) > 1 and not self.pretend and "fork" in multiprocessing.get_all_start_methods():
-            return self._run_parallel(rows, mode, progress, on_result, workers, on_busy)
+            return self._run_parallel(rows, mode, progress, on_result, workers, on_busy, repair)
         results = []
         for number, row in enumerate(rows, start=1):
             if progress:
                 progress(f"[{number}/{len(rows)}] {os.path.basename(row['path'])}")
             try:
-                result = self.process(row, mode)
+                result = self.repair(row) if repair else self.process(row, mode)
             except WriteAborted:
                 self.aborted_at = row["path"]
                 break
@@ -209,14 +209,17 @@ class Organizer:
                 on_result(number, len(rows), result)
         return results
 
-    def _independent(self, rows: list[dict[str, Any]], mode: str) -> set[int]:
+    def _independent(self, rows: list[dict[str, Any]], mode: str, repair: bool = False) -> set[int]:
         """The positions of the files that can be worked on without looking at each other: their destinations are all
         different (and not the place another file is leaving), and finding them needs no question."""
         probe = Organizer(self.library, self.settings, prompter=_Deferring(), force=self.force)
         planned: dict[int, str] = {}
         for index, row in enumerate(rows):
-            if album_id_of(row) is None or row.get("corrupted") or not os.path.exists(row["path"]):
+            if not os.path.exists(row["path"]) or (not repair and (album_id_of(row) is None or row.get("corrupted"))):
                 continue  # the main process explains these
+            if repair:  # a repaired file is written beside (CBZ) or replaced by a CBZ of the same name
+                planned[index] = row["path"] if row["format"] == "cbz" else os.path.splitext(row["path"])[0] + ".cbz"
+                continue
             try:
                 dest = probe._destination(row["path"], row["format"], album_id_of(row), mode, bool(row.get("spare")))
             except Exception:  # a question, or a template problem: the main process deals with it
@@ -229,18 +232,18 @@ class Organizer:
         return {index for index, dest in planned.items()
                 if taken[dest] == 1 and (dest == rows[index]["path"] or os.path.abspath(dest) not in leaving)}
 
-    def _run_parallel(self, rows, mode, progress, on_result, workers, on_busy) -> list[FileResult]:
+    def _run_parallel(self, rows, mode, progress, on_result, workers, on_busy, repair=False) -> list[FileResult]:
         from concurrent.futures import ProcessPoolExecutor
         from concurrent.futures import TimeoutError as Waiting
 
         global _STATE
-        parallel = self._independent(rows, mode)
+        parallel = self._independent(rows, mode, repair)
         results: list[FileResult] = []
         context = multiprocessing.get_context("fork")
         _STATE = context.Array("b", len(rows), lock=False)  # which files are being worked on, as the workers see it
         executor = ProcessPoolExecutor(max_workers=workers, mp_context=context,
                                        initializer=_init_worker, initargs=(self.settings, self.force, self.batch))
-        futures = {index: executor.submit(_work, (index, rows[index], mode)) for index in sorted(parallel)}
+        futures = {index: executor.submit(_work, (index, rows[index], mode, repair)) for index in sorted(parallel)}
         try:
             for index, row in enumerate(rows):
                 number = index + 1
@@ -257,7 +260,7 @@ class Organizer:
                                 if on_busy:
                                     on_busy([os.path.basename(rows[i]["path"]) for i in futures if _STATE[i] == 1])
                     if result is None:  # not independent, or a question to ask: here, in order
-                        result = self.process(row, mode)
+                        result = self.repair(row) if repair else self.process(row, mode)
                 except WriteAborted:
                     self.aborted_at = row["path"]
                     break
@@ -454,7 +457,15 @@ class Organizer:
 
     # --------------------------------------------------------------- repairing
     def repair(self, row: dict[str, Any]) -> FileResult:
-        """Rebuild a damaged CBZ/CBR as a clean CBZ, keeping its ComicInfo.xml and pages untouched."""
+        """Rebuild a damaged CBZ/CBR as a clean CBZ, keeping its ComicInfo.xml and pages untouched; the result says how
+        long it took."""
+        started = time.monotonic()
+        self._current = row["path"]
+        result = self._repair(row)
+        result.seconds = time.monotonic() - started
+        return result
+
+    def _repair(self, row: dict[str, Any]) -> FileResult:
         path, fmt = row["path"], row["format"]
         refused = self._read_only(path, WRITE)
         if refused:
@@ -466,6 +477,8 @@ class Organizer:
         if fmt != "cbz" and self.settings.write.format_preferred == "none":
             return FileResult(path, SKIPPED, note=f"{fmt} left as it is (write.format_preferred: none): "
                                                   "repairing it would convert it to CBZ")
+        if not self.pretend:
+            self._stage("reading the damaged archive, page by page")
         recovered = archive.read_entries_lenient(path, fmt)
         if not recovered.ok:
             return FileResult(path, FAILED, note="can not be repaired: " + "; ".join(recovered.lost))
@@ -475,10 +488,11 @@ class Organizer:
             return FileResult(path, PRETEND, dest, "would repair: " + note)
         if dest != path and os.path.exists(dest):
             return FileResult(path, SKIPPED, note=f"{dest} already exists")
+        delete = dest != path and self.settings.write.delete_original != "no" and (  # asked before anything is written
+            self.settings.write.delete_original == "yes" or self._confirm(f"Delete the damaged original {path}?"))
         self._build(dest, recovered.entries, recovered.comicinfo)
         old_row = self.library.get_file(path)
-        delete = dest != path and self.settings.write.delete_original != "no" and (
-            self.settings.write.delete_original == "yes" or self._confirm(f"Delete the damaged original {path}?"))
+        self._stage("updating the library")
         self._update_library(path, dest)
         if delete:
             if self.settings.write.use_trash:

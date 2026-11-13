@@ -10,9 +10,9 @@ from typing import Optional
 from bdnex.config import ConfigError, load_config
 from bdnex.library import Library
 from bdnex.library.query import QueryError
-from bdnex.organizer.organizer import auto_workers, COPY, FAILED, MOVE, WRITE, FileResult, Organizer, WriteAborted
+from bdnex.organizer.organizer import auto_workers, COPY, FAILED, MOVE, WRITE, Organizer, WriteAborted
 from bdnex.ui import color
-from bdnex.ui.output import Bar, add_verbosity, banner, progress, setup_logging
+from bdnex.ui.output import Bar, add_verbosity, banner, setup_logging
 from bdnex.ui.prompts import InquirerPrompter
 
 OUTCOMES = ("repaired", "written", "moved", "copied", "unchanged", "skipped", "failed", "pretend")
@@ -134,13 +134,13 @@ LEGEND = ("Each file: its archive is read, a new CBZ is written with the ComicIn
           "new file is checked against the original pages, then put in place (the original goes only after that).")
 
 
-def _run_files(organizer, rows, mode, out, root, command: str, workers: int = 1) -> list:
+def _run_files(organizer, rows, mode, out, root, command: str, workers: int = 1, repair: bool = False) -> list:
     """Process the files showing what happens: a bar with the file and the step on a terminal, and each result as soon
     as it is known (not all of them at the end)."""
     on = color.enabled(out)
     bar = Bar(len(rows), "Files") if rows and sys.stderr.isatty() and not organizer.pretend else None
     if rows and not organizer.pretend:
-        banner(f"{'Writing tags into' if mode == WRITE else 'Copying' if mode == COPY else 'Moving'} {len(rows)} file(s)")
+        banner(f"{'Repairing' if repair else 'Writing tags into' if mode == WRITE else 'Copying' if mode == COPY else 'Moving'} {len(rows)} file(s)")
         print(LEGEND, file=sys.stderr, flush=True)
     if bar:
         organizer.on_stage = lambda path, text: bar.refresh(f"{os.path.basename(path)} · {text}")
@@ -167,7 +167,7 @@ def _run_files(organizer, rows, mode, out, root, command: str, workers: int = 1)
         print(f"Working on up to {workers} files at a time (`--workers`, `write.workers`). A file that needs your answer "
               "waits for its turn.", file=sys.stderr, flush=True)
     try:
-        return organizer.run(rows, mode, progress=starting, on_result=done, workers=workers, on_busy=busy)
+        return organizer.run(rows, mode, progress=starting, on_result=done, workers=workers, on_busy=busy, repair=repair)
     finally:
         if bar:
             bar.finish()
@@ -205,22 +205,10 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
             return 2
         organizer = Organizer(library, settings, prompter=None if args.force else InquirerPrompter(),
                               pretend=args.pretend, force=args.force)
-        if command == "repair":
-            results = []
-            for number, row in enumerate(rows, start=1):
-                progress(f"[{number}/{len(rows)}] {os.path.basename(row['path'])}")
-                try:
-                    results.append(organizer.repair(row))
-                except WriteAborted:
-                    organizer.aborted_at = row["path"]
-                    break
-                except Exception as err:
-                    results.append(FileResult(row["path"], FAILED, note=str(err)))
-        else:
-            workers = args.workers if args.workers is not None else settings.write.workers
-            results = _run_files(organizer, rows, mode, out, settings.collection_path, command,
-                                 workers or auto_workers())
-    code = summary(results, out) if command != "repair" else report(results, out, settings.collection_path)
+        workers = args.workers if args.workers is not None else settings.write.workers
+        results = _run_files(organizer, rows, mode, out, settings.collection_path, command,
+                             workers or auto_workers(), repair=command == "repair")
+    code = summary(results, out)
     if organizer.aborted_at:
         print(aborted_message(organizer.aborted_at, command), file=out)
     return code

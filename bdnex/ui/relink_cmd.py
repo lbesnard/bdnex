@@ -17,6 +17,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
                "linked again, with its album and history. Nothing on disk is touched.")
     parser.add_argument("folders", nargs="*", help="where to look (default: your collection, `collection_path` in the configuration)")
     parser.add_argument("-n", "--pretend", action="store_true", help="show what would be linked; change nothing")
+    parser.add_argument("--workers", type=int, metavar="N",
+                        help="files read at once (0: the cores less one; 1: one by one); default: `import.workers`")
     args = parser.parse_args(argv)
     try:
         settings = load_config().settings
@@ -29,7 +31,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
         return 1
 
     with Library.for_settings(settings, readonly=args.pretend) as library:
-        result = library.relink(folders, apply=not args.pretend)
+        from bdnex.importer.pipeline import resolve_workers
+
+        workers = resolve_workers(settings.import_.workers if args.workers is None else args.workers)
+        result = library.relink(folders, apply=not args.pretend, workers=workers)
     for old, new in result["found"]:
         print(f"{old}\n    -> {new}", file=out)
     for old, copies in result["ambiguous"]:

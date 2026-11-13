@@ -1064,3 +1064,25 @@ def test_one_worker_or_a_preview_is_the_plain_serial_run(shared):
     organizer.on_stage = lambda path, text: stages.append(text)
     organizer.run(rows[:1], MOVE, workers=1)
     assert stages[0].startswith("reading the archive") and "putting it in place" in stages and stages[-1] == "updating the library"
+
+
+def test_damaged_archives_are_repaired_several_at_once(tmp_path, make_damaged_cbz):
+    settings = settings_for(tmp_path, library=str(tmp_path / "rep.sqlite"))
+    library = Library.for_settings(settings)
+    try:
+        rows = []
+        for n in range(5):
+            path, _ = make_damaged_cbz(f"bad{n}.cbz", pages=3, bad_page=1)
+            lib_row = registered(library, path, add_series_album(library, source_id=str(n), volume=n + 1))
+            assert lib_row["corrupted"] == 1
+            rows.append(lib_row)
+        seen = []
+        results = Organizer(library, settings, force=True).run(rows, WRITE, workers=3, repair=True,
+                                                               on_result=lambda n, t, r: seen.append(n))
+        assert [r.outcome for r in results] == ["repaired"] * 5 and seen == [1, 2, 3, 4, 5]
+        for row in rows:
+            assert library.get_file(row["path"])["corrupted"] == 0  # the library knows it is clean now
+            with zipfile.ZipFile(row["path"]) as archive:
+                assert archive.testzip() is None
+    finally:
+        library.close()

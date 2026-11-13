@@ -173,7 +173,8 @@ bdnex relink -n ~/comics            # preview: which missing file was found wher
 bdnex relink ~/comics ~/Downloads   # link them again (default folder: `collection_path`)
 ```
 
-A missing file is looked for by size and checksum in the folders you give. When exactly one copy is found, the
+A missing file is looked for by size and checksum in the folders you give (only files of a size a missing file had are
+read, several at a time: `--workers N`, default `import.workers`). When exactly one copy is found, the
 library points at it again, keeping its album, import history and edits. Several copies are listed and left alone,
 and what is not found stays in `ls --missing`. Nothing on disk is touched.
 
@@ -202,12 +203,13 @@ temporary files. Files, albums and covers that exist are never touched.
 
 ```bash
 bdnex duplicates            # identical files, and albums with several (non-spare) files
-bdnex duplicates --covers   # also files whose first pages look alike (reads each file once)
+bdnex duplicates --covers   # also files whose first pages look alike (reads each file once, several at a time)
 ```
 
 It only reports, in groups: *identical content* (same checksum at several paths, with the space they waste), *same
 album* (several files linked to one album that are not marked as spare versions) and, with `--covers`, *similar
-cover*. Deciding is done by [`bdnex import`](versions.md), which compares the files and asks, and by
+cover*. `--workers N` sets how many files are read at once with `--covers` (default `import.workers`; `1` is one by one);
+the hashes are stored, so the next run only reads new files. Deciding is done by [`bdnex import`](versions.md), which compares the files and asks, and by
 `bdnex trash` for what was replaced.
 
 ||||||| 9f8bd96

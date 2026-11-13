@@ -31,7 +31,7 @@ above the bar: what happened, where it went, the steps, how long it took. Withou
 
 ### Several files at once
 
-`write` and `move` work on several files at the same time (`write.workers`, or `--workers N` for one run; `0` is the
+`write`, `move` and `repair` work on several files at the same time (`write.workers`, or `--workers N` for one run; `0` is the
 cores less one, at most 4, and `1` is one by one). The bar then lists the files being worked on
 (`file a.cbz · file b.cbz · file c.cbz  (3 at once)`) and the results still come in order. Files that need no answer from you
 are written in worker processes; a file that needs a decision (a ComicInfo.xml that disagrees with the library, a name

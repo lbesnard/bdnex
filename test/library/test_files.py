@@ -189,3 +189,16 @@ def test_add_analysed_registers_what_add_file_would(lib, make_cbz):
     info, md5 = analyse_file(path)
     lib.add_analysed(info, md5)
     assert lib.get_file(path)["md5"] == md5 and lib.get_file(path)["page_count"] == 4
+
+
+def test_relink_reads_the_candidates_in_several_processes_with_the_same_answer(lib, make_cbz, tmp_path):
+    originals = [make_cbz(f"r{n}.cbz", pages=2 + n) for n in range(5)]
+    for path in originals:
+        lib.add_file(path)
+    moved = tmp_path / "elsewhere"
+    moved.mkdir()
+    for path in originals:
+        os.rename(path, moved / ("renamed-" + os.path.basename(path)))
+    serial = lib.relink([str(tmp_path)], apply=False, workers=1)
+    parallel = lib.relink([str(tmp_path)], apply=False, workers=3)
+    assert len(serial["found"]) == 5 and serial == parallel
