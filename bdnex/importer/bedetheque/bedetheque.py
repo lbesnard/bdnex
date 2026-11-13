@@ -84,7 +84,7 @@ class Bedetheque:
         self._words: Optional[dict[str, list[int]]] = None
 
     # --------------------------------------------------------------- fetching
-    def _get(self, kind: str, url: str, recache: bool = False) -> bytes:
+    def _get(self, kind: str, url: str, recache: bool = False, store: bool = True) -> bytes:
         if not recache:
             cached = self.library.cache_get(SOURCE, kind, url)
             if cached is not None and kind != "sitemap" and looks_blocked(200, cached):
@@ -99,7 +99,8 @@ class Bedetheque:
         if kind != "sitemap" and looks_blocked(200, content):  # whichever fetcher it came from
             raise BlockedError(f"{url}: the fetcher returned an anti-bot challenge page, not the page. "
                                "Nothing was stored.")
-        self.library.cache_put(SOURCE, kind, url, content)
+        if store:
+            self.library.cache_put(SOURCE, kind, url, content)
         return content
 
     # --------------------------------------------------------------- sitemaps
@@ -282,12 +283,7 @@ class Bedetheque:
         self.library.cache_put(SOURCE, "album", url, html)
         return self.album_info(url)
 
-    def cover(self, info: AlbumInfo, recache: bool = False) -> Optional[bytes]:
-        """Cover image bytes (cached)."""
-        if not info.cover_url:
-            return None
-        return self.cover_image(info.cover_url, recache)
-
     def cover_image(self, url: str, recache: bool = False) -> Optional[bytes]:
-        """The image at ``url`` (an album's ``cover_url``), through the library cache: one polite request."""
-        return self._get("cover", url, recache) if url else None
+        """The image at ``url`` (an album's ``cover_url``): one polite request. It is not kept in the library
+        cache: the importer saves it as a file (``cover.dir``)."""
+        return self._get("cover", url, recache, store=False) if url else None

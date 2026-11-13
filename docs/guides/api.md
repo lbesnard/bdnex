@@ -34,6 +34,7 @@ All of them are `GET`, JSON, and read-only. `q` takes the same terms as [`bdnex 
 | --- | --- |
 | `/api/albums?q=&limit=&offset=` | albums matching `q`, paged (`limit` up to 1000, 100 by default) |
 | `/api/albums/{id}` | one album with its credits, genres and files |
+| `/api/albums/{id}/cover` | the album's saved cover image (404 when none was downloaded yet) |
 | `/api/files?q=&limit=&offset=` | files matching `q` (the `--files` terms), with their absolute paths |
 | `/api/series?name=&missing=true` | series, what you own, and the albums you lack when the series page is known |
 | `/api/trash` | files waiting in the trash |

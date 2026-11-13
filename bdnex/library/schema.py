@@ -158,4 +158,10 @@ MIGRATIONS = [
     """
     ALTER TABLE files ADD COLUMN embedded TEXT;
     """,
+    # --- version 6 -------------------------------------------------------
+    # The album's cover as a file next to the library (`cover.dir`): its path below that folder.
+    # `cover_url` stays the address it came from.
+    """
+    ALTER TABLE albums ADD COLUMN cover_file TEXT;
+    """,
 ]

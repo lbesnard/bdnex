@@ -195,3 +195,42 @@ def sift_similarity(original: bytes, other: bytes, height: int = SIFT_HEIGHT, ra
     pairs = matcher.knnMatch(described_a, described_b, k=2)
     good = sum(1 for pair in pairs if len(pair) == 2 and pair[0].distance < ratio * pair[1].distance)
     return min(100.0, 100.0 * good / min(len(points_a), len(points_b)))
+
+
+def image_extension(data: bytes) -> str:
+    """``.jpg``, ``.png``, ``.webp`` or ``.gif`` from the first bytes of an image (``.jpg`` when unknown)."""
+    if data.startswith(b"\x89PNG"):
+        return ".png"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return ".webp"
+    if data.startswith(b"GIF8"):
+        return ".gif"
+    return ".jpg"
+
+
+def save_cover(directory, source: str, source_id: str, data: bytes) -> str:
+    """Write a cover below ``directory`` as ``<source>/<id>.<ext>`` (through a temporary file) and return that
+    relative path."""
+    import os
+    from pathlib import Path
+
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "_", str(source_id)) or "cover"
+    relative = f"{re.sub(r'[^A-Za-z0-9._-]+', '_', source)}/{safe}{image_extension(data)}"
+    target = Path(directory) / relative
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(target.name + ".part")
+    tmp.write_bytes(data)
+    os.replace(tmp, target)
+    return relative
+
+
+def find_cover(directory, source: str, source_id: str) -> Optional[str]:
+    """The relative path of a cover saved earlier for this album, if the file is still there."""
+    from pathlib import Path
+
+    stem = re.sub(r"[^A-Za-z0-9._-]+", "_", str(source_id)) or "cover"
+    folder = Path(directory) / re.sub(r"[^A-Za-z0-9._-]+", "_", source)
+    for extension in (".jpg", ".png", ".webp", ".gif"):
+        if (folder / f"{stem}{extension}").exists():
+            return f"{folder.name}/{stem}{extension}"
+    return None

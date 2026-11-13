@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 
 from bdnex.config import Settings
 from bdnex.library import Library
@@ -92,6 +92,18 @@ def create_app(settings: Settings, token: Optional[str] = None):
             raise HTTPException(404, f"no album {album_id}")
         found["files"] = lib.files_for_album(album_id)
         return found
+
+    @app.get("/api/albums/{album_id}/cover", dependencies=guarded, summary="The album's cover image")
+    def cover(album_id: int, lib: Library = Depends(library)):
+        found = lib.get_album(album_id)
+        if found is None:
+            raise HTTPException(404, f"no album {album_id}")
+        kept = found.get("cover_file")
+        target = (settings.cover_path / kept) if kept else None
+        # the stored name is relative to cover.dir; never serve anything that resolves outside of it
+        if target is None or not target.is_file() or settings.cover_path.resolve() not in target.resolve().parents:
+            raise HTTPException(404, "this album has no saved cover (`bdnex import --fetch` downloads it)")
+        return FileResponse(target)
 
     @app.get("/api/files", dependencies=guarded, summary="Files matching a query")
     def files(q: str = Query("", description="`bdnex ls --files` terms"),

@@ -128,3 +128,21 @@ def test_an_old_schema_is_reported_not_migrated(library):
 def test_no_library_yet(settings):
     answer = client(settings).get("/api/stats")
     assert answer.status_code == 503 and "no library" in answer.json()["detail"]
+
+
+def test_an_album_cover_is_served_from_the_cover_folder(library):
+    cover_dir = library.cover_path
+    (cover_dir / "bedetheque").mkdir(parents=True)
+    (cover_dir / "bedetheque" / "1.jpg").write_bytes(b"JPEGDATA")
+    with Library.for_settings(library) as lib:
+        album_id = lib.find_album("bedetheque", "1")
+    with Library.for_settings(library) as lib:
+        lib.set_cover_file(album_id, "bedetheque/1.jpg")
+    web = client(library)
+    got = web.get(f"/api/albums/{album_id}/cover")
+    assert got.status_code == 200 and got.content == b"JPEGDATA"
+    other = web.get("/api/albums/2/cover")
+    assert other.status_code == 404  # nothing saved for it
+    with Library.for_settings(library) as lib:
+        lib.set_cover_file(album_id, "../../etc/passwd")
+    assert web.get(f"/api/albums/{album_id}/cover").status_code == 404  # never outside cover.dir

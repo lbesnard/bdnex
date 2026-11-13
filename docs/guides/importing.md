@@ -180,6 +180,17 @@ Without a terminal to ask on, `ask` leaves them. With `import.mode: copy|move` e
 nothing is asked. Before a file is moved in, it is compared with the files the album already has: see
 [Duplicates, versions and the trash](versions.md).
 
+### Covers as files
+
+When an album's page is read, its cover is also downloaded (one more polite request) and kept as a real image file
+in `cover.dir` (`~/.local/share/bdnex/covers`), as `<source>/<album id>.jpg`. The library links it from the album
+(`albums.cover_file`, the path below `cover.dir`) next to the address it came from (`cover_url`), so
+[`bdnex serve`](api.md) can show it and other tools can use it. `cover.download: false` turns this off.
+
+A cover that is not there yet is downloaded the next time the album goes through `bdnex import --fetch`, which
+covers albums imported before this existed (`bdnex import --fetch` on your library). A deleted cover file is
+downloaded again the same way, and a file kept after `bdnex reset` is taken up again without any request.
+
 ### Checking covers
 
 `bdnex import --cover-check` (or `cover.check: true`) compares the front cover of each file with the
@@ -189,7 +200,7 @@ with the file. Below `cover.match_percentage` (40 by default), a terminal run as
 match or unlink it; unattended runs keep it and say so. List the doubtful ones with
 `bdnex ls --files cover:..40`.
 
-It costs one extra request per album (the cover), so it is off by default, and a file whose album is already
+The comparison uses the saved cover file (no further request). It is off by default; a file whose album is already
 complete gets its cover compared the first time you run `bdnex import --fetch --cover-check`.
 
 ### The album list: `bdnex init`

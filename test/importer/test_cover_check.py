@@ -36,8 +36,8 @@ def cbz_with_cover(tmp_path, name, seed):
     return str(path)
 
 
-def env_for(web, prompter=None, check=True, **kw):
-    env = Env(web, make_settings(cover={"check": check}), prompter, **kw)
+def env_for(web, prompter=None, check=True, download=False, **kw):
+    env = Env(web, make_settings(cover={"check": check, "download": download}), prompter, **kw)
     env.source.update_sitemaps()
     env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
     return env

@@ -509,6 +509,11 @@ class Library:
         return self.conn.execute("SELECT id FROM files WHERE path = ?",
                                  (self._store(info.path),)).fetchone()["id"]
 
+    def set_cover_file(self, album_id: int, cover_file: Optional[str]) -> None:
+        """Record where the album's cover is kept (a path below ``cover.dir``; ``None`` forgets it)."""
+        with self.conn:
+            self.conn.execute("UPDATE albums SET cover_file = ? WHERE id = ?", (cover_file, album_id))
+
     def get_file(self, path) -> Optional[dict[str, Any]]:
         row = self.conn.execute("SELECT * FROM files WHERE path = ?", (self._store(path),)).fetchone()
         return self._file_row(row) if row else None

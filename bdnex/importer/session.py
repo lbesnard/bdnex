@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from pathlib import Path
 import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional, Protocol
@@ -351,8 +352,9 @@ class ImportSession:
             mine = album["source"] == self.source.name
             if "fetch" in self.steps and mine and (partial or self.force):
                 return "fetch", album
-            if "fetch" in self.steps and mine and self.cover_check and known["cover_score"] is None and album["cover_url"]:
-                return "cover", album  # complete, but its cover was never compared with the file's
+            if "fetch" in self.steps and mine and album["cover_url"] and (
+                    (self.cover_check and known["cover_score"] is None) or self._cover_missing(album)):
+                return "cover", album  # complete, but its cover was never saved, or compared with the file's
             return "already", album
         if "match" not in self.steps:
             return "unmatched", None
@@ -426,7 +428,7 @@ class ImportSession:
                 result.outcome = PARTIAL if partial else TAGGED
                 result.note = "; ".join(n for n in (note, damaged) if n)
                 self._log(result.path, result.outcome, result.score, album_id)
-                if not partial and self.cover_check:
+                if not partial and (self.cover_check or self.settings.cover.download):
                     self._check_cover(result)
         except KeyboardInterrupt:
             self.progress("Interrupted: the files stay linked; `bdnex import --fetch` reads the rest of the pages.")
@@ -437,26 +439,65 @@ class ImportSession:
 
     # ------------------------------------------------------------- covers
     def _check_covers(self) -> None:
-        """Compare the covers of complete albums that were not part of this run's fetching."""
+        """Save and compare the covers of complete albums that were not part of this run's fetching."""
         waiting, self._covers = self._covers, []
-        if waiting and not self._cover_off:
-            self.progress(f"Comparing {len(waiting)} cover(s) (one request each, politely)...")
+        if waiting:
+            self.progress(f"Getting {len(waiting)} cover(s) (one request each, politely)...")
         for result in waiting:
             self._check_cover(result)
 
-    def _check_cover(self, result: ImportResult) -> None:
-        """Compare the file's cover with the album's: below ``cover.match_percentage`` it is probably
-        the wrong album. The score is kept with the file (``ls --files cover:..40``)."""
-        path = result.path
-        if self._cover_off or result.album_id is None:
-            return
+    def _cover_missing(self, album: dict) -> bool:
+        """Should this album's cover be downloaded (``cover.download``) and is it not there?"""
+        if not self.settings.cover.download or not album.get("cover_url"):
+            return False
+        return self._kept_cover(album) is None
+
+    def _kept_cover(self, album: dict) -> Optional[Path]:
+        """The saved cover file of an album, if there is one. A file from an earlier library (the album was
+        forgotten by `bdnex reset`, the folder was kept) is taken up again."""
+        kept = album.get("cover_file")
+        if kept and (self.settings.cover_path / kept).exists():
+            return self.settings.cover_path / kept
+        found = covers.find_cover(self.settings.cover_path, album["source"], album["source_id"])
+        if found is not None and not self.pretend:
+            self.library.set_cover_file(album["id"], found)
+            album["cover_file"] = found
+        return self.settings.cover_path / found if found else None
+
+    def _cover_bytes(self, album: dict) -> Optional[bytes]:
+        """The album's cover: the saved file, else downloaded now (and saved when ``cover.download``)."""
+        kept = self._kept_cover(album)
+        if kept is not None and not self.recache:
+            return kept.read_bytes()
         fetch_image = getattr(self.source, "cover_image", None)
+        if fetch_image is None or not album.get("cover_url"):
+            return None
+        data = fetch_image(album["cover_url"], recache=self.recache)
+        if data and self.settings.cover.download and not self.pretend:
+            relative = covers.save_cover(self.settings.cover_path, album["source"], album["source_id"], data)
+            self.library.set_cover_file(album["id"], relative)
+            album["cover_file"] = relative
+        return data
+
+    def _check_cover(self, result: ImportResult) -> None:
+        """Keep the album's cover as a file; and, with ``cover.check``, compare the file's cover with it: below
+        ``cover.match_percentage`` it is probably the wrong album. The score is kept with the file
+        (``ls --files cover:..40``)."""
+        path = result.path
+        if result.album_id is None:
+            return
         album, row = self.library.get_album(result.album_id), self.library.get_file(path)
-        if fetch_image is None or not album or not album["cover_url"] or row is None:
+        if not album or not album["cover_url"] or row is None:
+            return
+        try:
+            online = self._cover_bytes(album) if (self.settings.cover.download or self.cover_check) else None
+        except self.source.fetch_errors as err:
+            result.note = "; ".join(n for n in (result.note, f"cover not downloaded: {err}") if n)
+            return
+        if not self.cover_check or self._cover_off:
             return
         try:
             local = covers.front_cover(path, row["format"])
-            online = fetch_image(album["cover_url"], recache=self.recache)
             if not local or not online:
                 return
             score = round(covers.sift_similarity(local, online), 1)
@@ -569,6 +610,8 @@ class ImportSession:
         if partial and "fetch" not in self.steps:
             note = "; ".join(n for n in (note, "details not fetched: `bdnex import --fetch` gets them") if n)
         result = ImportResult(path, outcome, score=score, album_id=album_id, note=note)
+        if not partial and not defer_fetch and (self.cover_check or self.settings.cover.download):
+            self._check_cover(result)  # the page was read just now: keep (and compare) the cover too
         if defer_fetch and partial and "fetch" in self.steps:
             self._pending.append((result, candidate, damaged))
         return result

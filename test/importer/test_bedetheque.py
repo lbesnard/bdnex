@@ -131,11 +131,10 @@ def test_album_info_survives_missing_series_page(lib, web):
     assert info.series.summary is None
 
 
-def test_cover_cached(bdt, web):
+def test_a_cover_is_not_kept_in_the_library_cache(bdt, web, lib):
     info = bdt.album_info(ALBUM_URL)
-    assert bdt.cover(info) == b"JPEGDATA"
-    calls = len(web.calls)
-    assert bdt.cover(info) == b"JPEGDATA" and len(web.calls) == calls
+    assert bdt.cover_image(info.cover_url) == b"JPEGDATA"  # the importer saves it as a file instead
+    assert lib.cache_get("bedetheque", "cover", info.cover_url) is None
 
 
 def test_info_stores_in_library(bdt, lib):
