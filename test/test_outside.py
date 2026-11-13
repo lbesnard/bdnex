@@ -24,7 +24,7 @@ def world(tmp_path, monkeypatch, make_cbz):
     downloads.mkdir()
 
     def configure(**overrides):
-        settings = {"config_version": 2, "directory": str(root), "library": str(tmp_path / "lib.sqlite"),
+        settings = {"config_version": 2, "collection_path": str(root), "library": str(tmp_path / "lib.sqlite"),
                     "import": {"auto": True}, "bedetheque": {"delay": [0, 0]}}
         for key, value in overrides.items():
             settings[key] = {**settings.get(key, {}), **value} if isinstance(value, dict) else value

@@ -430,7 +430,7 @@ class Organizer:
         if mode == WRITE:
             return path if fmt == "cbz" else os.path.splitext(path)[0] + ".cbz"
 
-        root = self.settings.require_library_directory()
+        root = self.settings.require_collection()
         album = self.library.get_album(album_id)
         tpl = self.settings.paths.oneshot if album["kind"] == "oneshot" else self.settings.paths.series
         for rule in self.settings.paths.rules:  # the first rule whose query matches this album wins
@@ -523,7 +523,7 @@ class Organizer:
 
     def _versions_path(self, dest: str) -> str:
         """Where the spare version of the file that belongs at ``dest`` goes."""
-        root = self.settings.require_library_directory()
+        root = self.settings.require_collection()
         try:
             relative = Path(dest).relative_to(root)
         except ValueError:
@@ -578,7 +578,7 @@ class Organizer:
         elsewhere (an inbox) only the file's own folder goes, so a download folder is never climbed out of."""
         folder = os.path.dirname(os.path.abspath(old_path))
         try:
-            root = os.path.abspath(os.path.expanduser(self.settings.require_library_directory()))
+            root = os.path.abspath(os.path.expanduser(self.settings.require_collection()))
         except Exception:
             root = None
         inside = root is not None and folder.startswith(root + os.sep)

@@ -1,7 +1,7 @@
 # bdnex default configuration. Your own file only needs the options you change.
 config_version: 2
 
-directory: /path/to/comics/library      # root of the managed library (placeholder)
+collection_path: /path/to/comics/library   # your collection: the folder bdnex organises (placeholder)
 library: ~/.local/share/bdnex/bdnex.sqlite
 
 match:
@@ -15,7 +15,7 @@ import:
   auto: false                           # false: you check every file; true: matches >= strong_threshold are applied unasked
   workers: 0                            # processes that match file names in the background; 0 = CPU cores - 1, 1 = none
   lookahead: 100                        # files matched ahead of the one you are reviewing
-  outside: ask                          # files imported from outside `directory`: ask | move | copy | leave
+  outside: ask                          # files imported from outside `collection_path`: ask | move | copy | leave
   thumbnails: auto                      # a picture of the file's first page beside the match question: auto | kitty | iterm2 | never
   series: ask                           # several files in a folder: ask | always (assume a series) | never (match each file alone)
 
@@ -23,10 +23,10 @@ duplicates:
   keys: [series, volume]                # what makes two albums the same: series | volume | title
   action: ask                           # ask | skip | keep_both | replace
   prefer: [cbz, cbr, pdf]               # when two files are the same book, the format suggested first
-  versions_dir: _versions               # spare versions of an album go here, inside `directory`
+  versions_dir: _versions               # spare versions of an album go here, inside `collection_path`
 
 trash:
-  dir: .bdnex-trash                     # replaced files wait here, inside `directory` (see `bdnex trash`)
+  dir: .bdnex-trash                     # replaced files wait here, inside `collection_path` (see `bdnex trash`)
 
 cover:
   download: true                        # keep each album's cover as a file in `dir` (linked from the library)

@@ -256,4 +256,4 @@ def test_a_relative_library_without_directory_is_explained_not_a_traceback(env, 
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     with pytest.raises(SystemExit) as stop:
         main(["ls", "--files"])
-    assert stop.value.code == 1 and "`directory` is not set" in capsys.readouterr().err
+    assert stop.value.code == 1 and "`collection_path` is not set" in capsys.readouterr().err

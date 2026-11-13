@@ -27,7 +27,7 @@ def _parser(command: str) -> argparse.ArgumentParser:
                "converted to CBZ next to the original (see write.cbr / write.pdf).")
     else:
         doc = ("Write ComicInfo.xml and rename the files into the library tree "
-               "(`directory`, `paths` in the config).")
+               "(`collection_path`, `paths` in the config).")
     parser = argparse.ArgumentParser(prog=f"bdnex {command}", description=doc)
     parser.add_argument("query", nargs="*", help="files to process, same terms as `bdnex ls --files`")
     parser.add_argument("-n", "--pretend", action="store_true", help="show what would be done; change nothing")
@@ -106,7 +106,7 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
     try:
         settings = load_config().settings
         if mode != WRITE:
-            settings.require_library_directory()
+            settings.require_collection()
     except ConfigError as err:
         print(err, file=sys.stderr)
         return 1
@@ -139,7 +139,7 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
                     results.append(FileResult(row["path"], FAILED, note=str(err)))
         else:
             results = organizer.run(rows, mode, progress=progress)
-    code = report(results, out, settings.directory)
+    code = report(results, out, settings.collection_path)
     if organizer.aborted_at:
         print(aborted_message(organizer.aborted_at, command), file=out)
     return code
@@ -148,7 +148,7 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
 def place(settings, path: str, out=sys.stdout) -> int:
     """Move one registered file to where its album belongs (`bdnex move`, for a single file)."""
     try:
-        settings.require_library_directory()
+        settings.require_collection()
     except ConfigError as err:
         print(err, file=sys.stderr)
         return 1
@@ -163,7 +163,7 @@ def place(settings, path: str, out=sys.stdout) -> int:
         except WriteAborted:
             print(aborted_message(path, "move"), file=out)
             return 1
-    return report(results, out, settings.directory)
+    return report(results, out, settings.collection_path)
 
 
 def run_write(argv: list[str], out=sys.stdout) -> int:

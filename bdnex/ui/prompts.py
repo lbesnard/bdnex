@@ -486,7 +486,7 @@ class InquirerPrompter:
         from InquirerPy import inquirer
 
         return inquirer.select(
-            message=f"{count} imported file(s) are outside your library folder ({directory}). What now?",
+            message=f"{count} imported file(s) are outside your collection ({directory}). What now?",
             choices=[{"name": "Move them into the library (tags are written, names follow your templates)", "value": "move"},
                      {"name": "Copy them into the library (the originals stay where they are)", "value": "copy"},
                      {"name": "Leave them where they are (`bdnex move staged:true` places them later)", "value": "leave"}],

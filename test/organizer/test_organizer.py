@@ -49,7 +49,7 @@ class FakePrompter:
 
 
 def settings_for(tmp_path, **overrides):
-    user = {"config_version": 2, "directory": str(tmp_path / "library"), **overrides}
+    user = {"config_version": 2, "collection_path": str(tmp_path / "library"), **overrides}
     return build_settings(user)[0]
 
 
@@ -401,7 +401,7 @@ def test_move_needs_a_real_library_directory(lib, make_cbz):
     settings = build_settings({"config_version": 2})[0]  # placeholder directory
     row = registered(lib, make_cbz(), add_series_album(lib))
     results = Organizer(lib, settings).run([row], MOVE)
-    assert results[0].outcome == FAILED and "directory" in results[0].note
+    assert results[0].outcome == FAILED and "collection_path" in results[0].note
 
 
 # ------------------------------------------------------------- damaged archives
@@ -912,7 +912,7 @@ def test_path_rules_give_some_albums_another_template(lib, make_cbz, tmp_path):
 
 def test_a_move_removes_the_folder_it_empties_even_with_junk_left(lib, make_cbz, tmp_path):
     settings = settings_for(tmp_path)
-    root = settings.require_library_directory()
+    root = settings.require_collection()
     old = root / "Old" / "Deep"
     old.mkdir(parents=True)
     src = make_cbz("a.cbz")
@@ -928,7 +928,7 @@ def test_a_move_removes_the_folder_it_empties_even_with_junk_left(lib, make_cbz,
 
 def test_a_move_keeps_a_folder_that_still_holds_something(lib, make_cbz, tmp_path):
     settings = settings_for(tmp_path)
-    root = settings.require_library_directory()
+    root = settings.require_collection()
     old = root / "Old"
     old.mkdir(parents=True)
     moved = old / "a.cbz"
@@ -941,7 +941,7 @@ def test_a_move_keeps_a_folder_that_still_holds_something(lib, make_cbz, tmp_pat
 
 def test_after_a_hand_edit_move_renames_the_file_and_removes_the_old_folder(lib, make_cbz, tmp_path):
     settings = settings_for(tmp_path)
-    root = settings.require_library_directory()
+    root = settings.require_collection()
     album_id = add_series_album(lib)
     row = registered(lib, make_cbz("a.cbz"), album_id)
     placed = Organizer(lib, settings).process(row, MOVE)
@@ -956,7 +956,7 @@ def test_after_a_hand_edit_move_renames_the_file_and_removes_the_old_folder(lib,
 def test_move_still_places_a_file_that_is_left_in_its_format(lib, make_cbz, tmp_path):
     settings = settings_for(tmp_path)
     settings.write.format_preferred = "none"
-    root = settings.require_library_directory()
+    root = settings.require_collection()
     src = tmp_path / "inbox" / "x.cbr"
     src.parent.mkdir()
     src.write_bytes(b"Rar!\x1a\x07\x00" + b"\0" * 64)  # looks like a RAR; it is never opened

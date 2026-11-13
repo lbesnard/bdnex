@@ -7,7 +7,7 @@ you ask for it with `-W`, `--move` or `--copy`.
 
 ```bash
 bdnex init                       # once: download the album list the names are matched against
-bdnex import                     # your library folder (`directory` in the configuration)
+bdnex import                     # your library folder (`collection_path` in the configuration)
 bdnex import ~/comics            # a folder, recursively
 bdnex import album.cbz other.cbz
 bdnex import -n ~/comics         # --pretend: show what would happen, change nothing
@@ -168,7 +168,7 @@ export BDNEX_THUMBNAILS=kitty
 
 ### Files from outside your library folder
 
-You can import from any folder, such as `~/Downloads`. A file under `directory` is left where it is
+You can import from any folder, such as `~/Downloads`. A file under `collection_path` is left where it is
 (`bdnex move` can still tidy its name). A file **outside** it follows `import.outside`:
 
 | `import.outside` | What happens |

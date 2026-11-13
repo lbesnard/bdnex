@@ -6,12 +6,12 @@ bdnex reads `~/.config/bdnex/bdnex.yaml` (or `$XDG_CONFIG_HOME/bdnex/bdnex.yaml`
 or the file named by `$BDNEX_CONFIG`).
 
 On the **first launch** bdnex creates the file there and tells you to edit it. The only
-required edit is `directory`, your comics folder. Every other option is listed below it,
+required edit is `collection_path`, your comics folder. Every other option is listed below it,
 **commented out**, with its default and what it does:
 
 ```yaml
 config_version: 2
-directory: ~/comics
+collection_path: ~/comics
 
 # match:
   # strong_threshold: 90      # title score (0-100): applied without asking
@@ -56,7 +56,7 @@ rest keeps working. Review it with `bdnex config --defaults`, then set
 ## Main options
 
 ```yaml
-directory: ~/comics                      # library root (required); file paths are stored relative to it
+collection_path: ~/comics                 # your collection (required); file paths are stored relative to it
 library: ~/.local/share/bdnex/bdnex.sqlite
 
 match:
@@ -69,7 +69,7 @@ import:
   auto: false                            # false: you check every file; true: strong matches are unasked
   workers: 0                             # background matching processes; 0 = CPU cores - 1, 1 = none
   lookahead: 100                         # files matched ahead of the one you are reviewing
-  outside: ask                           # files from outside `directory`: ask | move | copy | leave
+  outside: ask                           # files from outside `collection_path`: ask | move | copy | leave
   thumbnails: auto                       # a picture of the file's first page beside the match question: auto | kitty | iterm2 | never
   series: ask                            # several files in a folder: ask | always (assume a series) | never (match each file alone)
   resume: true                           # a file already linked to an album is not matched again (`--force` redoes it)
@@ -78,10 +78,10 @@ duplicates:
   keys: [series, volume]                 # what makes two albums the same edition: series | volume | title
   action: ask                            # ask | skip | keep_both | replace
   prefer: [cbz, cbr, pdf]                # the format suggested first when two files are the same book
-  versions_dir: _versions                # spare versions of an album, inside `directory`
+  versions_dir: _versions                # spare versions of an album, inside `collection_path`
 
 trash:
-  dir: .bdnex-trash                      # replaced files wait here, inside `directory`
+  dir: .bdnex-trash                      # replaced files wait here, inside `collection_path`
 
 cover:
   download: true                         # keep each album's cover as a file in `dir` (linked from the library)
@@ -195,7 +195,7 @@ configuration before it does anything, so a mistake is reported by key, not half
 - **Rules:** every term of `paths.rules[].match` must be valid [query](queries.md) syntax (a regular expression that
   does not compile, a number that is not one).
 - **The fetcher:** `bedetheque.fetcher` must import and be callable.
-- **Warnings** (the command goes on): a `directory` that is not an existing folder (a disk that is not mounted?), a
+- **Warnings** (the command goes on): a `collection_path` that is not an existing folder (a disk that is not mounted?), a
   `fetcher_endpoint` set with no fetcher, an out-of-date `config_version`.
 
 `bdnex config --edit` checks the file again as soon as you leave the editor and tells you what is wrong, so you do not

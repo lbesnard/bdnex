@@ -13,9 +13,9 @@ from bdnex.library import Library
 def run(argv: list[str], out=sys.stdout) -> int:
     parser = argparse.ArgumentParser(
         prog="bdnex relocate", description=__doc__,
-        epilog="Paths under `directory` are stored relative to it: after moving the whole collection, just "
-               "change `directory`. `relocate` is for files stored with their full path (outside "
-               "`directory`): it rewrites the stored paths and touches nothing on disk. "
+        epilog="Paths under `collection_path` are stored relative to it: after moving the whole collection, just "
+               "change `collection_path`. `relocate` is for files stored with their full path (outside "
+               "`collection_path`): it rewrites the stored paths and touches nothing on disk. "
                "`bdnex ls --missing` lists what is not found.")
     parser.add_argument("old", help="the folder the files used to be in")
     parser.add_argument("new", help="the folder they are in now")

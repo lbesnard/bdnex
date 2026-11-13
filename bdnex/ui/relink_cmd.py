@@ -15,12 +15,12 @@ def run(argv: list[str], out=sys.stdout) -> int:
         epilog="A file the library knows but that is no longer where it was (`bdnex ls --missing`) is looked for "
                "in the folders you give (default: your library folder), by size and checksum. A single copy is "
                "linked again, with its album and history. Nothing on disk is touched.")
-    parser.add_argument("folders", nargs="*", help="where to look (default: `directory` in the configuration)")
+    parser.add_argument("folders", nargs="*", help="where to look (default: your collection, `collection_path` in the configuration)")
     parser.add_argument("-n", "--pretend", action="store_true", help="show what would be linked; change nothing")
     args = parser.parse_args(argv)
     try:
         settings = load_config().settings
-        folders = args.folders or [str(settings.require_library_directory())]
+        folders = args.folders or [str(settings.require_collection())]
     except ConfigError as err:
         print(err, file=sys.stderr)
         return 1

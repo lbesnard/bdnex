@@ -15,7 +15,7 @@ from helpers import ALBUM_URL, FakeWeb
 def env(tmp_path, monkeypatch, make_cbz):
     db = tmp_path / "lib.sqlite"
     conf = tmp_path / "bdnex.yaml"
-    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(db), "directory": str(tmp_path / "comics"),
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(db), "collection_path": str(tmp_path / "comics"),
                                     "bedetheque": {"delay": [0, 0]}}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     with Library(db) as lib:
@@ -90,7 +90,7 @@ def test_errors(env, monkeypatch, tmp_path, capsys):
 def test_main_dispatches_write_and_move(monkeypatch, tmp_path):
     from bdnex import ui
     conf = tmp_path / "c.yaml"
-    conf.write_text("config_version: 2\ndirectory: ~/c\n")
+    conf.write_text("config_version: 2\ncollection_path: ~/c\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     seen = []
     monkeypatch.setattr("bdnex.ui.write_cmd.run", lambda cmd, argv: seen.append((cmd, argv)) or 0)
@@ -106,7 +106,7 @@ def import_env(tmp_path, monkeypatch, make_cbz):
     def configure(extra=None):
         conf = tmp_path / "bdnex.yaml"
         conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"),
-                                        "directory": str(tmp_path / "comics"),
+                                        "collection_path": str(tmp_path / "comics"),
                                         "bedetheque": {"delay": [0, 0]}, **(extra or {}),
                                         "import": {"auto": True, **(extra or {}).get("import", {})}}))
         monkeypatch.setenv("BDNEX_CONFIG", str(conf))
@@ -173,7 +173,7 @@ def test_import_move_without_directory_explains_and_keeps_the_import(import_env,
                                     "import": {"auto": True}, "bedetheque": {"delay": [0, 0]}}))
     code, text = do_import("--move", path)
     assert code == 1 and os.path.exists(path)
-    assert "directory" in capsys.readouterr().err
+    assert "collection_path" in capsys.readouterr().err
     with Library(tmp / "lib.sqlite") as lib:
         assert lib.stats()["albums"] == 1  # the match itself was recorded
 
@@ -229,7 +229,7 @@ def test_move_force_leaves_unrepairable_files_alone(import_env, make_damaged_cbz
 def test_main_dispatches_repair(monkeypatch, tmp_path):
     from bdnex import ui
     conf = tmp_path / "c.yaml"
-    conf.write_text("config_version: 2\ndirectory: ~/c\n")
+    conf.write_text("config_version: 2\ncollection_path: ~/c\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     seen = []
     monkeypatch.setattr("bdnex.ui.write_cmd.run", lambda cmd, argv: seen.append(cmd) or 0)

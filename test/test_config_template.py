@@ -9,7 +9,7 @@ from bdnex import config as cfg
 from bdnex.config import Settings, build_settings, load_config, load_defaults
 from bdnex.config_template import comment_out, complete, missing, packaged
 
-MINIMAL = "config_version: 2\ndirectory: /comics\n"
+MINIMAL = "config_version: 2\ncollection_path: /comics\n"
 
 
 # ------------------------------------------------- the packaged file and the model agree, exactly
@@ -24,7 +24,7 @@ def model_options():
 
 def test_the_packaged_defaults_list_exactly_the_options_of_the_model():
     listed = {item.name: [c for c, _ in item.children] or None for item in packaged()}
-    listed.update({"config_version": None, "directory": None})
+    listed.update({"config_version": None, "collection_path": None})
     model = model_options()
     assert set(listed) == set(model)
     for key, children in model.items():
@@ -47,7 +47,7 @@ def test_every_packaged_option_has_a_comment_explaining_it():
 def test_a_minimal_file_gets_every_option_commented_out():
     text, added = complete(MINIMAL)
     assert missing(text) == [] and len(added) > 40
-    assert yaml.safe_load(text) == {"config_version": 2, "directory": "/comics"}  # nothing became active
+    assert yaml.safe_load(text) == {"config_version": 2, "collection_path": "/comics"}  # nothing became active
 
 
 def test_uncommenting_everything_gives_back_the_defaults():
@@ -56,7 +56,7 @@ def test_uncommenting_everything_gives_back_the_defaults():
                        for line in text.splitlines())
     loaded = yaml.safe_load(active)
     defaults = load_defaults()
-    for key in ("config_version", "directory"):
+    for key in ("config_version", "collection_path"):
         defaults.pop(key), loaded.pop(key)
     assert loaded == defaults
 
@@ -68,7 +68,7 @@ def test_completing_twice_changes_nothing():
 
 
 def test_what_the_user_wrote_is_kept_and_only_missing_options_are_added():
-    mine = ("config_version: 2\ndirectory: /comics\n\n# my notes\nimport:\n  mode: copy   # copy, please\n"
+    mine = ("config_version: 2\ncollection_path: /comics\n\n# my notes\nimport:\n  mode: copy   # copy, please\n"
             "  # workers: 3\n\nwrite:\n  delete_original: 'no'\n")
     text, added = complete(mine)
     assert text.startswith(mine.split("\nwrite:")[0])  # the top of the file is byte for byte the same
@@ -80,7 +80,7 @@ def test_what_the_user_wrote_is_kept_and_only_missing_options_are_added():
 
 
 def test_missing_options_go_inside_their_section_not_after_the_next_one():
-    mine = "config_version: 2\ndirectory: /comics\nimport:\n  mode: copy\n\nwrite:\n  cbr: skip\n"
+    mine = "config_version: 2\ncollection_path: /comics\nimport:\n  mode: copy\n\nwrite:\n  cbr: skip\n"
     text, _ = complete(mine)
     lines = text.splitlines()
     first_write = lines.index("write:")
@@ -119,7 +119,7 @@ def test_a_section_the_file_lacks_is_appended_commented():
 
 # ------------------------------------------------------------- the file still loads, whatever is commented
 def test_a_section_whose_options_are_all_commented_out_is_not_an_error(tmp_path):
-    user = yaml.safe_load(f"config_version: 2\ndirectory: {tmp_path}\nmatch:\n  # strong_threshold: 90\nwrite:\n")
+    user = yaml.safe_load(f"config_version: 2\ncollection_path: {tmp_path}\nmatch:\n  # strong_threshold: 90\nwrite:\n")
     assert user["match"] is None and user["write"] is None
     settings, warnings, _ = build_settings(user)
     assert settings.match.strong_threshold == 90 and warnings == []
@@ -131,12 +131,12 @@ def test_the_first_run_file_lists_every_option_and_loads_with_the_defaults(tmp_p
     text = (tmp_path / "new.yaml").read_text(encoding="utf-8")
     assert "# strong_threshold: 90" in text and text.startswith("# bdnex configuration")
     assert loaded.settings.match.strong_threshold == 90
-    assert loaded.settings.directory == cfg.PLACEHOLDER_DIRECTORY
+    assert loaded.settings.collection_path == cfg.PLACEHOLDER_COLLECTION
 
 
 def test_a_file_from_an_older_version_reports_what_is_new(tmp_path):
     path = tmp_path / "old.yaml"
-    path.write_text("config_version: 2\ndirectory: /comics\nwrite:\n  cbr: skip\n", encoding="utf-8")
+    path.write_text("config_version: 2\ncollection_path: /comics\nwrite:\n  cbr: skip\n", encoding="utf-8")
     loaded = load_config(path)
     assert "write.size_tolerance" in loaded.new_options and "match.strong_threshold" in loaded.new_options
 
@@ -144,7 +144,7 @@ def test_a_file_from_an_older_version_reports_what_is_new(tmp_path):
 def test_the_update_command_adds_them_and_keeps_a_backup(tmp_path, monkeypatch, capsys):
     from bdnex.ui import config_cmd
     path = tmp_path / "bdnex.yaml"
-    path.write_text("config_version: 2\ndirectory: /comics\nwrite:\n  cbr: skip\n", encoding="utf-8")
+    path.write_text("config_version: 2\ncollection_path: /comics\nwrite:\n  cbr: skip\n", encoding="utf-8")
     monkeypatch.setenv("BDNEX_CONFIG", str(path))
     assert config_cmd.run(["--update"]) == 0
     out = capsys.readouterr().out
@@ -157,7 +157,7 @@ def test_the_update_command_adds_them_and_keeps_a_backup(tmp_path, monkeypatch, 
 def test_the_run_says_once_that_the_file_lacks_options(tmp_path, monkeypatch, capsys):
     from bdnex.ui import check_config
     path = tmp_path / "bdnex.yaml"
-    path.write_text("config_version: 2\ndirectory: /comics\n", encoding="utf-8")
+    path.write_text("config_version: 2\ncollection_path: /comics\n", encoding="utf-8")
     monkeypatch.setenv("BDNEX_CONFIG", str(path))
     assert check_config() is True
     assert "bdnex config --update" in capsys.readouterr().err

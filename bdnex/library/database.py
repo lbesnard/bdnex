@@ -62,17 +62,17 @@ class Library:
 
     Use ``":memory:"`` for a throwaway database.
 
-    ``root`` is the library folder (``directory`` in the configuration). The paths of files under it
-    are stored relative to it, so moving the collection only means changing ``directory``; other
+    ``root`` is the library folder (``collection_path`` in the configuration). The paths of files under it
+    are stored relative to it, so moving the collection only means changing ``collection_path``; other
     files keep their absolute path. The API always takes and returns absolute paths.
     """
 
     @classmethod
     def for_settings(cls, settings, readonly=False) -> "Library":
-        """The library of a loaded configuration (its database and its ``directory``)."""
-        from bdnex.config import PLACEHOLDER_DIRECTORY
+        """The library of a loaded configuration (its database and its ``collection_path``)."""
+        from bdnex.config import PLACEHOLDER_COLLECTION
 
-        root = settings.directory if settings.directory not in ("", PLACEHOLDER_DIRECTORY) else None
+        root = settings.collection_path if settings.collection_path not in ("", PLACEHOLDER_COLLECTION) else None
         return cls(settings.library_path, root=root, readonly=readonly)
 
     def __init__(self, path=":memory:", root=None, readonly=False):
@@ -149,7 +149,7 @@ class Library:
             return stored
         if not self.root:
             raise LibraryRootError(
-                "this library stores paths relative to your comics folder, but `directory` is not set "
+                "this library stores paths relative to your comics folder, but `collection_path` is not set "
                 "in the configuration (`bdnex config --edit`)")
         return os.path.join(self.root, stored)
 
@@ -167,7 +167,7 @@ class Library:
             if self.conn.execute("SELECT 1 FROM files WHERE path NOT LIKE '/%' LIMIT 1").fetchone():
                 self.conn.close()
                 raise LibraryRootError(
-                    "this library stores paths relative to your comics folder, but `directory` is not set "
+                    "this library stores paths relative to your comics folder, but `collection_path` is not set "
                     "in the configuration (`bdnex config --edit`)")
             return
         prefix = self.root + os.sep
@@ -767,7 +767,7 @@ class Library:
     def relocate(self, old: str, new: str, apply: bool = True) -> dict[str, Any]:
         """Replace the folder prefix ``old`` by ``new`` in every file path (and the import log).
 
-        Files under the library root are stored relative to it and follow it when ``directory``
+        Files under the library root are stored relative to it and follow it when ``collection_path``
         changes, so this is for the others (and for databases kept with absolute paths). Returns
         ``{"files": n, "log": n, "collisions": [...], "moved": [(old, new), ...]}`` in absolute paths.
         Nothing is changed when a new path is already registered (``collisions``) or when ``apply``

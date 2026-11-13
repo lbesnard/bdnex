@@ -7,7 +7,7 @@ from bdnex import ui
 @pytest.fixture
 def conf(tmp_path, monkeypatch):
     path = tmp_path / "c.yaml"
-    path.write_text(yaml.safe_dump({"config_version": 2, "directory": "~/c"}))
+    path.write_text(yaml.safe_dump({"config_version": 2, "collection_path": "~/c"}))
     monkeypatch.setenv("BDNEX_CONFIG", str(path))
 
 

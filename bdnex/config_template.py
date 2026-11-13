@@ -19,7 +19,7 @@ from typing import Any, Optional
 
 from bdnex.config import DEFAULTS_PATH
 
-MANAGED = {"config_version", "directory"}  # written by bdnex itself, always active
+MANAGED = {"config_version", "collection_path"}  # written by bdnex itself, always active
 
 
 @dataclass

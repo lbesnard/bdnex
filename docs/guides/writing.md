@@ -5,7 +5,7 @@ The library database holds the metadata. Two commands push it into your files:
 | Command | Effect |
 |---|---|
 | `bdnex write [query]` | write `ComicInfo.xml` where the files are; CBR and PDF files become a CBZ next to the original |
-| `bdnex move [query]` | the same, then rename into the library tree (`directory` + `paths` in the config) |
+| `bdnex move [query]` | the same, then rename into the library tree (`collection_path` + `paths` in the config) |
 | `bdnex repair [query]` | rebuild damaged archives as clean CBZ files, nothing else |
 | `bdnex move --copy [query]` | as `move`, but the source stays untouched; the **copy** is what the database tracks |
 

@@ -97,8 +97,8 @@ duplicates:
   keys: [series, volume]       # what makes two albums the same edition: series | volume | title
   action: ask                  # ask | skip | keep_both | replace
   prefer: [cbz, cbr, pdf]      # the format suggested first when the files are the same book
-  versions_dir: _versions      # spare versions, inside `directory`
+  versions_dir: _versions      # spare versions, inside `collection_path`
 
 trash:
-  dir: .bdnex-trash            # replaced files, inside `directory`
+  dir: .bdnex-trash            # replaced files, inside `collection_path`
 ```

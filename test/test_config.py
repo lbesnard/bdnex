@@ -38,22 +38,22 @@ def test_first_run_writes_commented_template_with_placeholder(conf_path):
     loaded = load_config()
     assert loaded.first_run and loaded.path == conf_path
     text = conf_path.read_text()
-    assert "REQUIRED" in text and cfg.PLACEHOLDER_DIRECTORY in text
-    assert loaded.settings.directory == cfg.PLACEHOLDER_DIRECTORY
+    assert "REQUIRED" in text and cfg.PLACEHOLDER_COLLECTION in text
+    assert loaded.settings.collection_path == cfg.PLACEHOLDER_COLLECTION
     assert load_config().first_run is False  # second run: file exists
 
 
 def test_first_run_template_is_not_a_full_copy_of_defaults(conf_path):
     load_config()
-    assert yaml.safe_load(conf_path.read_text()).keys() == {"config_version", "directory"}
+    assert yaml.safe_load(conf_path.read_text()).keys() == {"config_version", "collection_path"}
 
 
 def test_library_directory_placeholder_is_refused(conf_path):
     settings = load_config().settings
-    with pytest.raises(ConfigError, match="directory"):
-        settings.require_library_directory()
-    write(conf_path, {"config_version": 2, "directory": "~/comics"})
-    assert str(load_config().settings.require_library_directory()) == os.path.expanduser("~/comics")
+    with pytest.raises(ConfigError, match="collection_path"):
+        settings.require_collection()
+    write(conf_path, {"config_version": 2, "collection_path": "~/comics"})
+    assert str(load_config().settings.require_collection()) == os.path.expanduser("~/comics")
 
 
 def test_user_overrides_are_deep_merged(conf_path):
@@ -94,7 +94,7 @@ def test_all_problems_reported_together(conf_path):
 def test_stale_config_warns_and_ignores_old_keys(conf_path):
     # shape of the files written by bdnex 0.1
     write(conf_path, {"bdnex": {"config_path": "~/.config/bdnex", "share_path": "~/x"},
-                      "directory": "~/comics", "import": {"copy": False, "move": True, "rename": True},
+                      "collection_path": "~/comics", "import": {"copy": False, "move": True, "rename": True},
                       "paths": {"series": "%title"}})
     loaded = load_config()
     assert any("stale" in w for w in loaded.warnings)
@@ -186,7 +186,7 @@ def test_plugin_runs_with_configured_fetcher(conf_path):
 def test_first_launch_tells_user_to_edit_config(conf_path, capsys):
     assert check_config() is True
     err = capsys.readouterr().err
-    assert str(conf_path) in err and "edit" in err and "directory" in err
+    assert str(conf_path) in err and "edit" in err and "collection_path" in err
     assert check_config() is True and capsys.readouterr().err == ""  # only once
 
 
@@ -197,7 +197,7 @@ def test_check_config_blocks_on_invalid_config(conf_path, capsys):
 
 
 def test_check_config_prints_stale_warning(conf_path, capsys):
-    write(conf_path, {"directory": "~/c"})
+    write(conf_path, {"collection_path": "~/c"})
     assert check_config() is True
     assert "stale" in capsys.readouterr().err
 
@@ -247,9 +247,9 @@ def test_plugins_section_must_be_a_mapping(conf_path):
 def test_version_1_config_with_the_old_paths_block_is_stale_not_broken(conf_path):
     """A full v1 config (as written by `bdnex config`) keeps working after the `bdnex:` block was removed."""
     write(conf_path, {"config_version": 1, "bdnex": {"config_path": "~/.config/bdnex", "share_path": "~/.local/share/bdnex"},
-                      "directory": "~/comics", "match": {"strong_threshold": 85}})
+                      "collection_path": "~/comics", "match": {"strong_threshold": 85}})
     loaded = load_config()
-    assert loaded.settings.match.strong_threshold == 85 and loaded.settings.directory == "~/comics"
+    assert loaded.settings.match.strong_threshold == 85 and loaded.settings.collection_path == "~/comics"
     assert any("stale" in w for w in loaded.warnings)
     assert any("ignored keys no longer used: bdnex" in w for w in loaded.warnings)
 
@@ -271,7 +271,7 @@ def test_a_real_typo_still_says_typo(conf_path):
 
 def test_stale_warning_tells_you_to_delete_the_ignored_keys_first(conf_path, tmp_path):
     os.makedirs(os.path.expanduser("~/c"))
-    write(conf_path, {"config_version": 1, "bdnex": {"share_path": "y"}, "directory": "~/c"})
+    write(conf_path, {"config_version": 1, "bdnex": {"share_path": "y"}, "collection_path": "~/c"})
     first, second = load_config().warnings
     assert "Delete the ignored keys" in first and "set `config_version: 2`" in first
     assert second == "ignored keys no longer used: bdnex"
@@ -294,14 +294,14 @@ def test_no_warning_when_the_fetcher_is_set_or_nothing_is(conf_path):
 def test_an_unquoted_yes_or_no_in_the_yaml_file_is_accepted(tmp_path, written, expected):
     """YAML itself reads ``delete_original: no`` as false."""
     import yaml
-    user = yaml.safe_load(f"config_version: 2\ndirectory: {tmp_path}\nwrite:\n  delete_original: {written}\n")
+    user = yaml.safe_load(f"config_version: 2\ncollection_path: {tmp_path}\nwrite:\n  delete_original: {written}\n")
     assert build_settings(user)[0].write.delete_original == expected
     assert build_settings(user)[0].write.delete_original in ("ask", "yes", "no")
 
 
 def test_other_wrong_values_are_still_reported(tmp_path):
     with pytest.raises(ConfigError, match="delete_original"):
-        build_settings({"config_version": 2, "directory": str(tmp_path), "write": {"delete_original": "maybe"}})
+        build_settings({"config_version": 2, "collection_path": str(tmp_path), "write": {"delete_original": "maybe"}})
 
 
 def test_the_fetcher_must_exist():
@@ -356,9 +356,9 @@ def test_a_value_set_later_is_checked_too():
 
 
 def test_a_missing_directory_is_warned_about(tmp_path):
-    _, warnings, _ = build_settings({"config_version": 2, "directory": str(tmp_path / "unmounted")})
+    _, warnings, _ = build_settings({"config_version": 2, "collection_path": str(tmp_path / "unmounted")})
     assert any("not an existing folder" in w for w in warnings)
-    _, none, _ = build_settings({"config_version": 2, "directory": str(tmp_path)})
+    _, none, _ = build_settings({"config_version": 2, "collection_path": str(tmp_path)})
     assert none == []
 
 
@@ -369,3 +369,22 @@ def test_editing_the_config_checks_what_was_saved(conf_path, monkeypatch, capsys
     assert config_cmd._edit(conf_path) == 0 and "configuration is valid" in capsys.readouterr().err
     write(conf_path, {"config_version": 2, "match": {"strong_threshold": 500}})
     assert config_cmd._edit(conf_path) == 1 and "strong_threshold" in capsys.readouterr().err
+
+
+def test_the_old_name_of_the_collection_option_still_works_with_a_warning(tmp_path):
+    settings, warnings, _ = build_settings({"config_version": 2, "directory": str(tmp_path)})
+    assert settings.collection_path == str(tmp_path)
+    assert any("`directory` is now called `collection_path`" in w for w in warnings)
+    _, both, _ = build_settings({"config_version": 2, "directory": "~/a", "collection_path": str(tmp_path)})
+    assert any("is also set" in w for w in both)
+
+
+def test_config_update_renames_the_old_option_in_the_file(conf_path, capsys, tmp_path):
+    from bdnex.ui import config_cmd
+    conf_path.parent.mkdir(parents=True, exist_ok=True)
+    conf_path.write_text(f"config_version: 2\ndirectory: {tmp_path}\nwrite:\n  cbr: skip\n", encoding="utf-8")
+    assert config_cmd._update(conf_path) == 0
+    text = conf_path.read_text(encoding="utf-8")
+    assert f"collection_path: {tmp_path}" in text and "\ndirectory:" not in text and "cbr: skip" in text
+    assert "Renamed the option directory -> collection_path" in capsys.readouterr().out
+    assert load_config(conf_path).warnings == []

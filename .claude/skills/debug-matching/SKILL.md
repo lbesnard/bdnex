@@ -4,7 +4,7 @@ description: Investigate why a comic file or folder matches the wrong Bédéthè
 ---
 
 Work on a **copy** of the user's library, never the real one (copy `~/.local/share/bdnex/bdnex.sqlite` into the
-scratchpad; the library refuses to open without `directory` set in the config).
+scratchpad; the library refuses to open without `collection_path` set in the config).
 
 1. Parse the name: `bdnex.importer.matching.query_from_filename`, `queries_for`, `series_queries`.
 2. Folder logic: `bdnex.importer.folders.title_and_volume`, `classify` (series / versions / unclear), `propose_series`.
