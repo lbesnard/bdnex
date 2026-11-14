@@ -27,6 +27,7 @@ from bdnex.library.query import QueryError
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_LIMIT = 1000
+MAX_BULK = 2000  # albums one edit may change
 
 
 class JobRequest(BaseModel):
@@ -51,6 +52,17 @@ class QuestionAnswer(BaseModel):
     choice: Optional[int] = None
     choices: list[int] = []
     text: str = ""
+
+
+class AlbumEdit(BaseModel):
+    preview: bool = True        # a preview shows the changes and stores nothing
+    fields: dict[str, Any]      # the album's fields as `bdnex edit` shows them: title, volume, credits {role: [names]}, ...
+
+
+class BulkEdit(BaseModel):
+    q: str                      # which albums, as in `bdnex ls`
+    set: list[str]              # `publisher=Soleil`, `genres=Humour; Fantasy`, `credits.Writer=A; B` (as `bdnex edit --set`)
+    preview: bool = True
 
 
 class ReviewAnswer(BaseModel):
@@ -178,6 +190,83 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             raise HTTPException(404, f"no album {album_id}")
         found["files"] = lib.files_for_album(album_id)
         return found
+
+    def apply_edits(lib_edit: Library, changes: dict[int, dict[str, Any]]) -> None:
+        for album_id, change in changes.items():
+            lib_edit.edit_album(album_id, change)
+
+    @app.post("/api/albums/{album_id}/edit", dependencies=guarded,
+              summary="**Change (unless a preview):** edit an album's metadata by hand, as `bdnex edit` does")
+    def album_edit(album_id: int, body: AlbumEdit, request: Request):
+        from bdnex.ui import edit_cmd
+
+        if not body.preview:
+            can_change(request)
+            if jobs.busy():
+                raise HTTPException(409, "a task is running: wait for it to finish, or cancel it")
+        lib = Library.for_settings(settings, readonly=body.preview)
+        try:
+            album = lib.get_album(album_id)
+            if album is None:
+                raise HTTPException(404, f"no album {album_id}")
+            problems: list[str] = []
+            change = edit_cmd.doc_changes(album, dict(body.fields), problems)
+            if problems:
+                raise HTTPException(400, "; ".join(problems))
+            lines = edit_cmd.describe_changes({album_id: album}, {album_id: change}) if change else []
+            if change and not body.preview:
+                apply_edits(lib, {album_id: change})
+            return {"changed": bool(change), "stored": bool(change) and not body.preview, "changes": lines,
+                    "album": lib.get_album(album_id) if not body.preview else album}
+        except (ValueError, KeyError) as err:
+            raise HTTPException(400, str(err)) from err
+        finally:
+            lib.close()
+
+    @app.post("/api/edit", dependencies=guarded,
+              summary="**Change (unless a preview):** one change on every album a query finds, as `bdnex edit --set`")
+    def bulk_edit(body: BulkEdit, request: Request):
+        from bdnex.ui import edit_cmd
+
+        if not body.q.strip():
+            raise HTTPException(400, "give a query: this changes every album it finds")
+        if not body.set:
+            raise HTTPException(400, "nothing to set")
+        if not body.preview:
+            can_change(request)
+            if jobs.busy():
+                raise HTTPException(409, "a task is running: wait for it to finish, or cancel it")
+        try:
+            assignments = edit_cmd.parse_assignments(body.set)
+        except ValueError as err:
+            raise HTTPException(400, f"bad value: {err}") from err
+        lib = Library.for_settings(settings, readonly=body.preview)
+        try:
+            try:
+                rows = [r for r in lib.query(terms(body.q)) if r.get("id")]
+            except QueryError as err:
+                raise HTTPException(400, f"bad query: {err}") from err
+            if len(rows) > MAX_BULK:
+                raise HTTPException(400, f"{len(rows)} albums: narrow the query (at most {MAX_BULK} at once)")
+            albums = {r["id"]: lib.get_album(r["id"]) for r in rows}
+            changes, problems, skipped = {}, [], 0
+            for album in albums.values():
+                if "series" in assignments and album["kind"] != "series":
+                    skipped += 1
+                    continue
+                change = edit_cmd.doc_changes(album, dict(assignments), problems)
+                if change:
+                    changes[album["id"]] = change
+            if problems:
+                raise HTTPException(400, "; ".join(problems[:5]))
+            if not body.preview:
+                apply_edits(lib, changes)
+            return {"matched": len(albums), "changed": len(changes), "skipped": skipped, "stored": not body.preview and bool(changes),
+                    "changes": edit_cmd.describe_changes(albums, changes)[:400]}
+        except (ValueError, KeyError) as err:
+            raise HTTPException(400, str(err)) from err
+        finally:
+            lib.close()
 
     @app.get("/api/albums/{album_id}/cover", dependencies=guarded, summary="The album's cover image")
     def cover(album_id: int, lib: Library = Depends(library)):

@@ -45,7 +45,7 @@ A word before a colon that is not a field name (as in `Tintin: Le Lotus`) is sea
 - **Everywhere:** `any` (see above).
 - **Text:** `title`, `series`, `publisher`, `isbn`, `language`, `summary`, `kind` (`series` or `oneshot`),
   `url`, `source`, `genre`, `author` (any credit), `writer`, `penciller`, `inker`, `colorist`, `letterer`, `coverartist`.
-- **Numbers:** `year`, `volume`, `pages`, `rating`, `files` (files per album; `files:0` finds albums without a file).
+- **Numbers:** `id` (the album's number, as the web page and `bdnex edit` know it), `year`, `volume`, `pages`, `rating`, `files` (files per album; `files:0` finds albums without a file).
 - **Yes/no:** `complete` (the album page was read; `partial` is its opposite).
 - **File fields:** `path`, `filename`, `format` (`cbz`, `cbr`, `pdf`), `md5`, `embedded` (what the file's own `ComicInfo.xml` says), `size`, `filepages` (pages of the file),
   `corrupted`, `review` (the match waits for `bdnex review`), `metadata` (file already has a `ComicInfo.xml`), `tagged` (only with `--files`),

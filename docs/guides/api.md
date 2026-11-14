@@ -87,6 +87,8 @@ JSON. The reading endpoints are `GET`; the ones that change something are marked
 | --- | --- |
 | `/api/albums?q=&limit=&offset=` | albums matching `q`, paged (`limit` up to 1000, 100 by default) |
 | `/api/albums/{id}` | one album with its credits, genres and files |
+| `POST /api/albums/{id}/edit` | **change (a preview is not):** edit an album's fields by hand: `{"preview": true, "fields": {"title": "…", "credits": {"Writer": ["A"]}}}`; answers `changes` (as `bdnex edit -n` prints them) and, when stored, the new album. A bad value is `400` with the reason |
+| `POST /api/edit` | **change (a preview is not):** `{"q": "series:nains", "set": ["publisher=Soleil"], "preview": true}`, as `bdnex edit QUERY --set`; at most 2000 albums, never an empty query |
 | `/api/albums/{id}/cover` | the album's saved cover image (404 when none was downloaded yet) |
 | `/api/files?q=&limit=&offset=` | files matching `q` (the `--files` terms), with their absolute paths |
 | `/api/series?name=&missing=true` | series, what you own, and the albums you lack when the series page is known |

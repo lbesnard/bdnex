@@ -65,6 +65,16 @@ bdnex edit series:nains --set publisher=Soleil --set year=2007 -y    # no editor
 bdnex edit -n series:nains           # show the changes, store nothing
 ```
 
+**In the web page.** Open an album and press **Edit**: a form with every field `bdnex edit` has (title, volume, publisher, date,
+pages, language, format, ISBN, summary, genres, and the credits as one row per role). *Preview the changes* shows them like
+`bdnex edit -n` and stores nothing; *Save* stores them as hand edits, kept across re-imports and `reparse`, with the same checks
+(a month from 1 to 12, whole numbers, text where text is expected). Names such as `Jarry, Nicolas` are one name: separate several
+with `;`. An emptied credit row removes the role, and renaming the series renames it for all its albums (the form says so).
+On the **Albums** page, a search with results also offers **Edit these N albums**: the same as `bdnex edit QUERY --set ...`,
+with a preview first. An edit changes the library only: **Write the tags into its files** (or `bdnex write`) puts the new values
+into the files. Edits need `api.allow_changes` and the login, and wait while a task is running. Album numbers are `id:` in
+[queries](queries.md).
+
 In the editor, each album is a block:
 
 ```yaml
