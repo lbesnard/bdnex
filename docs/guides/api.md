@@ -99,6 +99,7 @@ JSON. The reading endpoints are `GET`; the ones that change something are marked
 | endpoint | returns |
 | --- | --- |
 | `/api/albums?q=&limit=&offset=` | albums matching `q`, paged (`limit` up to 1000, 100 by default) |
+| `/api/people?q=&limit=&offset=` | every credited name once (a name is one row of the library's `people` table), most albums first, with the number of albums by role |
 | `/api/albums/{id}` | one album with its credits, genres and files |
 | `POST /api/albums/{id}/edit` | **change (a preview is not):** edit an album's fields by hand: `{"preview": true, "fields": {"title": "…", "credits": {"Writer": ["A"]}}}`; answers `changes` (as `bdnex edit -n` prints them) and, when stored, the new album. A bad value is `400` with the reason |
 | `POST /api/edit` | **change (a preview is not):** `{"q": "series:nains", "set": ["publisher=Soleil"], "preview": true}`, as `bdnex edit QUERY --set`; at most 2000 albums, never an empty query |

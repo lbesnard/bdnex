@@ -56,6 +56,16 @@ The number is how close the best candidate was when you skipped the file (`-` wh
 none). Only the **latest** import of a file counts: once it is linked, it leaves the list.
 Re-import them with `bdnex import <folder>` (already linked files are skipped).
 
+## Authors, and following a name
+
+Each credited name is stored once (the `people` table), and the credits link an album, a person and a role. In the web page,
+the names in an album's details are links: **a name** shows every album that person worked on, **as writer** (or penciller,
+colorist...) only the albums where they have that role; a series, a publisher or a genre is a link too. The **People** page lists
+everybody with how many albums they have and in which roles, with a search box. These are ordinary searches
+(`bdnex ls 'author:=Moebius'`, `'writer:=Moebius'`, `'series:=Blueberry'`; `=` is an exact match, ignoring case and accents).
+A name is unique by its spelling: the same person written two ways (`Moebius` and `Giraud, Jean`) is two entries, so correct a
+spelling with the editor (the credits of an album, or **Edit these albums** on a search).
+
 ## The Files page
 
 The Files page lists the files of a search (`format:pdf corrupted:true`...). With changes allowed, each row has an **Actions** menu:

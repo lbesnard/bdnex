@@ -88,6 +88,15 @@ function searchBox(placeholder, value, onsubmit) {
 }
 
 // ------------------------------------------------------------------ the views
+// A name in a credit, a series, a genre... is a link to the albums that have it: one term of the `bdnex ls` language,
+// quoted as a whole so that `Jarry, Nicolas` stays one name.
+const ROLE_FIELDS = new Set(["writer", "penciller", "inker", "colorist", "letterer", "coverartist"]);
+const exact = (field, value) => '"' + `${field}:=${value}`.replace(/(["\\])/g, "\\$1") + '"';
+const albumsWith = (field, value) => "#/albums?q=" + encodeURIComponent(exact(field, value));
+function filterLink(field, value, text, hint) {
+  return el("a", { href: albumsWith(field, value), title: hint || `All the albums with ${value}`, onclick: () => { const d = $("#dialog"); if (d.open) d.close(); } }, text ?? value);
+}
+
 const VIEWS = {
   overview: { name: "Overview", icon: "◧", async draw() {
     const o = app.overview = await api("/api/overview");
@@ -125,6 +134,18 @@ const VIEWS = {
       el("p", { class: "hint" }, rich("Same terms as `bdnex ls`: field:value, ranges, ::regex, ^ to exclude.")),
       cards.length ? el("div", { class: "grid" }, cards) : el("p", { class: "hint" }, "No album."),
       next < data.count ? el("div", { class: "more" }, el("button", { onclick: () => VIEWS.albums.draw(q, next, items) }, `Show more (${data.count - next})`)) : null);
+  } },
+
+  people: { name: "People", icon: "☺", async draw(q = "", offset = 0) {
+    const data = await api("/api/people", { params: { q, limit: 100, offset } });
+    const rows = data.items.map(p => el("tr", {}, el("td", {}, el("a", { href: albumsWith("author", p.name) }, p.name)), el("td", {}, String(p.albums)),
+      el("td", {}, Object.entries(p.roles).flatMap(([role, n], i) => [i ? " · " : "", filterLink(role.toLowerCase() in { writer: 1, penciller: 1, inker: 1, colorist: 1, letterer: 1, coverartist: 1 } ? role.toLowerCase() : "author", p.name, `${role} ${n}`, `${p.name} as ${role}`)]))));
+    const to = offset + data.items.length;
+    render(...header("People", `${data.count} credited name(s). Each name is one entry: the same person under two spellings is two entries.`),
+      searchBox("part of a name", q, v => VIEWS.people.draw(v, 0)),
+      el("div", { class: "panel scroll", style: "margin-top:12px" }, data.items.length ? el("table", {}, el("thead", {}, el("tr", {}, ["Name", "Albums", "Roles"].map(h => el("th", {}, h)))), el("tbody", {}, rows)) : "Nobody found."),
+      el("div", { class: "more" }, el("button", { disabled: offset === 0, onclick: () => VIEWS.people.draw(q, Math.max(0, offset - 100)) }, "‹ Previous"), " ",
+        el("button", { disabled: to >= data.count, onclick: () => VIEWS.people.draw(q, to) }, "Next ›")));
   } },
 
   series: { name: "Series", icon: "☰", async draw(name = "", onlyMissing = false) {
@@ -402,9 +423,15 @@ async function bulkEdit(q, count) {
 
 async function albumDialog(id, note) {
   const a = await api("/api/albums/" + id);
-  const credits = Object.entries(a.credits || {}).map(([role, names]) => [role, names.join(", ")]);
-  const rows = [["Series", a.series], ["Year", a.year], ["Language", a.language], ["Publisher", a.publisher], ["ISBN", a.isbn],
-    ["Genres", (a.genres || []).join(", ")], ...credits];
+  const joined = nodes => nodes.flatMap((n, i) => i ? [", ", n] : [n]);
+  const credits = Object.entries(a.credits || {}).map(([role, names]) => [role, joined(names.map(name => {
+    const field = role.toLowerCase();
+    return el("span", {}, filterLink("author", name, name, `All the albums ${name} worked on, in any role`),
+      ROLE_FIELDS.has(field) ? el("small", { class: "hint" }, " (", filterLink(field, name, "as " + role.toLowerCase(), `Only the albums where ${name} is ${role.toLowerCase()}`), ")") : null);
+  }))]);
+  const rows = [["Series", a.series ? filterLink("series", a.series) : null], ["Year", a.year], ["Language", a.language],
+    ["Publisher", a.publisher ? filterLink("publisher", a.publisher) : null], ["ISBN", a.isbn],
+    ["Genres", (a.genres || []).length ? joined(a.genres.map(g => filterLink("genre", g))) : null], ...credits];
   const dialog = $("#dialog");
   const writeTags = () => { dialog.close(); startJob("write", { query: ["id:" + id], preview: false, interactive: true }); };
   dialog.replaceChildren(el("button", { class: "d-close", "aria-label": "close", onclick: () => dialog.close() }, "×"),
@@ -413,7 +440,7 @@ async function albumDialog(id, note) {
         canChange() ? el("div", { class: "row", style: "margin:8px 0" }, el("button", { onclick: () => dialog.replaceChildren(el("button", { class: "d-close", "aria-label": "close", onclick: () => dialog.close() }, "×"), el("div", { style: "padding:18px" }, el("h2", { style: "margin-top:0" }, label(a)), editForm(a, dialog))) }, "Edit"),
           a.files.length ? el("button", { onclick: writeTags, title: "Write this album's values into its files" }, "Write the tags into its files") : null) : null,
         note ? el("p", { class: "hint ok" }, note) : null,
-        el("dl", {}, rows.filter(r => r[1]).flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, String(v))])),
+        el("dl", {}, rows.filter(r => r[1]).flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, Array.isArray(v) || v instanceof Node ? v : String(v))])),
         a.summary ? el("p", {}, a.summary) : null, el("h3", {}, `Files (${a.files.length})`),
         a.files.map(f => el("div", { class: "hint", style: "margin:2px 0" }, `${f.format} · ${size(f.size)} — ${f.path}`)))));
   if (!dialog.open) dialog.showModal();
@@ -569,7 +596,7 @@ async function route() {
   try {  // a link such as #/albums?q=series:nains or #/series?name=nains opens the view already filtered
     if (id === "albums") await entry.draw(params.get("q") || "");
     else if (id === "series") await entry.draw(params.get("name") || "", params.get("missing") === "1");
-    else if (id === "files") await entry.draw(params.get("q") || "");
+    else if (id === "files" || id === "people") await entry.draw(params.get("q") || "");
     else if (id === "tasks") await entry.draw(params.get("job"));
     else await entry.draw();
   } catch (e) { failure(e); }
