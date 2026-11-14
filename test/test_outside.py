@@ -194,3 +194,38 @@ def test_fetch_alone_without_a_path_still_means_the_whole_library(world, tmp_pat
     capsys.readouterr()
     code, text = do("--fetch")
     assert code == 0 and "No folder given" not in capsys.readouterr().err and "1 complete" in text
+
+
+def _snapshot(*folders):
+    """Every file under the folders: its bytes and its modification time, so any change shows."""
+    import hashlib
+    found = {}
+    for folder in folders:
+        for path in sorted(folder.rglob("*")):
+            if path.is_file():
+                found[str(path)] = (hashlib.sha256(path.read_bytes()).hexdigest(), path.stat().st_mtime_ns)
+    return found
+
+
+def test_import_database_only_never_changes_a_comic_even_with_the_worst_settings(world, tmp_path):
+    """`import --database-only` fills the library and touches no file: not even with `import.mode: move`,
+    a copy source and `duplicates.action: replace` in the configuration, and an identical file twice."""
+    root, downloads, comic, configure = world
+    inside = root / "mine" / NAME
+    inside.parent.mkdir()
+    shutil.copy(comic, inside)  # the same bytes twice: a duplicate
+    configure(**{"import": {"mode": "move", "outside": "move", "sources": [{"path": str(downloads), "mode": "move"}]},
+                 "duplicates": {"action": "replace"}})
+    before = _snapshot(root, downloads)
+    code, _ = do("--database-only", "--auto=all", str(root), str(downloads))
+    assert code == 0
+    assert _snapshot(root, downloads) == before  # same files, same bytes, same times: nothing moved, written or trashed
+    with library(tmp_path) as lib:
+        assert lib.get_file(str(inside)) is not None or lib.get_file(comic) is not None  # the library learned of one; the twin is a skipped duplicate
+
+
+def test_database_only_refuses_the_options_that_change_files(world, capsys):
+    root, downloads, comic, _ = world
+    for flag in ("--write", "--move", "--copy"):
+        with pytest.raises(SystemExit):
+            import_cmd.run(["--database-only", flag, comic], out=io.StringIO())
