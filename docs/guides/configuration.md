@@ -24,8 +24,13 @@ underneath, so options added in a new bdnex release work without touching your f
 
 **Keeping the file complete.** When a new version brings options your file does not list, bdnex
 says so once per run (`note: 3 option(s) are not in your config file yet`). `bdnex config --update`
-adds them, commented out, in the right section; nothing you wrote is changed, an option you already
-have (active or commented) is never repeated, and the previous file is kept as `bdnex.yaml.bak`.
+adds them, commented out, in the right section; no value you wrote is changed, an option you already
+have (active or commented) is never repeated, and the previous file is kept as `bdnex.yaml.bak`. It also puts the
+list of possible values back (`# convert | skip`) after any option of yours that has no comment, so you can
+see what to type; a comment you wrote yourself is left alone.
+
+**A commented-out option is not a setting.** `# pdf: convert` shows the default and changes nothing: PDFs are
+still converted. To keep them as they are, remove the `# ` and write `pdf: skip`.
 
 ## Commands
 
@@ -33,7 +38,7 @@ have (active or commented) is never repeated, and the previous file is kept as `
 |---|---|
 | `bdnex config` | print the effective configuration (defaults + yours) |
 | `bdnex config --defaults` | print every option with its default |
-| `bdnex config --update` | add the options your file does not list yet, commented out |
+| `bdnex config --update` | add the options your file does not list yet, commented out, and restore the list of possible values after options that lost it |
 | `bdnex config --path` | print the config file path |
 | `bdnex config --edit` | open the file in `$VISUAL` / `$EDITOR` |
 
