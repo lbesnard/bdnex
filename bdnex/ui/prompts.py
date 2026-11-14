@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import os
 import re
 import shlex
@@ -132,6 +134,26 @@ def bind_open(prompt, keys: tuple = ("c-o",)) -> None:
         prompt.register_kb(key)(_open)
 
 
+_FACTORY: contextvars.ContextVar = contextvars.ContextVar("bdnex_prompter_factory", default=None)
+
+
+@contextlib.contextmanager
+def use_prompter(factory):
+    """Inside this block (and this thread) ``new_prompter(...)`` makes ``factory(...)``: the web page asks its
+    questions on the page instead of the terminal."""
+    token = _FACTORY.set(factory)
+    try:
+        yield
+    finally:
+        _FACTORY.reset(token)
+
+
+def new_prompter(**kwargs) -> "InquirerPrompter":
+    """The prompter a command asks its questions with: the terminal's, unless :func:`use_prompter` says otherwise."""
+    factory = _FACTORY.get()
+    return factory(**kwargs) if factory is not None else InquirerPrompter(**kwargs)
+
+
 class InquirerPrompter:
     SKIP = "__skip__"
     PREVIOUS = "__previous__"
@@ -165,8 +187,13 @@ class InquirerPrompter:
 
     def _pick(self, message: str, entries: list):
         """Ask a question made of :data:`bdnex.ui.keys.ACTIONS` and answers of its own: keys, colours, Enter."""
-        choices, fragments, keys = ui_keys.build(entries, color.enabled(), shortcut)
+        choices, fragments, keys = ui_keys.build(entries, self._tinted(), shortcut)
         return self._select(message, choices, fragments, keys)
+
+    @staticmethod
+    def _tinted() -> bool:
+        """Are the answers coloured (the terminal supports it)? The web page always has their colours."""
+        return color.enabled()
 
     @staticmethod
     def _hint(shortcuts: Optional[dict]) -> str:
@@ -223,7 +250,7 @@ class InquirerPrompter:
                     {"action": "back", "value": self.PREVIOUS},
                     {"action": "abort", "value": self.ABORT,
                      "label": "Abort the import (what is decided is kept; run it again to continue)"}]
-        more, more_fragments, more_keys = ui_keys.build(offered, on, shortcut)
+        more, more_fragments, more_keys = ui_keys.build(offered, self._tinted(), shortcut)
         choices += more
         fragments += more_fragments
         keys.update(more_keys)
@@ -527,8 +554,6 @@ class InquirerPrompter:
 
     def resolve_fields(self, path: str, changes: list, file_fields: dict, db_fields: dict) -> Optional[dict]:
         """For each difference: the database's value, the file's, or one typed by hand (default: the database's)."""
-        from InquirerPy import inquirer
-
         from bdnex.organizer.comicinfo import excerpts
 
         chosen = {}
@@ -544,7 +569,7 @@ class InquirerPrompter:
             if answer == "skip":
                 return None
             if answer == "edit":
-                chosen[change.field] = inquirer.text(message=f"{change.field}:", default=mine or theirs or "").execute()
+                chosen[change.field] = self._text(f"{change.field}:", mine or theirs or "")
             else:
                 chosen[change.field] = mine if answer == "db" else theirs
         return chosen
@@ -555,9 +580,7 @@ class InquirerPrompter:
         return self._ask(message, choices) == "yes"
 
     def ask_value(self, field: str, label: str) -> Optional[str]:
-        from InquirerPy import inquirer
-
-        value = inquirer.text(message=f"`{field}` is empty for \"{label}\". Value (empty = skip the file):").execute()
+        value = self._text(f"`{field}` is empty for \"{label}\". Value (empty = skip the file):")
         return value.strip() or None
 
     def collision(self, dest: str) -> str:

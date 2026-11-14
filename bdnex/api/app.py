@@ -33,6 +33,17 @@ class JobRequest(BaseModel):
     paths: list[str] = []
     copy_files: bool = False    # `move` leaves the originals where they are
     batch: Optional[str] = None
+    interactive: bool = False   # a real run asks its questions on the page (else it never asks)
+    steps: list[str] = []       # import: match and / or fetch
+    auto: str = ""              # import: how much to ask (`strong`, `all`)
+    files: str = ""             # import: `database_only` (touch no file) or `no_move`
+
+
+class QuestionAnswer(BaseModel):
+    question: int               # the id of the question being answered
+    choice: Optional[int] = None
+    choices: list[int] = []
+    text: str = ""
 
 
 class ReviewAnswer(BaseModel):
@@ -297,7 +308,8 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             can_change(request)
         try:
             options = {"preview": body.preview, "query": body.query, "paths": body.paths, "copy": body.copy_files,
-                       "batch": body.batch}
+                       "batch": body.batch,
+                       "interactive": body.interactive, "steps": body.steps, "auto": body.auto, "files": body.files}
             job = jobs.start(body.command, options, allow_changes=allow_changes)
         except JobError as err:
             raise HTTPException(400, str(err)) from err
@@ -306,6 +318,19 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
         except Busy as err:
             raise HTTPException(409, str(err)) from err
         return job.public()
+
+    @app.post("/api/jobs/{job_id}/answer", dependencies=changing, summary="**Change:** answer the question a job is waiting on")
+    def job_answer(job_id: int, body: QuestionAnswer):
+        job = jobs.get(job_id)
+        if job is None:
+            raise HTTPException(404, f"no job {job_id}")
+        try:
+            taken = jobs.answer(job_id, body.question, {"choice": body.choice, "choices": body.choices, "text": body.text})
+        except JobError as err:
+            raise HTTPException(400, str(err)) from err
+        if not taken:
+            raise HTTPException(409, "this question is not being asked (any more)")
+        return {"answered": True}
 
     @app.post("/api/jobs/{job_id}/cancel", dependencies=changing, summary="Ask a running job to stop")
     def job_cancel(job_id: int):
