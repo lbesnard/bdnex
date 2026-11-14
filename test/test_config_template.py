@@ -168,3 +168,37 @@ def test_the_run_says_once_that_the_file_lacks_options(tmp_path, monkeypatch, ca
 def test_comment_out_keeps_the_indent():
     assert comment_out("  key: 1  # help") == "  # key: 1  # help"
     assert comment_out("key: 1") == "# key: 1"
+
+
+# ------------------------------------------------- the possible values come back
+def test_update_puts_the_help_back_after_options_that_lost_it():
+    from bdnex.config_template import annotate
+
+    text = MINIMAL + "write:\n  cbr: convert\n  # pdf: convert\n  workers: 2  # my own note\n"
+    new, done = annotate(text)
+    assert "write.cbr" in done and "write.pdf" in done and "write.workers" not in done
+    by_key = {m.group(1): m.group(0) for m in re.finditer(r"(?m)^  #? ?(cbr|pdf|workers):.*$", new)}
+    assert "convert | skip" in by_key["cbr"] and "convert | skip" in by_key["pdf"]
+    assert by_key["workers"].endswith("# my own note")  # a comment of the user's is never replaced
+    assert yaml.safe_load(new)["write"] == {"cbr": "convert", "workers": 2}  # values untouched
+    assert annotate(new)[1] == []  # and once is enough
+
+
+def test_the_help_is_not_added_to_a_value_that_contains_a_hash_or_to_an_empty_line():
+    from bdnex.config_template import annotate
+
+    text = MINIMAL + "write:\n  conflict: 'a # b'\n  cbr:\n"
+    assert annotate(text)[1] == []
+
+
+def test_config_update_reports_the_help_it_restored(tmp_path, monkeypatch, capsys):
+    from bdnex.config_template import complete
+    from bdnex.ui import config_cmd
+
+    path = tmp_path / "c.yaml"
+    full, _ = complete(MINIMAL + "write:\n  cbr: convert\n  # pdf: convert\n")
+    path.write_text(full)
+    monkeypatch.setattr(config_cmd, "user_config_path", lambda: path)
+    assert config_cmd.run(["--update"]) == 0
+    assert "Put the list of possible values back after" in capsys.readouterr().out
+    assert re.search(r"(?m)^  cbr: convert\s+# convert \| skip", path.read_text())

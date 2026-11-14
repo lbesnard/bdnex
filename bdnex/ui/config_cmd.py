@@ -70,7 +70,7 @@ def _edit(path) -> int:
 
 def _update(path) -> int:
     from bdnex.config import ensure_user_config
-    from bdnex.config_template import complete
+    from bdnex.config_template import annotate, complete
 
     path, created = ensure_user_config(path)
     if created:
@@ -86,15 +86,20 @@ def _update(path) -> int:
             renamed.append(f"{old} -> {new_name}")
             text = text2
     new, added = complete(text)
-    if not added and not renamed:
-        print(f"{path} already lists every option.")
+    new, helped = annotate(new)  # the possible values come back after options that lost their comment
+    if not added and not renamed and not helped:
+        print(f"{path} already lists every option, with its help.")
         return 0
     backup = path.with_name(path.name + ".bak")
     backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     path.write_text(new, encoding="utf-8")
     for line in renamed:
         print(f"Renamed the option {line}.")
-    print(f"Added {len(added)} option(s) to {path}, commented out (the previous file is {backup.name}):")
-    for name in added:
-        print(f"  {name}")
+    print(f"Updated {path} (the previous file is {backup.name}):")
+    if added:
+        print(f"Added {len(added)} option(s), commented out:")
+        for name in added:
+            print(f"  {name}")
+    if helped:
+        print(f"Put the list of possible values back after {len(helped)} option(s) that had none.")
     return 0

@@ -137,3 +137,38 @@ def complete(text: str) -> tuple[str, list[str]]:
             lines.append(f"# {item.name}:")
             lines.extend(new)
     return "\n".join(lines) + "\n", added
+
+
+def _help_of(packaged_line: str) -> Optional[tuple[str, int]]:
+    """``(# the help, its column)`` from a packaged line, ``None`` when it has none."""
+    found = re.search(r"\s(#\s.*)$", packaged_line)
+    return (found.group(1), found.start(1)) if found else None
+
+
+def annotate(text: str) -> tuple[str, list[str]]:
+    """``text`` with the help comment (the possible values and what the option does) put back after every option the
+    file already mentions, active or commented out, that has no comment of its own. Values are never changed.
+    Returns (new text, dotted names annotated)."""
+    lines = text.splitlines()
+    done: list[str] = []
+    for item in packaged():
+        if item.children:
+            header = _header(lines, item.name)
+            if header is None:
+                continue
+            scope, wanted, indent = (header + 1, _span_end(lines, header)), item.children, "  "
+        else:
+            scope, wanted, indent = (0, len(lines)), [(item.name, item.line)], ""
+        for name, pline in wanted:
+            help_ = _help_of(pline)
+            if help_ is None:
+                continue
+            pattern = re.compile(rf"^{indent}(?:#\s*)?{re.escape(name)}:(.*)$")
+            for i in range(*scope):
+                found = pattern.match(lines[i])
+                if found and not re.search(r"\s#", found.group(1)) and found.group(1).strip() != "":
+                    pad = max(len(lines[i]) + 2, help_[1])
+                    lines[i] = lines[i].ljust(pad) + help_[0]
+                    done.append(f"{item.name}.{name}" if item.children else name)
+                    break
+    return "\n".join(lines) + "\n", done
