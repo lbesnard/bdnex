@@ -42,7 +42,8 @@ CBR files are read with `bsdtar`, which the image has. For the cover check, buil
 
 ## Behind Traefik, or any proxy
 
-HTTP Basic sends the password as it is, so use HTTPS as soon as the page leaves your LAN. Drop `ports:` and add the
+The login (a form and a session cookie) travels as it is without HTTPS, so use HTTPS as soon as the page leaves your LAN. Set
+`api.behind_proxy: true` in `/config/bdnex.yaml` so that the limit on wrong guesses sees each client, not the proxy. Drop `ports:` and add the
 labels shown in `compose.yaml` (router, entrypoint, TLS, port 8765). The proxy must pass `Host` and `Origin` unchanged: the
 page refuses a change that comes from another site. You can also let the proxy do the login (Traefik's `basicauth`
 middleware) and keep the page's own as a second lock.

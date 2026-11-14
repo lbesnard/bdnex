@@ -100,6 +100,8 @@ api:
   port: 8765
   token: null                            # when set, requests must send `Authorization: Bearer <token>`
   username: bdnex                        # the login of the web page, with `password`
+  session_hours: 168                     # how long a browser stays logged in (the page has a login form and a log out)
+  behind_proxy: false                    # true behind your own reverse proxy: the client is the first `X-Forwarded-For` address
   password: null                         # when set, the web page asks for `username` and this password (HTTP Basic: use HTTPS beyond your LAN)
   allow_changes: false                   # true: the web page can run jobs and change the library (see the docs)
 
