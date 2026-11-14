@@ -33,6 +33,10 @@ class Spec:
     label: str
     writes: bool            # changes files or the library (needs `api.allow_changes`)
     build: Callable[..., tuple[Callable, list[str]]]  # (options, settings) -> (function(out), argv)
+    fields: tuple = ()      # what the page asks for: query, paths, import (its three choices), formats, older_than
+    preview: bool = True    # has a preview (`-n`); else only "Run for real"
+    asks: bool = False      # a real run needs the page to ask for a confirmation (it can not go ahead unasked)
+    listed: bool = True     # a card on the Tasks page (else started from another view, such as the trash)
 
 
 def _terms(options: dict) -> list[str]:
@@ -68,6 +72,11 @@ def _write_command(command: str):
             argv = ["--force", *argv]  # nobody to ask: the page did not offer to ask
         if command == "move" and options.get("copy"):
             argv = ["--copy", *argv]
+        if command == "convert":
+            formats = options.get("formats") or []
+            if not isinstance(formats, list) or any(fmt not in ("pdf", "cbr") for fmt in formats):
+                raise JobError("`formats` is a list of `pdf` and `cbr`")
+            argv = [arg for fmt in formats for arg in ("--from", fmt)] + argv
         return (lambda out: write_cmd.run(command, argv, out=out)), argv
     return build
 
@@ -108,6 +117,22 @@ def _simple(module: str, extra: Callable[[dict, Any], list[str]]):
     return build
 
 
+def _days(options: dict) -> list[str]:
+    days = options.get("older_than")
+    if days in (None, ""):
+        return []
+    if isinstance(days, bool) or not isinstance(days, int) or not 0 <= days <= 36500:
+        raise JobError("`older_than` is a number of days")
+    return ["--older-than", str(days)]
+
+
+def _trash_id(options: dict) -> str:
+    entry = options.get("id")
+    if isinstance(entry, bool) or not isinstance(entry, int) or entry < 1:
+        raise JobError("`id` is the number of a trash entry")
+    return str(entry)
+
+
 def _batch(options: dict) -> list[str]:
     batch = str(options.get("batch") or "last")
     if not all(c.isalnum() or c in "-_" for c in batch):
@@ -115,20 +140,37 @@ def _batch(options: dict) -> list[str]:
     return [batch]
 
 
+def _preview(options: dict) -> list[str]:
+    return ["-n"] if options.get("preview", True) else []
+
+
 SPECS: dict[str, Spec] = {
     "check": Spec("Check the library", False, _simple("check_cmd", lambda o, s: [])),
     "check-fix": Spec("Check the library and settle what is safe", True, _simple("check_cmd", lambda o, s: ["--fix"])),
     "duplicates": Spec("Find duplicates", False, _simple("duplicates_cmd", lambda o, s: [])),
+    "init": Spec("Download the album list (init)", True, _simple("init_cmd", lambda o, s: []), preview=False),
     "record": Spec("Record files as they are", True,
-                   _simple("import_cmd", lambda o, s: ["--as-is", *(["-n"] if o.get("preview", True) else []), *_paths(o, s)])),
-    "import": Spec("Match and read new files (import)", True, _import_command),
-    "write": Spec("Write tags into the files", True, _write_command("write")),
-    "move": Spec("Write tags and move the files into the collection", True, _write_command("move")),
-    "repair": Spec("Repair damaged archives", True, _write_command("repair")),
+                   _simple("import_cmd", lambda o, s: ["--as-is", *_preview(o), *_paths(o, s)]), fields=("paths",)),
+    "import": Spec("Match and read new files (import)", True, _import_command, fields=("paths", "import")),
+    "reparse": Spec("Update albums from the stored pages (reparse)", True,
+                    _simple("reparse_cmd", lambda o, s: [*_preview(o), *_terms(o)]), fields=("query",)),
+    "write": Spec("Write tags into the files", True, _write_command("write"), fields=("query",)),
+    "move": Spec("Write tags and move the files into the collection", True, _write_command("move"), fields=("query",)),
+    "convert": Spec("Convert PDFs (or CBRs) to CBZ", True, _write_command("convert"), fields=("query", "formats")),
+    "repair": Spec("Repair damaged archives", True, _write_command("repair"), fields=("query",)),
     "undo": Spec("Take back the files a move run renamed", True,
-                 _simple("undo_cmd", lambda o, s: [*_batch(o), *(["-n"] if o.get("preview", True) else [])])),
+                 _simple("undo_cmd", lambda o, s: [*_batch(o), *_preview(o)])),
     "relink": Spec("Find files that were moved by hand", True,
-                   _simple("relink_cmd", lambda o, s: [*(["-n"] if o.get("preview", True) else []), *_paths(o, s)])),
+                   _simple("relink_cmd", lambda o, s: [*_preview(o), *_paths(o, s)]), fields=("paths",)),
+    "trash-empty": Spec("Empty the trash (delete for good)", True,
+                        _simple("trash_cmd", lambda o, s: ["--empty", *_days(o), *(["-n"] if o.get("preview", True) else
+                                                                                   [] if o.get("interactive") else ["--yes"])]),
+                        fields=("older_than",)),
+    "trash-restore": Spec("Restore a file from the trash", True,
+                          _simple("trash_cmd", lambda o, s: ["--restore", _trash_id(o), *(["--place"] if o.get("place") else []),
+                                                              *_preview(o)]), listed=False),
+    "reset": Spec("Forget the whole library (reset)", True,
+                  _simple("reset_cmd", lambda o, s: _preview(o)), asks=True),
 }
 
 
@@ -237,6 +279,10 @@ class JobManager:
             raise JobError(f"unknown job {command!r}; the jobs are: {', '.join(SPECS)}")
         options = options or {}
         preview = bool(options.get("preview", True))
+        if preview and not spec.preview:
+            raise JobError(f"{command!r} has no preview: run it for real")
+        if not preview and spec.asks and not options.get("interactive"):
+            raise JobError(f"{command!r} asks you to confirm: tick \"ask me my questions here\" (it never runs unasked)")
         if spec.writes and not preview and not allow_changes:
             raise PermissionError("changes are disabled: set `api.allow_changes: true` in the configuration")
         function, argv = spec.build(options, self.settings)

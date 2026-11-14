@@ -37,6 +37,10 @@ class JobRequest(BaseModel):
     steps: list[str] = []       # import: match and / or fetch
     auto: str = ""              # import: how much to ask (`strong`, `all`)
     files: str = ""             # import: `database_only` (touch no file) or `no_move`
+    formats: list[str] = []     # convert: `pdf` and / or `cbr`
+    older_than: Optional[int] = None  # trash-empty: only what was trashed that many days ago
+    id: Optional[int] = None    # trash-restore: the trash entry
+    place: bool = False         # trash-restore: then move it where its album belongs
 
 
 class QuestionAnswer(BaseModel):
@@ -288,7 +292,8 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
     # ------------------------------------------------------------------------- jobs
     @app.get("/api/jobs/available", dependencies=guarded, summary="The jobs that can be started")
     def available():
-        return {"items": [{"command": name, "label": spec.label, "writes": spec.writes} for name, spec in SPECS.items()],
+        return {"items": [{"command": name, "label": spec.label, "writes": spec.writes, "fields": list(spec.fields),
+                           "preview": spec.preview, "asks": spec.asks} for name, spec in SPECS.items() if spec.listed],
                 "allow_changes": allow_changes}
 
     @app.get("/api/jobs", dependencies=guarded, summary="The jobs of this server run, newest first")
@@ -309,7 +314,8 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
         try:
             options = {"preview": body.preview, "query": body.query, "paths": body.paths, "copy": body.copy_files,
                        "batch": body.batch,
-                       "interactive": body.interactive, "steps": body.steps, "auto": body.auto, "files": body.files}
+                       "interactive": body.interactive, "steps": body.steps, "auto": body.auto, "files": body.files,
+                       "formats": body.formats, "older_than": body.older_than, "id": body.id, "place": body.place}
             job = jobs.start(body.command, options, allow_changes=allow_changes)
         except JobError as err:
             raise HTTPException(400, str(err)) from err
