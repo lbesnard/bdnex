@@ -49,7 +49,8 @@ you to confirm, and "Empty the trash" asks "Delete them for good?" (untick the b
 "cannot be taken back" confirmation). `init` has no preview: it downloads the album list (about 70 MB). `bdnex edit` (the
 metadata editor), `series`, `relocate` and `config` stay on the command line for now. The list of earlier runs is kept next to the library
 (`<library>.jobs.json`, the last 30 runs, 300 lines each), so it survives a restart; a task that was running when the server
-stopped is listed as "interrupted" (what it already did stays done: run it again to continue). The import task can also be told to touch no file
+stopped is listed as "interrupted" (what it already did stays done: run it again to continue). With `watch.enabled` the server also runs an import of the sources by itself (see [Importing](importing.md#watching-the-sources-watchenabled)).
+The import task can also be told to touch no file
 (`--database-only`) or to leave files where they are (`--no-move`).
 
 Changes are off until you turn them on, with `api.allow_changes: true` in the configuration or `--allow-changes` for one

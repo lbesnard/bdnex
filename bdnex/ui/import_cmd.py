@@ -14,7 +14,7 @@ from bdnex.importer.session import (ALREADY, DUPLICATE, FAILED, OUTCOME_LABELS, 
 from bdnex.library import Library
 from bdnex.ui import color, context, describe, results
 from bdnex.ui.output import Bar, add_pretend, add_verbosity, add_workers, banner, progress, setup_logging
-from bdnex.ui.prompts import new_prompter
+from bdnex.ui.prompts import can_ask, new_prompter
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -43,6 +43,10 @@ def build_parser() -> argparse.ArgumentParser:
                         help="only record the files: name, path, format, size, pages, checksum and what their own "
                              "ComicInfo.xml says. No matching, no network, nothing moved or written. "
                              "`bdnex import` (matching) can be run on them later")
+    parser.add_argument("--unattended", action="store_true",
+                        help="ask nothing: apply the confident matches (`--auto`), leave the others skipped for you "
+                             "(`--skipped` asks about them later), no question about duplicates, name clashes or conflicts "
+                             "(the database wins, a clash gets a number, originals are kept). What `bdnex serve` uses to watch folders")
     parser.add_argument("--force", action="store_true",
                         help="redo the selected steps for files that are already done (rematch, read the pages again)")
     parser.add_argument("--auto", choices=["strong", "all"], default=None, metavar="[=all]",
@@ -104,7 +108,7 @@ def ensure_album_list(source, library, settings, out=sys.stdout) -> bool:
 
     print("There is no album list yet: file names are matched against it (`bdnex init` downloads it).",
           file=sys.stderr)
-    if not (sys.stdin.isatty() and sys.stderr.isatty()):
+    if not can_ask():
         print("Run `bdnex init`, then import again.", file=sys.stderr)
         return False
     if not new_prompter().confirm("Download it now (about 70 MB, around a minute)?", default=True):
@@ -178,7 +182,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         if "match" in steps and not ensure_album_list(source, library, settings, out):
             return 1
         steps_order = [step for step in ("match", "fetch") if step in steps]
-        session = ImportSession(library, source, settings, prompter=new_prompter(source=source, thumbnails=settings.import_.thumbnails),
+        session = ImportSession(library, source, settings, prompter=None if args.unattended else new_prompter(source=source, thumbnails=settings.import_.thumbnails),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps, retry_skipped=getattr(args, "retry_skipped", False),
                                 workers=args.workers, cover_check=args.cover_check, series=args.series, files_untouched=args.database_only, progress=progress, bar=lambda total, label: Bar(total, label),
                                 phase=lambda step, title: banner(title, steps_order.index(step) + 1, len(steps_order)))
@@ -419,7 +423,7 @@ def _place(args, settings, library, report, prompter=None):
                     plan.append((outside, WRITE))
     if any(mode != WRITE for _, mode in plan):
         settings.require_collection()
-    never_ask = args.auto == "all"
+    never_ask = args.auto == "all" or args.unattended
     organizer = Organizer(library, settings, prompter=None if never_ask else new_prompter(), force=never_ask)
     results = []
     for chosen, mode in plan:

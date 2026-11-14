@@ -108,6 +108,9 @@ def test_the_import_job_checks_its_options_and_never_asks_unless_told(env, tmp_p
     wait(web, real["id"])
     asking = web.post("/api/jobs", json={"command": "import", "preview": False, "interactive": True}, headers=HEADERS).json()
     assert asking["arguments"] == [] and asking["interactive"] is True
+    job = waiting(web, asking["id"])  # no album list here: the page is asked whether to download it
+    assert "Download it now" in job["question"]["message"]
+    web.post(f"/api/jobs/{asking['id']}/cancel", headers=HEADERS)
     wait(web, asking["id"])
 
 

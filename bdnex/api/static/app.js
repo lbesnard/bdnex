@@ -233,13 +233,14 @@ const VIEWS = {
       const steps = choose(["", "match and read the pages"], ["match", "match only"], ["fetch", "read the pages only"]);
       const files = choose(["", "files as configured"], ["database_only", "touch no file (database only)"], ["no_move", "leave files where they are"]);
       const auto = choose(["", "ask about every match"], ["strong", "ask only when unsure"], ["all", "never ask"]);
+      const skipped = el("label", { class: "tick" }, el("input", { type: "checkbox", id: "only-skipped" }), " only the files skipped earlier");
       const formats = choose(["pdf", "PDF files"], ["cbr", "CBR files"], ["pdf,cbr", "PDF and CBR files"]);
       const days = el("input", { type: "number", min: 0, placeholder: "older than (days), or all" });
       const oldDir = el("input", { type: "text", placeholder: "the folder the files used to be in" }), newDir = el("input", { type: "text", placeholder: "the folder they are in now" });
-      const extras = el("div", { class: "row" }, has("import") ? [steps, files, auto] : null, has("formats") ? formats : null, has("older_than") ? days : null, has("relocate") ? [oldDir, newDir] : null);
+      const extras = el("div", { class: "row" }, has("import") ? [steps, files, auto, skipped] : null, has("formats") ? formats : null, has("older_than") ? days : null, has("relocate") ? [oldDir, newDir] : null);
       const opts = () => ({ query: has("query") ? query.value.split(/\s+/).filter(Boolean) : [], paths: has("paths") && folder.value ? [folder.value] : [],
                             copy_files: false, interactive: askHere.checked,
-                            ...(has("import") ? { steps: steps.value ? [steps.value] : [], files: files.value, auto: auto.value } : {}),
+                            ...(has("import") ? { steps: steps.value ? [steps.value] : [], files: files.value, auto: auto.value, skipped: skipped.querySelector("input").checked } : {}),
                             ...(has("formats") ? { formats: formats.value.split(",") } : {}),
                             ...(has("older_than") && days.value !== "" ? { older_than: Number(days.value) } : {}),
                             ...(has("relocate") ? { old: oldDir.value, new: newDir.value } : {}) });
@@ -548,9 +549,10 @@ async function followJob(id, box) {
 async function refreshBadge() {
   let overview;
   try { overview = await api("/api/overview"); } catch (e) { return; }
-  const before = JSON.stringify([app.overview && [app.overview.review, app.overview.busy, app.overview.allow_changes]]);
+  const key = o => o && JSON.stringify([o.review, o.busy, o.allow_changes, o.watch && o.watch.enabled]);
+  const before = key(app.overview);
   app.overview = overview;
-  if (before !== JSON.stringify([[overview.review, overview.busy, overview.allow_changes]])) { drawNav(); drawMode(); }
+  if (before !== key(overview)) { drawNav(); drawMode(); }
   drawWaiting();
 }
 function drawNav() {
@@ -583,6 +585,7 @@ function drawMode() {
   const o = app.overview;
   $("#mode").replaceChildren(...[o ? el("b", { class: o.allow_changes ? "on" : "" }, o.allow_changes ? "changes allowed" : "read-only") : null,
     o && o.busy ? el("div", {}, "a job is running") : null,
+    o && o.watch && o.watch.enabled ? el("div", { title: "Settings: watch.enabled" }, `watching the sources every ${o.watch.every} min`) : null,
     o && "Notification" in window && window.isSecureContext && Notification.permission === "default"
       ? el("div", {}, el("button", { onclick: () => Notification.requestPermission().then(drawMode) }, "Notify me when a question waits")) : null,
     o && o.login_required ? el("div", {}, el("button", { onclick: logout }, "Log out")) : null].filter(Boolean));

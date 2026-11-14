@@ -96,10 +96,19 @@ def _import_command(options: dict, settings):
     auto = options.get("auto") or ""
     if auto not in ("", "strong", "all"):
         raise JobError("`auto` is `strong` or `all`")
-    if not preview and not options.get("interactive") and auto != "all":
+    unattended = bool(options.get("unattended"))
+    if unattended:
+        argv.append("--unattended")  # the confident matches are applied, the others wait for you: nothing is asked
+    elif not preview and not options.get("interactive") and auto != "all":
         auto = "all"  # nobody to ask: never ask
     if auto:
         argv.append(f"--auto={auto}")
+    if options.get("sources"):
+        if not settings.import_.sources:
+            raise JobError("there is no import source in the configuration (`import.sources`)")
+        argv.append("--sources")  # what is new in the configured sources, each in its own mode
+    if options.get("skipped"):
+        argv.append("--skipped")  # only the files skipped at an earlier import, asked about again
     where = options.get("files") or ""
     if where not in ("", "database_only", "no_move"):
         raise JobError("`files` is `database_only` or `no_move`")
@@ -167,6 +176,7 @@ SPECS: dict[str, Spec] = {
     "record": Spec("Record files as they are", True,
                    _simple("import_cmd", lambda o, s: ["--as-is", *_preview(o), *_paths(o, s)]), fields=("paths",)),
     "import": Spec("Match and read new files (import)", True, _import_command, fields=("paths", "import")),
+    "watch": Spec("Watch the import sources (automatic import)", True, _import_command, listed=False),
     "reparse": Spec("Update albums from the stored pages (reparse)", True,
                     _simple("reparse_cmd", lambda o, s: [*_preview(o), *_terms(o)]), fields=("query",)),
     "write": Spec("Write tags into the files", True, _write_command("write"), fields=("query",)),

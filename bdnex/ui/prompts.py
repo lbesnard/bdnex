@@ -148,6 +148,11 @@ def use_prompter(factory):
         _FACTORY.reset(token)
 
 
+def can_ask() -> bool:
+    """Is there somebody to ask: a terminal, or the web page (a job with its own prompter)?"""
+    return _FACTORY.get() is not None or (sys.stdin.isatty() and sys.stderr.isatty())
+
+
 def new_prompter(**kwargs) -> "InquirerPrompter":
     """The prompter a command asks its questions with: the terminal's, unless :func:`use_prompter` says otherwise."""
     factory = _FACTORY.get()

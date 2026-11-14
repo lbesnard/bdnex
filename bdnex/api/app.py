@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from bdnex.api import auth, settings_api
+from bdnex.api.watch import Watcher
 from bdnex.api.jobs import SPECS, Busy, JobError, JobManager
 from bdnex.config import Settings, user_config_path
 from bdnex.library import Library
@@ -106,10 +107,13 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
     password = settings.api.password if password is None else password
     username = settings.api.username if username is None else username
     jobs = JobManager(settings)
+    watcher = Watcher(settings, jobs)
     app = FastAPI(
         title="bdnex", version=__version__,
         description="Read-only view of your bdnex library. The `q` parameter takes the same terms as "
                     "`bdnex ls` (`series:nains year:2010..2015 ^genre:humour`).")
+    app.router.on_startup.append(watcher.start)  # looks at the import sources when `watch.enabled` (not for a test client)
+    app.router.on_shutdown.append(watcher.stop)
 
     throttle, sessions = auth.Throttle(), auth.Sessions(settings.api.session_hours)
 
@@ -476,6 +480,8 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             "collection": settings.collection_path,
             "sources": [{"name": src.alias, "path": src.folder, "mode": src.mode} for src in settings.import_.sources],
             "allow_changes": allow_changes, "busy": jobs.busy(), "waiting": jobs.waiting(), "login_required": bool(password),
+            "watch": {"enabled": settings.watch.enabled, "every": settings.watch.interval, "last": watcher.last_job,
+                      "sources": len(settings.import_.sources)},
         }
 
     @app.get("/api/settings", dependencies=guarded, summary="Every option with its kind, default and help (no secrets)")

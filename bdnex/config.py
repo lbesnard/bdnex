@@ -111,6 +111,11 @@ class Trash(_Section):
     dir: str = Field(min_length=1)
 
 
+class Watch(_Section):
+    enabled: bool
+    interval: int = Field(ge=1, le=1440)  # minutes between two looks at the import sources
+
+
 class Cover(_Section):
     download: bool
     dir: str = Field(min_length=1)
@@ -258,6 +263,7 @@ class Settings(_Section):
     import_: Import = Field(alias="import")
     duplicates: Duplicates
     trash: Trash
+    watch: Watch
     cover: Cover
     api: Api
     write: Write
