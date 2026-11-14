@@ -258,3 +258,17 @@ def test_a_page_is_not_drawn_sharper_than_its_pictures(tmp_path):
         page.insert_image(pymupdf.Rect(0, 150, 200, 300), stream=jpeg(color=(200, 10, 10), size=(400, 300)))
     entries, _ = archive.read_entries(mixed_pdf(tmp_path, build), "pdf", "auto", 300, "png")
     assert int.from_bytes(entries[0].data[16:20], "big") == 400  # not 833, which 300 dpi would give
+
+
+def test_jpeg_quality_of_a_drawn_page_is_a_setting(tmp_path):
+    import pymupdf
+
+    def build(doc, jpeg):
+        page = doc.new_page(width=200, height=300)
+        page.insert_image(pymupdf.Rect(0, 0, 200, 150), stream=jpeg(color=(10, 10, 200)))
+        page.insert_image(pymupdf.Rect(0, 150, 200, 300), stream=jpeg(color=(200, 10, 10)))
+        page.insert_text((20, 50), "Noisy text 12345 abcdef", fontsize=20)
+    path = mixed_pdf(tmp_path, build)
+    low = archive.read_entries(path, "pdf", "auto", 150, "jpeg", 20)[0][0].data
+    high = archive.read_entries(path, "pdf", "auto", 150, "jpeg", 98)[0][0].data
+    assert len(high) > len(low)

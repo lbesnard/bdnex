@@ -102,7 +102,8 @@ write:
   pdf: convert                           # convert | skip
   pdf_mode: auto                         # auto | extract | render (extract keeps the scanned images untouched)
   pdf_dpi: 200                           # resolution when PDF pages have to be rendered
-  pdf_render_format: auto                # for pages that have to be drawn: auto | png | jpeg (auto: jpeg when the page has photographic pictures)
+  pdf_render_format: auto                # for pages that have to be drawn: auto | png | jpeg (leave on auto: it picks per page)
+  pdf_jpeg_quality: 90                   # quality (1-100) of a drawn page saved as JPEG: higher = bigger and closer to the PDF
   delete_original: ask                   # after a CBR / PDF was converted: ask | yes | no
   use_trash: true                        # a deleted original goes to the trash folder (false: deleted for good)
   min_free_space: 200                    # MiB that must stay free on the disk (and for the database) after writing

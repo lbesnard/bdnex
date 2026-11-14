@@ -40,7 +40,7 @@ def _is_comicinfo(name: str) -> bool:
 
 
 def read_entries(path: str, fmt: str, pdf_mode: str = "auto", pdf_dpi: int = 200,
-                 pdf_render_format: str = "auto") -> tuple[list[Entry], Optional[bytes]]:
+                 pdf_render_format: str = "auto", pdf_jpeg_quality: int = 90) -> tuple[list[Entry], Optional[bytes]]:
     """Return (entries, existing ComicInfo.xml bytes) of an archive; ComicInfo is not in ``entries``."""
     try:
         if fmt == "cbz":
@@ -48,7 +48,7 @@ def read_entries(path: str, fmt: str, pdf_mode: str = "auto", pdf_dpi: int = 200
         if fmt == "cbr":
             return _read_rar(path)
         if fmt == "pdf":
-            return _read_pdf(path, pdf_mode, pdf_dpi, pdf_render_format), None
+            return _read_pdf(path, pdf_mode, pdf_dpi, pdf_render_format, pdf_jpeg_quality), None
     except ArchiveError:
         raise
     except Exception as err:
@@ -107,7 +107,7 @@ LEFT_OUT_SHARE = 0.02  # other images smaller than this (a logo, a stamp) may be
 JPEG_QUALITY = 90
 
 
-def _read_pdf(path, mode: str, dpi: int, render_format: str = "auto") -> list[Entry]:
+def _read_pdf(path, mode: str, dpi: int, render_format: str = "auto", jpeg_quality: int = JPEG_QUALITY) -> list[Entry]:
     """The pages of a PDF as images, page by page: each page that is one plain image is taken out
     untouched (lossless); the others are drawn, unless ``mode`` is ``extract`` (then they are an error)."""
     import pymupdf
@@ -126,7 +126,7 @@ def _read_pdf(path, mode: str, dpi: int, render_format: str = "auto") -> list[En
             if mode == "extract":
                 odd.append(number)
                 continue
-            ext, data = _pdf_render_page(page, dpi, render_format)
+            ext, data = _pdf_render_page(page, dpi, render_format, jpeg_quality)
             entries.append(Entry(f"page-{number:0{width}d}.{ext}", data, rendered=True))
         if odd:
             raise ArchiveError(f"page(s) {', '.join(map(str, odd[:10]))}{'...' if len(odd) > 10 else ''} "
@@ -191,7 +191,7 @@ def _source_dpi(page) -> Optional[float]:
     return best or None
 
 
-def _pdf_render_page(page, dpi: int, render_format: str) -> tuple[str, bytes]:
+def _pdf_render_page(page, dpi: int, render_format: str, jpeg_quality: int = JPEG_QUALITY) -> tuple[str, bytes]:
     """A page drawn as an image. ``auto``: JPEG when the page holds photographic pictures (a PNG of those is many
     times bigger for the same look), PNG for anything else (1-bit scans, text, vector art). Never drawn at a higher
     resolution than its pictures have: that only makes the file bigger."""
@@ -203,7 +203,7 @@ def _pdf_render_page(page, dpi: int, render_format: str) -> tuple[str, bytes]:
         if pixmap.alpha:
             import pymupdf
             pixmap = pymupdf.Pixmap(pixmap, 0)
-        return "jpg", pixmap.tobytes("jpeg", jpg_quality=JPEG_QUALITY)
+        return "jpg", pixmap.tobytes("jpeg", jpg_quality=jpeg_quality)
     return "png", pixmap.tobytes("png")
 
 

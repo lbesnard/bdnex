@@ -43,7 +43,7 @@ class FakePrompter:
         self.asked.append(("fields", [c.field for c in changes]))
         return getattr(self, "fields_answer", {})
 
-    def size_action(self, path, before, after, tolerance):
+    def size_action(self, path, before, after, tolerance, drawn=0):
         self.asked.append(("size", before, after))
         return getattr(self, "size_answer", "refuse")
 
@@ -1086,3 +1086,15 @@ def test_damaged_archives_are_repaired_several_at_once(tmp_path, make_damaged_cb
                 assert archive.testzip() is None
     finally:
         library.close()
+
+
+def test_the_size_question_does_not_claim_drawn_pages_are_copies(capsys, monkeypatch):
+    from bdnex.ui.prompts import InquirerPrompter
+
+    prompter = InquirerPrompter()
+    monkeypatch.setattr(prompter, "_select", lambda message, choices, fragments=None, shortcuts=None: "refuse")
+    monkeypatch.setattr(prompter, "_need_terminal", lambda: None)
+    prompter.size_action("/x/a.pdf", 10, 99, 20, drawn=371)
+    assert "371 page(s) had to be drawn" in capsys.readouterr().out
+    prompter.size_action("/x/a.cbr", 10, 99, 20)
+    assert "byte for byte" in capsys.readouterr().out

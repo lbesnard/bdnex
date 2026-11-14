@@ -565,11 +565,13 @@ class InquirerPrompter:
             {"action": "keep_both", "value": "keep_both", "label": "Keep both (add a number)"},
             {"action": "replace", "value": "replace"}])
 
-    def size_action(self, path: str, before: int, after: int, tolerance: float) -> str:
+    def size_action(self, path: str, before: int, after: int, tolerance: float, drawn: int = 0) -> str:
         from bdnex.formatting import human_size
 
         print(f"\n{path}\nThe new archive is {human_size(after)}, the original {human_size(before)} "
-              f"(more than {tolerance:g}% apart). Every page is in it, byte for byte.")
+              f"(more than {tolerance:g}% apart). "
+              + (f"{drawn} page(s) had to be drawn from the PDF: they are new pictures, not copies of its own."
+                 if drawn else "Every page is in it, byte for byte."))
         return self._ask("What now?", [
             {"action": "refuse", "value": "refuse"},
             {"action": "accept", "value": "accept"}])
