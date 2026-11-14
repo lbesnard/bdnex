@@ -116,7 +116,7 @@ def asked(prompter_method, answers):
     """Run ``prompter_method(prompter)`` against a fake page that gives these answers; also return the questions."""
     seen = []
 
-    def page(question):
+    def page(question, image=None):
         seen.append(question)
         return answers.pop(0)
     return prompter_method(WebPrompter(page)), seen
@@ -136,7 +136,7 @@ def test_the_real_questions_run_unchanged_on_the_page_prompter():
     """`confirm` and the file conflict are the terminal prompter's own code, answered by the page."""
     seen_choices = []
 
-    def page(question):
+    def page(question, image=None):
         seen_choices.append(question)
         return {"choice": next(c["index"] for c in question["choices"] if c["key"] == "y")}
     assert WebPrompter(page).confirm("Sure?") is True

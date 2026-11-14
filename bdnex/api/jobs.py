@@ -11,10 +11,12 @@ import contextlib
 import ctypes
 import io
 import itertools
+import json
 import os
 import threading
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Callable, Optional
 
 MAX_LINES = 5000
@@ -189,22 +191,25 @@ class Job:
     thread_id: Optional[int] = None
     interactive: bool = False        # questions are asked on the page (else the run never asks)
     question: Optional[dict] = None  # the question waiting for an answer: {id, kind, message, choices...}
+    question_image: Optional[bytes] = field(default=None, repr=False)  # the picture shown with it (a PNG)
     _answer: Optional[dict] = field(default=None, repr=False)
     _answered: threading.Event = field(default_factory=threading.Event, repr=False)
     _question_ids: Any = field(default_factory=lambda: itertools.count(1), repr=False)
 
-    def ask(self, question: dict) -> dict:
+    def ask(self, question: dict, image: Optional[bytes] = None) -> dict:
         """Called by the job's own thread: put ``question`` on the job and wait until the page answers it.
         Cancelling the job raises ``KeyboardInterrupt`` here (the wait wakes up twice a second to let it in)."""
         self._answered.clear()
         self._answer = None
-        self.question = {"id": next(self._question_ids), **question}
+        self.question_image = image
+        self.question = {"id": next(self._question_ids), "image": bool(image), **question}
         try:
             while not self._answered.wait(0.5):
                 pass
             return self._answer or {}
         finally:
             self.question = None
+            self.question_image = None
 
     def answer(self, question_id: int, answer: dict) -> bool:
         """The page's answer to the question with this id; ``False`` when it is not the question being asked."""
@@ -265,13 +270,54 @@ class _Log(io.TextIOBase):
             self.job.dropped += 1
 
 
+STORED_JOBS = 30     # earlier runs kept across a restart
+STORED_LINES = 300   # lines kept of each
+
+
 class JobManager:
-    def __init__(self, settings):
+    def __init__(self, settings, store: Optional[Path] = None):
         self.settings = settings
         self.jobs: dict[int, Job] = {}
-        self._ids = itertools.count(1)
         self._lock = threading.Lock()      # protects the logs and the table of jobs
         self._running = threading.Lock()   # one job at a time
+        self._store = store or Path(str(settings.library_path) + ".jobs.json")  # beside the library (a volume in Docker)
+        self._load()
+        self._ids = itertools.count(max(self.jobs, default=0) + 1)
+
+    def _load(self) -> None:
+        """The earlier runs, so that the list survives a restart. A run that was going when the server stopped did not
+        finish: it says so (what it did stays done; run it again to continue)."""
+        try:
+            records = json.loads(self._store.read_text(encoding="utf-8"))
+            for record in records:
+                job = Job(record["id"], record["command"], record["label"], record["argv"], status=record["status"],
+                          started=record["started"], finished=record.get("finished"), exit_code=record.get("exit_code"),
+                          lines=list(record.get("lines", [])))
+                if job.status == "running":
+                    job.status, job.finished = "interrupted", job.finished or time.time()
+                    job.lines.append("(the server stopped while this was running: run it again to continue)")
+                self.jobs[job.id] = job
+        except (OSError, ValueError, KeyError, TypeError):
+            self.jobs = {}  # no history, or an unreadable one: start without
+
+    def _save(self) -> None:
+        try:
+            recent = sorted(self.jobs.values(), key=lambda job: job.id)[-STORED_JOBS:]
+            records = [{"id": j.id, "command": j.command, "label": j.label, "argv": j.argv, "status": j.status, "started": j.started,
+                        "finished": j.finished, "exit_code": j.exit_code, "lines": j.lines[-STORED_LINES:]} for j in recent]
+            tmp = self._store.with_name(self._store.name + ".tmp")
+            tmp.write_text(json.dumps(records), encoding="utf-8")
+            os.replace(tmp, self._store)
+        except OSError:
+            pass  # the history is a convenience: never a reason for a job to fail
+
+    def waiting(self) -> Optional[dict]:
+        """The job that waits for an answer, with its question, or ``None``."""
+        for job in self.jobs.values():
+            question = job.question
+            if job.status == "running" and question:
+                return {"job": job.id, "question": question["id"], "message": question["message"]}
+        return None
 
     def start(self, command: str, options: Optional[dict] = None, allow_changes: bool = False) -> Job:
         spec = SPECS.get(command)
@@ -292,6 +338,7 @@ class JobManager:
         with self._lock:
             job = Job(next(self._ids), command, spec.label, argv, interactive=interactive)
             self.jobs[job.id] = job
+        self._save()
         threading.Thread(target=self._run, args=(job, function), daemon=True, name=f"bdnex-job-{job.id}").start()
         return job
 
@@ -322,6 +369,7 @@ class JobManager:
         finally:
             log.flush()
             job.finished = time.time()
+            self._save()
             self._running.release()
 
     def get(self, job_id: int) -> Optional[Job]:

@@ -40,11 +40,16 @@ clash. The question appears at the top of the task, with the **same answers, key
 (`D`, `S`, `A`... press the key, or tap the answer; see [the keys](importing.md#the-keys-of-every-question)). The task
 waits for you, can be cancelled while it waits, and goes on when you answer. Untick it and the run never asks: the
 database wins a tag conflict, a name clash gets a number, originals are kept, and an import applies `--auto=all`.
-The same questions can be answered from a phone. Two tasks can not run unasked: `reset` only starts when the page can ask
+The question comes with what the terminal draws beside it: the **first page of the file** being matched, or the two covers of
+a review. Each candidate album has a **page ↗** link to its page on the site, to check before choosing. The page tells you when
+a question waits: the tab title changes to "❓ bdnex: waiting for you", a banner with an **Answer** button shows on every view
+and, if you press **Notify me** (browsers only allow notifications on HTTPS or localhost), a notification appears when the tab
+is in the background. The same questions can be answered from a phone. Two tasks can not run unasked: `reset` only starts when the page can ask
 you to confirm, and "Empty the trash" asks "Delete them for good?" (untick the box and it goes ahead, after the page's own
 "cannot be taken back" confirmation). `init` has no preview: it downloads the album list (about 70 MB). `bdnex edit` (the
-metadata editor), `series`, `relocate` and `config` stay on the command line for now. A task that is waiting for an answer is lost if the server restarts
-(what it already did stays done: run it again to continue). The import task can also be told to touch no file
+metadata editor), `series`, `relocate` and `config` stay on the command line for now. The list of earlier runs is kept next to the library
+(`<library>.jobs.json`, the last 30 runs, 300 lines each), so it survives a restart; a task that was running when the server
+stopped is listed as "interrupted" (what it already did stays done: run it again to continue). The import task can also be told to touch no file
 (`--database-only`) or to leave files where they are (`--no-move`).
 
 Changes are off until you turn them on, with `api.allow_changes: true` in the configuration or `--allow-changes` for one
@@ -112,6 +117,7 @@ JSON. The reading endpoints are `GET`; the ones that change something are marked
 | `/api/config` | the settings that matter to the page (no token, no fetcher address) |
 | `/api/jobs/available`, `/api/jobs`, `/api/jobs/{id}?after=` | the tasks you can start, the runs, and one run with its output from line `after` |
 | `POST /api/jobs` | start a task: `{"command": "move", "preview": true, "query": ["series:nains"]}`; `"interactive": true` lets a real run ask its questions; `import` takes `steps`, `auto` and `files`. A preview needs no permission; `"preview": false` is a **change** |
+| `/api/jobs/{id}/image` | the picture shown with the question the task is waiting on (404 when there is none); `GET /api/overview` has `waiting` (the task, its question) |
 | `POST /api/jobs/{id}/answer` | **change:** answer the question a task is waiting on: `{"question": 3, "choice": 0}` (`choices` for a list, `text` for a typed value). The question, with its answers, is in `GET /api/jobs/{id}` as `question` |
 | `POST /api/jobs/{id}/cancel` | **change:** ask a running task to stop |
 
