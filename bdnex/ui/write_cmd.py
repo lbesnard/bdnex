@@ -114,8 +114,9 @@ class QuietPrompter:
         return ask
 
 
-LEGEND = ("Each file: its archive is read, a new CBZ is written with the ComicInfo.xml and the pages byte for byte, the "
-          "new file is checked against the original pages, then put in place (the original goes only after that).")
+LEGEND = ("Each file: its archive is read, a new CBZ is written with the ComicInfo.xml and the pages as they are (a PDF "
+          "page that has to be drawn is a new picture, and the result says so), the new file is checked against those "
+          "pages, then put in place (the original goes only after that).")
 
 
 def _run_files(organizer, rows, mode, out, root, command: str, workers: int = 1, repair: bool = False) -> list:

@@ -190,8 +190,11 @@ which the library does not take from a file. Nothing is stored in a preview (`--
   If that picture is in a format comic readers do not open (JPEG 2000, JBIG2...), it is decoded and saved as PNG
   with the same pixels: still lossless, but bigger than the compressed original.
   Only the pages that are something else (text, several large pictures, transparency, a picture format viewers
-  do not open) are drawn at `write.pdf_dpi`, as PNG or JPEG (`write.pdf_render_format: auto` uses JPEG for
-  pages made of JPEG pictures, which keeps them close to their original size, and PNG otherwise).
+  do not open) are **drawn**: bdnex makes a new picture of the page, at `write.pdf_dpi` at most and never sharper than the
+  page's own pictures. This is **not lossless**: a drawn page is a new picture, not a copy of the PDF's. A scanner's
+  layered PDF (a JPEG background with a 1-bit text layer) is made only of such pages. Photographic pages are saved as
+  JPEG (`write.pdf_jpeg_quality`, 90 by default; raise it for a closer copy at a bigger size) and the others as PNG.
+  To keep the exact PDF, set `write.pdf: skip`.
   `write.pdf_mode: extract` refuses a PDF with such pages and names them, `render` draws every page.
   `bdnex write --pretend` tells you beforehand: `all 120 pages extracted untouched`, or
   `3 of 120 page(s) had to be drawn (page 4, 57, 58)`. A PDF that comes out many times bigger than it went in

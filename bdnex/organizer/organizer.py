@@ -64,8 +64,9 @@ class Prompter(Protocol):
                        db_fields: dict[str, str]) -> Optional[dict[str, str]]:
         """Decide field by field: ``{field: final value}`` for the differing fields, ``None`` to skip the file."""
 
-    def size_action(self, path: str, before: int, after: int, tolerance: float) -> str:
-        """The new archive is much bigger or smaller than the original: ``accept`` it or ``refuse`` it."""
+    def size_action(self, path: str, before: int, after: int, tolerance: float, drawn: int = 0) -> str:
+        """The new archive is much bigger or smaller than the original: ``accept`` it or ``refuse`` it.
+        ``drawn`` is how many PDF pages had to be drawn (they are not exact copies of the PDF's pictures)."""
 
 
 class WriteAborted(RuntimeError):
@@ -75,9 +76,9 @@ class WriteAborted(RuntimeError):
 class SizeChanged(archive.ArchiveError):
     """The new archive does not have about the size of the original."""
 
-    def __init__(self, before: int, after: int):
+    def __init__(self, before: int, after: int, drawn: int = 0):
         super().__init__(f"{human_size(before)} became {human_size(after)}")
-        self.before, self.after = before, after
+        self.before, self.after, self.drawn = before, after, drawn
 
 
 def free_space(path: str) -> int:
@@ -367,7 +368,8 @@ class Organizer:
         if self.pretend:
             existing, pages = archive.peek(path, fmt)
             return None, existing, pages
-        entries, existing = archive.read_entries(path, fmt, write.pdf_mode, write.pdf_dpi, write.pdf_render_format)
+        entries, existing = archive.read_entries(path, fmt, write.pdf_mode, write.pdf_dpi, write.pdf_render_format,
+                                              write.pdf_jpeg_quality)
         return entries, existing, archive.page_count(entries)
 
     def _plan(self, fmt, entries, xml_changes: bool, repaired_pages, dest: str, mode: str, same_place: bool) -> list[str]:
@@ -532,7 +534,7 @@ class Organizer:
                 policy = "refuse"
             else:
                 policy = self.prompter.size_action(path, change.before, change.after,
-                                                   self.settings.write.size_tolerance)
+                                                   self.settings.write.size_tolerance, change.drawn)
         if policy == "accept":
             return None
         return FileResult(path, SKIPPED, note=f"the new archive's size is off ({change}; write.size_tolerance is "
@@ -542,7 +544,7 @@ class Organizer:
         """Write ``dest`` through a verified temporary file; with ``compare_to``, its size must be about that file's."""
         tmp = dest + TMP_SUFFIX
         try:
-            self._stage("writing the new archive (the pages, byte for byte, and ComicInfo.xml)")
+            self._stage("writing the new archive (the pages as they are, and ComicInfo.xml)")
             archive.write_cbz(tmp, entries, xml)
             self._stage("checking the new archive against the original pages")
             archive.verify_cbz(tmp, entries, xml)
@@ -552,7 +554,7 @@ class Organizer:
             if compare_to is not None and tolerance > 0 and os.path.exists(compare_to):
                 before, after = os.path.getsize(compare_to), os.path.getsize(tmp)
                 if abs(after - before) > max(before * tolerance / 100, MIN_SIZE_CHANGE):
-                    raise SizeChanged(before, after)
+                    raise SizeChanged(before, after, sum(1 for entry in entries if entry.rendered))
         except Exception:
             if os.path.exists(tmp):
                 os.remove(tmp)
