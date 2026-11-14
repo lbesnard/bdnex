@@ -202,3 +202,39 @@ def test_config_update_reports_the_help_it_restored(tmp_path, monkeypatch, capsy
     assert config_cmd.run(["--update"]) == 0
     assert "Put the list of possible values back after" in capsys.readouterr().out
     assert re.search(r"(?m)^  cbr: convert\s+# convert \| skip", path.read_text())
+
+
+# ------------------------------------------------- set one option, keeping the file as it is
+def test_set_value_changes_an_active_line_and_keeps_its_comment():
+    from bdnex.config_template import set_value
+
+    text = MINIMAL + "write:\n  cbr: convert\n  pdf: convert   # convert | tag | skip\n  workers: 2\n"
+    new = set_value(text, "write.pdf", "tag")
+    assert "  pdf: tag   # convert | tag | skip\n" in new and "  cbr: convert\n" in new and "workers: 2" in new
+    assert yaml.safe_load(new)["write"] == {"cbr": "convert", "pdf": "tag", "workers": 2}
+
+
+def test_set_value_activates_a_commented_option_and_its_commented_section():
+    from bdnex.config_template import set_value
+
+    new = set_value(MINIMAL + "# write:\n#   cbr: convert    # convert | skip\n#   pdf: convert\n", "write.pdf", "skip")
+    assert yaml.safe_load(new)["write"] == {"pdf": "skip"}
+    assert "#   cbr: convert" in new and new.count("pdf:") == 1  # the others stay as they were, and pdf is not there twice
+    again = set_value(MINIMAL + "write:\n  # pdf: convert  # help\n", "write.pdf", "tag")
+    assert "  pdf: tag  # help" in again and yaml.safe_load(again)["write"] == {"pdf": "tag"}
+
+
+def test_set_value_adds_a_missing_option_or_section_and_top_level_options():
+    from bdnex.config_template import set_value
+
+    assert yaml.safe_load(set_value(MINIMAL + "write:\n  cbr: skip\n\ncover:\n  dir: /c\n", "write.workers", 3))["write"] == {"cbr": "skip", "workers": 3}
+    assert yaml.safe_load(set_value(MINIMAL, "write.pdf", "tag"))["write"] == {"pdf": "tag"}
+    assert yaml.safe_load(set_value(MINIMAL + "source: bedetheque\n", "source", "other"))["source"] == "other"
+    assert yaml.safe_load(set_value(MINIMAL, "library", "/data/x.sqlite"))["library"] == "/data/x.sqlite"
+
+
+@pytest.mark.parametrize("value", [None, True, False, 0, 7, 1.5, "plain", "yes", "no", "12", "a: b", "has # hash", "é accents", "", " spaced "])
+def test_set_value_round_trips_any_scalar(value):
+    from bdnex.config_template import set_value
+
+    assert yaml.safe_load(set_value(MINIMAL + "write:\n  conflict: ask\n", "write.conflict", value))["write"]["conflict"] == value

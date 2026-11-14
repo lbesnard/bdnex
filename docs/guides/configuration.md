@@ -32,6 +32,11 @@ see what to type; a comment you wrote yourself is left alone.
 **A commented-out option is not a setting.** `# pdf: convert` shows the default and changes nothing: PDFs are
 still converted. To keep them as PDFs, remove the `# ` and write `pdf: tag` (the tags go into the PDF) or `pdf: skip` (the PDF is left as it is).
 
+**From the web page.** With `bdnex serve --allow-changes` the **Settings** page shows every option with its possible values and
+default, and saves a change into this same file (checked as a whole first, the previous file kept as `bdnex.yaml.bak`, your
+comments kept). Folders (`collection_path`, `library`), secrets (`api.token`, `api.password`, the fetcher address) and lists
+(`paths.rules`, `import.sources`) are edited in the file.
+
 ## Commands
 
 | Command | Effect |

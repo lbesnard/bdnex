@@ -105,6 +105,8 @@ def _import_command(options: dict, settings):
         raise JobError("`files` is `database_only` or `no_move`")
     if where:
         argv.append("--" + where.replace("_", "-"))
+    if options.get("force"):
+        argv.append("--force")  # redo the steps for files that are already done: a rematch
     argv += _paths(options, settings)
     return (lambda out: import_cmd.run(argv, out=out)), argv
 
@@ -135,6 +137,17 @@ def _trash_id(options: dict) -> str:
     return str(entry)
 
 
+def _two_folders(options: dict) -> list[str]:
+    """`old` and `new`: folders as text (nothing is read or moved on the disk: only the stored paths change)."""
+    found = []
+    for key in ("old", "new"):
+        value = options.get(key)
+        if not isinstance(value, str) or not value.strip() or value.startswith("-") or "\n" in value:
+            raise JobError(f"`{key}` is a folder")
+        found.append(value.strip())
+    return found
+
+
 def _batch(options: dict) -> list[str]:
     batch = str(options.get("batch") or "last")
     if not all(c.isalnum() or c in "-_" for c in batch):
@@ -160,6 +173,8 @@ SPECS: dict[str, Spec] = {
     "move": Spec("Write tags and move the files into the collection", True, _write_command("move"), fields=("query",)),
     "convert": Spec("Convert PDFs (or CBRs) to CBZ", True, _write_command("convert"), fields=("query", "formats")),
     "repair": Spec("Repair damaged archives", True, _write_command("repair"), fields=("query",)),
+    "relocate": Spec("Tell the library your comics moved (relocate)", True,
+                     _simple("relocate_cmd", lambda o, s: [*_preview(o), *_two_folders(o)]), fields=("relocate",)),
     "undo": Spec("Take back the files a move run renamed", True,
                  _simple("undo_cmd", lambda o, s: [*_batch(o), *_preview(o)])),
     "relink": Spec("Find files that were moved by hand", True,

@@ -61,7 +61,7 @@ def _header(lines: list[str], name: str) -> Optional[int]:
 
 def _span_end(lines: list[str], header: int) -> int:
     """The line after the last line of the section that starts at ``header`` (trailing blank lines excluded)."""
-    top_level = re.compile(r"^(?:#\s*)?[A-Za-z_][\w-]*:")
+    top_level = re.compile(r"^(?:# ?)?[A-Za-z_][\w-]*:")  # `# write:`, not an indented-by-hand `#   cbr:`
     end = len(lines)
     for i in range(header + 1, len(lines)):
         if top_level.match(lines[i]):
@@ -172,3 +172,54 @@ def annotate(text: str) -> tuple[str, list[str]]:
                     done.append(f"{item.name}.{name}" if item.children else name)
                     break
     return "\n".join(lines) + "\n", done
+
+
+def format_scalar(value: Any) -> str:
+    """A YAML scalar for ``value`` (``null``, ``true``, a number, or a string quoted only when it has to be)."""
+    import yaml
+
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    return yaml.safe_dump(str(value), allow_unicode=True, default_flow_style=True, width=10 ** 6).split("\n...")[0].strip()
+
+
+def set_value(text: str, dotted: str, value: Any) -> str:
+    """``text`` with the option ``dotted`` (``write.pdf``, or ``library``) set to the scalar ``value``.
+
+    An active line keeps its own trailing comment; a commented-out line is made active (and so is a commented section
+    line); a missing option is added under its section, and a missing section at the end. Everything else is left as it is."""
+    lines = text.splitlines()
+    section, _, name = dotted.rpartition(".")
+    indent = "  " if section else ""
+    rendered = format_scalar(value)
+    scope = range(len(lines))
+    header = None
+    if section:
+        header = _header(lines, section)
+        if header is None:
+            if lines and lines[-1].strip():
+                lines.append("")
+            lines += [f"{section}:", f"  {name}: {rendered}"]
+            return "\n".join(lines) + "\n"
+        scope = range(header + 1, _span_end(lines, header))
+    for pattern, commented in ((rf"^{indent}{re.escape(name)}:[ \t]*(.*?)([ \t]+#.*)?$", False),
+                                (rf"^[ \t]*#[ \t]*{re.escape(name)}:[ \t]*(.*?)([ \t]+#.*)?$", True)):
+        for i in scope:
+            found = re.match(pattern, lines[i])
+            if found:
+                lines[i] = f"{indent}{name}: {rendered}" + (found.group(2) or "")
+                if header is not None and re.match(r"^#\s*", lines[header]):
+                    lines[header] = re.sub(r"^#\s*", "", lines[header])  # the section has to be active too
+                return "\n".join(lines) + "\n"
+    if header is not None:
+        lines[_span_end(lines, header):_span_end(lines, header)] = [f"{indent}{name}: {rendered}"]
+        lines[header] = re.sub(r"^#\s*", "", lines[header])
+    else:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines.append(f"{name}: {rendered}")
+    return "\n".join(lines) + "\n"

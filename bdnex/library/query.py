@@ -64,7 +64,7 @@ TEXT_FIELDS = {"title": "a.title", "series": "s.name", "publisher": "pub.name", 
 FILE_TEXT_FIELDS = {"path": "f.path", "filename": "basename(f.path)", "format": "f.format", "md5": "f.md5",
                     "embedded": "COALESCE(f.embedded, '')"}
 NUMERIC_FIELDS = {"id": "a.id", "year": "a.year", "volume": "a.volume", "pages": "a.pages", "rating": "a.rating"}
-FILE_NUMERIC_FIELDS = {"size": "f.size", "filepages": "f.page_count", "cover": "f.cover_score"}
+FILE_NUMERIC_FIELDS = {"fileid": "f.id", "size": "f.size", "filepages": "f.page_count", "cover": "f.cover_score"}
 BOOL_FIELDS = {"partial": "COALESCE(json_extract(a.extra, '$.partial'), 0)",
                "complete": "(1 - COALESCE(json_extract(a.extra, '$.partial'), 0))"}  # its page was read
 FILE_BOOL_FIELDS = {"corrupted": "f.corrupted", "tagged": "(f.album_id IS NOT NULL)",

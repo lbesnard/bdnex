@@ -50,6 +50,9 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   scripts, `Throttle` (5 wrong guesses lock a client for 5 min; `api.behind_proxy` decides what "client" is). The page's own
   requests carry `X-Bdnex-Page` so a 401 never triggers the browser's Basic box. The CSP forbids inline scripts: no
   `<script>` bodies and no `onclick=` attributes in the static HTML.
+- **Settings page** (`api/settings_api.py`): the form is built from the packaged defaults (their order and help) and the
+  pydantic model (kinds, choices, limits); a change goes through `config_template.set_value` (line edit, comments kept) and
+  `build_settings` before the file is written. A new option needs no page work, but a secret goes in `HIDDEN`.
 - **The metadata editor** (`POST /api/albums/{id}/edit`, `POST /api/edit`) calls `edit_cmd.doc_changes` / `describe_changes` /
   `parse_assignments`, so the web and `bdnex edit` can never disagree on what a valid value is. Do not validate fields twice.
 - **Look at it for real**: Chromium is available. `tools/demo_library.py` builds a demo library; see the
