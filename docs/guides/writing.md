@@ -179,7 +179,7 @@ which the library does not take from a file. Nothing is stored in a preview (`--
 
 - `.cbz` is the only format bdnex writes. `write.format_preferred` says what to do with the others:
   - `cbz` (default): CBR and PDF files are converted to CBZ, each one only if its own switch allows it
-    (`write.cbr`, `write.pdf`: `convert` or `skip`), so you can convert CBRs and keep PDFs, or the reverse.
+    (`write.cbr`: `convert` or `skip`; `write.pdf`: `convert`, `tag` or `skip`), so you can convert CBRs and keep PDFs, or the reverse.
   - `none`: nothing is ever converted. A CBR or a PDF cannot be tagged as it is, so `write`, `move` and `repair`
     leave it alone and say so; CBZ files are tagged and moved as usual.
   A CBR target (`cbr`) is not offered: writing RAR needs the proprietary `rar` program.
@@ -194,13 +194,23 @@ which the library does not take from a file. Nothing is stored in a preview (`--
   page's own pictures. This is **not lossless**: a drawn page is a new picture, not a copy of the PDF's. A scanner's
   layered PDF (a JPEG background with a 1-bit text layer) is made only of such pages. Photographic pages are saved as
   JPEG (`write.pdf_jpeg_quality`, 90 by default; raise it for a closer copy at a bigger size) and the others as PNG.
-  To keep the exact PDF, set `write.pdf: skip`.
+  To keep the PDF itself, see `write.pdf: tag` and `skip` below.
   `write.pdf_mode: extract` refuses a PDF with such pages and names them, `render` draws every page.
   `bdnex write --pretend` tells you beforehand: `all 120 pages extracted untouched`, or
   `3 of 120 page(s) had to be drawn (page 4, 57, 58)`. A PDF that comes out many times bigger than it went in
   was drawn in PNG: check that line, and the size check below catches it.
-- Conversion is automatic with `bdnex write` and `bdnex move`: set `write.cbr` and `write.pdf` to `convert`
-  (the default) or `skip`. The other direction, CBZ to CBR, is not offered: RAR can not be written.
+- **Keeping a PDF a PDF: `write.pdf`.** `convert` (the default) makes a CBZ. `tag` keeps the PDF and writes the tags
+  **into it**: the title, writer, summary and keywords in its Info dictionary (what viewers show), an XMP packet
+  (Dublin Core, plus the series and its number as Calibre keeps them), and the same `ComicInfo.xml` as a CBZ,
+  attached to the PDF so that bdnex can read it back (a second `write` says `unchanged`; a conflict is asked
+  like for a CBZ). The pages are not touched: the file is saved incrementally, the tagged copy must begin with the
+  original's exact bytes and is checked before it replaces the original, and `move` puts it in the tree as a `.pdf`
+  with your path templates. The XMP packet it replaces, if any, is lost. An encrypted PDF, or one whose structure is
+  damaged, can not be tagged: `move` still moves it, as it is. `skip` leaves the PDF alone entirely: no tags,
+  and `move` only renames it. Other readers use what they can: Info and XMP are read by most PDF viewers and by
+  Calibre; few comic servers read PDF tags, so check yours (not tested here with Komga or Kavita).
+- Conversion is automatic with `bdnex write` and `bdnex move`: set `write.cbr` to `convert` (the default) or `skip`,
+  and `write.pdf` to `convert` (the default), `tag` or `skip`. The other direction, CBZ to CBR, is not offered: RAR can not be written.
 - `write.delete_original: ask | yes | no` decides what happens to the CBR/PDF after conversion. `yes` deletes it
   without asking, once the new CBZ has passed both checks. With `write.use_trash: true` (the default) "deleted"
   means moved to the trash folder (`trash.dir`, inside your library folder) and recorded in the library with its

@@ -315,6 +315,8 @@ class Organizer:
             return FileResult(path, FAILED, note="file not found")
         spare = bool(row.get("spare"))
         left_as_is = self._left_as_is(fmt)
+        if self._tags_in_place(fmt):
+            return self._tag_pdf(row, mode, album_id, spare)
         if left_as_is:  # no tags can be written, but `move` can still put the file where it belongs
             return self._move_as_is(path, fmt, album_id, mode, spare, left_as_is)
 
@@ -351,6 +353,8 @@ class Organizer:
     def _left_as_is(self, fmt: str) -> Optional[str]:
         """Why a file of this format gets no tags (``None``: it is tagged)."""
         write = self.settings.write
+        if self._tags_in_place(fmt):
+            return None
         if fmt != "cbz" and write.format_preferred == "none":
             return f"{fmt} left as it is (write.format_preferred: none): only a CBZ can be tagged without converting it"
         if fmt == "cbr" and write.cbr == "skip":
@@ -358,6 +362,57 @@ class Organizer:
         if fmt == "pdf" and write.pdf == "skip":
             return "pdf skipped (write.pdf: skip)"
         return None
+
+    def _tags_in_place(self, fmt: str) -> bool:
+        """A PDF that keeps being a PDF: its tags are written into it (``write.pdf: tag``)."""
+        return fmt == "pdf" and self.settings.write.pdf == "tag"
+
+    def _tag_pdf(self, row: dict[str, Any], mode: str, album_id: int, spare: bool) -> FileResult:
+        """Tag a PDF without converting it: Info dictionary, XMP and ComicInfo.xml attached, its pages untouched."""
+        path = row["path"]
+        dest = self._destination(path, "pdf", album_id, mode, spare)
+        if isinstance(dest, FileResult):
+            return dest
+        try:
+            existing, pages = archive.pdf_comicinfo(path)
+        except archive.ArchiveError as err:
+            return self._move_as_is(path, "pdf", album_id, mode, spare, f"this PDF can not be tagged ({err})")
+        fields = comicinfo.album_to_fields(self.library.get_album(album_id), pages or 0)
+        xml = self._resolve_xml(path, existing, fields, album_id)
+        if isinstance(xml, FileResult):
+            return xml
+        same_place = os.path.abspath(dest) == os.path.abspath(path)
+        if same_place and xml == existing:
+            return FileResult(path, UNCHANGED, dest, "ComicInfo.xml already up to date")
+        steps = ["tag the PDF in place (Info, XMP, ComicInfo.xml attached; its pages are not touched)"
+                 if xml != existing else "keep the tags"]
+        if not same_place:
+            steps.append(f"{'copy' if mode == COPY else 'move'} to {dest}")
+        if self.pretend:
+            return FileResult(path, PRETEND, dest, "would: " + "; ".join(steps) + (
+                "; stays where it is" if same_place else
+                "; the destination already exists (you would be asked what to do)" if os.path.exists(dest) else ""))
+        return self._carry_out(row, mode, dest, None, xml, steps, False, same_place, spare, pdf_fields=fields)
+
+    def _build_pdf(self, path: str, dest: str, xml: bytes, fields: dict) -> None:
+        """``dest`` is a tagged copy of ``path``, made beside it and put in place only when it checks out."""
+        tmp = dest + TMP_SUFFIX
+        try:
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            self._stage("copying the PDF to tag it (its pages are not touched)")
+            shutil.copyfile(path, tmp)
+            self._stage("writing the tags into the PDF")
+            archive.tag_pdf(tmp, xml, fields)
+            self._stage("checking the tagged PDF against the original")
+            archive.verify_tagged_pdf(tmp, path, xml)
+            self._stage("making sure it is on the disk")
+            _flush_to_disk(tmp)
+        except Exception:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            raise
+        self._stage("putting it in place")
+        os.replace(tmp, dest)
 
     def _read(self, path: str, fmt: str, recovered):
         """``(entries, existing ComicInfo.xml, page count)``. A preview does not read the pictures (that is what
@@ -401,7 +456,8 @@ class Organizer:
         return [f"all {len(entries)} pages extracted untouched" if not decoded else
                 f"all {len(entries)} pages extracted without loss ({decoded} saved as PNG, same pixels)"]
 
-    def _carry_out(self, row, mode, dest, entries, xml, steps, converted, same_place, spare) -> FileResult:
+    def _carry_out(self, row, mode, dest, entries, xml, steps, converted, same_place, spare,
+                   pdf_fields: Optional[dict] = None) -> FileResult:
         """Write the new archive safely, then deal with the original and the library."""
         path = row["path"]
         if not same_place and os.path.exists(dest):
@@ -417,7 +473,10 @@ class Organizer:
             return FileResult(path, FAILED, note=problem)
         delete = self._delete_wanted(path, dest, mode, converted)  # asked now, before anything is written
         try:
-            self._build(dest, entries, xml, compare_to=path)
+            if pdf_fields is not None:  # a PDF that stays a PDF
+                self._build_pdf(path, dest, xml, pdf_fields)
+            else:
+                self._build(dest, entries, xml, compare_to=path)
         except OSError as err:
             if err.errno != errno.ENOSPC:
                 raise
@@ -612,8 +671,9 @@ class Organizer:
 
     # -------------------------------------------------------------- helpers
     def _destination(self, path: str, fmt: str, album_id: int, mode: str, spare: bool = False, as_is: bool = False):
+        tagged_pdf = self._tags_in_place(fmt)  # it stays a PDF, with its own extension
         if mode == WRITE:
-            return path if fmt == "cbz" else os.path.splitext(path)[0] + ".cbz"
+            return path if fmt == "cbz" or tagged_pdf else os.path.splitext(path)[0] + ".cbz"
 
         root = self.settings.require_collection()
         album = self.library.get_album(album_id)
@@ -629,7 +689,7 @@ class Organizer:
         if not rendered.parts:
             return FileResult(path, SKIPPED, note="the path template is empty")
         *folders, name = rendered.parts
-        extension = f".{fmt}" if as_is else ".cbz"  # an untouched file keeps what it is
+        extension = f".{fmt}" if as_is or tagged_pdf else ".cbz"  # an untouched file keeps what it is
         if spare:  # an extra version of the album: same name, in the spare versions folder
             return str(root.joinpath(self.settings.duplicates.versions_dir, *folders, name + extension))
         return str(root.joinpath(*folders, name + extension))

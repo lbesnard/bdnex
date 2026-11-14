@@ -121,7 +121,7 @@ class Cover(_Section):
 class Write(_Section):
     format_preferred: Literal["cbz", "none"]
     cbr: Literal["convert", "skip"]
-    pdf: Literal["convert", "skip"]
+    pdf: Literal["convert", "tag", "skip"]
     pdf_mode: Literal["auto", "extract", "render"]
     pdf_dpi: int = Field(ge=72, le=1200)
     pdf_render_format: Literal["auto", "png", "jpeg"]
