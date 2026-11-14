@@ -392,6 +392,9 @@ function labelNodes(text) {  // "[S]kip it" -> S in a key box, "kip it" after
 
 function questionCard(jobId, q) {
   const card = el("div", { class: "panel question", role: "group", "aria-label": "A question" }, el("h3", {}, q.message));
+  if (q.image) {  // what the terminal draws beside the question: the file's first page, or the two covers of a review
+    const img = el("img", { class: "qimg", alt: "the file's first page" }); picture(img, `/api/jobs/${jobId}/image?q=${q.id}`); card.append(img);
+  }
   let sent = false;
   const send = async body => {
     if (sent) return; sent = true; card.classList.add("sending");
@@ -402,7 +405,9 @@ function questionCard(jobId, q) {
     const keys = {};
     for (const c of q.choices) {
       if (c.key) keys[c.key] = c.index;
-      card.append(el("button", { class: "ans " + (c.tone || ""), onclick: () => send({ choice: c.index }) }, labelNodes(c.label)));
+      const answer = el("button", { class: "ans " + (c.tone || ""), onclick: () => send({ choice: c.index }) }, labelNodes(c.label));
+      card.append(c.url && /^https?:\/\//.test(c.url) ? el("div", { class: "withlink" }, answer,
+        el("a", { class: "btn", href: c.url, target: "_blank", rel: "noopener noreferrer", title: "Open the album's page on the site" }, "page ↗")) : answer);
     }
     card.onkey = e => { const i = keys[e.key.toLowerCase()]; if (i != null && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); send({ choice: i }); } };
   } else if (q.kind === "search") {
@@ -467,14 +472,35 @@ async function followJob(id, box) {
 
 // ------------------------------------------------------------------ navigation
 async function refreshBadge() {
-  try { app.overview = await api("/api/overview"); } catch (e) { return; }
-  drawNav(); drawMode();
+  let overview;
+  try { overview = await api("/api/overview"); } catch (e) { return; }
+  const before = JSON.stringify([app.overview && [app.overview.review, app.overview.busy, app.overview.allow_changes]]);
+  app.overview = overview;
+  if (before !== JSON.stringify([[overview.review, overview.busy, overview.allow_changes]])) { drawNav(); drawMode(); }
+  drawWaiting();
 }
 function drawNav() {
   const here = (location.hash.slice(2).split("?")[0] || "overview").split("/")[0];
   $("#nav").replaceChildren(...Object.entries(VIEWS).map(([id, v]) => el("a", { href: "#/" + id, "aria-current": id === here ? "page" : null },
     el("span", {}, v.icon), v.name, id === "review" && app.overview && app.overview.review ? el("span", { class: "count" }, app.overview.review) : null)));
 }
+// A question can wait for hours: say so in the tab title, in a banner on every page, and (if allowed) as a notification.
+let notified = "";
+function drawWaiting() {
+  const w = app.overview && app.overview.waiting;
+  document.title = w ? "❓ bdnex: waiting for you" : "bdnex";
+  let bar = $("#waiting");
+  if (!w) { if (bar) bar.remove(); notified = ""; return; }
+  if (!bar) { bar = el("div", { id: "waiting", class: "waiting", role: "status" }); document.body.prepend(bar); }
+  bar.replaceChildren(el("span", {}, "A task is waiting for your answer: " + w.message + " "), el("a", { class: "btn", href: "#/tasks?job=" + w.job }, "Answer"));
+  const key = w.job + ":" + w.question;
+  if (key !== notified && document.hidden && "Notification" in window && Notification.permission === "granted") {
+    try { new Notification("bdnex needs you", { body: w.message }); } catch (e) { /* some phones only allow it from a service worker */ }
+  }
+  notified = key;
+}
+setInterval(() => { if (!document.hidden || (app.overview && app.overview.busy)) refreshBadge(); }, 4000);
+
 async function logout() {
   try { await fetch("/api/logout", { method: "POST", headers: { "X-Requested-With": "bdnex" } }); } catch (e) { /* the page reloads anyway */ }
   location.reload();
@@ -483,6 +509,8 @@ function drawMode() {
   const o = app.overview;
   $("#mode").replaceChildren(...[o ? el("b", { class: o.allow_changes ? "on" : "" }, o.allow_changes ? "changes allowed" : "read-only") : null,
     o && o.busy ? el("div", {}, "a job is running") : null,
+    o && "Notification" in window && window.isSecureContext && Notification.permission === "default"
+      ? el("div", {}, el("button", { onclick: () => Notification.requestPermission().then(drawMode) }, "Notify me when a question waits")) : null,
     o && o.login_required ? el("div", {}, el("button", { onclick: logout }, "Log out")) : null].filter(Boolean));
 }
 async function route() {

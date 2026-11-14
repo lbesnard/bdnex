@@ -408,7 +408,7 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             "with_cover": count("SELECT COUNT(*) FROM albums WHERE cover_file IS NOT NULL"),
             "collection": settings.collection_path,
             "sources": [{"name": src.alias, "path": src.folder, "mode": src.mode} for src in settings.import_.sources],
-            "allow_changes": allow_changes, "busy": jobs.busy(), "login_required": bool(password),
+            "allow_changes": allow_changes, "busy": jobs.busy(), "waiting": jobs.waiting(), "login_required": bool(password),
         }
 
     @app.get("/api/config", dependencies=guarded, summary="The settings that matter to the page (no secrets)")
@@ -515,6 +515,14 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
         except Busy as err:
             raise HTTPException(409, str(err)) from err
         return job.public()
+
+    @app.get("/api/jobs/{job_id}/image", dependencies=guarded, summary="The picture shown with the question a task is waiting on")
+    def job_image(job_id: int):
+        job = jobs.get(job_id)
+        image = job.question_image if job else None
+        if not image:
+            raise HTTPException(404, "no picture with this question")
+        return Response(image, media_type="image/png", headers={"Cache-Control": "no-store"})
 
     @app.post("/api/jobs/{job_id}/answer", dependencies=changing, summary="**Change:** answer the question a job is waiting on")
     def job_answer(job_id: int, body: QuestionAnswer):
