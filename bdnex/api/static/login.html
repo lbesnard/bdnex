@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bdnex: log in</title>
+<link rel="icon" href="/static/bdnex-logo.png">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+<main class="login">
+  <img src="/static/bdnex-logo.png" alt="BDneX">
+  <form id="form" class="panel">
+    <h1>Log in</h1>
+    <label class="f"><span>User name</span><input id="user" type="text" autocomplete="username" autocapitalize="off" required autofocus></label>
+    <label class="f"><span>Password</span><input id="pass" type="password" autocomplete="current-password" required></label>
+    <p id="msg" class="hint bad" role="alert"></p>
+    <button class="primary" type="submit">Log in</button>
+  </form>
+</main>
+<script src="/static/login.js"></script>
+</body>
+</html>

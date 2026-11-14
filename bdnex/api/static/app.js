@@ -22,10 +22,11 @@ const view = $("#view");
 async function api(path, { params = {}, method = "GET", body } = {}) {
   const url = new URL(path, location.origin);
   for (const [k, v] of Object.entries(params)) if (v !== "" && v !== false && v != null) url.searchParams.set(k, v);
-  const headers = {};
+  const headers = { "X-Bdnex-Page": "1" };  // the server then sends no Basic challenge: the page has its own login form
   if (token) headers.Authorization = "Bearer " + token;
   if (method !== "GET") { headers["Content-Type"] = "application/json"; headers["X-Requested-With"] = "bdnex"; }
   const res = await fetch(url, { method, headers, body: body ? JSON.stringify(body) : undefined });
+  if (res.status === 401 && res.headers.get("X-Bdnex-Login") === "password") { location.reload(); return new Promise(() => {}); }  // the login form
   if (res.status === 401) { await askToken(); return api(path, { params, method, body }); }
   if (!res.ok) {
     let message = res.statusText;
@@ -474,10 +475,15 @@ function drawNav() {
   $("#nav").replaceChildren(...Object.entries(VIEWS).map(([id, v]) => el("a", { href: "#/" + id, "aria-current": id === here ? "page" : null },
     el("span", {}, v.icon), v.name, id === "review" && app.overview && app.overview.review ? el("span", { class: "count" }, app.overview.review) : null)));
 }
+async function logout() {
+  try { await fetch("/api/logout", { method: "POST", headers: { "X-Requested-With": "bdnex" } }); } catch (e) { /* the page reloads anyway */ }
+  location.reload();
+}
 function drawMode() {
   const o = app.overview;
   $("#mode").replaceChildren(...[o ? el("b", { class: o.allow_changes ? "on" : "" }, o.allow_changes ? "changes allowed" : "read-only") : null,
-    o && o.busy ? el("div", {}, "a job is running") : null].filter(Boolean));
+    o && o.busy ? el("div", {}, "a job is running") : null,
+    o && o.login_required ? el("div", {}, el("button", { onclick: logout }, "Log out")) : null].filter(Boolean));
 }
 async function route() {
   const [path, query] = location.hash.slice(2).split("?");

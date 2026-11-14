@@ -7,6 +7,7 @@ allow it.
 
 ```bash
 pip install 'bdnex[api]'      # the extra: fastapi and uvicorn
+# from a clone: uv run --extra api bdnex serve   (or once: uv sync --extra api)
 bdnex serve                   # http://127.0.0.1:8765/, read-only
 bdnex serve --allow-changes   # the page may also run tasks and answer reviews
 ```
@@ -72,8 +73,15 @@ Task results are kept in memory: restarting the server forgets the list of earli
 The server listens on this machine only. To reach it from another one (a phone, a NAS), give an address such as
 `--host 0.0.0.0` **and a password or a token**: without one bdnex refuses to start, because the API shows your file
 paths. With a **password** (`api.password`, or `BDNEX_PASSWORD` in the environment, with the user name `api.username`) the
-browser shows its own login box when it opens the page and then sends the login by itself, which also works on a
-phone. A **token** is the same for scripts (`Authorization: Bearer ...`); either one is accepted when both are set.
+page shows a **login form** (and a *Log out* button), which works on a phone and with a password manager. A successful login
+sets a session cookie (HttpOnly, SameSite=Strict, Secure over HTTPS) that lasts `api.session_hours` (a week by default) and
+ends at once when you log out; restarting the server logs everybody out. Scripts send the same login as HTTP Basic
+(`curl -u name:password`), or the **token** (`Authorization: Bearer ...`); any of them is accepted when several are set.
+Five wrong guesses from one place lock it out for five minutes (`429`, with `Retry-After`). Behind a reverse proxy set
+`api.behind_proxy: true` so that the place is the client the proxy forwards (`X-Forwarded-For`); otherwise every visitor
+looks like the proxy and one bad guesser would lock everybody out. Do not set it when the server is reachable directly: a
+visitor could then choose its own address. Every answer carries `X-Frame-Options: DENY`, `nosniff` and a content security
+policy (the page loads nothing from elsewhere), and a request body over 1 MB is refused.
 `/healthz` needs no login and shows nothing of the library, for a container's health check. There is no encryption
 (HTTP Basic sends the password as it is): put a reverse proxy with HTTPS in front of it if it leaves your home network.
 To run it in a container, see [Docker](docker.md).

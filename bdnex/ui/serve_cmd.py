@@ -35,7 +35,8 @@ def run(argv: list[str]) -> int:
 
         from bdnex.api.app import create_app
     except ImportError:
-        print("`bdnex serve` needs the API extra: pip install 'bdnex[api]'", file=sys.stderr)
+        print("`bdnex serve` needs the API extra: pip install 'bdnex[api]'\n"
+              "From a clone: uv run --extra api bdnex serve   (or once: uv sync --extra api)", file=sys.stderr)
         return 1
     if not context.has_library(settings):
         return 1

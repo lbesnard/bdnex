@@ -8,9 +8,6 @@ cannot send, and a request from the page's own address.
 
 from __future__ import annotations
 
-import base64
-import binascii
-import hmac
 import shlex
 from pathlib import Path
 from typing import Any, Optional
@@ -20,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
+from bdnex.api import auth
 from bdnex.api.jobs import SPECS, Busy, JobError, JobManager
 from bdnex.config import Settings
 from bdnex.library import Library
@@ -28,6 +26,7 @@ from bdnex.library.query import QueryError
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_LIMIT = 1000
 MAX_BULK = 2000  # albums one edit may change
+MAX_BODY = 1_000_000  # bytes of a request body: the page sends a few lines of JSON
 
 
 class JobRequest(BaseModel):
@@ -45,6 +44,11 @@ class JobRequest(BaseModel):
     older_than: Optional[int] = None  # trash-empty: only what was trashed that many days ago
     id: Optional[int] = None    # trash-restore: the trash entry
     place: bool = False         # trash-restore: then move it where its album belongs
+
+
+class Login(BaseModel):
+    username: str
+    password: str
 
 
 class QuestionAnswer(BaseModel):
@@ -90,36 +94,50 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
         description="Read-only view of your bdnex library. The `q` parameter takes the same terms as "
                     "`bdnex ls` (`series:nains year:2010..2015 ^genre:humour`).")
 
-    def same(given: str, expected: str) -> bool:
-        return hmac.compare_digest(given.encode(), expected.encode())
+    throttle, sessions = auth.Throttle(), auth.Sessions(settings.api.session_hours)
 
-    def basic_ok(value: str) -> bool:
-        """``value`` is the base64 part of ``Authorization: Basic ...``. Both parts are always compared."""
-        try:
-            name, _, secret = base64.b64decode(value, validate=True).decode("utf-8").partition(":")
-        except (binascii.Error, UnicodeDecodeError, ValueError):
-            return False
-        return same(name, username) & same(secret, password)
+    def client(request: Request) -> str:
+        """Who is asking, for the limit on wrong guesses. Behind a proxy that is the first address it forwarded
+        (`api.behind_proxy`); else every visitor would look like the proxy and one bad guesser would lock everybody out."""
+        if settings.api.behind_proxy:
+            forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            if forwarded:
+                return forwarded
+        return request.client.host if request.client else "?"
+
+    def secure(request: Request) -> bool:
+        scheme = request.headers.get("x-forwarded-proto", "") if settings.api.behind_proxy else ""
+        return (scheme or request.url.scheme) == "https"
+
+    def refuse(request: Request, tried: bool) -> HTTPException:
+        """401 for a request without a valid login. The page's own requests get no Basic challenge (the browser's login
+        box would come up over the page's login form); other clients (curl) do."""
+        headers = {"X-Bdnex-Login": "password" if password else "token"}
+        if not request.headers.get("x-bdnex-page"):
+            headers["WWW-Authenticate"] = 'Basic realm="bdnex", charset="UTF-8"' if password else "Bearer"
+        return HTTPException(401, "a login is required" if password else "a valid `Authorization: Bearer <token>` header is required",
+                             headers=headers)
 
     def allowed(request: Request) -> None:
         if not token and not password:
             return
+        who = client(request)
+        wait = throttle.wait(who)
+        if wait:
+            raise HTTPException(429, f"too many wrong guesses: try again in {wait} s", headers={"Retry-After": str(wait)})
         scheme, _, value = request.headers.get("authorization", "").partition(" ")
         scheme = scheme.lower()
-        if token and scheme == "bearer" and same(value, token):
+        if token and scheme == "bearer" and auth.same(value, token):
             return
-        if password and scheme == "basic" and basic_ok(value):
+        if password and scheme == "basic":
+            name, secret = auth.basic_credentials(value)
+            if auth.login_ok(name, secret, username, password):
+                return
+        if password and sessions.valid(request.cookies.get(auth.COOKIE)):
             return
-        if password:  # a browser answers this with its own login box, then sends the login by itself
-            raise HTTPException(401, "a login is required", headers={"WWW-Authenticate": 'Basic realm="bdnex", charset="UTF-8"'})
-        raise HTTPException(401, "a valid `Authorization: Bearer <token>` header is required",
-                            headers={"WWW-Authenticate": "Bearer"})
-
-    def page_login(request: Request) -> None:
-        """The page itself asks for the login first when there is a password, so the browser's box comes up at once.
-        With only a token the page is open and asks for the token itself."""
-        if password:
-            allowed(request)
+        if scheme in ("basic", "bearer"):  # a login was offered and is wrong
+            throttle.failed(who)
+        raise refuse(request, bool(scheme))
 
     def can_change(request: Request) -> None:
         """A change needs: changes enabled, the token (if any), our own header, and no foreign origin."""
@@ -162,9 +180,59 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
     def healthz():  # for a container's health check: no login, nothing of the library
         return {"status": "ok"}
 
-    @app.get("/", response_class=HTMLResponse, include_in_schema=False, dependencies=[Depends(page_login)])
-    def home():
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    def home(request: Request):
+        """The page. With a password and no valid login a browser gets the login form (status 401, so nothing caches it
+        as the page); other clients get the plain 401 and its challenge."""
+        if password:
+            try:
+                allowed(request)
+            except HTTPException as err:
+                if err.status_code == 401 and "text/html" in request.headers.get("accept", ""):
+                    return HTMLResponse((STATIC / "login.html").read_text(encoding="utf-8"), status_code=401)
+                raise
         return (STATIC / "index.html").read_text(encoding="utf-8")
+
+    @app.post("/api/login", include_in_schema=False)
+    def login(body: Login, request: Request, response: Response):
+        if not password:
+            raise HTTPException(404, "this server has no password")
+        who = client(request)
+        wait = throttle.wait(who)
+        if wait:
+            raise HTTPException(429, f"too many wrong guesses: try again in {wait} s", headers={"Retry-After": str(wait)})
+        if request.headers.get("x-requested-with") != "bdnex":
+            raise HTTPException(403, "missing the `X-Requested-With: bdnex` header")
+        if not auth.login_ok(body.username, body.password, username, password):
+            throttle.failed(who)
+            raise HTTPException(401, "wrong user name or password")
+        throttle.succeeded(who)
+        response.set_cookie(auth.COOKIE, sessions.start(), max_age=int(sessions.ttl), httponly=True, samesite="strict",
+                            secure=secure(request), path="/")
+        return {"ok": True}
+
+    @app.post("/api/logout", include_in_schema=False)
+    def logout(request: Request, response: Response):
+        if request.headers.get("x-requested-with") != "bdnex":
+            raise HTTPException(403, "missing the `X-Requested-With: bdnex` header")
+        sessions.end(request.cookies.get(auth.COOKIE))
+        response.delete_cookie(auth.COOKIE, path="/")
+        return {"ok": True}
+
+    @app.middleware("http")
+    async def protect(request: Request, call_next):
+        """Small bodies only, and headers that keep the page from being framed, sniffed or fed from elsewhere."""
+        if int(request.headers.get("content-length") or 0) > MAX_BODY:
+            return Response("the request is too big", status_code=413)
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Referrer-Policy"] = "no-referrer"
+        if not request.url.path.startswith(("/docs", "/redoc", "/openapi.json")):  # the API docs page uses a CDN
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["Content-Security-Policy"] = (
+                "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; "
+                "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+        return response
 
     @app.get("/api/health", dependencies=guarded, summary="Is the server up, and which library does it read?")
     def health(lib: Library = Depends(library)):
@@ -340,7 +408,7 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             "with_cover": count("SELECT COUNT(*) FROM albums WHERE cover_file IS NOT NULL"),
             "collection": settings.collection_path,
             "sources": [{"name": src.alias, "path": src.folder, "mode": src.mode} for src in settings.import_.sources],
-            "allow_changes": allow_changes, "busy": jobs.busy(),
+            "allow_changes": allow_changes, "busy": jobs.busy(), "login_required": bool(password),
         }
 
     @app.get("/api/config", dependencies=guarded, summary="The settings that matter to the page (no secrets)")
