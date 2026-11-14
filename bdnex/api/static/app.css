@@ -124,3 +124,12 @@ code { background: var(--tile); border-radius: 5px; padding: 1px 5px; font: 12.5
 kbd { font: 12px ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; margin-right: 2px; background: var(--tile); }
 .tick { display: flex; gap: 6px; align-items: center; cursor: pointer; }
 @media (max-width: 800px) { .question .ans { padding: 14px; font-size: 16px; } }
+
+/* the metadata editor */
+.edit .fields { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px 14px; }
+.edit .f { display: flex; flex-direction: column; gap: 3px; } .edit .f input, .edit .f textarea { flex: none; } .edit .f.wide { grid-column: 1 / -1; }
+.edit .f span { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+.edit input, .edit textarea, .role input, .role select { padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text); font: inherit; width: 100%; }
+.role { margin: 6px 0; flex-wrap: nowrap; } .role input:first-child, .role select { flex: 0 0 38%; }
+.hint.ok { color: var(--ok); }
+@media (max-width: 800px) { .edit .fields { grid-template-columns: 1fr; } .role { flex-wrap: wrap; } .role input:first-child, .role select { flex: 1 1 100%; } }

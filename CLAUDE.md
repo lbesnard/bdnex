@@ -46,6 +46,8 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   answers). Commands build their prompter with `prompts.new_prompter(...)`, never `InquirerPrompter(...)`, so a job can
   swap it (`use_prompter`). A new question must go through those four methods (not `inquirer.*` directly), and keep
   working with `fragments=None`. Never add a second copy of a question for the web.
+- **The metadata editor** (`POST /api/albums/{id}/edit`, `POST /api/edit`) calls `edit_cmd.doc_changes` / `describe_changes` /
+  `parse_assignments`, so the web and `bdnex edit` can never disagree on what a valid value is. Do not validate fields twice.
 - **Look at it for real**: Chromium is available. `tools/demo_library.py` builds a demo library; see the
   `check-web-page` skill for serving it and taking screenshots. Never claim a page works from the code alone.
 

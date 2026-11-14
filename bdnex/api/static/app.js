@@ -120,6 +120,7 @@ const VIEWS = {
     const next = offset + data.items.length;
     render(...header("Albums", `${data.count} match${data.count === 1 ? "" : "es"}`),
       searchBox("series:nains year:2010..2015 ^genre:humour", q, v => VIEWS.albums.draw(v, 0)),
+      q.trim() && data.count && canChange() ? el("div", { class: "row", style: "margin-top:8px" }, el("button", { onclick: () => bulkEdit(q, data.count) }, `Edit these ${data.count} album(s)…`)) : null,
       el("p", { class: "hint" }, rich("Same terms as `bdnex ls`: field:value, ranges, ::regex, ^ to exclude.")),
       cards.length ? el("div", { class: "grid" }, cards) : el("p", { class: "hint" }, "No album."),
       next < data.count ? el("div", { class: "more" }, el("button", { onclick: () => VIEWS.albums.draw(q, next, items) }, `Show more (${data.count - next})`)) : null);
@@ -271,19 +272,103 @@ const VIEWS = {
 };
 
 // ------------------------------------------------------------------ dialogs and jobs
-async function albumDialog(id) {
+// ------------------------------------------------------------------ the metadata editor
+const ROLES = ["Writer", "Penciller", "Inker", "Colorist", "Letterer", "CoverArtist", "Editor", "Translator"];
+const splitList = text => text.split(";").map(s => s.trim()).filter(Boolean);
+
+function editForm(a, dialog, note) {
+  const whole = (text) => text.trim() === "" ? null : /^-?\d+$/.test(text.trim()) ? Number(text.trim()) : text.trim();  // a bad number is sent as text: the server says why
+  const field = (key, name, opts = {}) => {
+    const input = el(opts.area ? "textarea" : "input", { type: opts.area ? null : "text", rows: opts.area ? 5 : null, inputmode: opts.number ? "numeric" : null,
+      value: opts.area ? null : (a[key] ?? ""), "aria-label": name });
+    if (opts.area) input.value = a[key] ?? "";
+    return { key, input, wrap: el("label", { class: "f " + (opts.wide ? "wide" : "") }, el("span", {}, name), input, opts.hint ? el("small", { class: "hint" }, opts.hint) : null), number: opts.number };
+  };
+  const fields = [
+    ...(a.kind === "series" ? [field("series", "Series", { hint: "Renames the series for all its albums." })] : []),
+    field("title", "Title", { wide: true }), field("volume", "Volume", { number: true }), field("alternate_number", "Alternate number"),
+    field("publisher", "Publisher"), field("year", "Year", { number: true }), field("month", "Month", { number: true }), field("day", "Day", { number: true }),
+    field("pages", "Pages", { number: true }), field("language", "Language"), field("format", "Format"), field("isbn", "ISBN"),
+    field("summary", "Summary", { area: true, wide: true })];
+  const genres = el("input", { type: "text", value: (a.genres || []).join("; "), "aria-label": "Genres" });
+  const roleRows = el("div", { class: "roles" });
+  const addRole = (role = "", names = []) => {
+    const r = el("input", { type: "text", value: role, list: "roles", placeholder: "role", "aria-label": "role" });
+    const n = el("input", { type: "text", value: names.join("; "), placeholder: "names, separated by ; (Name, First is one name)", "aria-label": "names" });
+    roleRows.append(el("div", { class: "row role" }, r, n));
+  };
+  for (const [role, names] of Object.entries(a.credits || {})) addRole(role, names);
+  const roleList = el("datalist", { id: "roles" }, ROLES.map(r => el("option", { value: r })));
+  const out = el("pre", { class: "log", hidden: true });
+  const collect = () => {
+    const doc = {};
+    for (const f of fields) doc[f.key] = f.number ? whole(f.input.value) : (f.input.value.trim() === "" ? null : f.input.value.trim());
+    doc.genres = splitList(genres.value);
+    const credits = {};
+    for (const row of roleRows.children) {
+      const [r, n] = row.querySelectorAll("input"); const role = r.value.trim();
+      if (role) credits[role] = splitList(n.value);
+    }
+    for (const role of Object.keys(a.credits || {})) if (!(role in credits)) credits[role] = [];  // an emptied row removes the role
+    doc.credits = credits;
+    return doc;
+  };
+  const send = async preview => {
+    out.hidden = false; out.textContent = preview ? "Checking…" : "Saving…";
+    try {
+      const r = await api(`/api/albums/${a.id}/edit`, { method: "POST", body: { preview, fields: collect() } });
+      if (!r.changed) { out.textContent = "Nothing differs from what is stored."; return; }
+      if (preview) { out.textContent = r.changes.join("\n") + "\n\nNot saved yet."; return; }
+      albumDialog(a.id, "Saved. The files still have their old tags until you write them.");
+    } catch (e) { out.textContent = e.message; }
+  };
+  return el("form", { class: "edit", onsubmit: e => { e.preventDefault(); send(false); } },
+    note ? el("p", { class: "hint ok" }, note) : null,
+    el("div", { class: "fields" }, fields.map(f => f.wrap), el("label", { class: "f wide" }, el("span", {}, "Genres (separated by ;)"), genres)),
+    el("h3", {}, "Credits"), roleRows, roleList, el("button", { type: "button", onclick: () => addRole() }, "Add a role"),
+    out, el("div", { class: "row", style: "margin-top:12px" }, el("button", { type: "button", onclick: () => send(true) }, "Preview the changes"),
+      el("button", { class: "primary", type: "submit" }, "Save"), el("button", { type: "button", onclick: () => albumDialog(a.id) }, "Cancel")));
+}
+
+async function bulkEdit(q, count) {
+  const dialog = $("#dialog");
+  const names = ["publisher", "language", "format", "year", "month", "day", "pages", "isbn", "genres", "credits.Writer", "credits.Penciller", "credits.Colorist", "series", "title", "summary"];
+  const rows = el("div", {}), out = el("pre", { class: "log", hidden: true });
+  const addRow = () => rows.append(el("div", { class: "row role" }, el("select", {}, names.map(n => el("option", { value: n }, n))), el("input", { type: "text", placeholder: "value (lists: a; b). Empty clears it", "aria-label": "value" })));
+  addRow();
+  const items = () => [...rows.children].map(r => `${r.querySelector("select").value}=${r.querySelector("input").value}`);
+  const send = async preview => {
+    out.hidden = false; out.textContent = preview ? "Checking…" : "Saving…";
+    try {
+      const r = await api("/api/edit", { method: "POST", body: { q, set: items(), preview } });
+      out.textContent = `${r.matched} album(s) found, ${r.changed} would change${r.skipped ? `, ${r.skipped} skipped (one-shots have no series)` : ""}.\n\n` + r.changes.join("\n") +
+        (preview ? "\n\nNot saved yet." : r.stored ? "\n\nSaved. Write the tags into the files from the Tasks page." : "\n\nNothing to save.");
+    } catch (e) { out.textContent = e.message; }
+  };
+  dialog.replaceChildren(el("button", { class: "d-close", "aria-label": "close", onclick: () => dialog.close() }, "×"),
+    el("div", { style: "padding:18px" }, el("h2", { style: "margin-top:0" }, "Change every album of this search"), el("p", { class: "hint" }, rich(`Search: \`${q}\` (${count} album(s)). Each line sets one field on all of them.`)),
+      rows, el("div", { class: "row", style: "margin-top:8px" }, el("button", { onclick: addRow }, "Add a field")), out,
+      el("div", { class: "row", style: "margin-top:12px" }, el("button", { onclick: () => send(true) }, "Preview"), el("button", { class: "primary", disabled: !canChange(), onclick: () => confirm(`Change ${count} album(s)?`) && send(false) }, "Save"))));
+  dialog.showModal();
+}
+
+async function albumDialog(id, note) {
   const a = await api("/api/albums/" + id);
   const credits = Object.entries(a.credits || {}).map(([role, names]) => [role, names.join(", ")]);
   const rows = [["Series", a.series], ["Year", a.year], ["Language", a.language], ["Publisher", a.publisher], ["ISBN", a.isbn],
     ["Genres", (a.genres || []).join(", ")], ...credits];
   const dialog = $("#dialog");
+  const writeTags = () => { dialog.close(); startJob("write", { query: ["id:" + id], preview: false, interactive: true }); };
   dialog.replaceChildren(el("button", { class: "d-close", "aria-label": "close", onclick: () => dialog.close() }, "×"),
     el("div", { class: "d-body" }, cover(`/api/albums/${id}/cover`, a.title),
       el("div", {}, el("h2", { style: "margin-top:0" }, label(a)), a.url ? el("a", { href: a.url, target: "_blank", rel: "noopener" }, "Open the album page") : null,
+        canChange() ? el("div", { class: "row", style: "margin:8px 0" }, el("button", { onclick: () => dialog.replaceChildren(el("button", { class: "d-close", "aria-label": "close", onclick: () => dialog.close() }, "×"), el("div", { style: "padding:18px" }, el("h2", { style: "margin-top:0" }, label(a)), editForm(a, dialog))) }, "Edit"),
+          a.files.length ? el("button", { onclick: writeTags, title: "Write this album's values into its files" }, "Write the tags into its files") : null) : null,
+        note ? el("p", { class: "hint ok" }, note) : null,
         el("dl", {}, rows.filter(r => r[1]).flatMap(([k, v]) => [el("dt", {}, k), el("dd", {}, String(v))])),
         a.summary ? el("p", {}, a.summary) : null, el("h3", {}, `Files (${a.files.length})`),
         a.files.map(f => el("div", { class: "hint", style: "margin:2px 0" }, `${f.format} · ${size(f.size)} — ${f.path}`)))));
-  dialog.showModal();
+  if (!dialog.open) dialog.showModal();
 }
 
 async function seriesVolumes(id) {
