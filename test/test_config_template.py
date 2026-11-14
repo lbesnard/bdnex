@@ -178,7 +178,7 @@ def test_update_puts_the_help_back_after_options_that_lost_it():
     new, done = annotate(text)
     assert "write.cbr" in done and "write.pdf" in done and "write.workers" not in done
     by_key = {m.group(1): m.group(0) for m in re.finditer(r"(?m)^  #? ?(cbr|pdf|workers):.*$", new)}
-    assert "convert | skip" in by_key["cbr"] and "convert | skip" in by_key["pdf"]
+    assert "convert | skip" in by_key["cbr"] and "convert | tag | skip" in by_key["pdf"]
     assert by_key["workers"].endswith("# my own note")  # a comment of the user's is never replaced
     assert yaml.safe_load(new)["write"] == {"cbr": "convert", "workers": 2}  # values untouched
     assert annotate(new)[1] == []  # and once is enough

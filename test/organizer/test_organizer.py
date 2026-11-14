@@ -1119,3 +1119,81 @@ def test_the_size_question_does_not_claim_drawn_pages_are_copies(capsys, monkeyp
     assert "371 page(s) had to be drawn" in capsys.readouterr().out
     prompter.size_action("/x/a.cbr", 10, 99, 20)
     assert "byte for byte" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------- write.pdf: tag (a PDF stays a PDF)
+def make_pdf(path, pages=2):
+    import pymupdf
+
+    doc = pymupdf.open()
+    for number in range(pages):
+        doc.new_page(width=200, height=300).insert_text((20, 50), f"page {number + 1}")
+    doc.save(str(path))
+    doc.close()
+    return str(path)
+
+
+def embedded_comicinfo(path):
+    import pymupdf
+
+    with pymupdf.open(path) as doc:
+        return comicinfo.parse_xml(doc.embfile_get("ComicInfo.xml")), doc.metadata, doc.get_xml_metadata()
+
+
+def test_pdf_tag_writes_the_tags_into_the_pdf_and_keeps_its_bytes(lib, tmp_path):
+    path = make_pdf(tmp_path / "a.pdf")
+    original = open(path, "rb").read()
+    row = registered(lib, path, add_series_album(lib))
+    result = Organizer(lib, settings_for(tmp_path, write={"pdf": "tag"})).process(row, WRITE)
+    assert result.outcome == WRITTEN and result.dest == path and not os.path.exists(str(tmp_path / "a.cbz"))
+    fields, info, xmp = embedded_comicinfo(path)
+    assert fields["Title"] == "Redwin de la Forge" and fields["Series"] == "Nains"
+    assert info["title"] == "Nains - T1 - Redwin de la Forge" and "Jarry" in info["author"]
+    assert "Redwin de la Forge" in xmp and "calibre:series" in xmp
+    assert open(path, "rb").read().startswith(original)  # the pages are the original's own bytes
+    again = Organizer(lib, settings_for(tmp_path, write={"pdf": "tag"})).process(lib.get_file(path), WRITE)
+    assert again.outcome == UNCHANGED
+
+
+def test_pdf_tag_move_puts_the_pdf_in_the_tree_with_its_extension(lib, tmp_path):
+    path = make_pdf(tmp_path / "inbox" / "a.pdf") if (tmp_path / "inbox").mkdir() is None else None
+    row = registered(lib, path, add_series_album(lib))
+    result = Organizer(lib, settings_for(tmp_path, write={"pdf": "tag"})).process(row, MOVE)
+    assert result.outcome == MOVED and result.dest.endswith(".pdf") and not os.path.exists(path)
+    assert embedded_comicinfo(result.dest)[0]["Series"] == "Nains"
+    assert lib.get_file(result.dest) is not None
+
+
+def test_pdf_tag_preview_changes_nothing(lib, tmp_path):
+    path = make_pdf(tmp_path / "a.pdf")
+    before = open(path, "rb").read()
+    row = registered(lib, path, add_series_album(lib))
+    result = Organizer(lib, settings_for(tmp_path, write={"pdf": "tag"}), pretend=True).process(row, WRITE)
+    assert result.outcome == PRETEND and "tag the PDF in place" in result.note and open(path, "rb").read() == before
+
+
+def test_pdf_skip_still_leaves_the_pdf_alone_and_convert_still_converts(lib, tmp_path):
+    path = make_pdf(tmp_path / "a.pdf")
+    row = registered(lib, path, add_series_album(lib))
+    assert Organizer(lib, settings_for(tmp_path, write={"pdf": "skip"})).process(row, WRITE).outcome == SKIPPED
+    assert Organizer(lib, settings_for(tmp_path, write={"pdf": "convert", "delete_original": "no"})).process(row, WRITE).outcome == WRITTEN
+    assert os.path.exists(str(tmp_path / "a.cbz"))
+
+
+def test_pdf_tag_on_an_encrypted_pdf_is_moved_as_it_is_not_failed(lib, tmp_path):
+    import pymupdf
+
+    path = str(tmp_path / "secret.pdf")
+    doc = pymupdf.open()
+    doc.new_page()
+    doc.save(path, encryption=pymupdf.PDF_ENCRYPT_AES_256, owner_pw="o", user_pw="u")
+    doc.close()
+    row = registered(lib, path, add_series_album(lib))
+    result = Organizer(lib, settings_for(tmp_path, write={"pdf": "tag"})).process(row, WRITE)
+    assert result.outcome == SKIPPED and "can not be tagged" in result.note
+
+
+def test_verify_tagged_pdf_refuses_a_file_whose_start_changed(tmp_path):
+    original, other = make_pdf(tmp_path / "o.pdf"), make_pdf(tmp_path / "t.pdf", pages=3)
+    with pytest.raises(archive.ArchiveError):
+        archive.verify_tagged_pdf(other, original, b"<ComicInfo/>")

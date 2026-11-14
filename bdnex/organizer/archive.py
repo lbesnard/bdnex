@@ -207,6 +207,123 @@ def _pdf_render_page(page, dpi: int, render_format: str, jpeg_quality: int = JPE
     return "png", pixmap.tobytes("png")
 
 
+# ------------------------------------------------------------------ PDF tagged in place (write.pdf: tag)
+PDF_COMICINFO = "ComicInfo.xml"  # the name of the file attached to a tagged PDF
+
+
+def pdf_comicinfo(path: str) -> tuple[Optional[bytes], int]:
+    """``(the ComicInfo.xml attached to a PDF, its number of pages)``. The pictures are not read."""
+    import pymupdf
+
+    try:
+        with pymupdf.open(path) as doc:
+            if doc.needs_pass or doc.is_encrypted:
+                raise ArchiveError("the PDF is encrypted")
+            if doc.is_repaired:
+                raise ArchiveError("the PDF's structure is damaged")
+            info = doc.embfile_get(PDF_COMICINFO) if PDF_COMICINFO in doc.embfile_names() else None
+            return info, doc.page_count
+    except ArchiveError:
+        raise
+    except Exception as err:
+        raise ArchiveError(f"{os.path.basename(path)}: {err}") from err
+
+
+def _pdf_title(fields: dict) -> str:
+    number = fields.get("Number")
+    return " - ".join(part for part in (fields.get("Series"), f"T{number}" if number else "", fields.get("Title")) if part)
+
+
+def pdf_info(fields: dict) -> dict:
+    """The classic Info dictionary entries (what every PDF viewer shows) for these ComicInfo fields."""
+    info = {"title": _pdf_title(fields), "author": fields.get("Writer", ""), "subject": fields.get("Summary", "")[:1000],
+            "keywords": fields.get("Genre", "")}
+    return {key: value for key, value in info.items() if value}
+
+
+def pdf_xmp(fields: dict) -> str:
+    """An XMP packet: Dublin Core (title, creator, description, publisher, subject, language, date) and the
+    series and its number the way Calibre keeps them."""
+    from xml.sax.saxutils import escape
+
+    def alt(value):
+        return f'<rdf:Alt><rdf:li xml:lang="x-default">{escape(value)}</rdf:li></rdf:Alt>'
+
+    def many(kind, text):
+        items = "".join(f"<rdf:li>{escape(item.strip())}</rdf:li>" for item in text.split(",") if item.strip())
+        return f"<rdf:{kind}>{items}</rdf:{kind}>"
+
+    parts = []
+    if _pdf_title(fields):
+        parts.append(f"<dc:title>{alt(_pdf_title(fields))}</dc:title>")
+    if fields.get("Writer"):
+        parts.append(f"<dc:creator>{many('Seq', fields['Writer'])}</dc:creator>")
+    if fields.get("Summary"):
+        parts.append(f"<dc:description>{alt(fields['Summary'])}</dc:description>")
+    if fields.get("Publisher"):
+        parts.append(f"<dc:publisher>{many('Bag', fields['Publisher'])}</dc:publisher>")
+    if fields.get("Genre"):
+        parts.append(f"<dc:subject>{many('Bag', fields['Genre'])}</dc:subject>")
+    if fields.get("LanguageISO"):
+        parts.append(f"<dc:language>{many('Bag', fields['LanguageISO'])}</dc:language>")
+    if fields.get("Year"):
+        parts.append(f"<dc:date><rdf:Seq><rdf:li>{escape(str(fields['Year']))}</rdf:li></rdf:Seq></dc:date>")
+    if fields.get("Series"):
+        index = f"<calibreSI:series_index>{escape(str(fields['Number']))}</calibreSI:series_index>" if fields.get("Number") else ""
+        parts.append(f'<calibre:series rdf:parseType="Resource"><rdf:value>{escape(fields["Series"])}</rdf:value>{index}</calibre:series>')
+    return ('<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">'
+            '<rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/" '
+            'xmlns:calibre="http://calibre-ebook.com/xmp-namespace" '
+            'xmlns:calibreSI="http://calibre-ebook.com/xmp-namespace-series-index">' + "".join(parts) +
+            "</rdf:Description></rdf:RDF></x:xmpmeta>")
+
+
+def tag_pdf(path: str, xml: bytes, fields: dict) -> None:
+    """Write the tags into the PDF ``path`` (a copy: it is changed in place) with an incremental save: the original
+    bytes stay as they are and the changes are appended. Raises :class:`ArchiveError` when that is not possible."""
+    import pymupdf
+
+    try:
+        with pymupdf.open(path) as doc:
+            if doc.needs_pass or doc.is_encrypted:
+                raise ArchiveError("the PDF is encrypted: it can not be tagged")
+            if doc.is_repaired:
+                raise ArchiveError("the PDF's structure is damaged: it can not be tagged in place")
+            info = {key: value for key, value in (doc.metadata or {}).items() if key not in ("format", "encryption") and value}
+            info.update(pdf_info(fields))
+            doc.set_metadata(info)
+            doc.set_xml_metadata(pdf_xmp(fields))
+            if PDF_COMICINFO in doc.embfile_names():
+                doc.embfile_upd(PDF_COMICINFO, xml)
+            else:
+                doc.embfile_add(PDF_COMICINFO, xml, filename=PDF_COMICINFO, desc="Comic book metadata (bdnex)")
+            doc.saveIncr()
+    except ArchiveError:
+        raise
+    except Exception as err:
+        raise ArchiveError(f"{os.path.basename(path)} could not be tagged: {err}") from err
+
+
+def verify_tagged_pdf(tagged: str, original: str, xml: bytes) -> None:
+    """The tagged copy begins with exactly the original's bytes (so the pages are untouched), has as many pages and
+    holds the ComicInfo.xml."""
+    size = os.path.getsize(original)
+    if os.path.getsize(tagged) < size:
+        raise ArchiveError("the tagged PDF is shorter than the original")
+    with open(original, "rb") as before, open(tagged, "rb") as after:
+        while True:
+            chunk = before.read(1 << 20)
+            if not chunk:
+                break
+            if after.read(len(chunk)) != chunk:
+                raise ArchiveError("the tagged PDF does not begin with the original's bytes")
+    found, pages = pdf_comicinfo(tagged)
+    if found != xml:
+        raise ArchiveError("the ComicInfo.xml in the tagged PDF is not the one written")
+    if pages != pdf_comicinfo(original)[1]:
+        raise ArchiveError("the tagged PDF has another number of pages")
+
+
 def page_count(entries: list[Entry]) -> int:
     return sum(1 for e in entries if e.is_image)
 

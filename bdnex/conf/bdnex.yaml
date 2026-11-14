@@ -44,7 +44,7 @@ api:
 write:
   format_preferred: cbz                 # cbz | none: convert other formats to CBZ (per cbr / pdf below), or never convert
   cbr: convert                          # convert | skip
-  pdf: convert                          # convert | skip
+  pdf: convert                          # convert | tag | skip (tag: keep the PDF, write the tags into it; skip: leave it as it is)
   pdf_mode: auto                        # auto | extract | render
   pdf_dpi: 200                          # resolution when pages have to be rendered
   pdf_render_format: auto               # for pages that have to be drawn: auto | png | jpeg (auto: jpeg when the page has photographic pictures)

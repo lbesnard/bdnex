@@ -30,7 +30,7 @@ list of possible values back (`# convert | skip`) after any option of yours that
 see what to type; a comment you wrote yourself is left alone.
 
 **A commented-out option is not a setting.** `# pdf: convert` shows the default and changes nothing: PDFs are
-still converted. To keep them as they are, remove the `# ` and write `pdf: skip`.
+still converted. To keep them as PDFs, remove the `# ` and write `pdf: tag` (the tags go into the PDF) or `pdf: skip` (the PDF is left as it is).
 
 ## Commands
 
@@ -104,7 +104,7 @@ api:
 write:
   format_preferred: cbz                  # cbz | none: convert other formats to CBZ (per cbr / pdf below), or never convert
   cbr: convert                           # convert | skip
-  pdf: convert                           # convert | skip
+  pdf: convert                           # convert | tag | skip (tag: keep the PDF, write the tags into it; skip: leave it as it is)
   pdf_mode: auto                         # auto | extract | render (extract keeps the scanned images untouched)
   pdf_dpi: 200                           # resolution when PDF pages have to be rendered
   pdf_render_format: auto                # for pages that have to be drawn: auto | png | jpeg (leave on auto: it picks per page)
