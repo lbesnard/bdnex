@@ -30,7 +30,7 @@ Links can carry a filter: `#/albums?q=series:nains`, `#/series?name=nains`, `#/f
 
 Everything that changes your library or your files is a **task**: `check --fix`, download the album list (`init`), record
 files as they are, **import** (match and read the pages of new files), `reparse`, write tags, move into the collection,
-`convert` PDFs, repair, undo a move, relink, empty the trash (and restore a file from the Trash page), and `reset`. A task is
+`convert` PDFs, repair, undo a move, relink, `relocate`, empty the trash (and restore a file from the Trash page), and `reset`. A task is
 one of these commands run in the background, with the same code as the terminal. Each has a **Preview** (changes
 nothing: `-n`) and **Run for real**. Only one task runs at a time; you can watch its output and cancel it.
 
@@ -117,6 +117,8 @@ JSON. The reading endpoints are `GET`; the ones that change something are marked
 | `/api/config` | the settings that matter to the page (no token, no fetcher address) |
 | `/api/jobs/available`, `/api/jobs`, `/api/jobs/{id}?after=` | the tasks you can start, the runs, and one run with its output from line `after` |
 | `POST /api/jobs` | start a task: `{"command": "move", "preview": true, "query": ["series:nains"]}`; `"interactive": true` lets a real run ask its questions; `import` takes `steps`, `auto` and `files`. A preview needs no permission; `"preview": false` is a **change** |
+| `GET /api/settings`, `POST /api/settings` | every option with its kind, default and help (no token, password or fetcher address); **change (a preview is not):** `{"changes": {"write.pdf": "tag"}, "preview": true}`. The whole file is validated before it is written, the previous one is kept as `.bak`, comments stay, and the running server follows at once (except `api.*`: restart) |
+| `POST /api/files/{id}/spare`, `/unlink`, `/trash` | **change:** mark a file as a spare version (`{"spare": true}`), forget its album, or move it to the trash (restorable). Never for a file under a copy-only source |
 | `/api/jobs/{id}/image` | the picture shown with the question the task is waiting on (404 when there is none); `GET /api/overview` has `waiting` (the task, its question) |
 | `POST /api/jobs/{id}/answer` | **change:** answer the question a task is waiting on: `{"question": 3, "choice": 0}` (`choices` for a list, `text` for a typed value). The question, with its answers, is in `GET /api/jobs/{id}` as `question` |
 | `POST /api/jobs/{id}/cancel` | **change:** ask a running task to stop |

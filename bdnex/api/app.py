@@ -8,6 +8,7 @@ cannot send, and a request from the page's own address.
 
 from __future__ import annotations
 
+import os
 import shlex
 from pathlib import Path
 from typing import Any, Optional
@@ -17,9 +18,9 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
-from bdnex.api import auth
+from bdnex.api import auth, settings_api
 from bdnex.api.jobs import SPECS, Busy, JobError, JobManager
-from bdnex.config import Settings
+from bdnex.config import Settings, user_config_path
 from bdnex.library import Library
 from bdnex.library.query import QueryError
 
@@ -40,10 +41,26 @@ class JobRequest(BaseModel):
     steps: list[str] = []       # import: match and / or fetch
     auto: str = ""              # import: how much to ask (`strong`, `all`)
     files: str = ""             # import: `database_only` (touch no file) or `no_move`
+    force: bool = False         # import: redo the steps for files that are done (rematch a file)
     formats: list[str] = []     # convert: `pdf` and / or `cbr`
     older_than: Optional[int] = None  # trash-empty: only what was trashed that many days ago
     id: Optional[int] = None    # trash-restore: the trash entry
     place: bool = False         # trash-restore: then move it where its album belongs
+    old: Optional[str] = None   # relocate: the folder the files used to be in
+    new: Optional[str] = None   # relocate: the folder they are in now
+
+
+class SettingsChange(BaseModel):
+    changes: dict[str, Any]     # {"write.pdf": "tag", "import.workers": 2}
+    preview: bool = True
+
+
+class FileSpare(BaseModel):
+    spare: bool = True
+
+
+class FileTrash(BaseModel):
+    reason: str = "moved to the trash from the web page"
 
 
 class Login(BaseModel):
@@ -348,6 +365,51 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             raise HTTPException(404, "this album has no saved cover (`bdnex import --fetch` downloads it)")
         return FileResponse(target, headers={"Cache-Control": "private, max-age=600"})
 
+    def file_change(request: Request, file_id: int, act):
+        """One change on one file of the library, under the same rules as every other change."""
+        can_change(request)
+        if jobs.busy():
+            raise HTTPException(409, "a task is running: wait for it to finish, or cancel it")
+        lib = Library.for_settings(settings)
+        try:
+            row = lib.file_by_id(file_id)
+            if row is None:
+                raise HTTPException(404, f"no file {file_id}")
+            return act(lib, row)
+        finally:
+            lib.close()
+
+    @app.post("/api/files/{file_id}/spare", dependencies=guarded, summary="**Change:** mark a file as a spare version of its album (or not)")
+    def file_spare(file_id: int, body: FileSpare, request: Request):
+        def act(lib, row):
+            lib.set_file_fields(row["path"], spare=int(body.spare))
+            return {"spare": body.spare, "note": "`move` puts it in the spare versions folder" if body.spare else "`move` puts it with its album"}
+        return file_change(request, file_id, act)
+
+    @app.post("/api/files/{file_id}/unlink", dependencies=guarded, summary="**Change:** forget which album a file belongs to")
+    def file_unlink(file_id: int, request: Request):
+        def act(lib, row):
+            lib.set_file_album(row["path"], None)
+            return {"unlinked": True, "note": "`bdnex import` matches it again whenever you like"}
+        return file_change(request, file_id, act)
+
+    @app.post("/api/files/{file_id}/trash", dependencies=guarded, summary="**Change:** move a file to the trash (it can be restored)")
+    def file_trash(file_id: int, body: FileTrash, request: Request):
+        from bdnex import trash
+
+        def act(lib, row):
+            source = settings.source_for(row["path"])
+            if source is not None and source.mode == "copy":
+                raise HTTPException(409, "this file is under a source that is only copied from: it is never changed")
+            if not os.path.exists(row["path"]):
+                raise HTTPException(409, "this file is not on the disk (any more)")
+            try:
+                entry = trash.move_to_trash(lib, settings, row["path"], body.reason[:200] or "moved to the trash from the web page", row=row)
+            except OSError as err:
+                raise HTTPException(500, f"could not move it: {err}") from err
+            return {"trashed": True, "trash_id": entry}
+        return file_change(request, file_id, act)
+
     @app.get("/api/files", dependencies=guarded, summary="Files matching a query")
     def files(q: str = Query("", description="`bdnex ls --files` terms"),
               limit: int = Query(100, ge=1, le=MAX_LIMIT), offset: int = Query(0, ge=0),
@@ -410,6 +472,27 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             "sources": [{"name": src.alias, "path": src.folder, "mode": src.mode} for src in settings.import_.sources],
             "allow_changes": allow_changes, "busy": jobs.busy(), "waiting": jobs.waiting(), "login_required": bool(password),
         }
+
+    @app.get("/api/settings", dependencies=guarded, summary="Every option with its kind, default and help (no secrets)")
+    def settings_list():
+        path = user_config_path()
+        text = path.read_text(encoding="utf-8") if path.exists() else ""
+        return {"path": str(path), "allow_changes": allow_changes, "sections": settings_api.describe(settings, text)}
+
+    @app.post("/api/settings", dependencies=guarded,
+              summary="**Change (unless a preview):** set options in your configuration file, checked as a whole before it is written")
+    def settings_change(body: SettingsChange, request: Request):
+        if not body.preview:
+            can_change(request)
+            if jobs.busy():
+                raise HTTPException(409, "a task is running: wait for it to finish, or cancel it")
+        path = user_config_path()
+        if not path.exists():
+            raise HTTPException(409, f"there is no configuration file yet ({path}): run `bdnex config --update`")
+        try:
+            return settings_api.change(settings, path, body.changes, apply=not body.preview)
+        except ValueError as err:
+            raise HTTPException(400, str(err)) from err
 
     @app.get("/api/config", dependencies=guarded, summary="The settings that matter to the page (no secrets)")
     def config():
@@ -505,8 +588,8 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
         try:
             options = {"preview": body.preview, "query": body.query, "paths": body.paths, "copy": body.copy_files,
                        "batch": body.batch,
-                       "interactive": body.interactive, "steps": body.steps, "auto": body.auto, "files": body.files,
-                       "formats": body.formats, "older_than": body.older_than, "id": body.id, "place": body.place}
+                       "interactive": body.interactive, "steps": body.steps, "auto": body.auto, "files": body.files, "force": body.force,
+                       "formats": body.formats, "older_than": body.older_than, "id": body.id, "place": body.place, "old": body.old, "new": body.new}
             job = jobs.start(body.command, options, allow_changes=allow_changes)
         except JobError as err:
             raise HTTPException(400, str(err)) from err

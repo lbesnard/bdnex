@@ -56,6 +56,14 @@ The number is how close the best candidate was when you skipped the file (`-` wh
 none). Only the **latest** import of a file counts: once it is linked, it leaves the list.
 Re-import them with `bdnex import <folder>` (already linked files are skipped).
 
+## The Files page
+
+The Files page lists the files of a search (`format:pdf corrupted:true`...). With changes allowed, each row has an **Actions** menu:
+open its album, write its tags, move it into place, repair it, **rematch** it (choose its album again), mark it as a spare
+version, unlink it from its album, or move it to the trash (restorable from the Trash page). They are the commands of this
+page's other sections on one file (`fileid:` in [queries](queries.md)). A file under a source that is only copied from is
+never changed.
+
 ## Editing an album or a series
 
 ```bash

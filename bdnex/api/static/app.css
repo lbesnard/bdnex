@@ -148,3 +148,10 @@ kbd { font: 12px ui-monospace, Menlo, monospace; border: 1px solid var(--line); 
 .withlink { display: flex; gap: 8px; align-items: stretch; } .withlink .ans { flex: 1; } .withlink .btn { white-space: nowrap; align-self: center; }
 .waiting { position: sticky; top: 0; z-index: 5; background: var(--accent); color: var(--accent-text); padding: 8px 16px; display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }
 .waiting .btn { color: var(--text); }
+
+/* file actions, settings */
+.acts summary { cursor: pointer; color: var(--accent); } .acts .menu { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; min-width: 170px; }
+.acts .menu button { text-align: left; padding: 5px 10px; }
+.optsec { margin-bottom: 10px; } .optsec summary { font-weight: 600; cursor: pointer; text-transform: capitalize; }
+.opt { display: flex; flex-direction: column; gap: 3px; padding: 9px 0; border-top: 1px solid var(--line); } .optname { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.opt input[type=text], .opt input[type=number], .opt select { max-width: 420px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text); font: inherit; flex: none; }

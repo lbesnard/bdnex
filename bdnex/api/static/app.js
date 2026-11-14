@@ -214,12 +214,14 @@ const VIEWS = {
       const auto = choose(["", "ask about every match"], ["strong", "ask only when unsure"], ["all", "never ask"]);
       const formats = choose(["pdf", "PDF files"], ["cbr", "CBR files"], ["pdf,cbr", "PDF and CBR files"]);
       const days = el("input", { type: "number", min: 0, placeholder: "older than (days), or all" });
-      const extras = el("div", { class: "row" }, has("import") ? [steps, files, auto] : null, has("formats") ? formats : null, has("older_than") ? days : null);
+      const oldDir = el("input", { type: "text", placeholder: "the folder the files used to be in" }), newDir = el("input", { type: "text", placeholder: "the folder they are in now" });
+      const extras = el("div", { class: "row" }, has("import") ? [steps, files, auto] : null, has("formats") ? formats : null, has("older_than") ? days : null, has("relocate") ? [oldDir, newDir] : null);
       const opts = () => ({ query: has("query") ? query.value.split(/\s+/).filter(Boolean) : [], paths: has("paths") && folder.value ? [folder.value] : [],
                             copy_files: false, interactive: askHere.checked,
                             ...(has("import") ? { steps: steps.value ? [steps.value] : [], files: files.value, auto: auto.value } : {}),
                             ...(has("formats") ? { formats: formats.value.split(",") } : {}),
-                            ...(has("older_than") && days.value !== "" ? { older_than: Number(days.value) } : {}) });
+                            ...(has("older_than") && days.value !== "" ? { older_than: Number(days.value) } : {}),
+                            ...(has("relocate") ? { old: oldDir.value, new: newDir.value } : {}) });
       const scary = j.asks || j.command === "trash-empty";
       const real = el("button", { class: "danger", disabled: !available.allow_changes,
         onclick: () => confirm(scary ? `“${j.label}” cannot be taken back. Go on?` : `Run “${j.label}” for real? It changes your files or your library.`) && startJob(j.command, { ...opts(), preview: false }, logBox) },
@@ -242,11 +244,24 @@ const VIEWS = {
 
   files: { name: "Files", icon: "▤", async draw(q = "", offset = 0) {
     const data = await api("/api/files", { params: { q, limit: 100, offset } });
+    const again = () => VIEWS.files.draw(q, offset);
+    const post = async (f, what, body) => { try { const r = await api(`/api/files/${f.file_id}/${what}`, { method: "POST", body: body || {} }); if (r.note) alert(r.note); again(); } catch (e) { alert(e.message); } };
+    const run = (command, f, extra) => startJob(command, { query: [`fileid:${f.file_id}`], preview: false, interactive: true, ...extra });
+    const actions = f => !canChange() ? "" : el("details", { class: "acts" }, el("summary", {}, "Actions"), el("div", { class: "menu" },
+      f.id ? el("button", { onclick: () => albumDialog(f.id) }, "Album") : null,
+      f.id ? el("button", { onclick: () => run("write", f) }, "Write tags") : null,
+      f.id ? el("button", { onclick: () => run("move", f) }, "Move into place") : null,
+      f.corrupted ? el("button", { onclick: () => run("repair", f) }, "Repair") : null,
+      el("button", { title: "Choose its album again", onclick: () => startJob("import", { paths: [f.path], steps: ["match"], force: true, files: "no_move", preview: false, interactive: true }) }, "Rematch"),
+      f.id ? el("button", { onclick: () => post(f, "spare", { spare: !f.spare }) }, f.spare ? "Not a spare version" : "Mark as spare version") : null,
+      f.id ? el("button", { onclick: () => confirm(`Forget which album ${f.path} belongs to?`) && post(f, "unlink") }, "Unlink from its album") : null,
+      el("button", { class: "danger", onclick: () => confirm(`Move ${f.path} to the trash? (Restore it from the Trash page.)`) && post(f, "trash", { reason: "moved to the trash from the Files page" }) }, "Move to the trash")));
     const rows = data.items.map(f => el("tr", {}, el("td", {}, f.path), el("td", {}, f.format), el("td", {}, size(f.size)),
-      el("td", {}, f.corrupted ? el("span", { class: "tag bad" }, "damaged") : "", f.spare ? el("span", { class: "tag" }, "spare") : "", f.review ? el("span", { class: "tag warn" }, "to review") : "")));
+      el("td", {}, f.corrupted ? el("span", { class: "tag bad" }, "damaged") : "", f.spare ? el("span", { class: "tag" }, "spare") : "", f.review ? el("span", { class: "tag warn" }, "to review") : ""),
+      el("td", {}, actions(f))));
     const to = offset + data.items.length;
     render(...header("Files", `${data.count} file(s)`), searchBox("format:cbz corrupted:true tagged:false", q, v => VIEWS.files.draw(v, 0)),
-      el("div", { class: "panel scroll", style: "margin-top:12px" }, el("table", {}, el("thead", {}, el("tr", {}, ["Path", "Format", "Size", ""].map(h => el("th", {}, h)))), el("tbody", {}, rows))),
+      el("div", { class: "panel scroll", style: "margin-top:12px" }, el("table", {}, el("thead", {}, el("tr", {}, ["Path", "Format", "Size", "", ""].map(h => el("th", {}, h)))), el("tbody", {}, rows))),
       el("div", { class: "more" }, el("button", { disabled: offset === 0, onclick: () => VIEWS.files.draw(q, Math.max(0, offset - 100)) }, "‹ Previous"), " ",
         el("button", { disabled: to >= data.count, onclick: () => VIEWS.files.draw(q, to) }, "Next ›")));
   } },
@@ -262,13 +277,45 @@ const VIEWS = {
   } },
 
   settings: { name: "Settings", icon: "⚙", async draw() {
-    const c = await api("/api/config");
-    const rows = [["Collection", c.collection_path], ["Library database", c.library], ["Covers", c.cover_dir],
-      ["Series path", c.paths.series], ["One-shot path", c.paths.oneshot], ["Rules", c.paths.rules.length ? c.paths.rules.map(r => `${r.match.join(" ")} → ${r.template}`).join("\n") : "none"],
-      ["Sources", c.sources.length ? c.sources.map(s => `${s.name || s.path} (${s.mode})`).join(", ") : "none"],
-      ["Convert CBR / PDF", `${c.write.cbr} / ${c.write.pdf}`], ["Server", `${c.api.host}:${c.api.port}${c.api.token_required ? " · token" : ""} · ${c.api.allow_changes ? "changes allowed" : "read-only"}`]];
-    render(...header("Settings", "Shown from your configuration file. Edit it with `bdnex config --edit`."),
-      el("div", { class: "panel" }, el("dl", {}, rows.flatMap(([k, v]) => [el("dt", {}, k), el("dd", { style: "white-space:pre-line" }, v)]))));
+    const data = await api("/api/settings");
+    const edit = canChange();
+    // one control per option; `value()` is what it holds now, in the type the server wants
+    const control = o => {
+      let input, value;
+      const editable = o.editable && edit;
+      if (o.kind === "choice") {
+        input = el("select", { disabled: !editable }, o.choices.map(c => el("option", { value: JSON.stringify(c) }, String(c))));
+        input.value = JSON.stringify(o.value); value = () => JSON.parse(input.value);
+      } else if (o.kind === "bool") {
+        input = el("input", { type: "checkbox", disabled: !editable }); input.checked = !!o.value; value = () => input.checked;
+      } else if (o.kind === "int" || o.kind === "float") {
+        input = el("input", { type: "number", step: o.kind === "int" ? 1 : "any", min: o.min, max: o.max, disabled: !editable, value: o.value ?? "" });
+        value = () => input.value === "" ? null : Number(input.value);
+      } else {
+        input = el("input", { type: "text", disabled: !editable, value: o.value ?? "" }); value = () => input.value === "" && o.nullable ? null : input.value;
+      }
+      const shown = JSON.stringify(o.default);
+      const wrap = el("div", { class: "opt" }, el("label", { class: "optname" }, el("code", {}, o.key), o.yours ? el("span", { class: "tag" }, "set by you") : null, o.restart ? el("span", { class: "tag warn" }, "restart") : null),
+        o.kind === "bool" ? el("label", { class: "tick" }, input, " on") : input,
+        el("small", { class: "hint" }, rich(o.help), shown !== undefined && shown !== "null" ? ` (default: ${shown.replace(/^"|"$/g, "")})` : ""));
+      return { wrap, key: o.key, changed: () => editable && JSON.stringify(value()) !== JSON.stringify(o.value), value };
+    };
+    const sections = data.sections.map((section, n) => {
+      const controls = section.options.map(control), out = el("pre", { class: "log", hidden: true });
+      const send = async preview => {
+        const changes = Object.fromEntries(controls.filter(c => c.changed()).map(c => [c.key, c.value()]));
+        out.hidden = false;
+        if (!Object.keys(changes).length) { out.textContent = "Nothing changed."; return; }
+        try {
+          const r = await api("/api/settings", { method: "POST", body: { changes, preview } });
+          out.textContent = r.changes.join("\n") + (preview ? "\n\nNot saved yet." : "\n\nSaved." + (r.restart.length ? ` Restart the server for ${r.restart.join(", ")}.` : " It applies now.") + " The previous file is kept as a .bak.");
+        } catch (e) { out.textContent = e.message; }
+      };
+      return el("details", { class: "panel optsec", open: n === 0 }, el("summary", {}, section.name),
+        controls.map(c => c.wrap), out,
+        edit && section.options.some(o => o.editable) ? el("div", { class: "row" }, el("button", { onclick: () => send(true) }, "Check the changes"), el("button", { class: "primary", onclick: () => send(false) }, "Save")) : null);
+    });
+    render(...header("Settings", edit ? `Your configuration file (${data.path}). A change is checked as a whole before it is written; secrets and folders are edited in the file.` : "Shown from your configuration file. Changes need `api.allow_changes`."), ...sections);
   } },
 };
 
