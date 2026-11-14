@@ -41,6 +41,11 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 - Tasks are `jobs.SPECS`: a fixed list that runs the CLI `run(argv, out=...)` functions in a thread, one at a time, never an
   arbitrary command line. Options are checked (`query` = plain terms, `paths` inside the collection or a source). A real
   run adds `--force` (nobody can answer questions yet); previews use `-n`. New web feature that writes = new spec + tests.
+- **Questions on the page**: `api/webprompter.py` is `InquirerPrompter` with its four low-level prompts (`_select`, `_fuzzy`,
+  `_text`, `_checkbox`) replaced: they put a question on the `Job` (`Job.ask` blocks the job's thread, `POST /api/jobs/{id}/answer`
+  answers). Commands build their prompter with `prompts.new_prompter(...)`, never `InquirerPrompter(...)`, so a job can
+  swap it (`use_prompter`). A new question must go through those four methods (not `inquirer.*` directly), and keep
+  working with `fragments=None`. Never add a second copy of a question for the web.
 - **Look at it for real**: Chromium is available. `tools/demo_library.py` builds a demo library; see the
   `check-web-page` skill for serving it and taking screenshots. Never claim a page works from the code alone.
 

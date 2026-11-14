@@ -203,11 +203,17 @@ const VIEWS = {
     const query = el("input", { type: "text", placeholder: "only these files (same terms as bdnex ls --files), e.g. series:nains" });
     const folder = el("select", {}, el("option", { value: "" }, "your whole collection"),
       el("option", { value: app.overview.collection || "" }, "collection folder"), ...(app.overview.sources || []).map(s => el("option", { value: s.path }, "source: " + s.name)));
+    const askHere = el("input", { type: "checkbox", checked: true });
     const cards = available.items.map(j => {
-      const wantsPaths = ["record", "relink"].includes(j.command), wantsQuery = ["write", "move", "repair"].includes(j.command);
+      const wantsPaths = ["record", "relink", "import"].includes(j.command), wantsQuery = ["write", "move", "repair"].includes(j.command);
+      const importing = j.command === "import";
+      const steps = el("select", {}, el("option", { value: "" }, "match and read the pages"), el("option", { value: "match" }, "match only"), el("option", { value: "fetch" }, "read the pages only"));
+      const files = el("select", {}, el("option", { value: "" }, "files as configured"), el("option", { value: "database_only" }, "touch no file (database only)"), el("option", { value: "no_move" }, "leave files where they are"));
+      const auto = el("select", {}, el("option", { value: "" }, "ask about every match"), el("option", { value: "strong" }, "ask only when unsure"), el("option", { value: "all" }, "never ask"));
       const opts = () => ({ query: wantsQuery ? query.value.split(/\s+/).filter(Boolean) : [], paths: wantsPaths && folder.value ? [folder.value] : [],
-                            copy_files: false });
-      return el("div", { class: "panel job" }, el("h3", {}, j.label),
+                            copy_files: false, interactive: askHere.checked,
+                            ...(importing ? { steps: steps.value ? [steps.value] : [], files: files.value, auto: auto.value } : {}) });
+      return el("div", { class: "panel job" }, el("h3", {}, j.label), importing ? el("div", { class: "row" }, steps, files, auto) : null,
         el("div", { class: "row" },
           el("button", { onclick: () => startJob(j.command, { ...opts(), preview: true }, logBox) }, j.writes ? "Preview" : "Run"),
           j.writes ? el("button", { class: "danger", disabled: !available.allow_changes,
@@ -215,7 +221,8 @@ const VIEWS = {
     });
     render(...header("Tasks", "The same operations as the command line. A preview changes nothing; run it first."),
       available.allow_changes ? null : el("p", { class: "hint warn" }, rich("Read-only server: previews and checks only. Set `api.allow_changes: true` to run for real.")),
-      el("div", { class: "row", style: "margin-bottom:12px" }, query, folder), el("div", { class: "jobs" }, cards), logBox,
+      el("div", { class: "row", style: "margin-bottom:12px" }, query, folder, el("label", { class: "tick" }, askHere, " ask me my questions here")),
+      logBox, el("div", { class: "jobs" }, cards),
       el("h2", {}, "Earlier runs"), el("div", { class: "panel" }, history.items.length ? history.items.map(j =>
         el("div", { class: "row" }, el("b", {}, `#${j.id}`), j.label, el("span", { class: "tag " + (j.status === "done" ? "ok" : j.status === "running" ? "warn" : "bad") }, j.status),
           el("button", { onclick: () => followJob(j.id, logBox) }, "Show"))) : el("span", { class: "hint" }, "Nothing has run yet.")));
@@ -279,6 +286,49 @@ async function seriesVolumes(id) {
   return el("div", {}, el("div", { class: "vols" }, tiles), el("p", { class: "legend" }, s.list_known ? "Filled: you have it. Dashed: missing (opens its page)." : "The list of volumes is unknown: run `bdnex import --fetch`."));
 }
 
+// A job's question: the same answers, keys and colours as in the terminal (the server sends them).
+function labelNodes(text) {  // "[S]kip it" -> S in a key box, "kip it" after
+  const out = []; let last = 0;
+  for (const m of text.matchAll(/\[(\w)\]/g)) { out.push(text.slice(last, m.index), el("kbd", {}, m[1].toUpperCase())); last = m.index + m[0].length; }
+  out.push(text.slice(last)); return out.filter(x => x !== "");
+}
+
+function questionCard(jobId, q) {
+  const card = el("div", { class: "panel question", role: "group", "aria-label": "A question" }, el("h3", {}, q.message));
+  let sent = false;
+  const send = async body => {
+    if (sent) return; sent = true; card.classList.add("sending");
+    try { await api(`/api/jobs/${jobId}/answer`, { method: "POST", body: { question: q.id, ...body } }); }
+    catch (e) { sent = false; card.classList.remove("sending"); alert(e.message); }
+  };
+  if (q.kind === "select") {
+    const keys = {};
+    for (const c of q.choices) {
+      if (c.key) keys[c.key] = c.index;
+      card.append(el("button", { class: "ans " + (c.tone || ""), onclick: () => send({ choice: c.index }) }, labelNodes(c.label)));
+    }
+    card.onkey = e => { const i = keys[e.key.toLowerCase()]; if (i != null && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); send({ choice: i }); } };
+  } else if (q.kind === "search") {
+    const box = el("input", { type: "text", placeholder: "type to filter", autofocus: true }), list = el("div", { class: "pick" });
+    const draw = () => {
+      const words = box.value.toLowerCase().split(/\s+/).filter(Boolean);
+      const found = q.choices.filter(c => words.every(w => c.label.toLowerCase().includes(w)));
+      list.replaceChildren(...found.slice(0, 60).map(c => el("button", { class: "ans", onclick: () => send({ choice: c.index }) }, c.label)),
+        found.length > 60 ? el("p", { class: "hint" }, `${found.length - 60} more: type more words`) : "");
+    };
+    box.addEventListener("input", draw); draw();
+    card.append(box, list, el("button", { onclick: () => send({ choice: null }) }, "Go back"));
+  } else if (q.kind === "text") {
+    const box = el("input", { type: "text", value: q.default || "", autofocus: true });
+    card.append(el("form", { class: "row", onsubmit: e => { e.preventDefault(); send({ text: box.value }); } }, box, el("button", { class: "primary", type: "submit" }, "OK")));
+  } else if (q.kind === "checkbox") {
+    const boxes = q.choices.map(c => el("input", { type: "checkbox", checked: c.ticked }));
+    card.append(...q.choices.map((c, i) => el("label", { class: "tick" }, boxes[i], " ", c.label)),
+      el("button", { class: "primary", onclick: () => send({ choices: q.choices.filter((c, i) => boxes[i].checked).map(c => c.index) }) }, "OK"));
+  }
+  return card;
+}
+
 let polling = null;
 async function startJob(command, options, box) {
   try {
@@ -292,7 +342,10 @@ async function followJob(id, box) {
   box = box || view;
   if (polling) clearTimeout(polling);
   const status = el("span", { class: "tag warn" }, "running"), log = el("pre", { class: "log" }), cancel = el("button", { disabled: !canChange() }, "Cancel");
-  box.replaceChildren(el("div", { class: "row", style: "margin-top:14px" }, el("b", {}, `Job #${id}`), status, cancel), log);
+  const asking = el("div", {});
+  box.replaceChildren(el("div", { class: "row", style: "margin-top:14px" }, el("b", {}, `Job #${id}`), status, cancel), asking, log);
+  let shown = 0, onkey = null;
+  const stopKeys = () => { if (onkey) document.removeEventListener("keydown", onkey); onkey = null; };
   cancel.addEventListener("click", async () => { try { await api(`/api/jobs/${id}/cancel`, { method: "POST" }); } catch (e) { alert(e.message); } });
   let after = 0;
   const tick = async () => {
@@ -300,8 +353,17 @@ async function followJob(id, box) {
     try { job = await api(`/api/jobs/${id}`, { params: { after } }); } catch (e) { log.append(e.message); return; }
     if (job.lines.length) { log.append(job.lines.join("\n") + "\n"); log.scrollTop = log.scrollHeight; }
     after = job.next;
-    status.textContent = job.status; status.className = "tag " + (job.status === "done" ? "ok" : job.status === "running" ? "warn" : "bad");
-    if (job.status === "running") polling = setTimeout(tick, 700); else { cancel.disabled = true; refreshBadge(); }
+    const waitingFor = job.status === "running" && job.question ? job.question : null;
+    if ((waitingFor ? waitingFor.id : 0) !== shown) {  // a new question (or none): draw it once, so typing is not lost
+      stopKeys(); asking.replaceChildren(); shown = waitingFor ? waitingFor.id : 0;
+      if (waitingFor) {
+        const card = questionCard(id, waitingFor); asking.append(card);
+        if (card.onkey) { onkey = e => { if (!/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName)) card.onkey(e); }; document.addEventListener("keydown", onkey); }
+      }
+    }
+    status.textContent = waitingFor ? "waiting for you" : job.status;
+    status.className = "tag " + (job.status === "done" ? "ok" : job.status === "running" ? "warn" : "bad");
+    if (job.status === "running") polling = setTimeout(tick, waitingFor ? 1000 : 700); else { stopKeys(); asking.replaceChildren(); cancel.disabled = true; refreshBadge(); }
   };
   tick();
 }

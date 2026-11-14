@@ -62,11 +62,40 @@ def _write_command(command: str):
         from bdnex.ui import write_cmd
 
         argv = _terms(options)
-        argv = ["-n", *argv] if options.get("preview", True) else ["--force", *argv]  # never ask: there is nobody to ask
+        if options.get("preview", True):
+            argv = ["-n", *argv]
+        elif not options.get("interactive"):
+            argv = ["--force", *argv]  # nobody to ask: the page did not offer to ask
         if command == "move" and options.get("copy"):
             argv = ["--copy", *argv]
         return (lambda out: write_cmd.run(command, argv, out=out)), argv
     return build
+
+
+def _import_command(options: dict, settings):
+    """`bdnex import`: the steps, how much to ask, whether files may move, and folders inside the collection or a source."""
+    from bdnex.ui import import_cmd
+
+    preview = options.get("preview", True)
+    argv = ["-n"] if preview else []
+    steps = options.get("steps") or []
+    if not isinstance(steps, list) or any(step not in ("match", "fetch") for step in steps):
+        raise JobError("`steps` is a list of `match` and `fetch`")
+    argv += [f"--{step}" for step in steps]
+    auto = options.get("auto") or ""
+    if auto not in ("", "strong", "all"):
+        raise JobError("`auto` is `strong` or `all`")
+    if not preview and not options.get("interactive") and auto != "all":
+        auto = "all"  # nobody to ask: never ask
+    if auto:
+        argv.append(f"--auto={auto}")
+    where = options.get("files") or ""
+    if where not in ("", "database_only", "no_move"):
+        raise JobError("`files` is `database_only` or `no_move`")
+    if where:
+        argv.append("--" + where.replace("_", "-"))
+    argv += _paths(options, settings)
+    return (lambda out: import_cmd.run(argv, out=out)), argv
 
 
 def _simple(module: str, extra: Callable[[dict, Any], list[str]]):
@@ -92,6 +121,7 @@ SPECS: dict[str, Spec] = {
     "duplicates": Spec("Find duplicates", False, _simple("duplicates_cmd", lambda o, s: [])),
     "record": Spec("Record files as they are", True,
                    _simple("import_cmd", lambda o, s: ["--as-is", *(["-n"] if o.get("preview", True) else []), *_paths(o, s)])),
+    "import": Spec("Match and read new files (import)", True, _import_command),
     "write": Spec("Write tags into the files", True, _write_command("write")),
     "move": Spec("Write tags and move the files into the collection", True, _write_command("move")),
     "repair": Spec("Repair damaged archives", True, _write_command("repair")),
@@ -115,12 +145,49 @@ class Job:
     lines: list[str] = field(default_factory=list)
     dropped: int = 0                 # lines forgotten once MAX_LINES were kept
     thread_id: Optional[int] = None
+    interactive: bool = False        # questions are asked on the page (else the run never asks)
+    question: Optional[dict] = None  # the question waiting for an answer: {id, kind, message, choices...}
+    _answer: Optional[dict] = field(default=None, repr=False)
+    _answered: threading.Event = field(default_factory=threading.Event, repr=False)
+    _question_ids: Any = field(default_factory=lambda: itertools.count(1), repr=False)
+
+    def ask(self, question: dict) -> dict:
+        """Called by the job's own thread: put ``question`` on the job and wait until the page answers it.
+        Cancelling the job raises ``KeyboardInterrupt`` here (the wait wakes up twice a second to let it in)."""
+        self._answered.clear()
+        self._answer = None
+        self.question = {"id": next(self._question_ids), **question}
+        try:
+            while not self._answered.wait(0.5):
+                pass
+            return self._answer or {}
+        finally:
+            self.question = None
+
+    def answer(self, question_id: int, answer: dict) -> bool:
+        """The page's answer to the question with this id; ``False`` when it is not the question being asked."""
+        current = self.question
+        if current is None or current["id"] != question_id or self._answered.is_set():
+            return False
+        count = len(current.get("choices") or [])
+        picked = answer.get("choices") or []
+        if current["kind"] == "select" and not (answer.get("choice") is not None and 0 <= answer["choice"] < count):
+            raise JobError("pick one of the answers offered")
+        if current["kind"] == "search" and answer.get("choice") is not None and not 0 <= answer["choice"] < count:
+            raise JobError("pick one of the answers offered")
+        if current["kind"] == "checkbox" and not all(0 <= i < count for i in picked):
+            raise JobError("pick among the answers offered")
+        if len(answer.get("text") or "") > 2000:
+            raise JobError("the text is too long")
+        self._answer = answer
+        self._answered.set()
+        return True
 
     def public(self, after: int = 0) -> dict[str, Any]:
         return {"id": self.id, "command": self.command, "label": self.label, "status": self.status,
                 "started": self.started, "finished": self.finished, "exit_code": self.exit_code,
                 "arguments": self.argv, "lines": self.lines[max(0, after - self.dropped):],
-                "next": self.dropped + len(self.lines)}
+                "next": self.dropped + len(self.lines), "interactive": self.interactive, "question": self.question}
 
 
 class _Log(io.TextIOBase):
@@ -173,10 +240,11 @@ class JobManager:
         if spec.writes and not preview and not allow_changes:
             raise PermissionError("changes are disabled: set `api.allow_changes: true` in the configuration")
         function, argv = spec.build(options, self.settings)
+        interactive = bool(options.get("interactive")) and not preview and spec.writes
         if not self._running.acquire(blocking=False):
             raise Busy("another job is running: wait for it to finish, or cancel it")
         with self._lock:
-            job = Job(next(self._ids), command, spec.label, argv)
+            job = Job(next(self._ids), command, spec.label, argv, interactive=interactive)
             self.jobs[job.id] = job
         threading.Thread(target=self._run, args=(job, function), daemon=True, name=f"bdnex-job-{job.id}").start()
         return job
@@ -185,7 +253,15 @@ class JobManager:
         log = _Log(job, self._lock)
         job.thread_id = threading.get_ident()
         try:
-            with contextlib.redirect_stderr(log), contextlib.redirect_stdout(log):
+            from bdnex.ui import prompts
+
+            if job.interactive:
+                from bdnex.api.webprompter import WebPrompter
+
+                factory = lambda **kw: WebPrompter(job.ask, **kw)  # noqa: E731
+            else:
+                factory = None
+            with contextlib.redirect_stderr(log), contextlib.redirect_stdout(log), prompts.use_prompter(factory):
                 try:
                     code = function(log)
                 except SystemExit as stop:  # argparse said no
@@ -207,6 +283,10 @@ class JobManager:
 
     def all(self) -> list[Job]:
         return sorted(self.jobs.values(), key=lambda job: -job.id)
+
+    def answer(self, job_id: int, question_id: int, answer: dict) -> bool:
+        job = self.jobs.get(job_id)
+        return bool(job and job.answer(question_id, answer))
 
     def cancel(self, job_id: int) -> bool:
         """Ask a running job to stop, as Ctrl-C would. What it already did stays done."""

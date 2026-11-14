@@ -14,7 +14,7 @@ from bdnex.library.query import QueryError
 from bdnex.organizer.organizer import auto_workers, COPY, FAILED, MOVE, WRITE, Organizer, WriteAborted
 from bdnex.ui import color, context, results
 from bdnex.ui.output import Bar, add_pretend, add_verbosity, add_workers, banner, setup_logging
-from bdnex.ui.prompts import InquirerPrompter
+from bdnex.ui.prompts import new_prompter
 
 OUTCOMES = ("repaired", "written", "moved", "copied", "unchanged", "skipped", "failed", "pretend")
 
@@ -197,7 +197,7 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
                                      else [*args.query, "tagged:true"], files=True)
         except QueryError as err:
             return context.bad_query(err)
-        organizer = Organizer(library, settings, prompter=None if args.force else InquirerPrompter(),
+        organizer = Organizer(library, settings, prompter=None if args.force else new_prompter(),
                               pretend=args.pretend, force=args.force)
         workers = args.workers if args.workers is not None else settings.write.workers
         results = _run_files(organizer, rows, mode, out, settings.collection_path, command,
@@ -220,7 +220,7 @@ def place(settings, path: str, out=sys.stdout) -> int:
         if row is None:
             print(f"{path} is not in the library.", file=sys.stderr)
             return 1
-        organizer = Organizer(library, settings, prompter=InquirerPrompter())
+        organizer = Organizer(library, settings, prompter=new_prompter())
         try:
             results = [organizer.process(row, MOVE)]
         except WriteAborted:

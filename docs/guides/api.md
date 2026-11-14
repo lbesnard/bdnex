@@ -27,12 +27,20 @@ Links can carry a filter: `#/albums?q=series:nains`, `#/series?name=nains`, `#/f
 
 ## Tasks, and what "allow changes" means
 
-Everything that changes your library or your files is a **task**: `check --fix`, record files as they are, write tags,
-move into the collection, repair, undo a move, relink. A task is one of these commands run in the background, with
-the same code as the terminal. Each has a **Preview** (changes nothing: `-n`) and **Run for real**. Only one task runs at
-a time; you can watch its output and cancel it. Questions are not asked on the page yet: a real run never asks (the
-database wins a tag conflict, a name clash gets a number, originals are kept), so look at the preview first. The
-matching of new files, which asks questions, stays in the terminal for now.
+Everything that changes your library or your files is a **task**: `check --fix`, record files as they are, **import**
+(match and read the pages of new files), write tags, move into the collection, repair, undo a move, relink. A task is
+one of these commands run in the background, with the same code as the terminal. Each has a **Preview** (changes
+nothing: `-n`) and **Run for real**. Only one task runs at a time; you can watch its output and cancel it.
+
+**Questions on the page.** With "ask me my questions here" ticked (the default on the Tasks page), a real run asks
+what the terminal would ask: which album is right, which side wins a conflict, what to do with a duplicate or a name
+clash. The question appears at the top of the task, with the **same answers, keys and colours** as in the terminal
+(`D`, `S`, `A`... press the key, or tap the answer; see [the keys](importing.md#the-keys-of-every-question)). The task
+waits for you, can be cancelled while it waits, and goes on when you answer. Untick it and the run never asks: the
+database wins a tag conflict, a name clash gets a number, originals are kept, and an import applies `--auto=all`.
+The same questions can be answered from a phone. A task that is waiting for an answer is lost if the server restarts
+(what it already did stays done: run it again to continue). The import task can also be told to touch no file
+(`--database-only`) or to leave files where they are (`--no-move`).
 
 Changes are off until you turn them on, with `api.allow_changes: true` in the configuration or `--allow-changes` for one
 run. When they are on:
@@ -89,7 +97,8 @@ JSON. The reading endpoints are `GET`; the ones that change something are marked
 | `/api/duplicates`, `/api/check` | what `bdnex duplicates` and `bdnex check` report |
 | `/api/config` | the settings that matter to the page (no token, no fetcher address) |
 | `/api/jobs/available`, `/api/jobs`, `/api/jobs/{id}?after=` | the tasks you can start, the runs, and one run with its output from line `after` |
-| `POST /api/jobs` | start a task: `{"command": "move", "preview": true, "query": ["series:nains"]}`. A preview needs no permission; `"preview": false` is a **change** |
+| `POST /api/jobs` | start a task: `{"command": "move", "preview": true, "query": ["series:nains"]}`; `"interactive": true` lets a real run ask its questions; `import` takes `steps`, `auto` and `files`. A preview needs no permission; `"preview": false` is a **change** |
+| `POST /api/jobs/{id}/answer` | **change:** answer the question a task is waiting on: `{"question": 3, "choice": 0}` (`choices` for a list, `text` for a typed value). The question, with its answers, is in `GET /api/jobs/{id}` as `question` |
 | `POST /api/jobs/{id}/cancel` | **change:** ask a running task to stop |
 
 A bad query answers `400` with the reason. Reading opens the database read-only, so looking cannot damage it and can

@@ -296,8 +296,8 @@ def run(argv: list[str], out=sys.stdout, editor: Callable[[str], str] = open_edi
             return 0
         if not args.yes:
             if prompter is None:
-                from bdnex.ui.prompts import InquirerPrompter
-                prompter = InquirerPrompter()
+                from bdnex.ui.prompts import new_prompter
+                prompter = new_prompter()
             if not prompter.confirm(f"Apply these changes to {len(changes)} album(s)?"):
                 print("Nothing changed.", file=out)
                 return 1

@@ -63,8 +63,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
             return 0
         if not args.yes:
             if prompter is None:
-                from bdnex.ui.prompts import InquirerPrompter
-                prompter = InquirerPrompter()
+                from bdnex.ui.prompts import new_prompter
+                prompter = new_prompter()
             if not prompter.confirm("Delete them for good?"):
                 print("Nothing changed.", file=out)
                 return 1

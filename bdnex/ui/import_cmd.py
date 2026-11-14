@@ -14,7 +14,7 @@ from bdnex.importer.session import (ALREADY, DUPLICATE, FAILED, OUTCOME_LABELS, 
 from bdnex.library import Library
 from bdnex.ui import color, context, describe, results
 from bdnex.ui.output import Bar, add_pretend, add_verbosity, add_workers, banner, progress, setup_logging
-from bdnex.ui.prompts import InquirerPrompter
+from bdnex.ui.prompts import new_prompter
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -107,7 +107,7 @@ def ensure_album_list(source, library, settings, out=sys.stdout) -> bool:
     if not (sys.stdin.isatty() and sys.stderr.isatty()):
         print("Run `bdnex init`, then import again.", file=sys.stderr)
         return False
-    if not InquirerPrompter().confirm("Download it now (about 70 MB, around a minute)?", default=True):
+    if not new_prompter().confirm("Download it now (about 70 MB, around a minute)?", default=True):
         print("Nothing done. `bdnex init` downloads it whenever you like.", file=sys.stderr)
         return False
     try:
@@ -178,7 +178,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         if "match" in steps and not ensure_album_list(source, library, settings, out):
             return 1
         steps_order = [step for step in ("match", "fetch") if step in steps]
-        session = ImportSession(library, source, settings, prompter=InquirerPrompter(source=source, thumbnails=settings.import_.thumbnails),
+        session = ImportSession(library, source, settings, prompter=new_prompter(source=source, thumbnails=settings.import_.thumbnails),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps, retry_skipped=getattr(args, "retry_skipped", False),
                                 workers=args.workers, cover_check=args.cover_check, series=args.series, files_untouched=args.database_only, progress=progress, bar=lambda total, label: Bar(total, label),
                                 phase=lambda step, title: banner(title, steps_order.index(step) + 1, len(steps_order)))
@@ -406,7 +406,7 @@ def _place(args, settings, library, report, prompter=None):
         if outside:
             choice = "leave" if args.no_move else settings.import_.outside
             if choice == "ask":
-                prompter = prompter or InquirerPrompter()
+                prompter = prompter or new_prompter()
                 choice = _ask_outside(len(outside), str(library.root), prompter)
                 if choice == "leave" and not sys.stdin.isatty():
                     notes.append("(No terminal to ask on: the files from outside your library folder were left "
@@ -420,7 +420,7 @@ def _place(args, settings, library, report, prompter=None):
     if any(mode != WRITE for _, mode in plan):
         settings.require_collection()
     never_ask = args.auto == "all"
-    organizer = Organizer(library, settings, prompter=None if never_ask else InquirerPrompter(), force=never_ask)
+    organizer = Organizer(library, settings, prompter=None if never_ask else new_prompter(), force=never_ask)
     results = []
     for chosen, mode in plan:
         results += organizer.run(chosen, mode, progress=progress)

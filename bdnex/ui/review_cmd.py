@@ -43,9 +43,9 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
             print(f"\n{len(rows)} file(s) wait for a review (`bdnex review` goes through them).", file=out)
             return 0
         if prompter is None:
-            from bdnex.ui.prompts import InquirerPrompter
+            from bdnex.ui.prompts import new_prompter
 
-            prompter = InquirerPrompter(thumbnails=settings.import_.thumbnails)
+            prompter = new_prompter(thumbnails=settings.import_.thumbnails)
         from bdnex.importer.session import ImportAborted, NeedsTerminal
 
         try:

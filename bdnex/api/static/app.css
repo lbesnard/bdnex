@@ -27,7 +27,7 @@ a { color: var(--accent); }
 .mode { margin-top: auto; font-size: 12px; color: var(--muted); }
 .mode b { display: inline-block; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); }
 .mode b.on { color: var(--warn); border-color: var(--warn); }
-main { padding: 22px 26px 60px; max-width: 1240px; width: 100%; }
+main { padding: 22px 26px 60px; max-width: 1240px; width: 100%; min-width: 0; }
 h1 { font-size: 24px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 24px 0 10px; } h3 { font-size: 15px; margin: 14px 0 6px; }
 .lead { color: var(--muted); margin: 0 0 18px; }
 .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow); padding: 14px 16px; }
@@ -40,7 +40,7 @@ button.danger { background: var(--red); color: #fff; border-color: var(--red); }
 button:disabled { opacity: .45; cursor: not-allowed; }
 input[type=search], input[type=text], input[type=password], select, textarea {
   font: inherit; padding: 8px 11px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--text); min-width: 0; }
-input[type=search], input[type=text] { flex: 1; }
+input[type=search], input[type=text] { flex: 1 1 200px; }
 .hint { color: var(--muted); font-size: 13px; margin: 6px 0 12px; }
 .err { color: var(--bad); } .ok { color: var(--ok); } .warn { color: var(--warn); }
 .tag { display: inline-block; font-size: 12px; padding: 1px 9px; border-radius: 99px; border: 1px solid var(--line); color: var(--muted); }
@@ -90,7 +90,7 @@ input[type=search], input[type=text] { flex: 1; }
 
 /* tasks */
 .jobs { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-.job h3 { margin-top: 0; }
+.job h3 { margin-top: 0; } .job .row { margin-top: 8px; }
 pre.log { background: #0e1220; color: #d9dcea; border-radius: 10px; padding: 12px 14px; max-height: 420px; overflow: auto; font: 12.5px/1.45 ui-monospace, "SF Mono", Menlo, monospace; white-space: pre-wrap; margin: 8px 0 0; }
 .findings { display: grid; gap: 10px; }
 .finding ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
@@ -106,9 +106,21 @@ dialog::backdrop { background: rgba(10, 14, 28, .55); }
 dl { display: grid; grid-template-columns: 110px 1fr; gap: 3px 12px; margin: 10px 0; } dt { color: var(--muted); } dd { margin: 0; overflow-wrap: anywhere; }
 
 @media (max-width: 800px) {
-  .shell { grid-template-columns: 1fr; }
+  .shell { grid-template-columns: minmax(0, 1fr); }
   .side { position: static; height: auto; flex-direction: row; align-items: center; overflow-x: auto; padding: 10px; }
   .brand img { width: 110px; } #nav { flex-direction: row; } .mode { display: none; }
   main { padding: 16px 14px 50px; } .d-body { grid-template-columns: 1fr; } .meter { width: 90px; }
 }
 code { background: var(--tile); border-radius: 5px; padding: 1px 5px; font: 12.5px ui-monospace, "SF Mono", Menlo, monospace; }
+
+/* a job's question */
+.question { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; border-color: var(--accent); }
+.question h3 { margin: 0 0 4px; } .question.sending { opacity: .6; pointer-events: none; }
+.question .ans { text-align: left; padding: 11px 14px; border-left-width: 5px; }
+.question .ans.green { border-left-color: var(--ok); } .question .ans.red { border-left-color: var(--bad); }
+.question .ans.yellow { border-left-color: var(--warn); } .question .ans.blue, .question .ans.cyan { border-left-color: var(--accent); }
+.question .pick { display: flex; flex-direction: column; gap: 6px; max-height: 50vh; overflow-y: auto; }
+.question input[type="text"] { flex: 1; min-width: 0; padding: 9px 11px; border: 1px solid var(--line); border-radius: 9px; background: var(--panel); color: var(--text); font: inherit; }
+kbd { font: 12px ui-monospace, Menlo, monospace; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; margin-right: 2px; background: var(--tile); }
+.tick { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+@media (max-width: 800px) { .question .ans { padding: 14px; font-size: 16px; } }
