@@ -1,0 +1,13 @@
+.git
+.venv
+build
+dist
+docs
+test
+tools
+*.egg-info
+**/__pycache__
+TODO.md
+config
+data
+covers

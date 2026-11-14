@@ -96,9 +96,11 @@ cover:
   match_percentage: 40                   # similarity (0-100) from which a cover is trusted
 
 api:
-  host: 127.0.0.1                        # `bdnex serve` listens here; anything but this machine needs a token
+  host: 127.0.0.1                        # `bdnex serve` listens here; anything but this machine needs a password or a token
   port: 8765
   token: null                            # when set, requests must send `Authorization: Bearer <token>`
+  username: bdnex                        # the login of the web page, with `password`
+  password: null                         # when set, the web page asks for `username` and this password (HTTP Basic: use HTTPS beyond your LAN)
   allow_changes: false                   # true: the web page can run jobs and change the library (see the docs)
 
 write:

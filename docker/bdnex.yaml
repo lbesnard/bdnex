@@ -1,0 +1,10 @@
+# The configuration a new container starts with (copied to /config/bdnex.yaml the first time).
+# Edit that file, not this one: it is yours. `docker compose exec bdnex bdnex config --update` lists every option.
+config_version: 2
+collection_path: /comics            # the volume with your comics
+library: /data/bdnex.sqlite         # the library (a volume: keep it)
+cover:
+  dir: /covers                      # downloaded covers (a volume: keep it, or lose nothing but a download)
+api:
+  host: 0.0.0.0
+  allow_changes: true               # the page can run tasks; the login is BDNEX_USER / BDNEX_PASSWORD

@@ -37,7 +37,7 @@ matching of new files, which asks questions, stays in the terminal for now.
 Changes are off until you turn them on, with `api.allow_changes: true` in the configuration or `--allow-changes` for one
 run. When they are on:
 
-- the **token** is required for every change as soon as one is set, and `bdnex serve` refuses a network address without one;
+- the **login** (password or token) is required for every change as soon as one is set, and `bdnex serve` refuses a network address without one;
 - a change must carry an `X-Requested-With: bdnex` header and may not come from another site (the `Origin` must be the
   page's own address), so a web page you happen to visit cannot drive your local server;
 - tasks are a fixed list with checked options: queries are plain terms (never flags), and folders must be inside your
@@ -54,12 +54,17 @@ Task results are kept in memory: restarting the server forgets the list of earli
 | `--host` | `api.host` (`127.0.0.1`) | address to listen on |
 | `--port` | `api.port` (`8765`) | port |
 | `--token` | `api.token` | require `Authorization: Bearer <token>` |
+| `--password-env` | `BDNEX_PASSWORD` | the environment variable that holds the page's password (else `api.password`); the user name is `$BDNEX_USER` or `api.username` |
 | `--allow-changes` | `api.allow_changes` (`false`) | let the page run tasks and answer reviews |
 
 The server listens on this machine only. To reach it from another one (a phone, a NAS), give an address such as
-`--host 0.0.0.0` **and a token**: without one bdnex refuses to start, because the API shows your file paths. The
-token is checked on every request; the web page asks for it once per browser tab. There is no encryption: put a
-reverse proxy with HTTPS in front of it if it leaves your home network.
+`--host 0.0.0.0` **and a password or a token**: without one bdnex refuses to start, because the API shows your file
+paths. With a **password** (`api.password`, or `BDNEX_PASSWORD` in the environment, with the user name `api.username`) the
+browser shows its own login box when it opens the page and then sends the login by itself, which also works on a
+phone. A **token** is the same for scripts (`Authorization: Bearer ...`); either one is accepted when both are set.
+`/healthz` needs no login and shows nothing of the library, for a container's health check. There is no encryption
+(HTTP Basic sends the password as it is): put a reverse proxy with HTTPS in front of it if it leaves your home network.
+To run it in a container, see [Docker](docker.md).
 
 ## Endpoints
 
@@ -75,7 +80,7 @@ JSON. The reading endpoints are `GET`; the ones that change something are marked
 | `/api/series?name=&missing=true` | series, what you own, and the albums you lack when the series page is known |
 | `/api/trash` | files waiting in the trash |
 | `/api/stats` | counts of files, albums, series... |
-| `/api/health` | version, schema, whether a token is required |
+| `/api/health` | version, schema, whether a token or a login is required |
 | `/api/overview` | the counts and state the front page shows, and whether changes are allowed |
 | `/api/series/{id}` | one series, volume by volume: owned or missing |
 | `/api/files/{id}/cover` | the first page of a file, as a small picture |

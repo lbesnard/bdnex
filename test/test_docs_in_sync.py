@@ -78,7 +78,7 @@ def test_the_usage_text_lists_every_command(capsys):
 
 def test_every_flag_the_docs_mention_exists(helps):
     known = set(re.findall(r"(?<![\w-])--[a-z][a-z0-9-]+", "\n".join(helps.values())))
-    foreign = {"--extra", "--cov", "--help", "--no-project", "--python"}  # other tools' flags
+    foreign = {"--extra", "--cov", "--help", "--no-project", "--python", "--build-arg", "--build"}  # other tools' flags
     mentioned = set(re.findall(r"(?<![\w-])--[a-z][a-z0-9-]+", all_docs()))
     assert sorted(mentioned - known - foreign) == []
 

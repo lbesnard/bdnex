@@ -147,3 +147,42 @@ def test_an_album_cover_is_served_from_the_cover_folder(library):
     with Library.for_settings(library) as lib:
         lib.set_cover_file(album_id, "../../etc/passwd")
     assert web.get(f"/api/albums/{album_id}/cover").status_code == 404  # never outside cover.dir
+
+
+# ------------------------------------------------------------------ a login for browsers (HTTP Basic)
+def _basic(name, secret):
+    import base64
+    return {"Authorization": "Basic " + base64.b64encode(f"{name}:{secret}".encode()).decode()}
+
+
+def test_a_password_asks_for_the_login_on_the_page_and_the_api(library):
+    c = client(library, password="s3cret", username="me")
+    for path in ("/", "/api/stats"):
+        refused = c.get(path)
+        assert refused.status_code == 401 and refused.headers["www-authenticate"].startswith("Basic")
+    assert c.get("/", headers=_basic("me", "nope")).status_code == 401
+    assert c.get("/", headers=_basic("you", "s3cret")).status_code == 401
+    assert c.get("/", headers={"Authorization": "Basic !!!not base64"}).status_code == 401
+    assert c.get("/api/stats", headers=_basic("me", "s3cret")).status_code == 200
+    assert c.get("/", headers=_basic("me", "s3cret")).status_code == 200
+    assert c.get("/api/health", headers=_basic("me", "s3cret")).json()["login_required"] is True
+
+
+def test_a_password_with_a_colon_and_accents_works(library):
+    c = client(library, password="mot:de passe é", username="lbesnard")
+    assert c.get("/api/stats", headers=_basic("lbesnard", "mot:de passe é")).status_code == 200
+
+
+def test_the_token_still_works_beside_a_password_and_the_health_check_needs_no_login(library):
+    c = client(library, password="s3cret", token="tok")
+    assert c.get("/api/stats", headers={"Authorization": "Bearer tok"}).status_code == 200
+    health = c.get("/healthz")
+    assert health.status_code == 200 and health.json() == {"status": "ok"}
+
+
+def test_a_login_does_not_replace_the_other_protections_for_changes(library):
+    c = client(library, password="s3cret", allow_changes=True)
+    login = _basic("bdnex", "s3cret")
+    assert c.post("/api/jobs", json={"command": "write", "preview": False}, headers=login).status_code == 403  # no X-Requested-With
+    assert c.post("/api/jobs", json={"command": "write", "preview": False},
+                  headers={**login, "X-Requested-With": "bdnex", "Origin": "http://evil.example"}).status_code == 403

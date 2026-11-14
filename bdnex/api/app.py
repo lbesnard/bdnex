@@ -1,12 +1,15 @@
 """The FastAPI application.
 
 Reading: the database is opened read-only for every request. Changing (jobs, review answers) is off unless
-``api.allow_changes`` is true, and then needs the token whenever one is set, a header a web page of another site
+``api.allow_changes`` is true, and then needs the login whenever one is set (the token as a bearer header, or the
+user name and password as HTTP Basic, which a browser asks for and then remembers), a header a web page of another site
 cannot send, and a request from the page's own address.
 """
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hmac
 import shlex
 from pathlib import Path
@@ -39,9 +42,11 @@ class ReviewAnswer(BaseModel):
     action: str                 # keep | unlink
 
 
-def create_app(settings: Settings, token: Optional[str] = None, allow_changes: Optional[bool] = None):
+def create_app(settings: Settings, token: Optional[str] = None, allow_changes: Optional[bool] = None,
+               password: Optional[str] = None, username: Optional[str] = None):
     """The application for ``settings``; ``token`` (default ``api.token``) is required when set; ``allow_changes``
-    (default ``api.allow_changes``) lets the page run jobs and answer reviews."""
+    (default ``api.allow_changes``) lets the page run jobs and answer reviews. ``password`` (default ``api.password``)
+    with ``username`` (default ``api.username``) is a login for browsers: HTTP Basic."""
     try:
         from importlib.metadata import version
         __version__ = version("bdnex")
@@ -50,20 +55,44 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
 
     token = settings.api.token if token is None else token
     allow_changes = settings.api.allow_changes if allow_changes is None else allow_changes
+    password = settings.api.password if password is None else password
+    username = settings.api.username if username is None else username
     jobs = JobManager(settings)
     app = FastAPI(
         title="bdnex", version=__version__,
         description="Read-only view of your bdnex library. The `q` parameter takes the same terms as "
                     "`bdnex ls` (`series:nains year:2010..2015 ^genre:humour`).")
 
+    def same(given: str, expected: str) -> bool:
+        return hmac.compare_digest(given.encode(), expected.encode())
+
+    def basic_ok(value: str) -> bool:
+        """``value`` is the base64 part of ``Authorization: Basic ...``. Both parts are always compared."""
+        try:
+            name, _, secret = base64.b64decode(value, validate=True).decode("utf-8").partition(":")
+        except (binascii.Error, UnicodeDecodeError, ValueError):
+            return False
+        return same(name, username) & same(secret, password)
+
     def allowed(request: Request) -> None:
-        if not token:
+        if not token and not password:
             return
-        given = request.headers.get("authorization", "")
-        supplied = given[7:] if given.lower().startswith("bearer ") else ""
-        if not hmac.compare_digest(supplied.encode(), token.encode()):
-            raise HTTPException(401, "a valid `Authorization: Bearer <token>` header is required",
-                                headers={"WWW-Authenticate": "Bearer"})
+        scheme, _, value = request.headers.get("authorization", "").partition(" ")
+        scheme = scheme.lower()
+        if token and scheme == "bearer" and same(value, token):
+            return
+        if password and scheme == "basic" and basic_ok(value):
+            return
+        if password:  # a browser answers this with its own login box, then sends the login by itself
+            raise HTTPException(401, "a login is required", headers={"WWW-Authenticate": 'Basic realm="bdnex", charset="UTF-8"'})
+        raise HTTPException(401, "a valid `Authorization: Bearer <token>` header is required",
+                            headers={"WWW-Authenticate": "Bearer"})
+
+    def page_login(request: Request) -> None:
+        """The page itself asks for the login first when there is a password, so the browser's box comes up at once.
+        With only a token the page is open and asks for the token itself."""
+        if password:
+            allowed(request)
 
     def can_change(request: Request) -> None:
         """A change needs: changes enabled, the token (if any), our own header, and no foreign origin."""
@@ -102,13 +131,17 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
     def page(rows: list[dict[str, Any]], limit: int, offset: int) -> dict[str, Any]:
         return {"count": len(rows), "offset": offset, "limit": limit, "items": rows[offset:offset + limit]}
 
-    @app.get("/", response_class=HTMLResponse, include_in_schema=False)
+    @app.get("/healthz", include_in_schema=False)
+    def healthz():  # for a container's health check: no login, nothing of the library
+        return {"status": "ok"}
+
+    @app.get("/", response_class=HTMLResponse, include_in_schema=False, dependencies=[Depends(page_login)])
     def home():
         return (STATIC / "index.html").read_text(encoding="utf-8")
 
     @app.get("/api/health", dependencies=guarded, summary="Is the server up, and which library does it read?")
     def health(lib: Library = Depends(library)):
-        return {"status": "ok", "version": __version__, "schema": lib.schema_version, "token_required": bool(token)}
+        return {"status": "ok", "version": __version__, "schema": lib.schema_version, "token_required": bool(token), "login_required": bool(password)}
 
     @app.get("/api/stats", dependencies=guarded, summary="Counts of files, albums, series...")
     def stats(lib: Library = Depends(library)):
@@ -213,7 +246,8 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
                                                                  "rules": [r.model_dump() for r in settings.paths.rules]},
                 "sources": [src.model_dump() for src in settings.import_.sources],
                 "write": settings.write.model_dump(), "api": {"host": settings.api.host, "port": settings.api.port,
-                                                              "token_required": bool(token), "allow_changes": allow_changes}}
+                                                              "token_required": bool(token), "login_required": bool(password),
+                                                              "allow_changes": allow_changes}}
 
     @app.get("/api/files/{file_id}/cover", dependencies=guarded, summary="The first page of a file, as a small picture")
     def file_cover(file_id: int, lib: Library = Depends(library)):

@@ -57,6 +57,13 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   Progress for the bar is read from shared memory (`_STATE`): `Future.running()` is true as soon as a task is queued.
 - Memory: a file is held whole while it is worked on; a PDF can be hundreds of MB. `write.workers` caps it.
 
+## Docker (`Dockerfile`, `compose.yaml`, `docker/`, docs/guides/docker.md)
+- The image runs `bdnex serve` as `PUID:PGID` (compose `user:`), `HOME` is a writable temp folder; config, library and
+  covers are volumes (`/config`, `/data`, `/covers`) beside `/comics`. The entrypoint seeds `/config/bdnex.yaml` and an empty
+  library, so `serve` can start. The login is HTTP Basic (`api.username` / `BDNEX_PASSWORD`); `/healthz` is the only open route.
+- A change to the image is tested for real: `docker build -t bdnex:local .`, run it with temp volumes, curl `/healthz`
+  and a login. Never put a user's fetcher address or password in the image or the repo (`.env` is ignored).
+
 ## Rules that are easy to forget
 - **Tests never touch the real home.** `test/conftest.py` has an autouse `isolated_home` fixture; keep it.
 - **Docs are enforced by tests** (`test/test_docs_in_sync.py`): every command, flag, config option, query field and
