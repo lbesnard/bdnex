@@ -428,6 +428,11 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             rows = [r for r in rows if r["missing"]]
         return {"count": len(rows), "items": rows}
 
+    @app.get("/api/people", dependencies=guarded, summary="Authors: each credited name once, with the albums they have by role")
+    def people(q: str = Query("", description="part of a name"), limit: int = Query(100, ge=1, le=MAX_LIMIT),
+               offset: int = Query(0, ge=0), lib: Library = Depends(library)):
+        return {**lib.people_summary(q, limit, offset), "offset": offset, "limit": limit}
+
     @app.get("/api/series/{series_id}", dependencies=guarded, summary="One series: each volume, owned or missing")
     def series_detail(series_id: int, lib: Library = Depends(library)):
         row = lib.conn.execute("SELECT * FROM series WHERE id = ?", (series_id,)).fetchone()

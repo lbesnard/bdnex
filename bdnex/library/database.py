@@ -1040,6 +1040,24 @@ class Library:
         return destination
 
     # ----------------------------------------------------------------- stats
+    def people_summary(self, text: str = "", limit: int = 100, offset: int = 0) -> dict[str, Any]:
+        """The people credited in the library (each name is one row of ``people``), most albums first, with the albums
+        they have by role. ``text`` filters by name (case and accents do not matter)."""
+        like = "%" + fold(text).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+        where = "WHERE fold(p.name) LIKE ? ESCAPE '\\'"
+        total = self.conn.execute(f"SELECT COUNT(*) FROM people p {where} AND EXISTS (SELECT 1 FROM album_credits c WHERE c.person_id = p.id)",
+                                  (like,)).fetchone()[0]
+        rows = self.conn.execute(
+            f"SELECT p.id, p.name, COUNT(DISTINCT c.album_id) AS albums FROM people p JOIN album_credits c ON c.person_id = p.id {where} "
+            "GROUP BY p.id ORDER BY albums DESC, p.name LIMIT ? OFFSET ?", (like, limit, offset)).fetchall()
+        items = [{"id": r["id"], "name": r["name"], "albums": r["albums"], "roles": {}} for r in rows]
+        by_id = {item["id"]: item for item in items}
+        if by_id:
+            marks = ",".join("?" * len(by_id))
+            for r in self.conn.execute(f"SELECT person_id, role, COUNT(*) AS n FROM album_credits WHERE person_id IN ({marks}) GROUP BY person_id, role", list(by_id)):
+                by_id[r["person_id"]]["roles"][r["role"]] = r["n"]
+        return {"count": total, "items": items}
+
     def stats(self) -> dict[str, int]:
         q = lambda sql: self.conn.execute(sql).fetchone()[0]  # noqa: E731
         return {
