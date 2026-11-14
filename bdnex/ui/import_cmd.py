@@ -61,6 +61,9 @@ def build_parser() -> argparse.ArgumentParser:
     where.add_argument("--no-move", action="store_true",
                        help="leave files from outside your library folder where they are (`import.outside`); "
                             "`bdnex move staged:true` places them later")
+    parser.add_argument("--database-only", action="store_true",
+                        help="only fill the library: no comic file is moved, copied, written, converted, replaced or "
+                             "deleted, whatever the configuration says (a duplicate is skipped, not replaced)")
     parser.add_argument("--cover-check", action=argparse.BooleanOptionalAction, default=None,
                         help="compare each file's cover with its album's (one request per album; needs "
                              "`pip install 'bdnex[cover]'`); default: `cover.check`")
@@ -118,7 +121,12 @@ def ensure_album_list(source, library, settings, out=sys.stdout) -> bool:
 def run(argv: list[str], out=sys.stdout) -> int:
     # a bare `--auto` must not take the next word (a path) as its value: only `--auto=all` has one
     argv = ["--auto=strong" if arg == "--auto" else arg for arg in argv]
-    args = build_parser().parse_args(argv)
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    if args.database_only:
+        if args.write or args.move or args.copy:
+            parser.error("--database-only changes no file: it can not be combined with --write, --move or --copy")
+        args.no_move = True  # nothing from outside the collection is moved or copied either
     setup_logging(args.verbose)
     steps, notes = resolve_steps(args)
     for note in notes:
@@ -172,7 +180,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         steps_order = [step for step in ("match", "fetch") if step in steps]
         session = ImportSession(library, source, settings, prompter=InquirerPrompter(source=source, thumbnails=settings.import_.thumbnails),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps, retry_skipped=getattr(args, "retry_skipped", False),
-                                workers=args.workers, cover_check=args.cover_check, series=args.series, progress=progress, bar=lambda total, label: Bar(total, label),
+                                workers=args.workers, cover_check=args.cover_check, series=args.series, files_untouched=args.database_only, progress=progress, bar=lambda total, label: Bar(total, label),
                                 phase=lambda step, title: banner(title, steps_order.index(step) + 1, len(steps_order)))
         try:
             report = session.run(args.paths)

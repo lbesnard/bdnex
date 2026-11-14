@@ -215,6 +215,26 @@ This forgets your albums, files, edits and import history, and **keeps the downl
 album pages**. The next `bdnex import` needs no network for what was already fetched. Your comic
 files are untouched. See [Maintaining](maintaining.md#starting-from-scratch).
 
+## …fill the library without touching my files?
+
+```bash
+bdnex import --database-only -n ~/comics     # preview
+bdnex import --database-only --auto=all ~/comics
+```
+
+Matches every file, reads the album pages and fills the library, and changes **no comic file**: not moved,
+copied, tagged, converted or replaced, whatever your configuration says (a duplicate is skipped, not replaced).
+Drop `--auto=all` to check each match yourself. Only bdnex's own data is written: the library and the cover folder.
+For a hard guarantee, run it on a read-only mount or on a copy first. See
+[Importing](importing.md#filling-the-library-without-touching-a-file-database-only).
+
+To keep all that was downloaded and start the library again:
+
+```bash
+bdnex reset            # backs the database up, then empties it; pages and covers stay
+bdnex import --database-only ~/comics    # no network for the pages already fetched
+```
+
 ## …add comics I just downloaded to my collection?
 
 ```bash
@@ -277,6 +297,34 @@ bdnex ls --missing           # nothing listed: everything was found
 
 Paths under `collection_path` are stored relative to it, so nothing in the database changes. See
 [Maintaining](maintaining.md#paths-and-moving-your-collection).
+
+## …take back a move, or relink files I moved by hand?
+
+```bash
+bdnex undo                 # the runs of `bdnex move` that can be taken back
+bdnex undo last -n         # preview, then without -n
+bdnex relink -n ~/comics   # files moved or renamed outside bdnex: found again by their content
+```
+
+`undo` moves the files back to where they were; tags already written stay, a converted CBR or PDF is in
+`bdnex trash`. `relink` touches nothing on disk. If the whole folder moved, see "move my whole collection" above
+(`bdnex relocate OLD NEW` for folders stored with their full path).
+
+## …look at the doubtful covers and the duplicates?
+
+```bash
+bdnex review -l            # list the matches whose cover looked different, ask nothing
+bdnex review               # one by one: keep, unlink, rematch or leave
+bdnex duplicates           # the same book in several files (add --covers to compare first pages)
+```
+
+## …browse my library in a browser, or complete commands with Tab?
+
+```bash
+pip install 'bdnex[api]'
+bdnex serve                           # http://127.0.0.1:8765, read-only
+eval "$(bdnex completion zsh)"        # in your shell startup file (bash and fish too)
+```
 
 ## …back up my library?
 

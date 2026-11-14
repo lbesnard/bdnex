@@ -114,7 +114,8 @@ class ImportSession:
                  auto=None, steps=STEPS, progress: Optional[Callable[[str], None]] = None,
                  workers: Optional[int] = None, bar: Optional[Callable] = None,
                  cover_check: Optional[bool] = None, series: Optional[str] = None,
-                 phase: Optional[Callable[[str, str], None]] = None, retry_skipped: bool = False):
+                 phase: Optional[Callable[[str, str], None]] = None, retry_skipped: bool = False,
+                 files_untouched: bool = False):
         self.library = library
         self.source = source
         self.settings = settings
@@ -123,6 +124,7 @@ class ImportSession:
         self.force = force
         self.steps = frozenset(steps)
         self.progress = progress or (lambda message: None)
+        self.files_untouched = files_untouched  # `--database-only`: no comic file may be moved, replaced or deleted
         self.retry_skipped = retry_skipped  # ask again about files skipped earlier (`import --skipped`)
         self.phase = phase or (lambda step, title: None)  # ("match" | "fetch", what is about to happen)
         self.bar = bar  # (total, label) -> object with update(detail) and finish(message)
@@ -751,6 +753,8 @@ class ImportSession:
 
     def _resolve_duplicate(self, path, others, what) -> str:
         """``skip`` (keep the existing files), ``keep_both`` or ``replace`` (the existing files go to the trash)."""
+        if self.files_untouched:
+            return "skip"  # `replace` would put a file in the trash, `keep_both` may move one: neither is allowed
         action = self.settings.duplicates.action
         if action != "ask":
             return action

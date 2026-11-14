@@ -339,6 +339,15 @@ takes the time. Files already in the library are
 left alone (`--force` records them again). `ls --files -l` shows the file's own metadata, and `embedded:` finds files
 by it (`bdnex ls --files embedded:nains`). Recorded files are not "skipped": the next `bdnex import` matches them.
 
+### Filling the library without touching a file: `--database-only`
+
+`bdnex import --database-only ~/comics` matches, reads the album pages and records everything in the library, and
+**changes no comic file**: nothing is moved, copied, tagged, converted or deleted, whatever `import.mode`,
+`import.outside`, `import.sources` or `duplicates.action` say. A file that is a duplicate of one already recorded
+is skipped (reported as a duplicate), never replaced. What bdnex does write is its own: the library, and the cover
+folder (`cover.dir`). It can not be combined with `-W`, `--move` or `--copy`. The difference with `--as-is`: that one
+records files without matching or network; `--database-only` does the whole match and fetch.
+
 ### Asking again about skipped files: `--skipped`
 
 A file you (or the matching) skipped is remembered, and a normal `bdnex import` leaves it alone ("skipped earlier") until
@@ -406,6 +415,7 @@ reported as you typed it.
 | `-n`, `--pretend` | show what would happen; no database change, no page fetched, no question asked |
 | `-W`, `--move`, `--copy` | afterwards write the tags / move into the library tree / copy there |
 | `--series` / `--no-series` | assume every folder with several files is a series without asking / never group files by folder (overrides `import.series`) |
+| `--database-only` | only fill the library: no comic file is moved, copied, written, converted, replaced or deleted, whatever the configuration says (a duplicate is skipped). Not with `-W`, `--move`, `--copy` |
 | `--no-move` | leave files from outside your library folder where they are (`import.outside`) |
 | `--cover-check` / `--no-cover-check` | compare each cover with the album's (overrides `cover.check`) |
 | `--workers N` | background matching processes (overrides `import.workers`) |
