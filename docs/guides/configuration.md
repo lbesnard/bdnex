@@ -94,6 +94,10 @@ duplicates:
 trash:
   dir: .bdnex-trash                      # replaced files wait here, inside `collection_path`
 
+watch:
+  enabled: false                         # `bdnex serve` looks at the import sources by itself and imports what is new, asking nothing
+  interval: 15                           # minutes between two looks
+
 cover:
   download: true                         # keep each album's cover as a file in `dir` (linked from the library)
   dir: ~/.local/share/bdnex/covers       # where the cover files are kept

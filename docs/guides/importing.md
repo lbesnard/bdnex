@@ -348,6 +348,17 @@ is skipped (reported as a duplicate), never replaced. What bdnex does write is i
 folder (`cover.dir`). It can not be combined with `-W`, `--move` or `--copy`. The difference with `--as-is`: that one
 records files without matching or network; `--database-only` does the whole match and fetch.
 
+### Watching the sources: `watch.enabled`
+
+With `bdnex serve` (or the [Docker](docker.md) image) running, `watch.enabled: true` makes the server look at your `import.sources`
+every `watch.interval` minutes and run `bdnex import --sources --unattended` for what is new: the confident matches are applied, each
+file follows its source's mode (copy or move into the collection), and **nothing is asked**: a file whose match is not
+confident, a duplicate, a name clash or a tag conflict is not decided for you (a doubtful one stays skipped, a clash gets a number,
+the database wins a conflict, originals are kept). Whatever is left is yours to settle whenever you like, with the **import** task
+on the Tasks page ("only the files skipped earlier") or `bdnex import --skipped`. A look is skipped while another task runs, each one
+is a task in the list of runs ("Watch the import sources"), and the setting can be changed from the Settings page without a restart.
+It needs a configured source and the album list (`bdnex init`).
+
 ### Asking again about skipped files: `--skipped`
 
 A file you (or the matching) skipped is remembered, and a normal `bdnex import` leaves it alone ("skipped earlier") until
@@ -416,6 +427,7 @@ reported as you typed it.
 | `-W`, `--move`, `--copy` | afterwards write the tags / move into the library tree / copy there |
 | `--series` / `--no-series` | assume every folder with several files is a series without asking / never group files by folder (overrides `import.series`) |
 | `--database-only` | only fill the library: no comic file is moved, copied, written, converted, replaced or deleted, whatever the configuration says (a duplicate is skipped). Not with `-W`, `--move`, `--copy` |
+| `--unattended` | ask nothing: confident matches are applied, the others stay skipped for you (`--skipped` asks about them later); no question about duplicates, name clashes or conflicts. What the folder watch of `bdnex serve` runs |
 | `--no-move` | leave files from outside your library folder where they are (`import.outside`) |
 | `--cover-check` / `--no-cover-check` | compare each cover with the album's (overrides `cover.check`) |
 | `--workers N` | background matching processes (overrides `import.workers`) |

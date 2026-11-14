@@ -50,7 +50,7 @@ def run(argv: list[str]) -> int:
         return 2
     allow = args.allow_changes or settings.api.allow_changes
     print(f"bdnex serving the library on http://{host}:{port}/  (API documentation: /docs)  "
-          + ("[changes allowed]" if allow else "[read-only]") + ("  [token required]" if token else "")
+          + ("[changes allowed]" if allow else "[read-only: add --allow-changes (or api.allow_changes: true) to run tasks and edit]") + ("  [token required]" if token else "")
           + ("  [login required]" if password else ""), file=sys.stderr)
     uvicorn.run(create_app(settings, token=token, allow_changes=allow, password=password, username=username), host=host, port=port, log_level="warning")
     return 0

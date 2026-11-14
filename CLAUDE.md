@@ -53,6 +53,10 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 - **Settings page** (`api/settings_api.py`): the form is built from the packaged defaults (their order and help) and the
   pydantic model (kinds, choices, limits); a change goes through `config_template.set_value` (line edit, comments kept) and
   `build_settings` before the file is written. A new option needs no page work, but a secret goes in `HIDDEN`.
+- **Folder watch** (`api/watch.py`): a daemon thread of `bdnex serve` (started by the app's startup event, never by a test
+  client) that, when `watch.enabled`, starts the `watch` task = `import --sources --unattended`. `--unattended` gives the session
+  *no prompter* (strong matches applied, the rest skipped, duplicates skipped) and the organizer `force`: nothing is ever asked.
+  Anything that must ask must not run from the watcher.
 - **The metadata editor** (`POST /api/albums/{id}/edit`, `POST /api/edit`) calls `edit_cmd.doc_changes` / `describe_changes` /
   `parse_assignments`, so the web and `bdnex edit` can never disagree on what a valid value is. Do not validate fields twice.
 - **Look at it for real**: Chromium is available. `tools/demo_library.py` builds a demo library; see the
