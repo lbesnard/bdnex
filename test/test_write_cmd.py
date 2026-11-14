@@ -273,3 +273,58 @@ def test_the_library_is_opened_read_only_for_a_preview(env, monkeypatch):
     run("move", "-n")
     run("move", "--force")
     assert seen == [True, False]
+
+
+# ------------------------------------------------------------------ bdnex convert
+def _add_pdf(tmp, name="three.pdf"):
+    import pymupdf
+
+    doc = pymupdf.open()
+    doc.new_page(width=200, height=300).insert_text((20, 50), "a page")
+    path = str(tmp / name)
+    doc.save(path)
+    doc.close()
+    with Library(tmp / "lib.sqlite") as lib:
+        lib.add_file(path, 2)  # the second album of the fixture
+    return path
+
+
+def test_convert_makes_a_cbz_of_a_pdf_even_when_the_config_tags_pdfs(env):
+    tmp, files = env
+    pdf = _add_pdf(tmp)
+    conf = tmp / "bdnex.yaml"
+    settings = yaml.safe_load(conf.read_text())
+    conf.write_text(yaml.safe_dump({**settings, "write": {"pdf": "tag", "delete_original": "no"}}))
+    code, text = run("convert", "--force")
+    assert code == 0 and "1 written" in text
+    cbz = str(tmp / "three.cbz")
+    assert has_comicinfo(cbz) and os.path.exists(pdf)  # the original is kept (delete_original: no)
+    assert not has_comicinfo(files["a"])  # a CBZ is not what `convert` is for
+
+
+def test_convert_preview_changes_nothing_and_cbz_files_are_not_selected(env):
+    tmp, files = env
+    _add_pdf(tmp)
+    code, text = run("convert", "-n")
+    assert code == 0 and "1 pretend" in text and not os.path.exists(str(tmp / "three.cbz"))
+    assert "1 file(s)" in text
+
+
+def test_convert_refuses_when_nothing_is_to_be_converted(env):
+    tmp, _ = env
+    conf = tmp / "bdnex.yaml"
+    conf.write_text(yaml.safe_dump({**yaml.safe_load(conf.read_text()), "write": {"format_preferred": "none"}}))
+    code, _ = run("convert", "-n")
+    assert code == 1
+
+
+def test_main_dispatches_convert(monkeypatch, tmp_path):
+    from bdnex import ui
+    conf = tmp_path / "c.yaml"
+    conf.write_text("config_version: 2\ncollection_path: ~/c\n")
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    seen = []
+    monkeypatch.setattr("bdnex.ui.write_cmd.run", lambda cmd, argv: seen.append(cmd) or 0)
+    with pytest.raises(SystemExit):
+        ui.main(["convert"])
+    assert seen == ["convert"]

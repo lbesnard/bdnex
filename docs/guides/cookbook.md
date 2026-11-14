@@ -194,6 +194,19 @@ bdnex write                  # push the new details (format, edition note, trans
 
 Reparse never erases a value the library already has, and keeps your `bdnex edit` changes.
 
+## …keep my PDFs as PDFs, and convert them later?
+
+```bash
+bdnex config --edit                  # write: pdf: tag   (tags go into the PDF; skip: leave it alone)
+bdnex move                           # PDFs are tagged and placed in the tree, still PDFs
+bdnex ls --files format:pdf          # which ones are PDFs
+bdnex convert -n                     # later: what would become a CBZ
+bdnex convert series:nains           # convert some, or all, of them
+```
+
+`convert` writes the CBZ next to the PDF and follows `write.delete_original` for the PDF. A drawn page is not a
+copy of the PDF's own picture: see [Writing](writing.md#formats).
+
 ## …repair a damaged archive?
 
 ```bash

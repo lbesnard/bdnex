@@ -1,7 +1,7 @@
 # bdnex
 
 A beets-like library manager for French comics (Bédéthèque): SQLite library, `import` (match + fetch), `ls`,
-`write`/`move`/`repair`, `edit`, `reparse`, `reset`, `relocate`, `relink`, `review`, `undo`, `check`, `duplicates`, `trash`,
+`write`/`move`/`repair`/`convert`, `edit`, `reparse`, `reset`, `relocate`, `relink`, `review`, `undo`, `check`, `duplicates`, `trash`,
 `series`, `serve`,
 `completion`; `import --as-is` records files first, `--select` re-imports by query. Docs: Sphinx in `docs/`
 (Read the Docs). Python via **uv**; run things with `uv run`.

@@ -20,7 +20,10 @@ OUTCOMES = ("repaired", "written", "moved", "copied", "unchanged", "skipped", "f
 
 
 def _parser(command: str) -> argparse.ArgumentParser:
-    if command == "repair":
+    if command == "convert":
+        doc = ("Convert PDF (or CBR) files that are in the library to CBZ, next to the original, with the ComicInfo.xml. "
+               "What happens to the original follows write.delete_original. Only files matched to an album are converted.")
+    elif command == "repair":
         doc = ("Rebuild damaged archives (a page whose checksum is wrong but whose data is intact) as a clean "
                "CBZ. Only files marked corrupted are touched; ComicInfo.xml and pages are kept as they are.")
     elif command == "write":
@@ -35,6 +38,9 @@ def _parser(command: str) -> argparse.ArgumentParser:
     add_workers(parser, "files written", "write.workers", ", at most 4")
     parser.add_argument("--force", action="store_true",
                         help="never ask: the database wins, name clashes get a number, originals are kept")
+    if command == "convert":
+        parser.add_argument("--from", dest="formats", action="append", choices=["pdf", "cbr"], metavar="FORMAT",
+                            help="the format to convert: pdf (the default) or cbr; repeat it for both")
     if command == "move":
         parser.add_argument("--copy", action="store_true",
                             help="leave the source files untouched; the copy is what the database tracks")
@@ -125,7 +131,7 @@ def _run_files(organizer, rows, mode, out, root, command: str, workers: int = 1,
     on = color.enabled(out)
     bar = Bar(len(rows), "Files") if rows and sys.stderr.isatty() and not organizer.pretend else None
     if rows and not organizer.pretend:
-        banner(f"{'Repairing' if repair else 'Writing tags into' if mode == WRITE else 'Copying' if mode == COPY else 'Moving'} {len(rows)} file(s)")
+        banner(f"{'Repairing' if repair else 'Converting' if command == 'convert' else 'Writing tags into' if mode == WRITE else 'Copying' if mode == COPY else 'Moving'} {len(rows)} file(s)")
         print(LEGEND, file=sys.stderr, flush=True)
     if bar:
         organizer.on_stage = lambda path, text: bar.refresh(f"{os.path.basename(path)} · {text}")
@@ -166,18 +172,29 @@ def aborted_message(path: str, command: str = "write") -> str:
 def run(command: str, argv: list[str], out=sys.stdout) -> int:
     args = _parser(command).parse_args(argv)
     setup_logging(args.verbose)
-    mode = WRITE if command in ("write", "repair") else (COPY if args.copy else MOVE)
+    mode = WRITE if command in ("write", "repair", "convert") else (COPY if args.copy else MOVE)
     settings = context.settings(collection=mode != WRITE)
     if settings is None:
         return 1
+    formats = list(dict.fromkeys(args.formats or ["pdf"])) if command == "convert" else []
+    if command == "convert":
+        if settings.write.format_preferred == "none":
+            print("write.format_preferred is `none`: nothing is converted. Set it to `cbz` to use `bdnex convert`.",
+                  file=sys.stderr)
+            return 1
+        for fmt in formats:  # this command is the request: the per-format switches (tag, skip) do not apply
+            setattr(settings.write, fmt, "convert")
 
     if args.pretend:
         print("Preview: nothing is written, moved, converted or deleted, and the library is opened read-only.",
               file=sys.stderr)
     with Library.for_settings(settings, readonly=args.pretend) as library:
         try:
-            rows = library.query([*args.query, "corrupted:true"] if command == "repair"
-                                 else [*args.query, "tagged:true"], files=True)
+            if command == "convert":
+                rows = [row for fmt in formats for row in library.query([*args.query, f"format:{fmt}", "tagged:true"], files=True)]
+            else:
+                rows = library.query([*args.query, "corrupted:true"] if command == "repair"
+                                     else [*args.query, "tagged:true"], files=True)
         except QueryError as err:
             return context.bad_query(err)
         organizer = Organizer(library, settings, prompter=None if args.force else InquirerPrompter(),
@@ -218,6 +235,10 @@ def run_write(argv: list[str], out=sys.stdout) -> int:
 
 def run_move(argv: list[str], out=sys.stdout) -> int:
     return run("move", argv, out)
+
+
+def run_convert(argv: list[str], out=sys.stdout) -> int:
+    return run("convert", argv, out)
 
 
 def run_repair(argv: list[str], out=sys.stdout) -> int:

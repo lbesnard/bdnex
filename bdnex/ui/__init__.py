@@ -24,6 +24,7 @@ commands:
   relink   find files that were moved or renamed outside bdnex, by their content
   reparse  re-read the pages stored in the library (offline) to fill in more details
   repair   rebuild damaged archives (wrong page checksums) as clean CBZ files
+  convert  convert the PDF files of the library to CBZ (next to the original)
   config   show or edit the configuration
   serve    open the library in a browser (web page and JSON API; read-only unless you allow changes)
   completion  print a tab-completion script for bash, zsh or fish
@@ -85,7 +86,7 @@ def _main(argv):
     if not check_config():
         sys.exit(1)
 
-    if argv and argv[0] in ("write", "move", "repair"):
+    if argv and argv[0] in ("write", "move", "repair", "convert"):
         from bdnex.ui.write_cmd import run as run_write_move
         sys.exit(run_write_move(argv[0], argv[1:]))
 

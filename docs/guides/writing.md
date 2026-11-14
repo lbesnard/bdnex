@@ -6,6 +6,7 @@ The library database holds the metadata. Two commands push it into your files:
 |---|---|
 | `bdnex write [query]` | write `ComicInfo.xml` where the files are; CBR and PDF files become a CBZ next to the original |
 | `bdnex move [query]` | the same, then rename into the library tree (`collection_path` + `paths` in the config) |
+| `bdnex convert [query]` | convert the PDFs (`--from cbr` also CBRs) of the library to CBZ, next to the original, whatever `write.pdf` says |
 | `bdnex repair [query]` | rebuild damaged archives as clean CBZ files, nothing else |
 | `bdnex move --copy [query]` | as `move`, but the source stays untouched; the **copy** is what the database tracks |
 
@@ -211,6 +212,13 @@ which the library does not take from a file. Nothing is stored in a preview (`--
   Calibre; few comic servers read PDF tags, so check yours (not tested here with Komga or Kavita).
 - Conversion is automatic with `bdnex write` and `bdnex move`: set `write.cbr` to `convert` (the default) or `skip`,
   and `write.pdf` to `convert` (the default), `tag` or `skip`. The other direction, CBZ to CBR, is not offered: RAR can not be written.
+- **Converting later: `bdnex convert [query]`.** Keep your PDFs as they are at first (`write.pdf: tag` or `skip`),
+  and convert them whenever you decide: `bdnex convert -n` previews, `bdnex convert` converts every PDF matched to
+  an album, `bdnex convert series:nains` only some of them, `--from cbr` (repeatable: `--from pdf --from cbr`)
+  picks the format. The CBZ is written next to the original with the same checks as `write`, and the original
+  follows `write.delete_original` (asked, kept or sent to the trash). It does not move files: run `bdnex move`
+  afterwards to put them in the tree. Nothing is converted when `write.format_preferred` is `none`. Find what is left
+  with `bdnex ls --files format:pdf`.
 - `write.delete_original: ask | yes | no` decides what happens to the CBR/PDF after conversion. `yes` deletes it
   without asking, once the new CBZ has passed both checks. With `write.use_trash: true` (the default) "deleted"
   means moved to the trash folder (`trash.dir`, inside your library folder) and recorded in the library with its
