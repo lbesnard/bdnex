@@ -204,20 +204,28 @@ const VIEWS = {
     const folder = el("select", {}, el("option", { value: "" }, "your whole collection"),
       el("option", { value: app.overview.collection || "" }, "collection folder"), ...(app.overview.sources || []).map(s => el("option", { value: s.path }, "source: " + s.name)));
     const askHere = el("input", { type: "checkbox", checked: true });
+    const choose = (...options) => el("select", {}, options.map(([value, text]) => el("option", { value }, text)));
     const cards = available.items.map(j => {
-      const wantsPaths = ["record", "relink", "import"].includes(j.command), wantsQuery = ["write", "move", "repair"].includes(j.command);
-      const importing = j.command === "import";
-      const steps = el("select", {}, el("option", { value: "" }, "match and read the pages"), el("option", { value: "match" }, "match only"), el("option", { value: "fetch" }, "read the pages only"));
-      const files = el("select", {}, el("option", { value: "" }, "files as configured"), el("option", { value: "database_only" }, "touch no file (database only)"), el("option", { value: "no_move" }, "leave files where they are"));
-      const auto = el("select", {}, el("option", { value: "" }, "ask about every match"), el("option", { value: "strong" }, "ask only when unsure"), el("option", { value: "all" }, "never ask"));
-      const opts = () => ({ query: wantsQuery ? query.value.split(/\s+/).filter(Boolean) : [], paths: wantsPaths && folder.value ? [folder.value] : [],
+      const has = name => j.fields.includes(name);
+      const steps = choose(["", "match and read the pages"], ["match", "match only"], ["fetch", "read the pages only"]);
+      const files = choose(["", "files as configured"], ["database_only", "touch no file (database only)"], ["no_move", "leave files where they are"]);
+      const auto = choose(["", "ask about every match"], ["strong", "ask only when unsure"], ["all", "never ask"]);
+      const formats = choose(["pdf", "PDF files"], ["cbr", "CBR files"], ["pdf,cbr", "PDF and CBR files"]);
+      const days = el("input", { type: "number", min: 0, placeholder: "older than (days), or all" });
+      const extras = el("div", { class: "row" }, has("import") ? [steps, files, auto] : null, has("formats") ? formats : null, has("older_than") ? days : null);
+      const opts = () => ({ query: has("query") ? query.value.split(/\s+/).filter(Boolean) : [], paths: has("paths") && folder.value ? [folder.value] : [],
                             copy_files: false, interactive: askHere.checked,
-                            ...(importing ? { steps: steps.value ? [steps.value] : [], files: files.value, auto: auto.value } : {}) });
-      return el("div", { class: "panel job" }, el("h3", {}, j.label), importing ? el("div", { class: "row" }, steps, files, auto) : null,
+                            ...(has("import") ? { steps: steps.value ? [steps.value] : [], files: files.value, auto: auto.value } : {}),
+                            ...(has("formats") ? { formats: formats.value.split(",") } : {}),
+                            ...(has("older_than") && days.value !== "" ? { older_than: Number(days.value) } : {}) });
+      const scary = j.asks || j.command === "trash-empty";
+      const real = el("button", { class: "danger", disabled: !available.allow_changes,
+        onclick: () => confirm(scary ? `“${j.label}” cannot be taken back. Go on?` : `Run “${j.label}” for real? It changes your files or your library.`) && startJob(j.command, { ...opts(), preview: false }, logBox) },
+        j.writes ? "Run for real" : "Run");
+      return el("div", { class: "panel job" }, el("h3", {}, j.label), extras.children.length ? extras : null,
         el("div", { class: "row" },
-          el("button", { onclick: () => startJob(j.command, { ...opts(), preview: true }, logBox) }, j.writes ? "Preview" : "Run"),
-          j.writes ? el("button", { class: "danger", disabled: !available.allow_changes,
-            onclick: () => confirm(`Run “${j.label}” for real? It changes your files or your library.`) && startJob(j.command, { ...opts(), preview: false }, logBox) }, "Run for real") : null));
+          j.preview ? el("button", { onclick: () => startJob(j.command, { ...opts(), preview: true }, logBox) }, j.writes ? "Preview" : "Run") : null,
+          j.writes ? real : null));
     });
     render(...header("Tasks", "The same operations as the command line. A preview changes nothing; run it first."),
       available.allow_changes ? null : el("p", { class: "hint warn" }, rich("Read-only server: previews and checks only. Set `api.allow_changes: true` to run for real.")),
@@ -243,9 +251,12 @@ const VIEWS = {
 
   trash: { name: "Trash", icon: "✕", async draw() {
     const data = await api("/api/trash");
-    render(...header("Trash", "Files that were replaced wait here. Restore or empty them with `bdnex trash`."),
-      el("div", { class: "panel scroll" }, data.items.length ? el("table", {}, el("thead", {}, el("tr", {}, ["Was at", "Why", "Size", "Trashed"].map(h => el("th", {}, h)))),
-        el("tbody", {}, data.items.map(t => el("tr", {}, el("td", {}, t.path), el("td", {}, t.reason), el("td", {}, size(t.size)), el("td", {}, t.trashed))))) : "The trash is empty."));
+    const restore = (t, place) => confirm(`Put ${t.path} back${place ? " and move it where its album belongs" : ""}?`) &&
+      startJob("trash-restore", { id: t.id, place, preview: false, interactive: true });
+    render(...header("Trash", "Files that were replaced wait here. Empty them from the Tasks page."),
+      el("div", { class: "panel scroll" }, data.items.length ? el("table", {}, el("thead", {}, el("tr", {}, ["Was at", "Why", "Size", "Trashed", ""].map(h => el("th", {}, h)))),
+        el("tbody", {}, data.items.map(t => el("tr", {}, el("td", {}, t.path), el("td", {}, t.reason), el("td", {}, size(t.size)), el("td", {}, t.trashed),
+          el("td", {}, canChange() ? el("div", { class: "row" }, el("button", { onclick: () => restore(t, false) }, "Restore"), el("button", { onclick: () => restore(t, true) }, "Restore and place")) : ""))))) : "The trash is empty."));
   } },
 
   settings: { name: "Settings", icon: "⚙", async draw() {
@@ -333,7 +344,7 @@ let polling = null;
 async function startJob(command, options, box) {
   try {
     const job = await api("/api/jobs", { method: "POST", body: { command, ...options } });
-    if (!box) { location.hash = "#/tasks"; await new Promise(r => setTimeout(r, 150)); box = $("#view > div:last-of-type") || view; }
+    if (!box) { location.hash = "#/tasks?job=" + job.id; return; }  // the Tasks page follows the job it is given
     followJob(job.id, box);
   } catch (e) { alert(e.message); }
 }

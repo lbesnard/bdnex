@@ -38,7 +38,7 @@ button:hover, .btn:hover { border-color: var(--accent); }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 button.danger { background: var(--red); color: #fff; border-color: var(--red); }
 button:disabled { opacity: .45; cursor: not-allowed; }
-input[type=search], input[type=text], input[type=password], select, textarea {
+input[type=search], input[type=text], input[type=password], input[type=number], select, textarea {
   font: inherit; padding: 8px 11px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel); color: var(--text); min-width: 0; }
 input[type=search], input[type=text] { flex: 1 1 200px; }
 .hint { color: var(--muted); font-size: 13px; margin: 6px 0 12px; }

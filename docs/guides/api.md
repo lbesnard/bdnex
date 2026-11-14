@@ -27,8 +27,9 @@ Links can carry a filter: `#/albums?q=series:nains`, `#/series?name=nains`, `#/f
 
 ## Tasks, and what "allow changes" means
 
-Everything that changes your library or your files is a **task**: `check --fix`, record files as they are, **import**
-(match and read the pages of new files), write tags, move into the collection, repair, undo a move, relink. A task is
+Everything that changes your library or your files is a **task**: `check --fix`, download the album list (`init`), record
+files as they are, **import** (match and read the pages of new files), `reparse`, write tags, move into the collection,
+`convert` PDFs, repair, undo a move, relink, empty the trash (and restore a file from the Trash page), and `reset`. A task is
 one of these commands run in the background, with the same code as the terminal. Each has a **Preview** (changes
 nothing: `-n`) and **Run for real**. Only one task runs at a time; you can watch its output and cancel it.
 
@@ -38,7 +39,10 @@ clash. The question appears at the top of the task, with the **same answers, key
 (`D`, `S`, `A`... press the key, or tap the answer; see [the keys](importing.md#the-keys-of-every-question)). The task
 waits for you, can be cancelled while it waits, and goes on when you answer. Untick it and the run never asks: the
 database wins a tag conflict, a name clash gets a number, originals are kept, and an import applies `--auto=all`.
-The same questions can be answered from a phone. A task that is waiting for an answer is lost if the server restarts
+The same questions can be answered from a phone. Two tasks can not run unasked: `reset` only starts when the page can ask
+you to confirm, and "Empty the trash" asks "Delete them for good?" (untick the box and it goes ahead, after the page's own
+"cannot be taken back" confirmation). `init` has no preview: it downloads the album list (about 70 MB). `bdnex edit` (the
+metadata editor), `series`, `relocate` and `config` stay on the command line for now. A task that is waiting for an answer is lost if the server restarts
 (what it already did stays done: run it again to continue). The import task can also be told to touch no file
 (`--database-only`) or to leave files where they are (`--no-move`).
 
