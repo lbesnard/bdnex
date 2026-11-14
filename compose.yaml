@@ -1,0 +1,25 @@
+# bdnex and its web page. Copy .env.example to .env, fill it in, then: docker compose up -d --build
+services:
+  bdnex:
+    build: .
+    image: bdnex:local
+    restart: unless-stopped
+    user: "${PUID:-1000}:${PGID:-1000}"          # the owner of the files it writes: `id -u` and `id -g`
+    ports:
+      - "${BDNEX_PORT:-8765}:8765"
+    environment:
+      BDNEX_USER: "${BDNEX_USER:-bdnex}"
+      BDNEX_PASSWORD: "${BDNEX_PASSWORD:?set BDNEX_PASSWORD in .env: the web page is not open without a login}"
+    volumes:
+      - "${COMICS_DIR:?set COMICS_DIR in .env: the folder with your comics}:/comics"
+      - "${CONFIG_DIR:-./config}:/config"        # bdnex.yaml
+      - "${DATA_DIR:-./data}:/data"              # the library (SQLite)
+      - "${COVERS_DIR:-./covers}:/covers"        # downloaded covers
+      # - "${INBOX_DIR}:/inbox"                  # a folder of new downloads: add it to `import.sources` as /inbox
+    # Behind Traefik, drop `ports` and use labels like these (HTTPS makes the login safe beyond your LAN):
+    # labels:
+    #   - traefik.enable=true
+    #   - traefik.http.routers.bdnex.rule=Host(`bdnex.example.org`)
+    #   - traefik.http.routers.bdnex.entrypoints=websecure
+    #   - traefik.http.routers.bdnex.tls=true
+    #   - traefik.http.services.bdnex.loadbalancer.server.port=8765

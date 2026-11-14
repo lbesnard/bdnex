@@ -29,6 +29,7 @@ guides/queries
 guides/writing
 guides/maintaining
 guides/api
+guides/docker
 guides/configuration
 ```
 

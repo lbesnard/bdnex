@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 
 from bdnex.config import LOCAL_HOSTS
@@ -18,6 +19,9 @@ def run(argv: list[str]) -> int:
     parser.add_argument("--host", help="address to listen on (default api.host: 127.0.0.1, this machine only)")
     parser.add_argument("--port", type=int, help="port (default api.port: 8765)")
     parser.add_argument("--token", help="require `Authorization: Bearer <token>` (default api.token)")
+    parser.add_argument("--password-env", default="BDNEX_PASSWORD", metavar="NAME",
+                        help="the environment variable that holds the web page's password (default BDNEX_PASSWORD; "
+                             "else api.password): the page then asks for api.username (or $BDNEX_USER) and it")
     parser.add_argument("--allow-changes", action="store_true",
                         help="let the web page run jobs and change the library (default api.allow_changes: false, read-only)")
     add_verbosity(parser)
@@ -37,12 +41,15 @@ def run(argv: list[str]) -> int:
         return 1
     host, port = args.host or settings.api.host, args.port or settings.api.port
     token = args.token or settings.api.token
-    if host not in LOCAL_HOSTS and not token:
-        print(f"Listening on {host} would show your library to the network: set api.token in the configuration "
-              "(or pass --token), or listen on 127.0.0.1.", file=sys.stderr)
+    password = os.environ.get(args.password_env) or settings.api.password
+    username = os.environ.get("BDNEX_USER") or settings.api.username
+    if host not in LOCAL_HOSTS and not (token or password):
+        print(f"Listening on {host} would show your library to the network: set api.password (or $BDNEX_PASSWORD) "
+              "or api.token in the configuration, or listen on 127.0.0.1.", file=sys.stderr)
         return 2
     allow = args.allow_changes or settings.api.allow_changes
     print(f"bdnex serving the library on http://{host}:{port}/  (API documentation: /docs)  "
-          + ("[changes allowed]" if allow else "[read-only]") + ("  [token required]" if token else ""), file=sys.stderr)
-    uvicorn.run(create_app(settings, token=token, allow_changes=allow), host=host, port=port, log_level="warning")
+          + ("[changes allowed]" if allow else "[read-only]") + ("  [token required]" if token else "")
+          + ("  [login required]" if password else ""), file=sys.stderr)
+    uvicorn.run(create_app(settings, token=token, allow_changes=allow, password=password, username=username), host=host, port=port, log_level="warning")
     return 0

@@ -150,6 +150,8 @@ class Api(_Section):
     host: str = Field(min_length=1)
     port: int = Field(ge=1, le=65535)
     token: Optional[str] = None
+    username: str = Field(min_length=1)  # with `password`: the login a browser asks for (HTTP Basic)
+    password: Optional[str] = None
     allow_changes: bool  # the web page (and the API) may start jobs and change the library; read-only otherwise
 
 

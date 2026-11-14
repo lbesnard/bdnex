@@ -40,3 +40,13 @@ def test_no_library_yet(tmp_path, monkeypatch, capsys):
     path.write_text(f"config_version: 2\ncollection_path: {tmp_path}/comics\nlibrary: {tmp_path}/none.sqlite\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(path))
     assert serve_cmd.run([]) == 1 and "No library yet" in capsys.readouterr().err
+
+
+def test_a_public_address_with_a_password_starts_and_the_login_is_passed_on(config, monkeypatch):
+    seen = {}
+    monkeypatch.setattr("uvicorn.run", lambda app, **kw: seen.update(kw))
+    monkeypatch.setattr("bdnex.api.app.create_app", lambda settings, **kw: seen.update(app=kw))
+    monkeypatch.setenv("BDNEX_PASSWORD", "pw")
+    monkeypatch.setenv("BDNEX_USER", "me")
+    assert serve_cmd.run(["--host", "0.0.0.0"]) == 0
+    assert seen["app"]["password"] == "pw" and seen["app"]["username"] == "me"
