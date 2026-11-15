@@ -68,6 +68,69 @@ VOLUME_TIEBREAK = 10.0  # only orders the candidates; the reported score does no
 MAX_POSTINGS = 4000  # a word in more albums than this ('integrale') is no use to find candidates
 
 
+class PageQueue:
+    """Album pages downloaded in worker threads as soon as their address is known, while matching goes on.
+
+    Only the downloading is threaded (each request waits the polite ``delay`` first, in its own thread). The library
+    is touched by the calling thread alone: :meth:`store` puts the finished pages in the cache, :meth:`arrivals` waits
+    for the rest, in the order asked.
+    """
+
+    def __init__(self, source: "Bedetheque", workers: int):
+        from concurrent.futures import ThreadPoolExecutor
+
+        self.source = source
+        self._executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="bdnex-page")
+        self._futures: dict = {}  # address -> Future of the bytes
+        self._failed: dict[str, Exception] = {}  # address -> why its page was not fetched
+        self.stored = 0  # pages put in the cache by this queue
+        source.active = source.downloaded = 0
+        source._fetching = []
+
+    def submit(self, url: str) -> None:
+        """Start downloading a page unless it is in the library or already asked for."""
+        if url in self._futures or url in self._failed or self.source.library.cache_get(SOURCE, "album", url) is not None:
+            return
+        logger.debug(f"page queued: {url}")
+        self._futures[url] = self._executor.submit(self.source._tracked_download, url)
+
+    def store(self) -> int:
+        """Save the pages that have arrived (call it often: it keeps the downloaded bytes out of memory)."""
+        count = 0
+        for url, future in list(self._futures.items()):
+            if future.done():
+                self._settle(url, future)
+                count += 1
+        return count
+
+    def _settle(self, url: str, future) -> None:
+        del self._futures[url]
+        try:
+            self.source.library.cache_put(SOURCE, "album", url, future.result())
+            self.stored += 1
+        except Exception as err:  # this page failed; the others go on
+            self._failed[url] = err
+
+    def arrivals(self, urls: list[str], tick=None):
+        """Yield ``(url, error or None)`` in the order of ``urls``, waiting for each page (and asking for those not queued)."""
+        from concurrent.futures import wait
+
+        for url in urls:
+            self.submit(url)
+            future = self._futures.get(url)
+            while future is not None and url in self._futures:
+                finished, _ = wait([future], timeout=0.5)  # not future.result(timeout): a fetcher may raise TimeoutError itself
+                if finished:
+                    self._settle(url, future)
+                elif tick:
+                    tick()
+            yield url, self._failed.pop(url, None)
+
+    def close(self) -> None:
+        """Stop: what is not started is dropped, what is running ends by itself."""
+        self._executor.shutdown(wait=False, cancel_futures=True)
+
+
 class Bedetheque:
     """Look albums up on Bédéthèque, through the library cache.
 
@@ -143,6 +206,10 @@ class Bedetheque:
         with self._stats:
             urls = list(self._fetching)
         return [re.sub(r"-\d+$", "", re.sub(r"\.html$", "", re.sub(r"^BD-", "", url.rsplit("/", 1)[-1]))) for url in urls]
+
+    def page_queue(self, workers: Optional[int] = None) -> "PageQueue":
+        """A queue that downloads album pages in the background while the caller goes on (see :class:`PageQueue`)."""
+        return PageQueue(self, max(1, workers or self.parallel))
 
     def prefetch(self, urls: list[str], workers: Optional[int] = None, recache: bool = False, tick=None):
         """Download album pages ``workers`` at a time. Yields ``(url, error or None)`` in the order of ``urls``; each page

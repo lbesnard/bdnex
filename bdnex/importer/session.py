@@ -3,8 +3,9 @@
 Pipeline: file names are matched in the background (``pipeline.match_ahead``) while the user
 reviews earlier files. Per file: skip if already imported -> corruption/duplicate-file checks ->
 candidates -> score -> (ask) -> link the file to the album as known from the sitemap alone.
-Afterwards the album pages are fetched, politely and slowly, and complete those albums; an
-interrupted fetch loses nothing (``import --fetch`` resumes).
+The album page of a linked file is requested at once in the background (``Bedetheque.page_queue``: threads
+download, only this thread touches the library), politely and slowly, and completes the album when the loop
+is done; an interrupted fetch loses nothing (``import --fetch`` resumes).
 """
 
 from __future__ import annotations
@@ -137,6 +138,7 @@ class ImportSession:
         self.auto = "all" if wanted == "all" else "strong" if wanted in (True, "strong") else None
         self.workers = resolve_workers(settings.import_.workers if workers is None else workers)
         self._pending: list[tuple[ImportResult, Candidate, str]] = []
+        self._early = None  # pages downloaded in the background while files are still being matched (PageQueue)
         self._journal: Optional[Journal] = None  # what the file being matched has recorded so far
         self._asked = False  # the user was asked about the file being matched
         self.series_mode = settings.import_.series if series is None else series  # ask | always | never
@@ -191,6 +193,7 @@ class ImportSession:
         self._series_asked: set[str] = set()  # folders where the user already said what the series is
         position = 0
         self._loop_started = time.monotonic()
+        self._open_early()
         if "match" in self.steps:
             self.phase("match", f"Matching {len(files)} file(s) to albums")
         while position < len(files):
@@ -239,6 +242,7 @@ class ImportSession:
                 break  # this file stays undecided: it is asked about again next time
             except (NeedsTerminal, KeyboardInterrupt):
                 stream.close()  # stop the background matching before leaving
+                self._close_early()
                 raise  # not this file's fault: the decisions made so far are saved, the run stops
             except Exception as err:  # one bad file must not stop the batch
                 logger.exception(f"{path} failed")
@@ -257,11 +261,14 @@ class ImportSession:
                     followed[position] = list(offered)
             report.results.append(result)
             self._attention(result)
+            if self._early is not None:
+                self._early.store()  # the pages that arrived meanwhile go in the library (this thread only)
             if self._asked:
                 history.append(position)
             position += 1
         stream.close()  # stops the background matching
         if report.aborted_at:
+            self._close_early()
             self._pending = []  # the pages are fetched by the next run (the albums are "matched")
             self._remember_abort(report, paths)
             return report
@@ -298,7 +305,8 @@ class ImportSession:
         if number == 1 or number == total or number % max(25, total // 100) == 0:
             elapsed = time.monotonic() - started
             left = f"  about {human_duration(elapsed / number * (total - number))} left" if number >= 25 else ""
-            self.progress(f"[{number}/{total}] {100 * number // total}%{left}")
+            pages = f"  ·  {self._early.stored} page(s) fetched" if self._early is not None and self._early.stored else ""
+            self.progress(f"[{number}/{total}] {100 * number // total}%{left}{pages}")
 
     def _attention(self, result: "ImportResult") -> None:
         """What happened to a file that was not matched, at the default level (``-v`` shows every file, with its reason)."""
@@ -494,9 +502,28 @@ class ImportSession:
             return ImportResult(path, PRETEND, album_id=album["id"], note=f"would fetch {album['url']}")
         result = ImportResult(path, PARTIAL, album_id=album["id"], note=f"matched as {album_label(album)}")
         self._pending.append((result, candidate, ""))
+        self._queue_page(candidate)
         if not defer_fetch:
             self._fetch_pending()
         return result
+
+    def _open_early(self) -> None:
+        """Start downloading each album page as soon as its file is matched, instead of after the last file.
+
+        The pages go through the same polite delay and ``parallel`` limit as before; only the waiting changes."""
+        self._early = None
+        if "fetch" in self.steps and not self.pretend and hasattr(self.source, "page_queue"):
+            self._early = self.source.page_queue(getattr(self.source, "parallel", 1))
+
+    def _close_early(self) -> None:
+        if self._early is not None:
+            self._early.close()
+            self._early = None
+
+    def _queue_page(self, candidate: Candidate) -> None:
+        if self._early is not None:
+            self._early.submit(candidate.url)
+            self.detail(f"    page queued: {candidate.url.rsplit('/', 1)[-1]}")
 
     def _fetch_pending(self) -> None:
         """Read the album pages of the files linked so far: one polite request each."""
@@ -504,6 +531,7 @@ class ImportSession:
         if "fetch" not in self.steps:
             return
         if not pending:
+            self._close_early()
             self._check_covers()
             return
         self.phase("fetch", f"Reading {len(pending)} album page(s): authors, publisher, summary... "
@@ -523,7 +551,12 @@ class ImportSession:
             done = getattr(self.source, "downloaded", 0)
             return (" · ".join(titles) if titles else name) + f"  ({done} of {len(pending)} fetched)"
 
-        if workers > 1 and hasattr(self.source, "prefetch") and not self.pretend:
+        if self._early is not None:
+            self._early.store()
+            self.progress(f"{self._early.stored} page(s) already fetched while matching; fetching {workers} at a time.")
+            arriving = self._early.arrivals([candidate.url for _, candidate, _ in pending],
+                                            tick=lambda: bar and bar.refresh(busy(current[0])))
+        elif workers > 1 and hasattr(self.source, "prefetch") and not self.pretend:
             self.progress(f"Fetching {workers} pages at a time.")
             arriving = self.source.prefetch([candidate.url for _, candidate, _ in pending], workers, recache=self.recache,
                                             tick=lambda: bar and bar.refresh(busy(current[0])))
@@ -559,6 +592,7 @@ class ImportSession:
         finally:
             if arriving is not None and hasattr(arriving, "close"):
                 arriving.close()  # stops the pages still being fetched
+            self._close_early()
             if bar:
                 bar.finish()
         self._check_covers()
@@ -758,6 +792,7 @@ class ImportSession:
             self._check_cover(result)  # the page was read just now: keep (and compare) the cover too
         if defer_fetch and partial and "fetch" in self.steps:
             self._pending.append((result, candidate, damaged))
+            self._queue_page(candidate)
         return result
 
     # -------------------------------------------------------------- helpers

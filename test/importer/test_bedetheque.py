@@ -399,3 +399,35 @@ def test_the_titles_being_fetched_are_known_while_they_are_fetched(lib):
         pass
     assert seen and sorted(seen[0]) == ["1984-Derrien-Torregrossa-1984", "Abaddon-Shadmi-Tome-1-Abaddon", "Ada-Baldi-Ada"]
     assert source.fetching_now() == []  # nothing is being fetched once they are all in
+
+
+def test_a_page_queue_downloads_in_the_background_and_stores_in_the_calling_thread(lib):
+    web = FakeWeb()
+    urls = _album_urls(4)
+    for url in urls:
+        web.pages[url] = b"<html>" + url.encode() + b"</html>"
+    source = Bedetheque(lib, fetch=web, delay=(0, 0), sleep=lambda s: None, parallel=2)
+    queue = source.page_queue(2)
+    for url in urls:
+        queue.submit(url)
+    queue.submit(urls[0])  # twice: asked once
+    results = list(queue.arrivals(urls))
+    assert [u for u, _ in results] == urls and all(e is None for _, e in results)
+    assert sorted(web.calls) == sorted(urls)
+    assert all(lib.cache_get("bedetheque", "album", u) for u in urls)
+    assert queue.stored == 4
+    queue.close()
+
+
+def test_a_page_queue_reports_a_failed_page_and_skips_a_stored_one(lib):
+    web = FakeWeb()
+    urls = _album_urls(3)
+    web.pages[urls[0]] = b"<html>0</html>"
+    web.pages[urls[2]] = b"<html>2</html>"  # urls[1] is missing: the fake raises
+    lib.cache_put("bedetheque", "album", urls[2], b"<html>old</html>")
+    source = Bedetheque(lib, fetch=web, delay=(0, 0), sleep=lambda s: None, parallel=2)
+    queue = source.page_queue(2)
+    results = dict(queue.arrivals(urls))
+    assert results[urls[0]] is None and results[urls[1]] is not None and results[urls[2]] is None
+    assert urls[2] not in web.calls  # already in the library: not asked again
+    queue.close()

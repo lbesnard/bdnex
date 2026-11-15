@@ -53,6 +53,8 @@ class FakeWeb:
 
     def __call__(self, url):
         self.calls.append(url)
+        if url not in self.pages and url.startswith("https://www.bedetheque.com/BD-") and url.endswith("-245127.html"):
+            return self.pages[ALBUM_URL]  # the one album page the fixtures have, under the address the sitemap lists
         return self.pages[url]
 
 

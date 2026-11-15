@@ -429,21 +429,58 @@ def test_pages_are_fetched_several_at_a_time_when_the_source_says_so(web, make_c
     env.source.parallel = 3
     web.pages[env.lib.get_album(first.album_id)["url"]] = web.pages[ALBUM_URL]  # the page the sitemap points at
     seen = []
-    real = env.source.prefetch
-    env.source.prefetch = lambda urls, workers, recache=False, **kw: seen.append((list(urls), workers)) or real(urls, workers, recache, **kw)
+    real = env.source.page_queue
+    env.source.page_queue = lambda workers=None: seen.append(workers) or real(workers)
     messages = []
     env.session.progress = messages.append
     env.session.steps = frozenset(["fetch"])
     assert env.session.run([path]).results[0].outcome == TAGGED
-    assert seen and seen[0][1] == 3 and any("3 pages at a time" in m for m in messages)
+    assert seen == [3] and any("3 at a time" in m for m in messages)
     env.lib.close()
 
 
 def test_a_page_that_the_endpoints_could_not_fetch_is_reported_for_its_file(web, make_cbz):
     env, path, first = partial_env(web, make_cbz)
     env.source.parallel = 2
-    env.source.prefetch = lambda urls, workers, recache=False, **kw: iter([(urls[0], OSError("every endpoint is down"))])
+
+    def down(url):
+        raise OSError("every endpoint is down")
+
+    env.source._fetch = down
     env.session.steps = frozenset(["fetch"])
     result = env.session.run([path]).results[0]
     assert result.outcome == PARTIAL and "page not fetched: every endpoint is down" in result.note
+    env.lib.close()
+
+
+def test_a_page_is_downloaded_while_the_other_files_are_still_being_matched(web, make_cbz, tmp_path):
+    make_cbz(FILE)
+    env = Env(web, make_settings(), None)
+    env.source.update_sitemaps()
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    seen = {"queued": [], "queued_before_the_fetch_phase": None}
+    real, queue_page = env.session._fetch_pending, env.session._queue_page
+
+    def spy_queue(candidate):
+        seen["queued"].append(candidate.url)
+        queue_page(candidate)
+
+    def spy_fetch():
+        seen["queued_before_the_fetch_phase"] = list(seen["queued"])
+        real()
+
+    env.session._queue_page, env.session._fetch_pending = spy_queue, spy_fetch
+    report = env.session.run([str(tmp_path)])
+    assert report.count(TAGGED) == 1
+    assert len(seen["queued_before_the_fetch_phase"]) == 1  # asked for in the loop, not after it
+    assert env.session._early is None  # and the queue is closed afterwards
+    env.lib.close()
+
+
+def test_pretend_downloads_nothing_early(web, make_cbz, tmp_path):
+    make_cbz(FILE)
+    env = Env(web, make_settings(), None, pretend=True)
+    env.source.update_sitemaps()
+    env.session.run([str(tmp_path)])
+    assert env.session._early is None
     env.lib.close()
