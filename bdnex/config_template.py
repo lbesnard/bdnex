@@ -145,9 +145,18 @@ def _help_of(packaged_line: str) -> Optional[tuple[str, int]]:
     return (found.group(1), found.start(1)) if found else None
 
 
+_CHOICES = re.compile(r"^#\s*[\w.-]+(?:\s*\|\s*[\w.-]+)+\s*$")  # a comment that is only "a | b | c"
+
+
+def _stale_choices(comment: str, help_: str) -> bool:
+    """True when ``comment`` is just a list of choices (the help an older release wrote) and not what ``help_`` says now.
+    A comment with any other word in it is the user's own and is never replaced."""
+    return bool(_CHOICES.match(comment.strip())) and comment.strip() != help_.strip()
+
+
 def annotate(text: str) -> tuple[str, list[str]]:
     """``text`` with the help comment (the possible values and what the option does) put back after every option the
-    file already mentions, active or commented out, that has no comment of its own. Values are never changed.
+    file already mentions, active or commented out, that has no comment of its own, or only an old list of choices (``# a | b``). Values are never changed.
     Returns (new text, dotted names annotated)."""
     lines = text.splitlines()
     done: list[str] = []
@@ -166,7 +175,13 @@ def annotate(text: str) -> tuple[str, list[str]]:
             pattern = re.compile(rf"^{indent}(?:#\s*)?{re.escape(name)}:(.*)$")
             for i in range(*scope):
                 found = pattern.match(lines[i])
-                if found and not re.search(r"\s#", found.group(1)) and found.group(1).strip() != "":
+                if not found or found.group(1).strip() == "":
+                    continue
+                old = re.search(r"\s(#.*)$", found.group(1))
+                if old and _stale_choices(old.group(1), help_[0]):
+                    lines[i] = lines[i][:len(lines[i]) - len(old.group(1))].rstrip()  # drop the old list, then add the new
+                    old = None
+                if not old:
                     pad = max(len(lines[i]) + 2, help_[1])
                     lines[i] = lines[i].ljust(pad) + help_[0]
                     done.append(f"{item.name}.{name}" if item.children else name)
