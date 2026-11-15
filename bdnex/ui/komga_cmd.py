@@ -158,9 +158,13 @@ def _table(rows) -> list[str]:
 
 
 def _value(value) -> str:
+    """A value as the table shows it: credits as ``name (role)``, links as ``label: url`` (never cut), the rest short."""
+    if isinstance(value, list) and value and isinstance(value[0], dict):
+        if "url" in value[0]:
+            return "; ".join(f"{v.get('label')}: {v['url']}" for v in value)
+        return "; ".join(f"{v['name']} ({v['role']})" if "role" in v else str(v) for v in value)
     if isinstance(value, list):
-        value = "; ".join(f"{v['name']} ({v['role']})" if "role" in v else f"{v.get('label')}" if "label" in v
-                          else str(v) for v in value) if value and isinstance(value[0], dict) else ", ".join(map(str, value))
+        value = ", ".join(map(str, value))
     return _short(value)
 
 
