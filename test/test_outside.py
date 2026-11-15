@@ -229,3 +229,32 @@ def test_database_only_refuses_the_options_that_change_files(world, capsys):
     for flag in ("--write", "--move", "--copy"):
         with pytest.raises(SystemExit):
             import_cmd.run(["--database-only", flag, comic], out=io.StringIO())
+
+
+def _tree(*folders):
+    """Every folder and file under the folders, with times: a rename, a new folder or a trash bin shows too."""
+    return sorted((str(p), p.is_dir(), p.stat().st_size, p.stat().st_mtime_ns) for f in folders for p in [f, *f.rglob("*")])
+
+
+def test_import_database_only_on_the_whole_collection_changes_nothing_with_every_trap_set(world, tmp_path, make_cbz, make_pdf):
+    """The way it will be run: no path (the whole collection), `--auto=all`, a configuration that would convert,
+    move, replace and trash everything, and several files for one album: an identical copy, another edition
+    (other bytes) and a PDF. Every file, folder and time must be the same afterwards, and no trash may appear."""
+    root, downloads, comic, configure = world
+    for folder, name, pages in (("mine", NAME, 3), ("copy", NAME, 3), ("other edition", NAME, 5)):
+        (root / folder).mkdir()
+        shutil.copy(make_cbz("e%d.cbz" % pages, pages=pages) if folder == "other edition" else comic, root / folder / name)
+    pdf = root / "pdfs"
+    pdf.mkdir()
+    shutil.copy(make_pdf("album.pdf"), pdf / NAME.replace(".cbz", ".pdf"))
+    configure(**{"import": {"mode": "move", "outside": "move", "auto": True, "sources": [{"path": str(downloads), "mode": "move"}]},
+                 "duplicates": {"action": "replace"},
+                 "write": {"cbr": "convert", "pdf": "convert", "format_preferred": "cbz"},
+                 "cover": {"check": True}})
+    before = (_tree(root, downloads), _snapshot(root, downloads))
+    code, _ = do("--database-only", "--auto=all")
+    assert code == 0
+    assert (_tree(root, downloads), _snapshot(root, downloads)) == before
+    assert not list(tmp_path.glob("**/trash*")) and not list(root.rglob("*.cbz.bak"))
+    with library(tmp_path) as lib:
+        assert lib.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] >= 1  # and it did fill the library
