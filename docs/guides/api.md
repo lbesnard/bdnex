@@ -149,7 +149,7 @@ for series in requests.get(f"{api}/series", params={"missing": "true"}, headers=
         print("   ", album["title"], album["url"])
 ```
 
-To send the metadata to a Komga server, use [`bdnex komga`](komga.md). To do it yourself, read `/api/files` for the paths and the album each belongs to
+To send the metadata to a Komga server, use [`bdnex komga push`](komga.md). To do it yourself, read `/api/files` for the paths and the album each belongs to
 (`album_id`), then call Komga's own API for the books. The bdnex side is one request:
 
 ```bash
