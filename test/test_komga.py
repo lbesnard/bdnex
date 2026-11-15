@@ -226,3 +226,9 @@ def test_books_use_the_list_call_and_fall_back_to_the_deprecated_one():
     session.no_list = True
     assert [b["id"] for b in komga.Client(config, session).books()] == ["b1"]
     assert [c[:2] for c in session.calls] == [("POST", "api/v1/books/list"), ("GET", "api/v1/books")]
+
+
+def test_options_may_come_before_or_after_the_query(cmd_env):
+    for argv in (["push", "-n", "series:nains"], ["push", "series:nains", "-n"], ["show", "series:nains", "-v"]):
+        code, _, session, _ = send(argv, cmd_env)
+        assert code == 0

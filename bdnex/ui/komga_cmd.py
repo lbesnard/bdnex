@@ -34,7 +34,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None, session=None) -> int:
     parser.add_argument("-y", "--yes", action="store_true", help="push: do not ask for confirmation")
     add_pretend(parser, "be sent to Komga (push)")
     add_verbosity(parser)
-    args = parser.parse_args(argv)
+    args = parser.parse_intermixed_args(argv)  # `push -y series:x` and `push series:x -y`, on every Python
     setup_logging(args.verbose)
     settings = context.settings()
     if settings is None:
