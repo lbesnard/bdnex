@@ -104,10 +104,13 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    on disk, unlinked).
 7. **Linked.** The file is linked to the album as the album list tells it, so a decision is saved
    the moment you make it.
-8. **Fetch.** Once every file is decided, the album pages are read one by one (politely slow,
-   `bedetheque.delay`), with a progress bar and the time left. If a page cannot be fetched the
-   album stays matched, with the URL to save. Ctrl-C stops here and loses nothing: run
-   `bdnex import --fetch` to continue.
+8. **Fetch.** The album page of a linked file is requested **at once, in the background**, while the next
+   files are still being matched and asked about (politely slow: every request waits `bedetheque.delay`, and no
+   more than `bedetheque.parallel` run at a time). When the last file is decided, the pages still on their way are
+   waited for, with a progress bar and the time left; the default progress line counts the pages already fetched.
+   If a page cannot be fetched the album stays matched, with the URL to save. Ctrl-C stops everything and loses
+   nothing: run `bdnex import --fetch` to continue. Nothing is requested with `-n`; `-vv` logs each page queued
+   and each request (`grep -i fetch`).
 
 ### Folders with several files
 
