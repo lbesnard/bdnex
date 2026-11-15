@@ -63,6 +63,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None, session=None) -> int:
             for file, _, _ in found["pairs"]:
                 if file["id"] not in albums:
                     albums[file["id"]] = library.get_album(file["id"])
+                    albums[file["id"]]["series_record"] = library.series_record(file["id"])
             if args.action == "show":
                 return _inspect(client, found, books, albums, args, out, on)
             plan = _plan(client, found["pairs"], albums, args, lock)
@@ -108,9 +109,9 @@ def _inspect(client, found, books, albums, args, out, on) -> int:
     for file, book, how in found["pairs"]:
         album = albums[file["id"]]
         meta = book.get("metadata") or {}
-        fields = komga.book_fields(album)
+        fields = komga.book_fields(album, meta)
         rows = [(key, meta.get(key), fields.get(key), meta.get(komga.BOOK_LOCKS.get(key, "")))
-                for key in ("title", "number", "releaseDate", "authors", "summary", "isbn", "links")]
+                for key in ("title", "number", "releaseDate", "authors", "summary", "isbn", "links", "tags")]
         if args.verbose:
             sid = book["seriesId"]
             if sid not in series_seen:
@@ -118,7 +119,8 @@ def _inspect(client, found, books, albums, args, out, on) -> int:
             wanted = komga.series_fields([album])
             rows += [(f"series {key}", series_seen[sid].get(key), wanted.get(key),
                       series_seen[sid].get(komga.SERIES_LOCKS.get(key, "")))
-                     for key in ("title", "publisher", "language", "genres")]
+                     for key in ("title", "publisher", "language", "genres", "summary", "status", "totalBookCount",
+                                "links")]
         lines = [f"file:  {file['path']}", f"komga: {book['url']}  (id {book['id']}, matched by {how})", "",
                  *_table(rows)]
         print(results.block("found", _label(album), lines, on), file=out)
@@ -169,8 +171,11 @@ def _value(value) -> str:
 
 
 BOOK_FIELD_KEYS = {"title": ("title",), "number": ("number", "numberSort"), "releaseDate": ("releaseDate",),
-                   "authors": ("authors",), "summary": ("summary",), "isbn": ("isbn",), "links": ("links",)}
-SERIES_FIELD_KEYS = {"series-title": "title", "publisher": "publisher", "language": "language", "genres": "genres"}
+                   "authors": ("authors",), "summary": ("summary",), "isbn": ("isbn",), "links": ("links",),
+                   "tags": ("tags",)}
+SERIES_FIELD_KEYS = {"series-title": "title", "publisher": "publisher", "language": "language", "genres": "genres",
+                     "series-summary": "summary", "series-status": "status", "series-total": "totalBookCount",
+                     "series-link": "links"}
 FIELD_NAMES = [*BOOK_FIELD_KEYS, *SERIES_FIELD_KEYS]
 
 
@@ -200,7 +205,8 @@ def _plan(client, pairs, albums, args, lock) -> list[dict]:
         by_series.setdefault(book["seriesId"], []).append(album)
         if args.only == "series" or (args.wanted[0] is not None and not args.wanted[0]):
             continue
-        payload, differing = komga.changes(_only(komga.book_fields(album), args.wanted[0]), book.get("metadata") or {},
+        current = book.get("metadata") or {}
+        payload, differing = komga.changes(_only(komga.book_fields(album, current), args.wanted[0]), current,
                                            komga.BOOK_LOCKS, lock)
         plan.append({"kind": "book", "id": book["id"], "label": _label(album), "how": how, "payload": payload,
                      "differing": differing, "current": book.get("metadata") or {}})

@@ -16,11 +16,14 @@ import requests
 
 PAGE_SIZE = 500
 ROLES = {"Writer": "writer", "Penciller": "penciller", "Inker": "inker", "Colorist": "colorist",
-         "Letterer": "letterer", "CoverArtist": "cover"}
+         "Letterer": "letterer", "CoverArtist": "cover", "Editor": "editor", "Translator": "translator",
+         "Other": "other"}
 BOOK_LOCKS = {"title": "titleLock", "summary": "summaryLock", "number": "numberLock", "numberSort": "numberSortLock",
-              "releaseDate": "releaseDateLock", "authors": "authorsLock", "isbn": "isbnLock", "links": "linksLock"}
+              "releaseDate": "releaseDateLock", "authors": "authorsLock", "isbn": "isbnLock", "links": "linksLock",
+              "tags": "tagsLock"}
 SERIES_LOCKS = {"title": "titleLock", "publisher": "publisherLock", "language": "languageLock", "genres": "genresLock",
-                "summary": "summaryLock"}
+                "summary": "summaryLock", "status": "statusLock", "totalBookCount": "totalBookCountLock",
+                "links": "linksLock"}
 
 
 class KomgaError(Exception):
@@ -149,8 +152,10 @@ def authors_of(album: dict[str, Any]) -> list[dict[str, str]]:
     return [{"name": name, "role": ROLES[role]} for role in ROLES for name in album["credits"].get(role, [])]
 
 
-def book_fields(album: dict[str, Any]) -> dict[str, Any]:
-    """What the library knows of an album, in the fields of a Komga book (only those it knows)."""
+def book_fields(album: dict[str, Any], current: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """What the library knows of an album, in the fields of a Komga book (only those it knows).
+
+    The genres become the book's tags, added to the tags Komga already has (yours are never removed)."""
     fields: dict[str, Any] = {"title": album["title"]}
     if album.get("summary"):
         fields["summary"] = album["summary"]
@@ -165,11 +170,29 @@ def book_fields(album: dict[str, Any]) -> dict[str, Any]:
         fields["isbn"] = album["isbn"]
     if album.get("url"):
         fields["links"] = [{"label": "Bédéthèque", "url": album["url"]}]
+    if album["genres"]:
+        tags = {t.lower(): t for t in album["genres"]}
+        tags.update({t.lower(): t for t in (current or {}).get("tags") or []})  # Komga's own spelling wins
+        fields["tags"] = sorted(tags.values(), key=str.lower)
     return fields
 
 
+STATUSES = (("ONGOING", ("en cours", "continu")), ("ENDED", ("termin", "fini", "complet")),
+            ("ABANDONED", ("abandon", "interrompu", "arrete")), ("HIATUS", ("suspendu", "pause", "hiatus")))
+
+
+def status_of(text: Optional[str]) -> Optional[str]:
+    """Komga's series status from Bédéthèque's words (``Terminée``, ``En cours``...); ``None`` when not recognised."""
+    import unicodedata
+    folded = "".join(c for c in unicodedata.normalize("NFKD", (text or "").lower()) if not unicodedata.combining(c))
+    return next((status for status, words in STATUSES if any(w in folded for w in words)), None)
+
+
 def series_fields(albums: list[dict[str, Any]]) -> dict[str, Any]:
-    """The fields of a Komga series from the albums of the library that are in it (names: the commonest wins)."""
+    """The fields of a Komga series from the albums of the library that are in it (names: the commonest wins).
+
+    The series' own record (``album["series_record"]``, read by the command) adds its summary, page link, status and
+    the number of numbered albums the source lists."""
     names = Counter((a["series"] or a["title"]) for a in albums)
     fields: dict[str, Any] = {"title": names.most_common(1)[0][0]}
     for key, name in (("publisher", "publisher"), ("language", "language")):
@@ -179,6 +202,18 @@ def series_fields(albums: list[dict[str, Any]]) -> dict[str, Any]:
     genres = sorted({g for a in albums for g in a["genres"]})
     if genres:
         fields["genres"] = genres
+    record = next((a["series_record"] for a in albums if a.get("series_record")), None)
+    if record:
+        if record.get("summary"):
+            fields["summary"] = record["summary"]
+        if record.get("url"):
+            fields["links"] = [{"label": "Bédéthèque", "url": record["url"]}]
+        extra = record.get("extra") or {}
+        if status_of(extra.get("status")):
+            fields["status"] = status_of(extra["status"])
+        numbered = [a for a in extra.get("albums") or [] if a.get("volume") is not None]
+        if numbered:  # integrals and special issues have no number: they are not counted
+            fields["totalBookCount"] = len(numbered)
     return fields
 
 
@@ -187,8 +222,10 @@ def _same(key: str, mine: Any, theirs: Any) -> bool:
         return {(a["name"], a["role"].lower()) for a in mine} == {(a["name"], a["role"].lower()) for a in theirs or []}
     if key == "links":
         return {(x["label"], x["url"]) for x in mine} == {(x.get("label"), x.get("url")) for x in theirs or []}
-    if key == "genres":
+    if key in ("genres", "tags"):
         return {g.lower() for g in mine} == {g.lower() for g in theirs or []}
+    if key == "totalBookCount":
+        return theirs is not None and int(mine) == int(theirs)
     if key == "numberSort":
         return theirs is not None and abs(float(mine) - float(theirs)) < 1e-9
     return (mine or "") == (theirs or "")
