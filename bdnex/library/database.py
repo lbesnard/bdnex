@@ -82,6 +82,9 @@ class Library:
         self.conn.row_factory = sqlite3.Row
         self.conn.execute("PRAGMA foreign_keys = ON")
         register_functions(self.conn)
+        sql = logging.getLogger("bdnex.sql")
+        if sql.isEnabledFor(logging.DEBUG):  # `-vvv`: every statement, with the thread that runs it
+            self.conn.set_trace_callback(lambda statement: sql.debug("%s", statement))
         self.root = os.path.abspath(os.path.expanduser(str(root))).rstrip("/") if root else None
         if readonly:
             self.conn.execute("PRAGMA query_only = ON")

@@ -482,3 +482,17 @@ the same answer is the same key everywhere. Press the highlighted letter, in eit
 
 A key is the same in every question where its answer exists, and a question never uses one key twice. Green is the safe
 answer, yellow puts it off, red is destructive or stops the run. `NO_COLOR=1` turns the colours off, the keys stay.
+
+## What the import tells you: `-v`, `-vv`, `-vvv`, `--log-file`
+
+A big collection must neither scroll for hours nor hide why a file was left alone. Four levels, on every command:
+
+| Option | What you see |
+|---|---|
+| (none) | the phases, a line every percent or so (`[1200/18743] 6%  about 2 h left`), and **only the files that need a look**: `skipped: name - no match: best guess BD-Berserk-Tome-36-... scored 63, under 70, the lowest score applied`, `duplicate: ... - identical to ...`, `failed: ...` |
+| `-v` | every file, and under it what was decided and why: the album and its score, the page fetched, the reason a file was skipped |
+| `-vv` | how: what each worker read, cache hits and misses, requests and their time, with the thread's name on each line (bdnex's own messages only) |
+| `-vvv` | everything, for debugging bdnex itself: the debug messages of every library too, and each SQL statement. Very long |
+| `--log-file PATH` | in addition, writes everything bdnex logs at the debug level, with the time, to this file, whatever the level on the screen: run a long import with `--log-file import.log`, keep the screen quiet, and send the file when something looks wrong |
+
+The reasons are also kept: each skipped file is recorded with the score of its best guess (`bdnex import --skipped` asks about them again).

@@ -123,6 +123,10 @@ never ran in a test crashed that way), `uv run python -m compileall -q bdnex` (P
   `build` raises when a question uses a key twice. Write-side questions end with `[A]bort` (`_ask` adds it).
 - Tests: autouse fixtures isolate HOME and switch the automatic cover check off; `FakeWeb` (test/helpers.py) serves
   fixtures and a real picture. A bug found by reading code gets a test that fails without the fix.
+- **Verbosity** (`ui/output.py`, `ImportSession.verbosity`): default = phases, a count line every percent, and only the files that need a look
+  (skipped with *why*, duplicate, failed); `-v` = every file + reason (`session.detail()`); `-vv` = bdnex's own debug (`logger.debug`,
+  thread names); `-vvv` = libraries + SQL (`bdnex.sql`); `--log-file` always gets debug. A new per-file message goes through
+  `detail()`, a decision that needs the user's eye goes through `_attention`, and a skip must carry its reason in `result.note`.
 - Long commands show their phases with `banner()` and tint progress lines (`ui/output.py`); plain text in a pipe.
 - **Shared options and formats**: `-n` is `add_pretend(parser, "what would happen")` and `--workers` is
   `add_workers(parser, ...)` (`ui/output.py`); sizes, durations and short paths are `bdnex/formatting.py`

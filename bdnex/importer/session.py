@@ -23,6 +23,7 @@ from bdnex.importer import covers, folders
 from bdnex.importer.matching import Match, Recommendation, find_matches, recommend
 from bdnex.importer.pipeline import match_ahead, resolve_workers
 from bdnex.importer.source import Candidate, MetadataSource
+from bdnex.formatting import human_duration
 from bdnex.library import Library
 from bdnex.library.database import analyse_file
 from bdnex.library.hashing import file_md5
@@ -116,8 +117,10 @@ class ImportSession:
                  workers: Optional[int] = None, bar: Optional[Callable] = None,
                  cover_check: Optional[bool] = None, series: Optional[str] = None,
                  phase: Optional[Callable[[str, str], None]] = None, retry_skipped: bool = False,
-                 files_untouched: bool = False):
+                 files_untouched: bool = False, verbosity: int = 1):
         self.library = library
+        self._loop_started = time.monotonic()
+        self.verbosity = verbosity  # 0: a count now and then and what needs a look; 1 (-v): every file and why; 2 (-vv): + logging
         self.source = source
         self.settings = settings
         self.prompter = prompter
@@ -187,13 +190,17 @@ class ImportSession:
         followed: dict[int, list[str]] = {}  # position -> the files whose album came from the series chosen at that file
         self._series_asked: set[str] = set()  # folders where the user already said what the series is
         position = 0
+        self._loop_started = time.monotonic()
         if "match" in self.steps:
             self.phase("match", f"Matching {len(files)} file(s) to albums")
         while position < len(files):
             path = files[position]
             kind = kinds[path][0]
             if kind in ("match", "fetch", "cover"):
-                self.progress(f"[{position + 1}/{len(files)}] {os.path.basename(path)}")
+                if self.verbosity >= 1:
+                    self.progress(f"[{position + 1}/{len(files)}] {os.path.basename(path)}")
+                else:
+                    self._heartbeat(position + 1, len(files))
             self._asked = False
             try:
                 matches = None
@@ -249,6 +256,7 @@ class ImportSession:
                     chosen.update(offered)
                     followed[position] = list(offered)
             report.results.append(result)
+            self._attention(result)
             if self._asked:
                 history.append(position)
             position += 1
@@ -278,6 +286,28 @@ class ImportSession:
             return
         self.library.set_meta(self.ABORT_KEY, json.dumps({
             "file": report.aborted_at, "done": len(report.results), "total": report.total, "paths": list(paths)}))
+
+    def detail(self, message: str) -> None:
+        """A line about one file: shown from ``-v``. At the default level only the files that need a look are reported."""
+        if self.verbosity >= 1:
+            self.progress(message)
+
+    def _heartbeat(self, number: int, total: int) -> None:
+        """The default level's progress: a line every percent or so (at least every 25 files), with the time left."""
+        started = self._loop_started
+        if number == 1 or number == total or number % max(25, total // 100) == 0:
+            elapsed = time.monotonic() - started
+            left = f"  about {human_duration(elapsed / number * (total - number))} left" if number >= 25 else ""
+            self.progress(f"[{number}/{total}] {100 * number // total}%{left}")
+
+    def _attention(self, result: "ImportResult") -> None:
+        """What happened to a file that was not matched, at the default level (``-v`` shows every file, with its reason)."""
+        if result.outcome not in (SKIPPED, DUPLICATE, FAILED) or not result.note:
+            return
+        if self.verbosity >= 1:
+            self.progress(f"    {result.outcome}: {result.note}")  # under the file's own line
+        else:
+            self.progress(f"{result.outcome}: {os.path.basename(result.path)} - {result.note}")
 
     def _announce_resume(self) -> None:
         """Say that this run continues an aborted one, then forget the record."""
@@ -671,6 +701,8 @@ class ImportSession:
     def _import_matched(self, path: str, matches: Optional[list[Match]], defer_fetch: bool,
                         chosen: Optional[tuple]) -> ImportResult:
         info, md5 = self._analysis(path)
+        logger.debug("%s: %s, %s page(s), %s", os.path.basename(path), info.format, info.page_count,
+                     "read ahead" if path in self._analysed else "read here")
         if not info.readable:
             self._log(path, FAILED)
             return ImportResult(path, FAILED, note=info.problem or "unreadable archive")
@@ -678,6 +710,7 @@ class ImportSession:
 
         dup = self._duplicate_file(path, md5)
         if dup is not None:
+            logger.debug("%s: identical file already registered (%s)", os.path.basename(path), dup.note)
             return dup
 
         matches = matches if matches is not None else self._matches(path)
@@ -688,10 +721,10 @@ class ImportSession:
             candidate, score = self._select(path, matches)
         if candidate is None:
             self._log(path, SKIPPED, matches[0].score if matches else None)  # how close the best guess was
-            return ImportResult(path, SKIPPED, note="no match")
+            return ImportResult(path, SKIPPED, note=self._why_no_match(matches))
 
         shown = via or (f"score {score:.0f}" if score is not None else "chosen by you")
-        self.progress(f"    match: {candidate.url.rsplit('/', 1)[-1]} ({shown})")
+        self.detail(f"    match: {candidate.url.rsplit('/', 1)[-1]} ({shown})")
         if self.pretend:
             return ImportResult(path, PRETEND, score=score,
                                 note=f"would link to {candidate.url}")
@@ -728,6 +761,19 @@ class ImportSession:
         return result
 
     # -------------------------------------------------------------- helpers
+    def _why_no_match(self, matches) -> str:
+        """Why a file was left unmatched: the best guess and how far it was from being taken."""
+        if not matches:
+            return "no match: nothing in the album list looks like this name"
+        best = matches[0]
+        strong, medium = self.settings.match.strong_threshold, self.settings.match.medium_threshold
+        title = best.candidate.url.rsplit("/", 1)[-1]
+        if self._asked:
+            return f"you chose none of the candidates (best guess {title}, {best.score:.0f})"
+        if best.score >= medium:
+            return f"best guess {title} scored {best.score:.0f}: not applied without asking (sure from {strong:.0f}, or --auto=all)"
+        return f"no match: best guess {title} scored {best.score:.0f}, under {medium:.0f}, the lowest score applied"
+
     def _log(self, path, outcome, score=None, album_id=None):
         if not self.pretend:
             self.library.log_import(path, outcome, score, album_id)
@@ -849,18 +895,18 @@ class ImportSession:
         existing_full = (existing is not None
                          and not self.library.get_album(existing)["extra"].get("partial"))
         if existing_full and not self.recache:
-            self.progress("    album already complete in the library: nothing to fetch")
+            self.detail("    album already complete in the library: nothing to fetch")
             return existing, False, "album already in library"
         if not fetch:
             if existing is not None:
                 return existing, True, ""
             return self.library.add_album(self.source.partial_info(candidate)), True, ""
-        self.progress(f"    fetching the album page ({self.source.name}; the first request waits a few seconds)...")
+        self.detail(f"    fetching the album page ({self.source.name}; the first request waits a few seconds)...")
         started = time.monotonic()
         try:
             info = self.source.album_info(candidate.url, recache=self.recache)
             partial, note = False, ""
-            self.progress(f"    page read in {time.monotonic() - started:.1f}s")
+            self.detail(f"    page read in {time.monotonic() - started:.1f}s")
         except self.source.fetch_errors as err:
             self.progress(f"    page unavailable after {time.monotonic() - started:.1f}s: {err}")
             logger.warning(f"Page for {candidate.url} unavailable ({err}); using sitemap data only")
