@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
+import os
 import re
 import sys
 import time
@@ -48,7 +50,10 @@ def banner(title: str, step: int = 0, steps: int = 0, stream=None) -> None:
 
 def add_verbosity(parser) -> None:
     parser.add_argument("-v", "--verbose", action="count", default=0,
-                        help="more detail: -v for info, -vv for debug (requests, cache hits)")
+                        help="more detail: -v what is decided and why (every file), -vv how (reads, cache, requests, threads), "
+                             "-vvv everything, libraries and SQL included")
+    parser.add_argument("--log-file", metavar="PATH", action=_LogFile,
+                        help="also write everything, at the debug level and with the time, to this file (for a long run)")
 
 
 def add_pretend(parser, what: str = "be done") -> None:
@@ -62,9 +67,44 @@ def add_workers(parser, unit: str, setting: str = "import.workers", note: str = 
                         help=f"{unit} at once (0: the cores less one{note}; 1: one by one); default: `{setting}`")
 
 
+LOG_FILE: str | None = None  # set by `--log-file`: everything bdnex logs goes there, at the debug level
+
+
+class _LogFile(argparse.Action):
+    """``--log-file PATH``: remember the path; ``setup_logging`` opens it."""
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        global LOG_FILE
+        LOG_FILE = os.path.expanduser(values)
+        setattr(namespace, self.dest, values)
+
+
 def setup_logging(verbosity: int) -> None:
-    level = logging.WARNING if verbosity <= 0 else logging.INFO if verbosity == 1 else logging.DEBUG
-    logging.basicConfig(level=level, format="%(levelname)-7s %(name)s: %(message)s", stream=sys.stderr, force=True)
+    """``-v``: what bdnex decides (info); ``-vv``: how (debug: reads, cache, requests, with the thread); ``-vvv``: all of it
+    from every library too, and each SQL statement (for debugging bdnex itself). Without ``-vvv`` the libraries it uses
+    stay at warnings. A ``--log-file`` gets bdnex's debug level, with the time."""
+    own = logging.DEBUG if verbosity >= 2 else logging.INFO if verbosity == 1 else logging.WARNING
+    console = logging.StreamHandler(sys.stderr)
+    console.setLevel(own)
+    console.setFormatter(logging.Formatter(
+        "%(levelname)-7s [%(threadName)s] %(name)s: %(message)s" if verbosity >= 2 else "%(levelname)-7s %(name)s: %(message)s"))
+    handlers: list[logging.Handler] = [console]
+    if LOG_FILE:
+        try:
+            to_file = logging.FileHandler(LOG_FILE, encoding="utf-8")
+        except OSError as err:
+            print(f"warning: cannot write the log file {LOG_FILE}: {err}", file=sys.stderr)
+        else:
+            to_file.setLevel(logging.DEBUG)
+            to_file.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s [%(threadName)s] %(name)s: %(message)s"))
+            handlers.append(to_file)
+    logging.basicConfig(level=logging.DEBUG if verbosity >= 3 else logging.WARNING, handlers=handlers, force=True)
+    logging.getLogger("bdnex").setLevel(logging.DEBUG if len(handlers) > 1 or verbosity >= 2 else own)
+    # every SQL statement is a lot: only from -vvv (the file gets them too when it is asked for with -vvv)
+    logging.getLogger(SQL_LOGGER).setLevel(logging.DEBUG if verbosity >= 3 else logging.INFO)
+
+
+SQL_LOGGER = "bdnex.sql"
 
 
 class Bar:

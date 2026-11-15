@@ -184,7 +184,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         steps_order = [step for step in ("match", "fetch") if step in steps]
         session = ImportSession(library, source, settings, prompter=None if args.unattended else new_prompter(source=source, thumbnails=settings.import_.thumbnails),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps, retry_skipped=getattr(args, "retry_skipped", False),
-                                workers=args.workers, cover_check=args.cover_check, series=args.series, files_untouched=args.database_only, progress=progress, bar=lambda total, label: Bar(total, label),
+                                workers=args.workers, cover_check=args.cover_check, series=args.series, files_untouched=args.database_only, verbosity=args.verbose, progress=progress, bar=lambda total, label: Bar(total, label),
                                 phase=lambda step, title: banner(title, steps_order.index(step) + 1, len(steps_order)))
         try:
             report = session.run(args.paths)

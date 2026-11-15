@@ -72,19 +72,48 @@ def test_main_dispatches_import(monkeypatch, tmp_path):
     assert seen["argv"] == ["-n", "foo.cbz"] and exit_.value.code == 0
 
 
-def test_import_command_shows_progress_on_stderr(setup, capsys):
+def test_import_command_shows_every_file_from_v_and_only_a_count_by_default(setup, capsys):
     path, tmp_path = setup
-    import_cmd.run([path], out=io.StringIO())
+    import_cmd.run(["-v", path], out=io.StringIO())
+    assert "[1/1] Nains - T01 - Redwin de la forge.cbz" in capsys.readouterr().err
+    import_cmd.run(["--force", path], out=io.StringIO())
     err = capsys.readouterr().err
-    assert "[1/1] Nains - T01 - Redwin de la forge.cbz" in err
+    assert "[1/1] 100%" in err and "Redwin de la forge.cbz" not in err  # a count, not a line per file
+
+
+def test_a_file_that_is_not_matched_says_why_even_by_default(setup, capsys, tmp_path, make_cbz):
+    path, _ = setup
+    other = make_cbz("zzz qqq xxx.cbz", pages=5)
+    import_cmd.run(["--auto=all", path, other], out=io.StringIO())
+    err = capsys.readouterr().err
+    assert "skipped: zzz qqq xxx.cbz - " in err and "no match" in err  # the reason, not just "skipped"
+    assert "Nains - T01" not in err.replace("[1/2]", "")  # the matched file has no line of its own
+
+
+def test_the_log_file_gets_the_debug_level_while_the_screen_stays_quiet(setup, capsys, tmp_path):
+    from bdnex.ui import output
+
+    path, _ = setup
+    log = tmp_path / "import.log"
+    try:
+        import_cmd.run(["--log-file", str(log), path], out=io.StringIO())
+    finally:
+        output.LOG_FILE = None
+        output.setup_logging(0)
+    assert "DEBUG" in log.read_text() and "bdnex." in log.read_text()
+    assert "DEBUG" not in capsys.readouterr().err
 
 
 def test_verbosity_levels():
     import logging
     from bdnex.ui.output import setup_logging
-    for flags, level in ((0, logging.WARNING), (1, logging.INFO), (2, logging.DEBUG)):
+    for flags, own, root in ((0, logging.WARNING, logging.WARNING), (1, logging.INFO, logging.WARNING),
+                             (2, logging.DEBUG, logging.WARNING), (3, logging.DEBUG, logging.DEBUG)):
         setup_logging(flags)
-        assert logging.getLogger().level == level
+        assert logging.getLogger("bdnex").level == own and logging.getLogger().level == root  # libraries only at -vvv
+    assert logging.getLogger("bdnex.sql").level == logging.DEBUG  # the SQL statements come with -vvv
+    setup_logging(2)
+    assert logging.getLogger("bdnex.sql").level == logging.INFO
     setup_logging(0)
 
 
