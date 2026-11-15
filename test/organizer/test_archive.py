@@ -299,3 +299,12 @@ def test_a_layered_page_is_drawn_at_its_colour_picture_not_its_sharpest_layer():
     assert round(_source_dpi(_LayeredPage([(2500, 1, FULL), (316, 1, STRIP)]))) == 294  # 1-bit only: the large one
     assert _source_dpi(_LayeredPage([(316, 1, STRIP)])) is not None  # only a strip: it is all there is
     assert _source_dpi(_LayeredPage([])) is None
+
+
+def test_the_pdf_title_does_not_repeat_the_series_of_a_one_shot():
+    from bdnex.organizer.archive import pdf_info
+
+    assert pdf_info({"Series": "Aâma", "Title": "Aâma"})["title"] == "Aâma"
+    assert pdf_info({"Series": "Nains", "Number": "1", "Title": "Redwin"})["title"] == "Nains - T1 - Redwin"
+    assert pdf_info({"Series": "Nains", "Title": "Redwin"})["title"] == "Nains - Redwin"
+    assert pdf_info({"Series": "Nains", "Number": "2", "Title": "Nains"})["title"] == "Nains - T2 - Nains"

@@ -241,8 +241,10 @@ def pdf_comicinfo(path: str) -> tuple[Optional[bytes], int]:
 
 
 def _pdf_title(fields: dict) -> str:
-    number = fields.get("Number")
-    return " - ".join(part for part in (fields.get("Series"), f"T{number}" if number else "", fields.get("Title")) if part)
+    number, series, title = fields.get("Number"), fields.get("Series"), fields.get("Title")
+    if series and title and not number and series.casefold() == title.casefold():
+        title = ""  # a one-shot is named like its series: "Aâma", not "Aâma - Aâma"
+    return " - ".join(part for part in (series, f"T{number}" if number else "", title) if part)
 
 
 def pdf_info(fields: dict) -> dict:
