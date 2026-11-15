@@ -184,6 +184,18 @@ def test_update_puts_the_help_back_after_options_that_lost_it():
     assert annotate(new)[1] == []  # and once is enough
 
 
+def test_update_replaces_an_old_list_of_choices_but_never_the_users_own_words():
+    from bdnex.config_template import annotate
+
+    text = MINIMAL + "write:\n  pdf: skip   # convert | skip\n  cbr: skip  # convert | skip, my choice\n  workers: 2  # convert | skip\n"
+    new, done = annotate(text)
+    lines = {m.group(1): m.group(0) for m in re.finditer(r"(?m)^  (cbr|pdf|workers):.*$", new)}
+    assert "convert | tag | skip" in lines["pdf"] and lines["pdf"].count("#") == 1 and "write.pdf" in done
+    assert lines["cbr"].endswith("# convert | skip, my choice")  # a comment with other words is the user's
+    assert yaml.safe_load(new)["write"]["pdf"] == "skip"
+    assert annotate(new)[1] == []
+
+
 def test_the_help_is_not_added_to_a_value_that_contains_a_hash_or_to_an_empty_line():
     from bdnex.config_template import annotate
 

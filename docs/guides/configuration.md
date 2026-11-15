@@ -43,7 +43,7 @@ comments kept). Folders (`collection_path`, `library`), secrets (`api.token`, `a
 |---|---|
 | `bdnex config` | print the effective configuration (defaults + yours) |
 | `bdnex config --defaults` | print every option with its default |
-| `bdnex config --update` | add the options your file does not list yet, commented out, and restore the list of possible values after options that lost it |
+| `bdnex config --update` | add the options your file does not list yet, commented out, and restore the list of possible values after options that lost it or that have an old one (`# convert | skip`); a comment with your own words is never touched |
 | `bdnex config --path` | print the config file path |
 | `bdnex config --edit` | open the file in `$VISUAL` / `$EDITOR` |
 
