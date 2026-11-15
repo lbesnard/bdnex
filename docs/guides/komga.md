@@ -19,8 +19,21 @@ A user name and password (`komga.username`, `komga.password`) work too. The acco
 
 ## Look first: `bdnex komga show`
 
-`show` only reads. For each file of your library it prints the Komga book it was paired with and, field by field,
-what Komga holds and, after `->`, what the library would send when it is different. A locked field says `[locked]`.
+`show` only reads. For each file of your library it prints the Komga book it was paired with and a table, one row
+per field, with the two sides apart: what **Komga** holds now, what **bdnex** (the library) would send, and what `push`
+would do with it:
+
+```text
+| Field   | Komga             | bdnex          | push                       |
+|---------|-------------------|----------------|----------------------------|
+| title   | Le Strict Maximum | Strict maximum | push changes it            |
+| authors | -                 | -              | bdnex has none: left alone |
+| isbn    | -                 | 9782205073522  | push adds it               |
+| number  | 1 [locked]        | -              | bdnex has none: left alone |
+```
+
+`same` means both agree. `bdnex has none` means the library has no value (an album not fetched yet, perhaps), so
+`push` does not touch the field. A locked field says `[locked]`.
 
 ```bash
 bdnex komga show format:pdf             # what Komga has for your PDFs
