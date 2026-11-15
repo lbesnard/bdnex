@@ -3,9 +3,11 @@
 Pipeline: file names are matched in the background (``pipeline.match_ahead``) while the user
 reviews earlier files. Per file: skip if already imported -> corruption/duplicate-file checks ->
 candidates -> score -> (ask) -> link the file to the album as known from the sitemap alone.
-The album page of a linked file is requested at once in the background (``Bedetheque.page_queue``: threads
-download, only this thread touches the library), politely and slowly, and completes the album when the loop
-is done; an interrupted fetch loses nothing (``import --fetch`` resumes).
+The album page of a linked file, then its series page, is requested at once in the background
+(``Bedetheque.page_queue``: threads download, only this thread touches the library), politely and slowly. The
+album's record is built from the stored pages as soon as both are here (``_handle_arrivals``: no request, covers
+later); what is still on its way is waited for after the loop. An interrupted fetch loses nothing (``import --fetch``
+resumes).
 """
 
 from __future__ import annotations
@@ -139,6 +141,10 @@ class ImportSession:
         self.workers = resolve_workers(settings.import_.workers if workers is None else workers)
         self._pending: list[tuple[ImportResult, Candidate, str]] = []
         self._early = None  # pages downloaded in the background while files are still being matched (PageQueue)
+        self._by_page: dict[str, list] = {}  # album page address -> the pending items waiting for it
+        self._by_series: dict[str, list] = {}  # series page address -> the items whose album page is here, waiting for it
+        self._done: set[int] = set()  # results (by id) completed early, or undone: the fetch phase skips them
+        self._completed_early = 0
         self._journal: Optional[Journal] = None  # what the file being matched has recorded so far
         self._asked = False  # the user was asked about the file being matched
         self.series_mode = settings.import_.series if series is None else series  # ask | always | never
@@ -242,7 +248,7 @@ class ImportSession:
                 break  # this file stays undecided: it is asked about again next time
             except (NeedsTerminal, KeyboardInterrupt):
                 stream.close()  # stop the background matching before leaving
-                self._close_early()
+                self._finish_stored()
                 raise  # not this file's fault: the decisions made so far are saved, the run stops
             except Exception as err:  # one bad file must not stop the batch
                 logger.exception(f"{path} failed")
@@ -261,14 +267,14 @@ class ImportSession:
                     followed[position] = list(offered)
             report.results.append(result)
             self._attention(result)
-            if self._early is not None:
-                self._early.store()  # the pages that arrived meanwhile go in the library (this thread only)
+            if self._early is not None:  # the pages that arrived meanwhile go in the library (this thread only), and their albums are built
+                self._handle_arrivals(self._early.store())
             if self._asked:
                 history.append(position)
             position += 1
         stream.close()  # stops the background matching
         if report.aborted_at:
-            self._close_early()
+            self._finish_stored()
             self._pending = []  # the pages are fetched by the next run (the albums are "matched")
             self._remember_abort(report, paths)
             return report
@@ -305,7 +311,8 @@ class ImportSession:
         if number == 1 or number == total or number % max(25, total // 100) == 0:
             elapsed = time.monotonic() - started
             left = f"  about {human_duration(elapsed / number * (total - number))} left" if number >= 25 else ""
-            pages = f"  ·  {self._early.stored} page(s) fetched" if self._early is not None and self._early.stored else ""
+            pages = (f"  ·  {self._completed_early} album(s) complete"
+                     if self._early is not None and self._completed_early else "")
             self.progress(f"[{number}/{total}] {100 * number // total}%{left}{pages}")
 
     def _attention(self, result: "ImportResult") -> None:
@@ -502,7 +509,7 @@ class ImportSession:
             return ImportResult(path, PRETEND, album_id=album["id"], note=f"would fetch {album['url']}")
         result = ImportResult(path, PARTIAL, album_id=album["id"], note=f"matched as {album_label(album)}")
         self._pending.append((result, candidate, ""))
-        self._queue_page(candidate)
+        self._queue_page(self._pending[-1])
         if not defer_fetch:
             self._fetch_pending()
         return result
@@ -512,24 +519,133 @@ class ImportSession:
 
         The pages go through the same polite delay and ``parallel`` limit as before; only the waiting changes."""
         self._early = None
-        if "fetch" in self.steps and not self.pretend and hasattr(self.source, "page_queue"):
+        self._by_page, self._by_series, self._done, self._completed_early = {}, {}, set(), 0
+        if "fetch" in self.steps and not self.pretend and not self.recache and hasattr(self.source, "page_queue"):
             self._early = self.source.page_queue(getattr(self.source, "parallel", 1))
+
+    def _finish_stored(self) -> None:
+        """Leaving early: complete the albums whose pages are already here (no request), drop the rest."""
+        try:
+            if self._early is not None:
+                self._handle_arrivals(self._early.store())
+        except Exception as err:  # leaving must not fail
+            logger.debug(f"could not finish the stored pages: {err}")
+        self._close_early()
 
     def _close_early(self) -> None:
         if self._early is not None:
             self._early.close()
             self._early = None
 
-    def _queue_page(self, candidate: Candidate) -> None:
-        if self._early is not None:
-            self._early.submit(candidate.url)
-            self.detail(f"    page queued: {candidate.url.rsplit('/', 1)[-1]}")
+    def _queue_page(self, item) -> None:
+        """Ask for the album page of a pending item now; the album is completed when the page (and its series page) is here."""
+        if self._early is None:
+            return
+        url = item[1].url
+        self._by_page.setdefault(url, []).append(item)
+        self.detail(f"    page queued: {url.rsplit('/', 1)[-1]}")
+        state = self._early.submit(url)
+        if state == "cached":
+            self._page_ready(url)
+        elif state == "failed":
+            self._by_page.pop(url, None)  # asked for before and it did not come: the fetch phase tries again
+
+    def _handle_arrivals(self, events) -> None:
+        """What to do with the pages that arrived: a page of an album needs its series page, which is asked for in
+        turn; an album is completed (from the library's cache: no request) once both are here."""
+        for kind, url, error in events:
+            if kind == "album":
+                if error is None:
+                    self._page_ready(url)
+                else:
+                    self._by_page.pop(url, None)  # the fetch phase reports it
+            else:
+                items = self._by_series.pop(url, [])
+                if error is None:
+                    self._complete_early(items)
+
+    def _page_ready(self, url: str) -> None:
+        items = self._by_page.pop(url, [])
+        if not items:
+            return
+        try:
+            href = self.source.series_href_of(url)
+        except Exception as err:  # a page that does not parse: the fetch phase says so for its file
+            logger.debug(f"{url}: {err}")
+            return
+        state = "cached" if href is None else self._early.submit(href, "series")
+        if state == "cached":
+            self._complete_early(items)
+        elif state != "failed":
+            self._by_series.setdefault(href, []).extend(items)
+
+    def _complete_early(self, items) -> None:
+        journal, self._journal = self._journal, None  # what is recorded here belongs to no file being matched
+        try:
+            for item in items:
+                if id(item[0]) in self._done:
+                    continue
+                try:
+                    self._complete(item)
+                except Exception as err:  # the fetch phase reports it, with the file
+                    logger.debug(f"{item[1].url}: {err}")
+                    continue
+                self._done.add(id(item[0]))
+                self._completed_early += 1
+                self.detail(f"    album completed: {item[1].url.rsplit('/', 1)[-1]}")
+        finally:
+            self._journal = journal
+
+    def _complete(self, item) -> None:
+        """Build the album's record from its stored pages and say so in the file's result."""
+        result, candidate, damaged = item
+        album_id, partial, note = self._album_for(candidate)
+        result.album_id = album_id
+        result.outcome = PARTIAL if partial else TAGGED
+        result.note = "; ".join(n for n in (note, damaged) if n)
+        self._log(result.path, result.outcome, result.score, album_id)
+        if not partial and (self.cover_check or self.settings.cover.download):
+            self._covers.append(result)  # its cover is got later, so that nothing waits for it here
+
+    def _drain_early(self) -> None:
+        """The matching is over: wait for the pages still on their way, completing each album as its pages arrive."""
+        waiting = sum(1 for items in (*self._by_page.values(), *self._by_series.values()) for i in items
+                      if id(i[0]) not in self._done)
+        if self._early is None or not waiting:
+            return
+        self.phase("fetch", f"Waiting for {waiting} album page(s) still on their way "
+                            "(Ctrl-C stops and keeps what is complete; `bdnex import --fetch` resumes)")
+        bar = self.bar(waiting, "Album pages") if self.bar else None
+        shown = self._completed_early
+        try:
+            while self._early.outstanding():
+                self._handle_arrivals(self._early.wait(0.5))
+                names = getattr(self.source, "fetching_now", lambda: [])()
+                if bar and self._completed_early > shown:
+                    bar.update(" · ".join(names), step=self._completed_early - shown)
+                elif bar:
+                    bar.refresh(" · ".join(names))
+                shown = self._completed_early
+        finally:
+            if bar:
+                bar.finish()
 
     def _fetch_pending(self) -> None:
         """Read the album pages of the files linked so far: one polite request each."""
-        pending, self._pending = self._pending, []
         if "fetch" not in self.steps:
+            self._pending = []
             return
+        try:
+            self._drain_early()  # the albums whose pages were asked for during the matching complete as they arrive
+        except KeyboardInterrupt:
+            self._covers = []
+            self._pending = []
+            self._close_early()
+            self.progress("Interrupted: the albums already complete are saved; `bdnex import --fetch` reads the rest "
+                          "of the pages and downloads the covers that are missing.")
+            return
+        pending = [item for item in self._pending if id(item[0]) not in self._done]
+        self._pending = []
         if not pending:
             self._close_early()
             self._check_covers()
@@ -552,8 +668,9 @@ class ImportSession:
             return (" · ".join(titles) if titles else name) + f"  ({done} of {len(pending)} fetched)"
 
         if self._early is not None:
-            self._early.store()
-            self.progress(f"{self._early.stored} page(s) already fetched while matching; fetching {workers} at a time.")
+            if self._completed_early:
+                self.progress(f"{self._completed_early} album(s) were completed while matching; "
+                              f"{len(pending)} left (fetching {workers} at a time).")
             arriving = self._early.arrivals([candidate.url for _, candidate, _ in pending],
                                             tick=lambda: bar and bar.refresh(busy(current[0])))
         elif workers > 1 and hasattr(self.source, "prefetch") and not self.pretend:
@@ -792,7 +909,7 @@ class ImportSession:
             self._check_cover(result)  # the page was read just now: keep (and compare) the cover too
         if defer_fetch and partial and "fetch" in self.steps:
             self._pending.append((result, candidate, damaged))
-            self._queue_page(candidate)
+            self._queue_page(self._pending[-1])
         return result
 
     # -------------------------------------------------------------- helpers
@@ -818,6 +935,7 @@ class ImportSession:
     def _undo(self, result: ImportResult) -> None:
         """Take back what matching this file recorded (nothing for files that were only fetched or skipped over)."""
         self._pending = [item for item in self._pending if item[0] is not result]
+        self._done.add(id(result))  # a page still on its way must not complete the album for a file taken back
         self._undo_journal(result.journal, result.path)
 
     def _undo_journal(self, journal: Optional[Journal], path: str) -> None:

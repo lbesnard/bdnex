@@ -105,12 +105,16 @@ them. A file you **skipped** is remembered and not asked about again, until you 
 7. **Linked.** The file is linked to the album as the album list tells it, so a decision is saved
    the moment you make it.
 8. **Fetch.** The album page of a linked file is requested **at once, in the background**, while the next
-   files are still being matched and asked about (politely slow: every request waits `bedetheque.delay`, and no
-   more than `bedetheque.parallel` run at a time). When the last file is decided, the pages still on their way are
-   waited for, with a progress bar and the time left; the default progress line counts the pages already fetched.
-   If a page cannot be fetched the album stays matched, with the URL to save. Ctrl-C stops everything and loses
-   nothing: run `bdnex import --fetch` to continue. Nothing is requested with `-n`; `-vv` logs each page queued
-   and each request (`grep -i fetch`).
+   files are still being matched and asked about, and so is its series page (once per series). Every request
+   waits `bedetheque.delay`, and no more than `bedetheque.parallel` run at a time. As soon as an album's pages are
+   here, **the album's record is built in the library** (authors, summary, date, series): `bdnex ls complete:true -c`
+   grows while the import runs, and the progress line says how many albums are complete. Nothing waits for the
+   network: the building reads the stored pages. The covers are downloaded at the end. When the last file is
+   decided, the pages still on their way are waited for, with a progress bar. If a page cannot be fetched the
+   album stays matched, with the URL to save. Ctrl-C stops everything: the albums already complete (and those whose
+   pages are stored) are kept, and `bdnex import --fetch` continues with the rest. Nothing is requested with `-n`;
+   `-v` says each page queued and each album completed, `-vv` logs each request (`grep -i fetch`). Only the
+   library changes: with `--database-only` no comic file is touched either way.
 
 ### Folders with several files
 
