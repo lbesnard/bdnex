@@ -80,6 +80,18 @@ def _embedded(archive, names) -> Optional[dict]:
         return None
 
 
+def _pdf_embedded(doc) -> Optional[dict]:
+    """The simple fields of the ``ComicInfo.xml`` attached to a PDF (``bdnex write`` attaches it): ``None`` if none."""
+    from bdnex.organizer.comicinfo import parse_xml
+
+    try:
+        name = next((n for n in doc.embfile_names() if os.path.basename(n).lower() == "comicinfo.xml"), None)
+        return parse_xml(doc.embfile_get(name)) or None if name else None
+    except Exception as err:  # a broken attachment must not make the PDF unreadable
+        logger.debug(f"the ComicInfo.xml attached to the PDF could not be read: {err}")
+        return None
+
+
 def inspect_file(path) -> FileInfo:
     """Return format, size, page count and integrity of a comic file.
 
@@ -116,6 +128,8 @@ def inspect_file(path) -> FileInfo:
 
             with pymupdf.open(path) as doc:
                 page_count = doc.page_count
+                embedded = _pdf_embedded(doc)
+                has_metadata = embedded is not None
         else:
             fmt = "unknown"
             corrupted, readable, problem = True, False, "not a CBZ, CBR or PDF file"
@@ -139,6 +153,11 @@ def read_embedded(path) -> Optional[dict]:
         if fmt == "cbr":
             with rarfile.RarFile(path) as archive:
                 return _embedded(archive, archive.namelist())
+        if fmt == "pdf":
+            import pymupdf
+
+            with pymupdf.open(path) as doc:
+                return _pdf_embedded(doc)
     except Exception as err:
         logger.debug(f"{path}: no readable ComicInfo.xml ({err})")
     return None
