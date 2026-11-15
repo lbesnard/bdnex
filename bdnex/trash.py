@@ -45,6 +45,33 @@ def move_to_trash(library, settings, path: str, reason: str, row: Optional[dict]
     return entry
 
 
+def keep_copy(library, settings, path: str, reason: str, row: Optional[dict] = None) -> int:
+    """Copy a file into the trash and record it, leaving the file where it is (it is about to be replaced in place).
+    Returns the trash id; :func:`discard` takes the copy back out when the replacement did not happen."""
+    source = Path(os.path.abspath(path))
+    row = row if row is not None else library.get_file(str(source))
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    destination = unique(settings.trash_path / stamp / source.name)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(str(source), str(destination))
+    return library.add_trash(str(source), str(destination), reason,
+                             album_id=row["album_id"] if row else None, md5=row["md5"] if row else None,
+                             size=row["size"] if row else destination.stat().st_size,
+                             fmt=row["format"] if row else destination.suffix.lstrip(".").lower())
+
+
+def discard(library, entry_id: int) -> None:
+    """Remove a copy made by :func:`keep_copy` (and its record)."""
+    entry = library.get_trash(entry_id)
+    if entry is None:
+        return
+    trashed = Path(entry["trash_path"])
+    if trashed.exists():
+        trashed.unlink()
+        _prune(trashed.parent)
+    library.delete_trash(entry_id)
+
+
 def restore(library, entry_id: int) -> Optional[str]:
     """Put a file back where it came from (or beside it with a number if that name is taken) and
     register it again. Returns the new path, or ``None`` when the trashed file no longer exists."""

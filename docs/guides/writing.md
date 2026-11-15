@@ -128,7 +128,10 @@ file that opens but has a page failing its checksum is still **matched and recor
 that. The repair recovers a page whose stored checksum is wrong while its data is complete (the right
 size, and a picture that decodes), then rebuilds the archive with correct checksums. It changes no
 page and keeps the file's `ComicInfo.xml`, and the new archive is verified before it replaces the
-old one.
+old one: every page of the damaged archive must be in it, with the same bytes, or nothing is replaced. A CBZ
+repaired in place **keeps the damaged original in the trash** first (`write.use_trash`, the default;
+`bdnex trash` lists it and `--restore ID` puts it back beside the repaired file); a CBR becomes a CBZ and its
+original follows `write.delete_original`. With `use_trash: false` the damaged original is not kept.
 
 If a page cannot be recovered (its data is truncated or is not an image), nothing is changed and
 bdnex asks what to do: **leave** the file as it is, or **move it anyway**, as it is and without
