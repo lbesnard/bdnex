@@ -77,7 +77,7 @@ match:
 import:
   mode: in_place                         # in_place | copy | move
   auto: false                            # false: you check every file; true: strong matches are unasked
-  workers: 0                             # background matching processes; 0 = CPU cores - 1, 1 = none
+  workers: 0                             # processes that match names and read each file ahead (check + checksum, once); 0 = CPU cores - 1, 1 = none
   lookahead: 100                         # files matched ahead of the one you are reviewing
   outside: ask                           # files from outside `collection_path`: ask | move | copy | leave
   sources: []                            # folders new files come from, each copied or moved in: see below

@@ -122,8 +122,8 @@ def page_requests(web):
 def test_pages_are_fetched_after_the_files_are_linked(web, make_cbz):
     env, path = prepared(web, make_settings(), None, make_cbz)
     order = []
-    original_add_file = env.lib.add_file
-    env.lib.add_file = lambda *a, **k: (order.append("link"), original_add_file(*a, **k))[1]
+    original_add_file = env.lib.add_analysed
+    env.lib.add_analysed = lambda *a, **k: (order.append("link"), original_add_file(*a, **k))[1]
     original = env.source.album_info
     env.source.album_info = lambda *a, **k: (order.append("page"), original(*a, **k))[1]
     report = env.session.run([path])
@@ -160,3 +160,39 @@ def test_pretend_never_asks(web, make_cbz):
     env, path = prepared(web, make_settings(**{"import": {"auto": False}}), FakePrompter("first"), make_cbz, pretend=True)
     result = env.session.run([path]).results[0]
     assert env.session.prompter.asked == [] and result.outcome == "pretend"
+
+
+# ------------------------------------------------------------ each file is read once, ahead of the loop
+@pytest.mark.parametrize("workers", [1, 3])
+def test_the_workers_do_a_side_job_per_file_and_keep_its_failures(tmp_path, workers):
+    def read(path):
+        if "boom" in path:
+            raise OSError("unreadable")
+        return ("info", path)
+
+    paths = [f"/c/f{i}.cbz" for i in range(9)] + ["/c/boom.cbz"]
+    side = {}
+    out = list(match_ahead(Recorder(tmp_path / "log"), paths, workers=workers, lookahead=4, min_parallel=0,
+                           side=read, side_results=side))
+    assert [p for p, _ in out] == paths
+    assert side["/c/f3.cbz"] == ("info", "/c/f3.cbz") and isinstance(side["/c/boom.cbz"], OSError)
+
+
+def test_an_import_reads_each_file_once(web, make_cbz, monkeypatch):
+    """It used to open every archive four times (the check, the hash, then both again to register it)."""
+    import bdnex.library.database as database
+    import bdnex.importer.session as session_module
+
+    calls = {"inspect": [], "md5": []}
+    real_inspect, real_md5 = database.inspect_file, database.file_md5
+    monkeypatch.setattr(database, "inspect_file", lambda path: (calls["inspect"].append(path), real_inspect(path))[1])
+    monkeypatch.setattr(database, "file_md5", lambda path: (calls["md5"].append(path), real_md5(path))[1])
+    monkeypatch.setattr(session_module, "file_md5", lambda path: (calls["md5"].append(path), real_md5(path))[1])
+    env, first = prepared(web, make_settings(), None, make_cbz, workers=1)
+    second = make_cbz("Nains - T02 - La Forge.cbz")
+    report = env.session.run([first, second])
+    assert [r.outcome for r in report.results].count(TAGGED) >= 1
+    for path in (first, second):
+        assert calls["inspect"].count(path) == 1 and calls["md5"].count(path) == 1, (path, calls)
+    row = env.lib.get_file(first)
+    assert row["md5"] and row["page_count"]  # and the file is registered as before

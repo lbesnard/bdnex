@@ -315,7 +315,7 @@ politeness delay never stops you.
 ```yaml
 import:
   auto: false       # true: apply matches >= match.strong_threshold without asking
-  workers: 0        # processes matching in the background; 0 = CPU cores - 1, 1 = none
+  workers: 0        # processes that match names and read each file ahead (check + checksum, once); 0 = CPU cores - 1, 1 = none
   lookahead: 100    # files matched ahead of the one you are reviewing
 ```
 
@@ -430,7 +430,7 @@ reported as you typed it.
 | `--unattended` | ask nothing: confident matches are applied, the others stay skipped for you (`--skipped` asks about them later); no question about duplicates, name clashes or conflicts. What the folder watch of `bdnex serve` runs |
 | `--no-move` | leave files from outside your library folder where they are (`import.outside`) |
 | `--cover-check` / `--no-cover-check` | compare each cover with the album's (overrides `cover.check`) |
-| `--workers N` | background matching processes (overrides `import.workers`) |
+| `--workers N` | processes that match names and read each file ahead (overrides `import.workers`) |
 | `-v` | list the `already` files too, and more detail |
 
 The former names still work and say what replaced them: `--no-fetch` is `--match`,

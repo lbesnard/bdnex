@@ -14,13 +14,14 @@ from __future__ import annotations
 import collections
 import multiprocessing
 import os
-from typing import Iterable, Iterator, Union
+from typing import Callable, Iterable, Iterator, Optional, Union
 
 from bdnex.importer.matching import Match, find_matches
 
 MIN_PARALLEL = 8  # fewer files than this: a pool costs more than it saves
 
 _SOURCE = None  # set before the workers are forked; they read it from their copy of the process
+_SIDE: Optional[Callable] = None  # idem: what else a worker does with each file (see ``match_ahead(side=)``)
 
 
 def resolve_workers(configured: int) -> int:
@@ -28,8 +29,22 @@ def resolve_workers(configured: int) -> int:
     return configured if configured > 0 else max(1, (os.cpu_count() or 2) - 1)
 
 
-def _match_in_worker(path: str) -> list[Match]:
-    return find_matches(_SOURCE, path)
+def _side_result(path: str):
+    """The result of the side job for ``path``, or the exception it raised (the caller then does it itself)."""
+    try:
+        return _SIDE(path)
+    except Exception as err:
+        return err
+
+
+def _match_in_worker(path: str):
+    if not _SIDE:
+        return find_matches(_SOURCE, path)
+    try:
+        matches = find_matches(_SOURCE, path)
+    except Exception as err:  # a file that can not be matched is still read ahead: the caller reports the failure
+        matches = err
+    return matches, _side_result(path)
 
 
 def can_fork() -> bool:
@@ -37,22 +52,36 @@ def can_fork() -> bool:
 
 
 def match_ahead(source, paths: Iterable[str], workers: int = 1, lookahead: int = 100,
-                min_parallel: int = MIN_PARALLEL) -> Iterator[tuple[str, Union[list[Match], Exception]]]:
-    """Yield ``(path, matches)`` in the order of ``paths``; a failure is yielded as the exception."""
-    global _SOURCE
+                min_parallel: int = MIN_PARALLEL, side: Optional[Callable] = None,
+                side_results: Optional[dict] = None) -> Iterator[tuple[str, Union[list[Match], Exception]]]:
+    """Yield ``(path, matches)`` in the order of ``paths``; a failure is yielded as the exception.
+
+    ``side`` is a second job for each file, done by the same worker right after matching (reading and hashing the file,
+    which is mostly waiting on the disk): its result (or its exception) is put in ``side_results[path]`` before the
+    file is yielded. It must not touch a database.
+    """
+    global _SOURCE, _SIDE
     paths = list(paths)
+    if side is not None and side_results is None:
+        side_results = {}
     if workers <= 1 or len(paths) < min_parallel or not can_fork():
         for path in paths:
             try:
-                yield path, find_matches(source, path)
+                found = find_matches(source, path)
             except Exception as err:
-                yield path, err
+                found = err
+            if side is not None:
+                try:
+                    side_results[path] = side(path)
+                except Exception as err:
+                    side_results[path] = err
+            yield path, found
         return
 
     warm = getattr(source, "warm", None)
     if warm:
         warm()
-    _SOURCE = source
+    _SOURCE, _SIDE = source, side
     # a Pool forks all its workers right here, before any helper thread exists (forking later,
     # from a multi-threaded process, can deadlock)
     pool = multiprocessing.get_context("fork").Pool(processes=workers)
@@ -72,9 +101,12 @@ def match_ahead(source, paths: Iterable[str], workers: int = 1, lookahead: int =
             path, pending = window.popleft()
             top_up()  # refill before handing over: the workers go on while the caller reviews
             try:
-                yield path, pending.get()
+                found = pending.get()
+                if side is not None:
+                    found, side_results[path] = found
+                yield path, found
             except Exception as err:
                 yield path, err
     finally:
         pool.terminate()
-        _SOURCE = None
+        _SOURCE = _SIDE = None

@@ -24,8 +24,9 @@ from bdnex.importer.matching import Match, Recommendation, find_matches, recomme
 from bdnex.importer.pipeline import match_ahead, resolve_workers
 from bdnex.importer.source import Candidate, MetadataSource
 from bdnex.library import Library
+from bdnex.library.database import analyse_file
 from bdnex.library.hashing import file_md5
-from bdnex.library.scan import inspect_file, iter_comic_files
+from bdnex.library.scan import iter_comic_files
 from bdnex.versions import compare, facts_of
 
 logger = logging.getLogger(__name__)
@@ -124,6 +125,7 @@ class ImportSession:
         self.force = force
         self.steps = frozenset(steps)
         self.progress = progress or (lambda message: None)
+        self._analysed: dict = {}  # file -> (FileInfo, md5) read ahead by the matching workers
         self.files_untouched = files_untouched  # `--database-only`: no comic file may be moved, replaced or deleted
         self.retry_skipped = retry_skipped  # ask again about files skipped earlier (`import --skipped`)
         self.phase = phase or (lambda step, title: None)  # ("match" | "fetch", what is about to happen)
@@ -169,8 +171,9 @@ class ImportSession:
         files.sort(key=lambda path: (os.path.dirname(path), path))  # the files of a folder together
         kinds = {path: self._classify(path) for path in files}
         todo = [path for path in files if kinds[path][0] == "match"]
-        stream = match_ahead(self.source, todo, workers=self.workers,
-                             lookahead=self.settings.import_.lookahead)
+        self._analysed = {}  # file -> (FileInfo, md5) read by the matching workers, or the exception they met
+        stream = match_ahead(self.source, todo, workers=self.workers, lookahead=self.settings.import_.lookahead,
+                             side=analyse_file, side_results=self._analysed)
         ready: dict[str, object] = {}  # matches read from the stream, waiting for their file
         chosen: dict[str, tuple] = {}  # file -> (album, score, why) decided for a whole folder
         groups: dict[str, list[str]] = {}
@@ -667,13 +670,13 @@ class ImportSession:
 
     def _import_matched(self, path: str, matches: Optional[list[Match]], defer_fetch: bool,
                         chosen: Optional[tuple]) -> ImportResult:
-        info = inspect_file(path)
+        info, md5 = self._analysis(path)
         if not info.readable:
             self._log(path, FAILED)
             return ImportResult(path, FAILED, note=info.problem or "unreadable archive")
         damaged = f"archive damaged ({info.problem}): `bdnex repair` can try to fix it" if info.corrupted else ""
 
-        dup = self._duplicate_file(path)
+        dup = self._duplicate_file(path, md5)
         if dup is not None:
             return dup
 
@@ -707,7 +710,7 @@ class ImportSession:
             self._trash_others(others, path)
             note = "; ".join(n for n in (note, f"{len(others)} replaced file(s) are in the trash (`bdnex trash`)") if n)
         self._journal.new_file = self.library.get_file(path) is None
-        self.library.add_file(path, album_id)
+        self.library.add_analysed(info, md5, album_id)
         self._journal.linked = True
         if album_action == "keep_both" and any(
                 f["path"] != os.path.abspath(path) and not f["spare"] for f in self.library.files_for_album(album_id)):
@@ -776,9 +779,17 @@ class ImportSession:
             else:
                 self.library.remove_file(other)  # already gone from the disk: only the record is left
 
-    def _duplicate_file(self, path) -> Optional[ImportResult]:
+    def _analysis(self, path: str):
+        """``(FileInfo, md5)`` of a file. The matching workers read it ahead (the whole file is read once, in parallel);
+        when they did not (a single file, a failure), it is read here."""
+        found = self._analysed.get(path)  # kept: going Back to a file must not read it again
+        if found is None or isinstance(found, Exception):
+            return analyse_file(path)
+        return found
+
+    def _duplicate_file(self, path, md5: Optional[str] = None) -> Optional[ImportResult]:
         """Same bytes already registered under another path."""
-        same = [f["path"] for f in self.library.files_with_md5(file_md5(path))
+        same = [f["path"] for f in self.library.files_with_md5(md5 or file_md5(path))
                 if f["path"] != os.path.abspath(path)]
         if not same:
             return None
