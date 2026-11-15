@@ -110,7 +110,7 @@ def test_the_plan_sends_one_patch_per_changed_book_and_series():
     session = FakeSession([], series_meta={"title": "Nains"})
     client = komga.Client(Komga(url="http://k", api_key="K", username=None, password=None, lock=True, timeout=5),
                           session)
-    args = type("A", (), {"only": None})()
+    args = type("A", (), {"only": None, "wanted": (None, None)})()
     plan = komga_cmd._plan(client, [(file("/c/a.pdf", 1), book("b1", "/k/a.pdf", 1), "name and size")],
                            {1: ALBUM}, args, True)
     assert [s["kind"] for s in plan] == ["book", "series"]
@@ -226,6 +226,23 @@ def test_books_use_the_list_call_and_fall_back_to_the_deprecated_one():
     session.no_list = True
     assert [b["id"] for b in komga.Client(config, session).books()] == ["b1"]
     assert [c[:2] for c in session.calls] == [("POST", "api/v1/books/list"), ("GET", "api/v1/books")]
+
+
+def test_fields_pushes_only_the_chosen_ones(cmd_env):
+    _, _, session, _ = send(["push", "-y", "--fields", "title,number"], cmd_env)
+    patches = {p: body for m, p, body in session.calls if m == "PATCH"}
+    assert list(patches) == ["api/v1/books/b1/metadata"]  # no series field chosen: the series is left alone
+    assert "title" in patches["api/v1/books/b1/metadata"] and "isbn" not in patches["api/v1/books/b1/metadata"]
+    _, _, session, _ = send(["push", "-y", "--fields", "publisher,genres"], cmd_env)
+    patches = {p: body for m, p, body in session.calls if m == "PATCH"}
+    assert list(patches) == ["api/v1/series/s1/metadata"] and "title" not in patches["api/v1/series/s1/metadata"]
+
+
+def test_an_unknown_field_is_refused(cmd_env, capsys):
+    import pytest
+    with pytest.raises(SystemExit):
+        send(["push", "--fields", "colour"], cmd_env)
+    assert "unknown field" in capsys.readouterr().err
 
 
 def test_options_may_come_before_or_after_the_query(cmd_env):

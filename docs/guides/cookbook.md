@@ -339,6 +339,12 @@ bdnex serve                           # http://127.0.0.1:8765, read-only
 eval "$(bdnex completion zsh)"        # in your shell startup file (bash and fish too)
 ```
 
+## …get my PDFs' titles and summaries into Komga?
+
+Komga does not read the tags inside a PDF. `bdnex komga show format:pdf` compares what Komga holds with the library,
+`bdnex komga push format:pdf -n` previews, and `bdnex komga push format:pdf --fields summary,authors,releaseDate,isbn`
+fills the missing data and leaves the titles alone. Step by step: [Komga](komga.md#how-to-fill-komga-from-the-library-step-by-step).
+
 ## …back up my library?
 
 Copy the database file (`bdnex config --defaults | grep library`, by default

@@ -26,6 +26,9 @@ def run(argv: list[str], out=sys.stdout, prompter=None, session=None) -> int:
                              "series:nains  year:2010..2015")
     parser.add_argument("--only", choices=("books", "series"),
                         help="push only the books, or only the series (default: both)")
+    parser.add_argument("--fields", metavar="LIST",
+                        help="push only these fields, comma separated (the others are left as Komga has them): "
+                             + ", ".join(FIELD_NAMES))
     parser.add_argument("--no-lock", action="store_true",
                         help="push: do not lock the fields sent (a Komga rescan may then undo them); default: komga.lock")
     parser.add_argument("--json", action="store_true", help="show: print what Komga holds as JSON")
@@ -36,6 +39,10 @@ def run(argv: list[str], out=sys.stdout, prompter=None, session=None) -> int:
     add_verbosity(parser)
     args = parser.parse_intermixed_args(argv)  # `push -y series:x` and `push series:x -y`, on every Python
     setup_logging(args.verbose)
+    try:
+        args.wanted = _wanted(args.fields)
+    except ValueError as err:
+        parser.error(str(err))
     settings = context.settings()
     if settings is None:
         return 1
@@ -157,6 +164,29 @@ def _value(value) -> str:
     return _short(value)
 
 
+BOOK_FIELD_KEYS = {"title": ("title",), "number": ("number", "numberSort"), "releaseDate": ("releaseDate",),
+                   "authors": ("authors",), "summary": ("summary",), "isbn": ("isbn",), "links": ("links",)}
+SERIES_FIELD_KEYS = {"series-title": "title", "publisher": "publisher", "language": "language", "genres": "genres"}
+FIELD_NAMES = [*BOOK_FIELD_KEYS, *SERIES_FIELD_KEYS]
+
+
+def _wanted(text):
+    """``--fields`` as ``(book keys, series keys)``; ``None`` for a side means everything. Unknown names are an error."""
+    if not text:
+        return None, None
+    names = [n.strip() for n in text.split(",") if n.strip()]
+    bad = [n for n in names if n not in FIELD_NAMES]
+    if bad:
+        raise ValueError(f"unknown field(s) {', '.join(bad)}: choose among {', '.join(FIELD_NAMES)}")
+    books = {k for n in names if n in BOOK_FIELD_KEYS for k in BOOK_FIELD_KEYS[n]}
+    series = {SERIES_FIELD_KEYS[n] for n in names if n in SERIES_FIELD_KEYS}
+    return books, series
+
+
+def _only(fields, keep):
+    return fields if keep is None else {k: v for k, v in fields.items() if k in keep}
+
+
 def _plan(client, pairs, albums, args, lock) -> list[dict]:
     """One step per book or series that differs: what to send, and what changes."""
     plan = []
@@ -164,17 +194,17 @@ def _plan(client, pairs, albums, args, lock) -> list[dict]:
     for file, book, how in pairs:
         album = albums[file["id"]]
         by_series.setdefault(book["seriesId"], []).append(album)
-        if args.only == "series":
+        if args.only == "series" or (args.wanted[0] is not None and not args.wanted[0]):
             continue
-        payload, differing = komga.changes(komga.book_fields(album), book.get("metadata") or {},
+        payload, differing = komga.changes(_only(komga.book_fields(album), args.wanted[0]), book.get("metadata") or {},
                                            komga.BOOK_LOCKS, lock)
         plan.append({"kind": "book", "id": book["id"], "label": _label(album), "how": how, "payload": payload,
                      "differing": differing, "current": book.get("metadata") or {}})
-    if args.only != "books":
+    if args.only != "books" and not (args.wanted[1] is not None and not args.wanted[1]):
         for series_id, group in by_series.items():
             current = client.series(series_id).get("metadata") or {}
             fields = komga.series_fields(group)
-            payload, differing = komga.changes(fields, current, komga.SERIES_LOCKS, lock)
+            payload, differing = komga.changes(_only(fields, args.wanted[1]), current, komga.SERIES_LOCKS, lock)
             plan.append({"kind": "series", "id": series_id, "label": fields["title"], "how": "", "payload": payload,
                          "differing": differing, "current": current})
     return plan
