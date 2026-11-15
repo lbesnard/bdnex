@@ -34,12 +34,13 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     with Library.for_settings(settings) as library:
         counts = library.reset(apply=False)
         cache = library.cache_summary()
-        print("Would be deleted:" if args.pretend else "About to delete:", file=out)
+        print("Would be forgotten (your collection's records in the library):" if args.pretend
+              else "About to forget (your collection's records in the library):", file=out)
         for key, label in LABELS:
             print(f"  {counts[key]:>7} {label}", file=out)
         kept = ", ".join(f"{n} {kind}" for kind, (n, _) in sorted(cache.items())) or "nothing"
         size = human_size(sum(size for _, size in cache.values()))
-        print(f"Kept: the downloaded data ({kept}; {size}) and your comic files.", file=out)
+        print(f"Kept, not touched: the downloaded pages and covers ({kept}; {size}) and your comic files.", file=out)
         if args.pretend:
             return 0
         if not any(counts.values()):
@@ -49,7 +50,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
             if prompter is None:
                 from bdnex.ui.prompts import new_prompter
                 prompter = new_prompter()
-            if not prompter.confirm("Delete all of this from the library?"):
+            if not prompter.confirm("Forget these records? The downloaded pages and covers and your comic files stay."):
                 print("Nothing changed.", file=out)
                 return 1
         if not args.no_backup:

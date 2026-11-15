@@ -109,8 +109,8 @@ def count(db, table="albums"):
 
 def test_pretend_lists_what_goes_and_what_stays(cmd_env):
     code, text, prompter = reset(["-n"])
-    assert code == 0 and "Would be deleted" in text and "1 albums" in text.replace("      ", " ").replace("  ", " ")
-    assert "Kept: the downloaded data (1 album, 1 cover, 1 sitemap" in text and not prompter.asked
+    assert code == 0 and "Would be forgotten" in text and "1 albums" in text.replace("      ", " ").replace("  ", " ")
+    assert "Kept, not touched: the downloaded pages and covers (1 album, 1 cover, 1 sitemap" in text and not prompter.asked
     assert count(cmd_env) == 1
 
 
