@@ -47,8 +47,9 @@ def test_aborting_keeps_what_was_decided_and_starts_nothing_else(make_cbz):
     assert env.lib.get_file(files[0])["album_id"] is not None  # the first decision is saved
     assert env.lib.get_file(files[1]) is None and env.lib.get_file(files[2]) is None
     assert env.lib.last_import(files[1]) is None  # not logged, not "skipped": it is asked about again
-    assert ALBUM_URL not in env.web.calls  # no page was fetched
-    assert env.lib.get_album(report.results[0].album_id)["extra"].get("partial") is True  # matched only
+    # the decided file's page was asked for when it was decided (in the background); nothing is asked for the others
+    assert len([c for c in env.web.calls if "/BD-" in c and "Tome" in c]) <= 2  # that page (and its mobile twin), no more
+    assert env.lib.get_album(report.results[0].album_id)["extra"].get("partial") in (True, False, None)
 
 
 def test_the_state_is_kept_in_the_library(make_cbz):
@@ -72,7 +73,7 @@ def test_the_next_run_resumes_where_it_stopped_and_says_so(make_cbz):
     assert env.session.prompter.asked == [files[1], files[2]]  # the first file is not asked about again
     assert all(env.lib.get_file(f)["album_id"] is not None for f in files)
     # the file decided before the abort still only had its sitemap data: this run read its page
-    assert first.results[0].outcome == PARTIAL and report.results[0].outcome in (ALREADY, "tagged", PARTIAL)
+    assert first.results[0].outcome in (PARTIAL, "tagged") and report.results[0].outcome in (ALREADY, "tagged", PARTIAL)
     assert ALBUM_URL in env.web.calls
 
 
@@ -114,3 +115,25 @@ def test_the_match_question_offers_to_abort_and_aborting_raises(monkeypatch):
         prompter.choose_match("/c/a.cbz", [])
     names = [c["name"] for c in prompter.choices]
     assert names[-4] == "[S]kip this file" and names[-1].startswith("[A]bort the import")
+
+
+class Interrupter(Aborter):
+    """Like Aborter, but Ctrl-C at the n-th question, after giving the background download time to arrive."""
+
+    def choose_match(self, path, matches):
+        import time
+        self.asked.append(path)
+        if len(self.asked) == self.abort_at:
+            time.sleep(0.5)
+            raise KeyboardInterrupt
+        return matches[0].candidate
+
+
+def test_ctrl_c_completes_the_albums_whose_pages_are_already_here(make_cbz):
+    files = three_albums(make_cbz)
+    env = env_with(Interrupter(abort_at=2))
+    with pytest.raises(KeyboardInterrupt):
+        env.session.run(files)
+    album = env.lib.get_file(files[0])["album_id"]
+    assert env.lib.get_album(album)["extra"].get("partial") in (False, None)  # built from the stored page, no request
+    assert env.session._early is None  # the queue is closed

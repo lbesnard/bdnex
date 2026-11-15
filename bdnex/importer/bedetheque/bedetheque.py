@@ -69,11 +69,11 @@ MAX_POSTINGS = 4000  # a word in more albums than this ('integrale') is no use t
 
 
 class PageQueue:
-    """Album pages downloaded in worker threads as soon as their address is known, while matching goes on.
+    """Album and series pages downloaded in worker threads as soon as their address is known, while matching goes on.
 
     Only the downloading is threaded (each request waits the polite ``delay`` first, in its own thread). The library
-    is touched by the calling thread alone: :meth:`store` puts the finished pages in the cache, :meth:`arrivals` waits
-    for the rest, in the order asked.
+    is touched by the calling thread alone: :meth:`store` puts the finished pages in the cache and says which
+    arrived, :meth:`wait` waits for some, :meth:`arrivals` waits for album pages in a given order.
     """
 
     def __init__(self, source: "Bedetheque", workers: int):
@@ -81,50 +81,73 @@ class PageQueue:
 
         self.source = source
         self._executor = ThreadPoolExecutor(max_workers=workers, thread_name_prefix="bdnex-page")
-        self._futures: dict = {}  # address -> Future of the bytes
-        self._failed: dict[str, Exception] = {}  # address -> why its page was not fetched
+        self._futures: dict = {}  # (kind, address) -> Future of the bytes
+        self._failed: dict = {}  # (kind, address) -> why its page was not fetched
         self.stored = 0  # pages put in the cache by this queue
         source.active = source.downloaded = 0
         source._fetching = []
 
-    def submit(self, url: str) -> None:
-        """Start downloading a page unless it is in the library or already asked for."""
-        if url in self._futures or url in self._failed or self.source.library.cache_get(SOURCE, "album", url) is not None:
-            return
+    def submit(self, url: str, kind: str = "album") -> str:
+        """Start downloading a page. Says what happened: ``new`` (started), ``queued`` (already asked for, not here yet),
+        ``cached`` (the library has it) or ``failed`` (it was asked for and did not come)."""
+        key = (kind, url)
+        if key in self._futures:
+            return "queued"
+        if key in self._failed:
+            return "failed"
+        if self.source.library.cache_get(SOURCE, kind, url) is not None:
+            return "cached"
         logger.debug(f"page queued: {url}")
-        self._futures[url] = self._executor.submit(self.source._tracked_download, url)
+        self._futures[key] = self._executor.submit(self.source._tracked_download, url, kind)
+        return "new"
 
-    def store(self) -> int:
-        """Save the pages that have arrived (call it often: it keeps the downloaded bytes out of memory)."""
-        count = 0
-        for url, future in list(self._futures.items()):
+    def outstanding(self) -> int:
+        return len(self._futures)
+
+    def store(self) -> list[tuple[str, str, Optional[Exception]]]:
+        """Save the pages that have arrived (call it often: it keeps the downloaded bytes out of memory).
+        Returns ``(kind, address, error or None)`` for each one that came or failed."""
+        events = []
+        for key, future in list(self._futures.items()):
             if future.done():
-                self._settle(url, future)
-                count += 1
-        return count
+                events.append((*key, self._settle(key, future)))
+        return events
 
-    def _settle(self, url: str, future) -> None:
-        del self._futures[url]
+    def wait(self, timeout: float = 0.5) -> list[tuple[str, str, Optional[Exception]]]:
+        """Wait until a page arrives (or ``timeout`` seconds), then :meth:`store`."""
+        from concurrent.futures import FIRST_COMPLETED, wait
+
+        if self._futures:
+            wait(list(self._futures.values()), timeout=timeout, return_when=FIRST_COMPLETED)
+        return self.store()
+
+    def _settle(self, key, future) -> Optional[Exception]:
+        del self._futures[key]
         try:
-            self.source.library.cache_put(SOURCE, "album", url, future.result())
+            self.source.library.cache_put(SOURCE, key[0], key[1], future.result())
             self.stored += 1
+            return None
         except Exception as err:  # this page failed; the others go on
-            self._failed[url] = err
+            self._failed[key] = err
+            return err
 
     def arrivals(self, urls: list[str], tick=None):
-        """Yield ``(url, error or None)`` in the order of ``urls``, waiting for each page (and asking for those not queued)."""
+        """Yield ``(url, error or None)`` in the order of ``urls``, waiting for each album page (asking again for one
+        that failed or was never queued)."""
         from concurrent.futures import wait
 
         for url in urls:
+            self._failed.pop(("album", url), None)
             self.submit(url)
-            future = self._futures.get(url)
-            while future is not None and url in self._futures:
+            key = ("album", url)
+            future = self._futures.get(key)
+            while future is not None and key in self._futures:
                 finished, _ = wait([future], timeout=0.5)  # not future.result(timeout): a fetcher may raise TimeoutError itself
                 if finished:
-                    self._settle(url, future)
+                    self._settle(key, future)
                 elif tick:
                     tick()
-            yield url, self._failed.pop(url, None)
+            yield url, self._failed.pop(key, None)
 
     def close(self) -> None:
         """Stop: what is not started is dropped, what is running ends by itself."""
@@ -189,12 +212,12 @@ class Bedetheque:
                                "Nothing was stored.")
         return content
 
-    def _tracked_download(self, url: str) -> bytes:
+    def _tracked_download(self, url: str, kind: str = "album") -> bytes:
         with self._stats:
             self.active += 1
             self._fetching.append(url)
         try:
-            return self._download("album", url)
+            return self._download(kind, url)
         finally:
             with self._stats:
                 self.active -= 1
@@ -206,6 +229,15 @@ class Bedetheque:
         with self._stats:
             urls = list(self._fetching)
         return [re.sub(r"-\d+$", "", re.sub(r"\.html$", "", re.sub(r"^BD-", "", url.rsplit("/", 1)[-1]))) for url in urls]
+
+    def series_href_of(self, url: str) -> Optional[str]:
+        """The series page an album page (already in the library) needs to be complete, or ``None``: a one-shot, or
+        no page stored. Reads the stored page; no request."""
+        cached = self.library.cache_get(SOURCE, "album", url)
+        if cached is None:
+            return None
+        fields, href = parser.parse_album_page(cached.decode("utf-8", errors="replace") if isinstance(cached, bytes) else cached, url)
+        return href if href and fields.get("Tome") is not None else None
 
     def page_queue(self, workers: Optional[int] = None) -> "PageQueue":
         """A queue that downloads album pages in the background while the caller goes on (see :class:`PageQueue`)."""

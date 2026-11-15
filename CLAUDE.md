@@ -93,7 +93,7 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   do not change what it does or run it against the site, and never put their endpoint address in the repo. The config
   validates that `bedetheque.fetcher` imports and is callable. `fetcher_endpoint` is a list (a string is one item): used
   round-robin with fallback, and pages are fetched `parallel` at a time (`Bedetheque.page_queue` / `PageQueue`: network in worker
-  threads started as soon as a file is matched, SQLite only in the calling thread; `prefetch` is the older, ordered form). Covers do not use it (plain request).
+  threads started as soon as a file is matched, album then series page, SQLite only in the calling thread; the album record is built in the loop as the pages arrive, `ImportSession._handle_arrivals`; `prefetch` is the older, ordered form). Covers do not use it (plain request).
 - Do not modify the user's real database or comics. Work on copies in the session scratchpad.
 - PRs target `main`. **Do not stack**: a PR based on another branch is merged into that branch, not into `main`, and its
   work never ships (it happened twice). Branch from `origin/main`; if two changes touch the same code, merge the first

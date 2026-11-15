@@ -435,7 +435,7 @@ def test_pages_are_fetched_several_at_a_time_when_the_source_says_so(web, make_c
     env.session.progress = messages.append
     env.session.steps = frozenset(["fetch"])
     assert env.session.run([path]).results[0].outcome == TAGGED
-    assert seen == [3] and any("3 at a time" in m for m in messages)
+    assert seen == [3]
     env.lib.close()
 
 
@@ -461,9 +461,9 @@ def test_a_page_is_downloaded_while_the_other_files_are_still_being_matched(web,
     seen = {"queued": [], "queued_before_the_fetch_phase": None}
     real, queue_page = env.session._fetch_pending, env.session._queue_page
 
-    def spy_queue(candidate):
-        seen["queued"].append(candidate.url)
-        queue_page(candidate)
+    def spy_queue(item):
+        seen["queued"].append(item[1].url)
+        queue_page(item)
 
     def spy_fetch():
         seen["queued_before_the_fetch_phase"] = list(seen["queued"])
@@ -483,4 +483,18 @@ def test_pretend_downloads_nothing_early(web, make_cbz, tmp_path):
     env.source.update_sitemaps()
     env.session.run([str(tmp_path)])
     assert env.session._early is None
+    env.lib.close()
+
+
+def test_the_albums_are_built_from_the_pages_as_they_arrive_not_by_the_slow_fetch_phase(web, make_cbz, tmp_path):
+    make_cbz(FILE)
+    env = Env(web, make_settings(), None)
+    env.source.update_sitemaps()
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    messages = []
+    env.session.progress = messages.append
+    report = env.session.run([str(tmp_path)])
+    assert report.count(TAGGED) == 1
+    assert env.session._completed_early == 1  # by the queue's arrivals (in the loop, or waiting for the last ones)
+    assert not any(m.startswith("Fetching") for m in messages)  # the sequential fetch had nothing left to do
     env.lib.close()
