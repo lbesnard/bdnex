@@ -6,10 +6,13 @@ description: Run the bdnex checks and publish a change as a PR (tests, py3.10 co
 1. `git status`; the user's `TODO.md` stays untracked.
 2. `uv run pytest -q` (all green; `test/test_docs_in_sync.py` fails when docs drift).
 3. `uv run ruff check --select F bdnex` (undefined names) and `uv run python -m compileall -q bdnex`.
+   CI also runs Python 3.10-3.13 and `argparse` differs (options after positionals fail before 3.13). To try another
+   version: `uv sync --python 3.10 --extra dev --extra docs`, run the tests, then `uv sync --python 3.12 --extra dev
+   --extra docs` back. `uv run --python 3.10 ...` alone leaves a venv without the extras and breaks the next run.
 4. `uv run sphinx-build -W -E -q docs "$SCRATCH/html"` (warnings are errors).
 5. Read `git diff` for anything private (the user's fetcher address, paths of their library) before staging.
 6. Branch from `origin/main` (never commit on `main`, never stack on an unmerged branch: it would be merged into that
    branch, not into `main`), `git add <explicit paths>`, commit with the session's attribution trailers.
 7. `git push -u origin <branch>`, then `gh pr create --base main` with the session's PR trailer. Say in the body what
    was *not* verified (terminal output, real data) and which earlier PR a stacked branch depends on.
-8. Give the user the PR link; they merge.
+8. Give the user the PR link; they merge. `gh pr checks <n>` shows CI; a red check is yours to fix on the same branch.

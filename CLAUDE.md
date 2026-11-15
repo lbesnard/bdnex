@@ -13,6 +13,7 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   `session.py` (the import loop, Journal/undo), `covers.py`, `bedetheque/` (source plugin).
 - `bdnex/organizer/`: `organizer.py` (write/move/repair: `process` is a few small steps, keep it that way),
   `archive.py` (lossless CBZ/CBR/PDF reading and writing), `comicinfo.py`, `template.py`; `bdnex/trash.py`, `versions.py`.
+- `bdnex/komga.py` + `bdnex/ui/komga_cmd.py`: `bdnex komga show|push` (see "Komga" below).
 - `bdnex/library/`: `database.py`, `schema.py` (migrations), `query.py` (the query language), `scan.py`.
 - `bdnex/api/`: `bdnex serve`, a read-only FastAPI app plus one static page (`static/index.html`); extra `bdnex[api]`.
 - `bdnex/config.py` + `bdnex/conf/bdnex.yaml` (every option and its default, also the source of the commented
@@ -61,6 +62,26 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   `parse_assignments`, so the web and `bdnex edit` can never disagree on what a valid value is. Do not validate fields twice.
 - **Look at it for real**: Chromium is available. `tools/demo_library.py` builds a demo library; see the
   `check-web-page` skill for serving it and taking screenshots. Never claim a page works from the code alone.
+
+## Komga (`bdnex komga show|push`, docs/guides/komga.md)
+- Komga ignores the tags inside a PDF, so the library's metadata is pushed through its API (`POST /api/v1/books/list`,
+  `PATCH /api/v1/books/{id}/metadata`, `PATCH /api/v1/series/{id}/metadata`; checked against Komga's OpenAPI file, not a live server).
+- A library file is paired with a Komga book by **file name + size** (`komga.match`), never by path (containers, other
+  machines); ties are left alone, never guessed. `show` only reads (a table: Komga value, bdnex value, what push would do);
+  `push` sends **only what differs**, locks the fields it sends (`komga.lock`), and `--fields` limits it. Omitted fields are
+  never sent (Komga leaves them alone), and tags are the genres *added* to Komga's own.
+- A new field = a row in `komga.book_fields` / `series_fields`, its lock in `BOOK_LOCKS` / `SERIES_LOCKS`, its name in
+  `komga_cmd.BOOK_FIELD_KEYS` / `SERIES_FIELD_KEYS`, the table in docs/guides/komga.md and a test with the fake session.
+- `komga_cmd` parses with `parse_intermixed_args`: before Python 3.13 `argparse` rejects options after a positional list.
+
+## The import fetches while it matches (`Bedetheque.page_queue`, `ImportSession._handle_arrivals`)
+- A linked file's album page, then its series page, is downloaded in worker threads at once (`PageQueue`); **only the main
+  thread touches SQLite** (`store()` / `wait()` return the arrivals). `_handle_arrivals` builds the album record from the
+  stored pages (no request) and fills the file's result; covers wait for the cover pass (a request would block matching).
+- A failed page is left for the sequential fetch phase, which reports it for its file. `--force` (recache) and `-n` do not
+  use the queue. Ctrl-C / abort run `_finish_stored` (complete what is stored, then close the queue); never leave the
+  executor open (its threads would hold the exit).
+- Fetching writes to the library only: `--database-only` must still change no comic file (`test/test_outside.py`).
 
 ## Several files at once (`Organizer.run(workers=)`, `bdnex/parallel.py`)
 - `parallel.map_ordered(function, items, workers)` is the helper for read-only work (hashing, reading first pages): forked processes,
