@@ -2,7 +2,7 @@
 
 A beets-like library manager for French comics (Bédéthèque): SQLite library, `import` (match + fetch), `ls`,
 `write`/`move`/`repair`/`convert`, `edit`, `reparse`, `reset`, `relocate`, `relink`, `review`, `undo`, `check`, `duplicates`, `trash`,
-`series`, `serve`,
+`series`, `komga` (pushes metadata to a Komga server through its API; Komga ignores the tags inside a PDF), `serve`,
 `completion`; `import --as-is` records files first, `--select` re-imports by query. Docs: Sphinx in `docs/`
 (Read the Docs). Python via **uv**; run things with `uv run`.
 
