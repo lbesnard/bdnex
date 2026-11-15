@@ -15,6 +15,21 @@ SHELLS = ("bash", "zsh", "fish")
 FLAG = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]+|-[a-zA-Z])(?=[\s,=\[]|$)")
 
 
+# commands whose first word is a choice, not a file (read from their usage line, `{show,push}`, so they cannot drift)
+def actions(command: str) -> list[str]:
+    from bdnex import ui
+
+    out = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            ui.main([command, "--help"])
+    except SystemExit:
+        pass
+    _, _, positionals = out.getvalue().partition("positional arguments:")  # not an option's `--only {a,b}`
+    found = re.search(r"^\s+\{([a-z][a-z,-]*)\}", positionals, re.M)
+    return found.group(1).split(",") if found else []
+
+
 def commands() -> list[str]:
     from bdnex.ui import USAGE
 
@@ -37,6 +52,8 @@ def options(command: str) -> list[str]:
 def script(shell: str) -> str:
     table = {command: options(command) for command in commands() if command != "completion"}
     names = " ".join([*table, "completion"])
+    words = {command: actions(command) for command in table if command != "completion"}
+    words = {command: choice for command, choice in words.items() if choice}
     if shell == "fish":
         lines = [f"complete -c bdnex -f -n __fish_use_subcommand -a '{names}'"]
         for command, flags in table.items():
@@ -44,13 +61,22 @@ def script(shell: str) -> str:
                 kind = f"-l {flag[2:]}" if flag.startswith("--") else f"-s {flag[1:]}"
                 lines.append(f"complete -c bdnex -n '__fish_seen_subcommand_from {command}' {kind}")
         lines.append("complete -c bdnex -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish'")
+        lines += [f"complete -c bdnex -n '__fish_seen_subcommand_from {command}' -a '{' '.join(choice)}'"
+                  for command, choice in words.items()]
         return "\n".join(lines) + "\n"
     cases = "\n".join(f"    {command}) opts='{' '.join(flags)}' ;;" for command, flags in table.items())
+    choices = "\n".join(f"    {command}) COMPREPLY=($(compgen -W '{' '.join(choice)}' -- \"$cur\")); return ;;"
+                        for command, choice in words.items())
     body = f"""_bdnex() {{
   local cur="${{COMP_WORDS[COMP_CWORD]}}" opts=""
   if [ "$COMP_CWORD" -eq 1 ]; then
     COMPREPLY=($(compgen -W "{names}" -- "$cur"))
     return
+  fi
+  if [ "$COMP_CWORD" -eq 2 ] && [[ "$cur" != -* ]]; then
+    case "${{COMP_WORDS[1]}}" in
+{choices}
+    esac
   fi
   case "${{COMP_WORDS[1]}}" in
 {cases}

@@ -34,3 +34,14 @@ def test_the_command_prints_the_script(capsys):
     with pytest.raises(SystemExit) as stop:
         ui.main(["completion", "bash"])
     assert stop.value.code == 0 and "_bdnex()" in capsys.readouterr().out
+
+
+def test_the_words_after_komga_come_from_its_help():
+    assert completion_cmd.actions("komga") == ["show", "push"]
+    assert completion_cmd.actions("ls") == []  # its first word is a query, not a choice
+
+
+@pytest.mark.parametrize("shell", ["bash", "zsh", "fish"])
+def test_show_and_push_are_offered_after_komga(shell):
+    text = completion_cmd.script(shell)
+    assert "show push" in text
