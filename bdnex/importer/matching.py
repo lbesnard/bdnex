@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from dataclasses import dataclass, replace
@@ -9,6 +10,8 @@ from enum import Enum
 from typing import Optional
 
 from bdnex.importer.source import Candidate
+
+logger = logging.getLogger(__name__)
 
 VOLUME_MATCH_BONUS = 5.0
 VOLUME_MISMATCH_PENALTY = 15.0
@@ -191,7 +194,8 @@ def find_matches(source, path: str, limit: int = 5) -> list[Match]:
 def embedded_hint(source, path: str):
     """What the file's own ComicInfo.xml says about its album: ``(candidate or None, extra queries)``.
 
-    A ``Web`` field with the address of an album page (bdnex writes it) names the album exactly; a ``Series`` and a
+    A ``Web`` field with the address of an album page (bdnex writes it) names the album exactly, **if that album is in
+    the album list** (a stale or wrong address is not trusted); a ``Series`` and a
     ``Number`` give a ``series number`` query like those made from the file name. ``match.use_embedded: false``
     switches this off.
     """
@@ -202,8 +206,10 @@ def embedded_hint(source, path: str):
     embedded = read_embedded(path)
     if not embedded:
         return None, []
-    from_url = getattr(source, "candidate_from_url", None)
+    from_url = getattr(source, "known_candidate_from_url", None) or getattr(source, "candidate_from_url", None)
     named = from_url(embedded.get("Web", "")) if from_url else None
+    if named is None and embedded.get("Web"):
+        logger.debug(f"{path}: its Web address {embedded['Web']!r} is not an album of the album list: not trusted")
     series, number = embedded.get("Series"), embedded.get("Number") or embedded.get("Volume")
     extra = [f"{series} {number}"] if series and number and str(number).isdigit() else []
     return named, extra

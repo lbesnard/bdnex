@@ -124,19 +124,51 @@ def test_a_series_score_is_capped_even_if_the_title_query_also_listed_the_album(
     assert find_matches(Stub(), "/c/Ombres/Ombres 02_Rollin_Fr.pdf")[0].score < 90
 
 
-def test_a_file_that_names_its_album_matches_it_first(tmp_path):
+URL_245127 = "https://www.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html"
+
+
+def tagged_cbz(tmp_path, web=URL_245127):
     import zipfile
+    path = tmp_path / "completely unrelated name.cbz"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("ComicInfo.xml", f"<ComicInfo><Series>Nains</Series><Number>1</Number><Web>{web}</Web></ComicInfo>")
+        archive.writestr("1.jpg", b"x")
+    return str(path)
+
+
+def source_with(*candidates):
     from bdnex.importer.bedetheque import Bedetheque
-    from bdnex.importer.matching import find_matches
     from bdnex.library import Library
     source = Bedetheque(Library(":memory:"), fetch=lambda url: b"", sleep=lambda s: None)
-    source._index = []
-    path = tmp_path / "completely unrelated name.cbz"
-    url = "https://www.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html"
-    with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("ComicInfo.xml", f"<ComicInfo><Series>Nains</Series><Number>1</Number><Web>{url}</Web></ComicInfo>")
-        archive.writestr("1.jpg", b"x")
-    matches = find_matches(source, str(path))
-    assert matches[0].candidate.url == url and matches[0].score == 100.0
+    source._index = list(candidates)
+    return source
+
+
+def test_a_file_that_names_its_album_matches_it_first(tmp_path):
+    from bdnex.importer.matching import find_matches
+    from bdnex.importer.source import Candidate
+    source = source_with(Candidate("245127", URL_245127, "nains tome 1 redwin de la forge", 1))
+    path = tagged_cbz(tmp_path)
+    matches = find_matches(source, path)
+    assert matches[0].candidate.url == URL_245127 and matches[0].score == 100.0
     source.use_embedded = False
-    assert find_matches(source, str(path)) == []  # without the tags nothing in the name leads anywhere
+    assert all(m.score < 100.0 for m in find_matches(source, path))
+
+
+def test_an_address_that_is_not_in_the_album_list_is_not_trusted(tmp_path):
+    from bdnex.importer.matching import find_matches
+    from bdnex.importer.source import Candidate
+    other = Candidate("999", "https://www.bedetheque.com/BD-Autre-Tome-1-Rien-999.html", "autre tome 1 rien", 1)
+    source = source_with(other)  # the list does not have album 245127 (stale tag, wrong id, list older than the album)
+    matches = find_matches(source, tagged_cbz(tmp_path))
+    assert all(m.score < 100.0 for m in matches) and URL_245127 not in [m.candidate.url for m in matches]
+
+
+def test_the_candidate_is_the_albums_own_entry_whatever_the_address_style(tmp_path):
+    from bdnex.importer.matching import find_matches
+    from bdnex.importer.source import Candidate
+    entry = Candidate("245127", URL_245127, "nains tome 1 redwin de la forge", 1)
+    source = source_with(entry)
+    mobile = "http://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html?x=1"
+    matches = find_matches(source, tagged_cbz(tmp_path, mobile))
+    assert matches[0].candidate is entry and matches[0].score == 100.0
