@@ -249,3 +249,9 @@ def test_options_may_come_before_or_after_the_query(cmd_env):
     for argv in (["push", "-n", "series:nains"], ["push", "series:nains", "-n"], ["show", "series:nains", "-v"]):
         code, _, session, _ = send(argv, cmd_env)
         assert code == 0
+
+
+def test_a_link_is_shown_with_its_full_address():
+    assert komga_cmd._value([{"label": "Bédéthèque", "url": "https://www.bedetheque.com/BD-Nains-1-" + "x" * 80 + ".html"}]
+                            ).startswith("Bédéthèque: https://www.bedetheque.com/BD-Nains-1-xxx") 
+    assert komga_cmd._value([{"label": "Bédéthèque", "url": "https://u"}]) == "Bédéthèque: https://u"
