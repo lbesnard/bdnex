@@ -272,3 +272,30 @@ def test_jpeg_quality_of_a_drawn_page_is_a_setting(tmp_path):
     low = archive.read_entries(path, "pdf", "auto", 150, "jpeg", 20)[0][0].data
     high = archive.read_entries(path, "pdf", "auto", 150, "jpeg", 98)[0][0].data
     assert len(high) > len(low)
+
+
+class _LayeredPage:
+    """Page 95 of a real scan: a 175 dpi colour picture, 300 dpi line art, thin strips of 1304 dpi."""
+
+    class rect:
+        width, height = 612.0, 792.0
+
+    def __init__(self, layers):
+        self._layers = layers
+
+    def get_image_info(self):
+        return [{"width": px, "bpc": bpc, "bbox": box} for px, bpc, box in self._layers]
+
+
+FULL = (0, 0, 612, 792)
+STRIP = (0, 0, 14, 792)
+
+
+def test_a_layered_page_is_drawn_at_its_colour_picture_not_its_sharpest_layer():
+    from bdnex.organizer.archive import _source_dpi
+
+    page = _LayeredPage([(1459, 8, FULL), (2500, 1, FULL), (316, 1, STRIP), (80, 8, STRIP)])
+    assert round(_source_dpi(page)) == 172  # not 300 (the line art) and not 1304 (a strip)
+    assert round(_source_dpi(_LayeredPage([(2500, 1, FULL), (316, 1, STRIP)]))) == 294  # 1-bit only: the large one
+    assert _source_dpi(_LayeredPage([(316, 1, STRIP)])) is not None  # only a strip: it is all there is
+    assert _source_dpi(_LayeredPage([])) is None

@@ -182,13 +182,24 @@ def _is_photographic(images) -> bool:
 
 
 def _source_dpi(page) -> Optional[float]:
-    """The resolution of the sharpest picture on the page (its pixels per inch), ``None`` if there is none."""
-    best = 0.0
+    """How sharp the page really is (pixels per inch), ``None`` if it holds no picture. Scanned comics are layers: a
+    colour picture (say 175 dpi) under 1-bit line art (300 dpi) and thin strips of 1300 dpi. Drawing at the sharpest
+    layer makes a file several times bigger than the PDF for no visible gain, so the colour picture sets the
+    resolution: the sharpest picture of more than one bit covering a good part of the page; else the sharpest large
+    picture; else the sharpest of all. Tiny pictures never count."""
+    area = max(page.rect.width * page.rect.height, 1.0)
+    big, tonal, anything = [], [], []
     for info in page.get_image_info():
         inches = abs(info["bbox"][2] - info["bbox"][0]) / 72
-        if inches > 0:
-            best = max(best, info["width"] / inches)
-    return best or None
+        if inches <= 0:
+            continue
+        dpi = info["width"] / inches
+        anything.append(dpi)
+        if abs((info["bbox"][2] - info["bbox"][0]) * (info["bbox"][3] - info["bbox"][1])) >= area / 4:
+            big.append(dpi)
+            if info.get("bpc", 8) > 1:
+                tonal.append(dpi)
+    return max(tonal or big or anything, default=0.0) or None
 
 
 def _pdf_render_page(page, dpi: int, render_format: str, jpeg_quality: int = JPEG_QUALITY) -> tuple[str, bytes]:
