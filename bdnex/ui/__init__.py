@@ -26,7 +26,7 @@ commands:
   repair   rebuild damaged archives (wrong page checksums) as clean CBZ files
   convert  convert the PDF files of the library to CBZ (next to the original)
   config   show or edit the configuration
-  komga    send the library's metadata to a Komga server (it does not read a PDF's tags)
+  komga    see what a Komga server holds for your files (show), or send it the library's metadata (push)
   serve    open the library in a browser (web page and JSON API; read-only unless you allow changes)
   completion  print a tab-completion script for bash, zsh or fish
 

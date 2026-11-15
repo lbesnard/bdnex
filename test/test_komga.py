@@ -78,10 +78,14 @@ class FakeResponse:
 class FakeSession:
     def __init__(self, books, series_meta=None):
         self.headers, self.auth, self.calls = {}, None, []
-        self.books, self.series_meta = books, series_meta or {}
+        self.books, self.series_meta, self.no_list = books, series_meta or {}, False
 
     def request(self, method, url, **kwargs):
         self.calls.append((method, url.split("//", 1)[1].split("/", 1)[1], kwargs.get("json")))
+        if method == "POST" and url.endswith("/api/v1/books/list"):
+            if self.no_list:
+                return FakeResponse("not found", 404)
+            return FakeResponse({"content": self.books, "last": True})
         if method == "GET" and url.endswith("/api/v1/books"):
             return FakeResponse({"content": self.books, "last": True})
         if method == "GET":
@@ -156,13 +160,13 @@ def send(argv, cmd_env, answer=True):
 
 
 def test_pretend_shows_the_changes_and_sends_nothing(cmd_env):
-    code, text, session, prompter = send(["-n"], cmd_env)
+    code, text, session, prompter = send(["push", "-n"], cmd_env)
     assert code == 0 and "Redwin" in text and "1 book(s) and 1 series" in text
     assert not [c for c in session.calls if c[0] == "PATCH"] and not prompter.asked
 
 
 def test_a_real_run_asks_then_patches_book_and_series(cmd_env):
-    code, text, session, prompter = send([], cmd_env)
+    code, text, session, prompter = send(["push"], cmd_env)
     assert code == 0 and prompter.asked
     patches = {p: body for m, p, body in session.calls if m == "PATCH"}
     assert patches["api/v1/books/b1/metadata"]["title"] == "Redwin"
@@ -171,14 +175,14 @@ def test_a_real_run_asks_then_patches_book_and_series(cmd_env):
 
 
 def test_declining_sends_nothing_and_only_books_skips_the_series(cmd_env):
-    code, _, session, _ = send([], cmd_env, answer=False)
+    code, _, session, _ = send(["push"], cmd_env, answer=False)
     assert code == 1 and not [c for c in session.calls if c[0] == "PATCH"]
-    _, _, session, _ = send(["-y", "--only", "books"], cmd_env)
+    _, _, session, _ = send(["push", "-y", "--only", "books"], cmd_env)
     assert [p for m, p, _ in session.calls if m == "PATCH"] == ["api/v1/books/b1/metadata"]
 
 
 def test_a_query_filters_the_files(cmd_env):
-    code, text, session, _ = send(["-y", "author:nobody"], cmd_env)
+    code, text, session, _ = send(["push", "-y", "author:nobody"], cmd_env)
     assert code == 0 and not [c for c in session.calls if c[0] == "PATCH"]
 
 
@@ -186,5 +190,39 @@ def test_no_komga_address_is_explained(cmd_env, monkeypatch, tmp_path, capsys):
     conf = tmp_path / "other.yaml"
     conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite")}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
-    assert komga_cmd.run(["-n"]) == 1
+    assert komga_cmd.run(["push", "-n"]) == 1
     assert "komga.url" in capsys.readouterr().err
+
+
+def test_show_prints_what_komga_holds_next_to_the_library_and_changes_nothing(cmd_env):
+    code, text, session, prompter = send(["show"], cmd_env)
+    assert code == 0 and "1 in Komga" in text and "Nains T01.cbz" in text
+    assert "title: -   ->  Redwin" in text
+    assert [m for m, p, _ in session.calls if m == "PATCH"] == [] and not prompter.asked
+
+
+def test_show_with_v_adds_the_series_and_json_is_machine_readable(cmd_env):
+    _, text, session, _ = send(["show", "-v"], cmd_env)
+    assert "series title: Old   ->  Nains" in text
+    code, text, _, _ = send(["show", "--json"], cmd_env)
+    import json
+    data = json.loads(text[text.index("["):])
+    assert data[0]["komga"]["id"] == "b1" and data[0]["matched_by"] == "name and size"
+
+
+def test_show_missing_lists_the_komga_books_without_a_library_file(cmd_env):
+    session = FakeSession([book("b1", cmd_env["url"], cmd_env["size"]), book("b2", "/k/Other.cbz", 3)])
+    out = io.StringIO()
+    assert komga_cmd.run(["show", "--missing"], out=out, session=session) == 0
+    assert out.getvalue().strip().splitlines() == ["/k/Other.cbz"]
+
+
+def test_books_use_the_list_call_and_fall_back_to_the_deprecated_one():
+    config = Komga(url="http://k", api_key="K", username=None, password=None, lock=True, timeout=5)
+    session = FakeSession([book("b1", "/k/a.cbz", 1)])
+    assert [b["id"] for b in komga.Client(config, session).books()] == ["b1"]
+    assert session.calls[0][:2] == ("POST", "api/v1/books/list")
+    session = FakeSession([book("b1", "/k/a.cbz", 1)])
+    session.no_list = True
+    assert [b["id"] for b in komga.Client(config, session).books()] == ["b1"]
+    assert [c[:2] for c in session.calls] == [("POST", "api/v1/books/list"), ("GET", "api/v1/books")]

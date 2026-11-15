@@ -1,4 +1,4 @@
-"""``bdnex komga``: send the library's metadata to a Komga server."""
+"""``bdnex komga``: see what a Komga server holds for your files, and send the library's metadata to it."""
 
 from __future__ import annotations
 
@@ -15,18 +15,24 @@ from bdnex.ui.output import add_pretend, add_verbosity, setup_logging
 def run(argv: list[str], out=sys.stdout, prompter=None, session=None) -> int:
     parser = argparse.ArgumentParser(
         prog="bdnex komga", description=__doc__,
-        epilog="Komga does not read the ComicInfo.xml inside a PDF, so this is how a PDF gets its title, summary, "
+        epilog="Komga does not read the ComicInfo.xml inside a PDF, so `push` is how a PDF gets its title, summary, "
                "credits and the rest in Komga. A Komga book is matched to a library file by its file name and size "
                "(the folders may differ). No comic file is read or changed.")
+    parser.add_argument("action", choices=("show", "push"),
+                        help="show: what Komga holds for each file, next to the library's value (reads only); "
+                             "push: send the library's metadata to Komga")
     parser.add_argument("query", nargs="*",
                         help="only the files of these albums, same terms as `bdnex ls`: format:pdf  author:uderzo  "
                              "series:nains  year:2010..2015")
     parser.add_argument("--only", choices=("books", "series"),
-                        help="update only the books, or only the series (default: both)")
+                        help="push only the books, or only the series (default: both)")
     parser.add_argument("--no-lock", action="store_true",
-                        help="do not lock the fields sent (a Komga rescan may then undo them); default: komga.lock")
-    parser.add_argument("-y", "--yes", action="store_true", help="do not ask for confirmation")
-    add_pretend(parser, "be sent to Komga")
+                        help="push: do not lock the fields sent (a Komga rescan may then undo them); default: komga.lock")
+    parser.add_argument("--json", action="store_true", help="show: print what Komga holds as JSON")
+    parser.add_argument("--missing", action="store_true",
+                        help="show: list the Komga books that no library file matches (instead of the matches)")
+    parser.add_argument("-y", "--yes", action="store_true", help="push: do not ask for confirmation")
+    add_pretend(parser, "be sent to Komga (push)")
     add_verbosity(parser)
     args = parser.parse_args(argv)
     setup_logging(args.verbose)
@@ -43,13 +49,15 @@ def run(argv: list[str], out=sys.stdout, prompter=None, session=None) -> int:
                 rows = [r for r in library.query(args.query, files=True) if r.get("id")]
             except QueryError as err:
                 return context.bad_query(err)
-            print(f"Reading the books of Komga ({client.base})...", file=out)
+            print(f"Reading the books of Komga ({client.base})...", file=sys.stderr if args.action == "show" else out)
             books = list(client.books())
             found = komga.match(rows, books)
             albums = {}
             for file, _, _ in found["pairs"]:
                 if file["id"] not in albums:
                     albums[file["id"]] = library.get_album(file["id"])
+            if args.action == "show":
+                return _inspect(client, found, books, albums, args, out, on)
             plan = _plan(client, found["pairs"], albums, args, lock)
     except komga.KomgaError as err:
         print(err, file=sys.stderr)
@@ -67,6 +75,71 @@ def run(argv: list[str], out=sys.stdout, prompter=None, session=None) -> int:
             print("Nothing sent.", file=out)
             return 1
     return _send(client, todo, out, on)
+
+
+def _inspect(client, found, books, albums, args, out, on) -> int:
+    """``show``: what Komga holds for each file, next to what the library would send. Nothing is changed."""
+    import json
+
+    if args.missing:
+        paired = {book["id"] for _, book, _ in found["pairs"]}
+        loose = [b for b in books if b["id"] not in paired]
+        if args.json:
+            print(json.dumps(loose, ensure_ascii=False, indent=2), file=out)
+        else:
+            for book in loose:
+                print(book["url"], file=out)
+            print(f"{len(loose)} Komga book(s) without a library file (of {len(books)}); the query only narrows "
+                  "the library's side.", file=sys.stderr)
+        return 0
+    if args.json:
+        data = [{"file": f["path"], "album_id": f["id"], "matched_by": how, "komga": book}
+                for f, book, how in found["pairs"]]
+        print(json.dumps(data, ensure_ascii=False, indent=2), file=out)
+        return 0
+    series_seen: dict[str, dict] = {}
+    for file, book, how in found["pairs"]:
+        album = albums[file["id"]]
+        meta = book.get("metadata") or {}
+        fields = komga.book_fields(album)
+        lines = [f"file: {file['path']}", f"komga: {book['url']}  (id {book['id']}, matched by {how})"]
+        for key in ("title", "number", "releaseDate", "authors", "summary", "isbn", "links"):
+            lines.append(_compare(key, meta.get(key), fields.get(key), meta.get(komga.BOOK_LOCKS.get(key, ""))))
+        if args.verbose:
+            sid = book["seriesId"]
+            if sid not in series_seen:
+                series_seen[sid] = client.series(sid).get("metadata") or {}
+            wanted = komga.series_fields([album])
+            for key in ("title", "publisher", "language", "genres"):
+                lines.append(_compare(f"series {key}", series_seen[sid].get(key), wanted.get(key),
+                                      series_seen[sid].get(komga.SERIES_LOCKS.get(key, ""))))
+        print(results.block("found", _label(album), lines, on), file=out)
+    for file in found["no_book"]:
+        print(results.block("skipped", file["path"], ["not in Komga (not scanned yet, or another size)"], on), file=out)
+    for file in found["ambiguous"]:
+        print(results.block("ambiguous", file["path"], ["several Komga books have this name"], on), file=out)
+    parts = [(f"{len(found['pairs'])} in Komga", "found")]
+    if found["no_book"]:
+        parts.append((f"{len(found['no_book'])} not in Komga", "skipped"))
+    if found["ambiguous"]:
+        parts.append((f"{len(found['ambiguous'])} ambiguous", "ambiguous"))
+    print(results.footer(parts, on), file=out)
+    return 0
+
+
+def _compare(key: str, theirs, mine, locked) -> str:
+    """``title: Komga value`` and, when the library would send another, `` -> library value``. A lock is shown."""
+    text = _value(theirs)
+    if mine is not None and not komga._same(key.split()[-1], mine, theirs):
+        text += f"   ->  {_value(mine)}"
+    return f"{key}: {text}" + ("  [locked]" if locked else "")
+
+
+def _value(value) -> str:
+    if isinstance(value, list):
+        value = "; ".join(f"{v['name']} ({v['role']})" if "role" in v else f"{v.get('label')}" if "label" in v
+                          else str(v) for v in value) if value and isinstance(value[0], dict) else ", ".join(map(str, value))
+    return _short(value)
 
 
 def _plan(client, pairs, albums, args, lock) -> list[dict]:

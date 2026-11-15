@@ -210,7 +210,7 @@ which the library does not take from a file. Nothing is stored in a preview (`--
   damaged, can not be tagged: `move` still moves it, as it is. `skip` leaves the PDF alone entirely: no tags,
   and `move` only renames it. Other readers use what they can: Info and XMP are read by most PDF viewers and by
   Calibre; few comic servers read PDF tags. Komga does not read the `ComicInfo.xml` inside a PDF (only its pages): use
-  [`bdnex komga`](komga.md) to send the metadata to it through its API.
+  [`bdnex komga push`](komga.md) to send the metadata to it through its API.
 - Conversion is automatic with `bdnex write` and `bdnex move`: set `write.cbr` to `convert` (the default) or `skip`,
   and `write.pdf` to `convert` (the default), `tag` or `skip`. The other direction, CBZ to CBR, is not offered: RAR can not be written.
 - **Converting later: `bdnex convert [query]`.** Keep your PDFs as they are at first (`write.pdf: tag` or `skip`),

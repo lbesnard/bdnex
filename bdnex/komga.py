@@ -58,13 +58,25 @@ class Client:
         return response.json() if response.content else None
 
     def books(self) -> Iterable[dict[str, Any]]:
-        page = 0
+        """Every book. ``POST /books/list`` is the current call; ``GET /books`` (deprecated since Komga 1.19) is the
+        fallback for a server that refuses an empty search."""
+        try:
+            first = self._call("POST", "/api/v1/books/list", params={"page": 0, "size": PAGE_SIZE}, json={})
+            fetch = lambda page: self._call("POST", "/api/v1/books/list",  # noqa: E731
+                                            params={"page": page, "size": PAGE_SIZE}, json={})
+        except KomgaError as err:
+            if "refused the login" in str(err) or "can not reach" in str(err):
+                raise
+            first = self._call("GET", "/api/v1/books", params={"page": 0, "size": PAGE_SIZE})
+            fetch = lambda page: self._call("GET", "/api/v1/books",  # noqa: E731
+                                            params={"page": page, "size": PAGE_SIZE})
+        page, data = 0, first
         while True:
-            data = self._call("GET", "/api/v1/books", params={"page": page, "size": PAGE_SIZE})
             yield from data["content"]
             page += 1
             if data.get("last", True) or not data["content"]:
                 return
+            data = fetch(page)
 
     def series(self, series_id: str) -> dict[str, Any]:
         return self._call("GET", f"/api/v1/series/{series_id}")
