@@ -34,7 +34,7 @@ still converted. To keep them as PDFs, remove the `# ` and write `pdf: tag` (the
 
 **From the web page.** With `bdnex serve --allow-changes` the **Settings** page shows every option with its possible values and
 default, and saves a change into this same file (checked as a whole first, the previous file kept as `bdnex.yaml.bak`, your
-comments kept). Folders (`collection_path`, `library`), secrets (`api.token`, `api.password`, the fetcher address) and lists
+comments kept). Folders (`collection_path`, `library`), secrets (`api.token`, `api.password`, `komga.api_key`, `komga.password`, the fetcher address) and lists
 (`paths.rules`, `import.sources`) are edited in the file.
 
 ## Commands
@@ -113,6 +113,14 @@ api:
   behind_proxy: false                    # true behind your own reverse proxy: the client is the first `X-Forwarded-For` address
   password: null                         # when set, the web page asks for `username` and this password (HTTP Basic: use HTTPS beyond your LAN)
   allow_changes: false                   # true: the web page can run jobs and change the library (see the docs)
+
+komga:
+  url: null                              # your Komga server, e.g. http://localhost:25600 (`bdnex komga` sends the library's metadata there)
+  api_key: null                          # a Komga API key (Komga: account settings, API keys); used before username / password
+  username: null                        # or the login of a Komga account that may edit metadata
+  password: null
+  lock: true                             # lock the fields bdnex sets, so a Komga rescan does not undo them
+  timeout: 30                            # seconds to wait for each answer of Komga
 
 write:
   format_preferred: cbz                  # cbz | none: convert other formats to CBZ (per cbr / pdf below), or never convert

@@ -28,6 +28,7 @@ guides/versions
 guides/queries
 guides/writing
 guides/maintaining
+guides/komga
 guides/api
 guides/docker
 guides/configuration

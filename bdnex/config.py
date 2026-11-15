@@ -162,6 +162,15 @@ class Api(_Section):
     allow_changes: bool  # the web page (and the API) may start jobs and change the library; read-only otherwise
 
 
+class Komga(_Section):
+    url: Optional[str] = None  # where your Komga server is, e.g. http://localhost:25600
+    api_key: Optional[str] = None  # a Komga API key (its account settings); used before username / password
+    username: Optional[str] = None
+    password: Optional[str] = None
+    lock: bool  # lock the fields bdnex sets, so a Komga rescan does not undo them
+    timeout: float = Field(gt=0, le=600)  # seconds to wait for each answer of Komga
+
+
 class PathRule(_Section):
     match: list[str] = Field(min_length=1)  # `bdnex ls` terms, all must match the album
     template: str = Field(min_length=1)
@@ -266,6 +275,7 @@ class Settings(_Section):
     watch: Watch
     cover: Cover
     api: Api
+    komga: Komga
     write: Write
     paths: Paths
     source: str = Field(min_length=1)
