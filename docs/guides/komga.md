@@ -56,6 +56,33 @@ bdnex komga push series:nains --only books   # only the books, leave the series 
 
 `--only books` or `--only series` limits the kind of record.
 
+`--fields` sends only the fields you name and leaves the others as Komga has them, for instance to fill what is
+missing without touching your titles:
+
+```bash
+bdnex komga push --fields summary,authors,releaseDate,isbn -n
+```
+
+The names are `title`, `number`, `releaseDate`, `authors`, `summary`, `isbn`, `links` (the book) and `series-title`,
+`publisher`, `language`, `genres` (the series). Naming only book fields leaves the series alone, and the other way round.
+
+## How to: fill Komga from the library, step by step
+
+1. **Make the library complete.** `bdnex ls --long series:nains` shows an album's summary, credits and date. An album
+   that says `[not fetched]` has only its link: run `bdnex import` on it (or `bdnex import --select ...`) to fetch the page.
+2. **Create the key.** In Komga, account settings, API keys; put it in `komga.api_key` with `komga.url`
+   (`bdnex config --edit`). The account needs the ADMIN role to change metadata.
+3. **Look.** `bdnex komga show series:nains`: the table says, per field, what Komga holds, what bdnex holds, and
+   what `push` would do. Files marked not in Komga need a library scan in Komga first. A wrong title on the bdnex side
+   means a wrong match: fix it with `bdnex edit` before pushing.
+4. **Preview.** `bdnex komga push series:nains -n`.
+5. **Push what you trust.** `bdnex komga push series:nains --fields summary,authors,releaseDate,isbn`, then without
+   `--fields` when the titles are right too. Add `format:pdf` to the query to do only the PDFs.
+6. **Look again.** `bdnex komga show series:nains`: every row says `same`. A second `push` sends nothing.
+
+To undo a push, edit the field in Komga (the lock only keeps a rescan from replacing it) or push again after
+fixing the library: `bdnex komga` never reads a comic file and never changes one.
+
 ## Which calls it makes
 
 Checked against Komga's OpenAPI description (1.30): `POST /api/v1/books/list` to read the books (a server that
