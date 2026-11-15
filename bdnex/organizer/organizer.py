@@ -348,7 +348,15 @@ class Organizer:
             where = "; stays where it is" if same_place else (
                 "; the destination already exists (you would be asked what to do)" if os.path.exists(dest) else "")
             return FileResult(path, PRETEND, dest, "would: " + "; ".join(steps) + where)
-        return self._carry_out(row, mode, dest, entries, xml, steps, converted, same_place, spare)
+        backup = self._keep_damaged(path, row) if repaired_pages and same_place and not converted else None
+        try:
+            result = self._carry_out(row, mode, dest, entries, xml, steps, converted, same_place, spare)
+        except Exception:
+            self._drop_backup(backup)
+            raise
+        if result.outcome in (FAILED, SKIPPED):
+            self._drop_backup(backup)  # the original was left as it was
+        return result
 
     def _left_as_is(self, fmt: str) -> Optional[str]:
         """Why a file of this format gets no tags (``None``: it is tagged)."""
@@ -555,8 +563,13 @@ class Organizer:
             return FileResult(path, SKIPPED, note=f"{dest} already exists")
         delete = dest != path and self.settings.write.delete_original != "no" and (  # asked before anything is written
             self.settings.write.delete_original == "yes" or self._confirm(f"Delete the damaged original {path}?"))
-        self._build(dest, recovered.entries, recovered.comicinfo)
         old_row = self.library.get_file(path)
+        backup = self._keep_damaged(path, old_row) if dest == path else None  # the replacement is in place
+        try:
+            self._build(dest, recovered.entries, recovered.comicinfo)
+        except Exception:
+            self._drop_backup(backup)  # nothing was replaced: no copy to keep
+            raise
         self._stage("updating the library")
         self._update_library(path, dest)
         if delete:
@@ -565,6 +578,21 @@ class Organizer:
             else:
                 os.remove(path)
         return FileResult(path, REPAIRED, dest, note)
+
+    def _keep_damaged(self, path: str, row: Optional[dict]) -> Optional[int]:
+        """A file that is about to be repaired in place keeps a copy in the trash (``write.use_trash``): a repair
+        rebuilds the archive, and what it rebuilt from is then gone. ``None``: no copy was asked for or possible."""
+        if not self.settings.write.use_trash:
+            return None
+        try:
+            self._stage("keeping a copy of the damaged original in the trash")
+            return trash.keep_copy(self.library, self.settings, path, "damaged original, repaired in place", row=row)
+        except OSError as err:  # no room for the copy: say so and do not touch the original
+            raise archive.ArchiveError(f"could not keep a copy of the damaged original in the trash ({err}); nothing was changed") from err
+
+    def _drop_backup(self, entry: Optional[int]) -> None:
+        if entry is not None:
+            trash.discard(self.library, entry)
 
     def _room_problem(self, dest: str, needed: int) -> Optional[str]:
         """Why writing ``needed`` bytes at ``dest`` is not safe (``None`` when it is): the disk of the file and

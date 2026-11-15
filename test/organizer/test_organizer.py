@@ -7,6 +7,7 @@ import pytest
 from bdnex.config import build_settings
 from bdnex.library import AlbumInfo, Library, SeriesInfo
 from bdnex.library.hashing import file_md5
+from bdnex import trash as trash_module
 from bdnex.organizer import archive, comicinfo
 from bdnex.organizer.organizer import (COPIED, COPY, FAILED, MOVE, MOVED, PRETEND, REPAIRED, SKIPPED, UNCHANGED,
                                        WRITE, WRITTEN, Organizer)
@@ -1197,3 +1198,47 @@ def test_verify_tagged_pdf_refuses_a_file_whose_start_changed(tmp_path):
     original, other = make_pdf(tmp_path / "o.pdf"), make_pdf(tmp_path / "t.pdf", pages=3)
     with pytest.raises(archive.ArchiveError):
         archive.verify_tagged_pdf(other, original, b"<ComicInfo/>")
+
+
+def test_a_cbz_repaired_in_place_keeps_the_damaged_original_in_the_trash(lib, make_damaged_cbz, tmp_path):
+    path, _ = make_damaged_cbz()
+    before = file_md5(path)
+    row = damaged_row(lib, path)
+    result = Organizer(lib, settings_for(tmp_path)).repair(row)
+    assert result.outcome == REPAIRED and file_md5(path) != before
+    (entry,) = lib.trash_entries()
+    assert entry["reason"] == "damaged original, repaired in place" and entry["path"] == path
+    assert file_md5(entry["trash_path"]) == before  # the very bytes that were replaced
+    restored = trash_module.restore(lib, entry["id"])  # beside the repaired file, never over it
+    assert restored != path and file_md5(restored) == before and file_md5(path) != before
+
+
+def test_tagging_a_damaged_cbz_keeps_its_original_too(lib, make_damaged_cbz, tmp_path):
+    path, _ = make_damaged_cbz()
+    before = file_md5(path)
+    result = Organizer(lib, settings_for(tmp_path)).process(damaged_row(lib, path), WRITE)
+    assert result.outcome == WRITTEN
+    (entry,) = lib.trash_entries()
+    assert file_md5(entry["trash_path"]) == before
+
+
+def test_no_copy_without_use_trash_or_when_nothing_was_replaced(lib, make_damaged_cbz, tmp_path):
+    path, _ = make_damaged_cbz()
+    Organizer(lib, settings_for(tmp_path, write={"use_trash": False})).repair(damaged_row(lib, path))
+    assert lib.trash_entries() == []
+    other, _ = make_damaged_cbz()
+    Organizer(lib, settings_for(tmp_path), pretend=True).repair(damaged_row(lib, other))
+    assert lib.trash_entries() == []  # a preview copies nothing
+
+
+def test_the_copy_is_dropped_when_the_new_archive_fails_its_check(lib, make_damaged_cbz, tmp_path, monkeypatch):
+    path, _ = make_damaged_cbz()
+    before = file_md5(path)
+
+    def fails(*args, **kwargs):
+        raise archive.ArchiveError("the new archive differs from the source (page count or bytes)")
+
+    monkeypatch.setattr(archive, "verify_cbz", fails)
+    result = Organizer(lib, settings_for(tmp_path)).run([damaged_row(lib, path)], WRITE, repair=True)[0]
+    assert result.outcome == FAILED and file_md5(path) == before  # the original is untouched
+    assert lib.trash_entries() == []  # and no stale copy is left in the trash
