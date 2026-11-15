@@ -102,17 +102,18 @@ def _inspect(client, found, books, albums, args, out, on) -> int:
         album = albums[file["id"]]
         meta = book.get("metadata") or {}
         fields = komga.book_fields(album)
-        lines = [f"file: {file['path']}", f"komga: {book['url']}  (id {book['id']}, matched by {how})"]
-        for key in ("title", "number", "releaseDate", "authors", "summary", "isbn", "links"):
-            lines.append(_compare(key, meta.get(key), fields.get(key), meta.get(komga.BOOK_LOCKS.get(key, ""))))
+        rows = [(key, meta.get(key), fields.get(key), meta.get(komga.BOOK_LOCKS.get(key, "")))
+                for key in ("title", "number", "releaseDate", "authors", "summary", "isbn", "links")]
         if args.verbose:
             sid = book["seriesId"]
             if sid not in series_seen:
                 series_seen[sid] = client.series(sid).get("metadata") or {}
             wanted = komga.series_fields([album])
-            for key in ("title", "publisher", "language", "genres"):
-                lines.append(_compare(f"series {key}", series_seen[sid].get(key), wanted.get(key),
-                                      series_seen[sid].get(komga.SERIES_LOCKS.get(key, ""))))
+            rows += [(f"series {key}", series_seen[sid].get(key), wanted.get(key),
+                      series_seen[sid].get(komga.SERIES_LOCKS.get(key, "")))
+                     for key in ("title", "publisher", "language", "genres")]
+        lines = [f"file:  {file['path']}", f"komga: {book['url']}  (id {book['id']}, matched by {how})", "",
+                 *_table(rows)]
         print(results.block("found", _label(album), lines, on), file=out)
     for file in found["no_book"]:
         print(results.block("skipped", file["path"], ["not in Komga (not scanned yet, or another size)"], on), file=out)
@@ -127,12 +128,26 @@ def _inspect(client, found, books, albums, args, out, on) -> int:
     return 0
 
 
-def _compare(key: str, theirs, mine, locked) -> str:
-    """``title: Komga value`` and, when the library would send another, `` -> library value``. A lock is shown."""
-    text = _value(theirs)
-    if mine is not None and not komga._same(key.split()[-1], mine, theirs):
-        text += f"   ->  {_value(mine)}"
-    return f"{key}: {text}" + ("  [locked]" if locked else "")
+def _status(key: str, theirs, mine) -> str:
+    empty = theirs in (None, "", [])
+    if mine is None:
+        return "bdnex has none: left alone"
+    if not empty and komga._same(key.split()[-1], mine, theirs):
+        return "same"
+    return "push adds it" if empty else "push changes it"
+
+
+def _table(rows) -> list[str]:
+    """A table: one row per field, Komga's value and bdnex's value side by side, and what ``push`` would do."""
+    cells = [("Field", "Komga", "bdnex", "push")]
+    for key, theirs, mine, locked in rows:
+        komga_value = (_value(theirs) if theirs not in (None, "", []) else "-") + (" [locked]" if locked else "")
+        cells.append((key, komga_value, _value(mine) if mine is not None else "-", _status(key, theirs, mine)))
+    cells = [tuple(c.replace("|", "/") for c in row) for row in cells]
+    widths = [max(len(row[i]) for row in cells) for i in range(4)]
+    lines = ["| " + " | ".join(c.ljust(w) for c, w in zip(row, widths)) + " |" for row in cells]
+    lines.insert(1, "|" + "|".join("-" * (w + 2) for w in widths) + "|")
+    return lines
 
 
 def _value(value) -> str:

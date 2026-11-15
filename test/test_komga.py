@@ -197,13 +197,13 @@ def test_no_komga_address_is_explained(cmd_env, monkeypatch, tmp_path, capsys):
 def test_show_prints_what_komga_holds_next_to_the_library_and_changes_nothing(cmd_env):
     code, text, session, prompter = send(["show"], cmd_env)
     assert code == 0 and "1 in Komga" in text and "Nains T01.cbz" in text
-    assert "title: -   ->  Redwin" in text
+    assert "| title " in text and "Redwin" in text and "push adds it" in text
     assert [m for m, p, _ in session.calls if m == "PATCH"] == [] and not prompter.asked
 
 
 def test_show_with_v_adds_the_series_and_json_is_machine_readable(cmd_env):
     _, text, session, _ = send(["show", "-v"], cmd_env)
-    assert "series title: Old   ->  Nains" in text
+    assert "| series title " in text and "Old" in text and "push changes it" in text
     code, text, _, _ = send(["show", "--json"], cmd_env)
     import json
     data = json.loads(text[text.index("["):])
