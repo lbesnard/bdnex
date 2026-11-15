@@ -63,8 +63,9 @@ missing without touching your titles:
 bdnex komga push --fields summary,authors,releaseDate,isbn -n
 ```
 
-The names are `title`, `number`, `releaseDate`, `authors`, `summary`, `isbn`, `links` (the book) and `series-title`,
-`publisher`, `language`, `genres` (the series). Naming only book fields leaves the series alone, and the other way round.
+The names are `title`, `number`, `releaseDate`, `authors`, `summary`, `isbn`, `links`, `tags` (the book) and
+`series-title`, `publisher`, `language`, `genres`, `series-summary`, `series-status`, `series-total`, `series-link`
+(the series). Naming only book fields leaves the series alone, and the other way round.
 
 ## How to: fill Komga from the library, step by step
 
@@ -105,12 +106,19 @@ ambiguous. The summary also counts the files Komga does not know yet: start a sc
 | title, summary | the album's title and summary |
 | number | the volume |
 | release date | year, month and day (January and the 1st when unknown) |
-| authors | writer, penciller, inker, colorist, letterer, cover artist |
+| authors | writer, penciller, inker, colorist, letterer, cover artist, editor, translator and other credits, each with its role |
 | ISBN, link | the ISBN, and the Bédéthèque page |
+| tags | the album's genres, **added** to the tags Komga already has (yours are never removed; one spelling, Komga's) |
 
 | Series (Komga) | From the library |
 |---|---|
 | title, publisher, language, genres | those of its albums (the commonest title and publisher; every genre) |
+| summary, link | the series page's summary, and its address |
+| status | `En cours` is ongoing, `Terminée` ended, `Abandonnée` abandoned, `Suspendue` hiatus; any other word is not sent |
+| total book count | the albums the series page lists that have a volume number (an integral or a special issue is not counted), so Komga can show "5 of 25" |
+
+The series values need the series page: an album that is only linked (`bdnex ls partial:true`) has none of them, and
+an album of a one-shot has no series. The status is only there when the page says it.
 
 Only what differs from Komga's current value is sent, so a second run says `already up to date`. The fields sent are
 **locked** (`komga.lock`, `--no-lock` to skip) so that a Komga rescan does not replace them with what it reads in the

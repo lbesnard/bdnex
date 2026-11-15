@@ -505,6 +505,17 @@ class Library:
                                 (album_id,)).fetchone()
         return (row["source_id"], row["name"]) if row else None
 
+    def series_record(self, album_id: int) -> Optional[dict[str, Any]]:
+        """The series of an album as stored: ``name``, ``summary``, ``url`` and ``extra`` (its page's details, with
+        ``albums``: every album the source lists). ``None`` for a one-shot."""
+        row = self.conn.execute("SELECT s.* FROM albums a JOIN series s ON s.id = a.series_id WHERE a.id = ?",
+                                (album_id,)).fetchone()
+        if row is None:
+            return None
+        record = dict(row)
+        record["extra"] = json.loads(record["extra"])
+        return record
+
     def files_for_album(self, album_id: int) -> list[dict[str, Any]]:
         return sorted((self._file_row(r) for r in self.conn.execute(
             "SELECT * FROM files WHERE album_id = ?", (album_id,))), key=lambda r: r["path"])

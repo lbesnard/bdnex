@@ -255,3 +255,46 @@ def test_a_link_is_shown_with_its_full_address():
     assert komga_cmd._value([{"label": "Bédéthèque", "url": "https://www.bedetheque.com/BD-Nains-1-" + "x" * 80 + ".html"}]
                             ).startswith("Bédéthèque: https://www.bedetheque.com/BD-Nains-1-xxx") 
     assert komga_cmd._value([{"label": "Bédéthèque", "url": "https://u"}]) == "Bédéthèque: https://u"
+
+
+SERIES_RECORD = {"summary": "Des nains.", "url": "https://m.bedetheque.com/serie-1-BD-Nains.html",
+                 "extra": {"status": "En cours", "albums": [{"volume": 1}, {"volume": 2}, {"volume": None}]}}
+
+
+def test_translator_and_other_credits_are_sent_with_their_roles():
+    album = {**ALBUM, "credits": {"Writer": ["A"], "Translator": ["T"], "Other": ["O"], "Editor": ["E"]}}
+    assert komga.book_fields(album)["authors"] == [
+        {"name": "A", "role": "writer"}, {"name": "E", "role": "editor"}, {"name": "T", "role": "translator"},
+        {"name": "O", "role": "other"}]
+
+
+def test_genres_become_tags_added_to_the_ones_komga_has():
+    fields = komga.book_fields(ALBUM, {"tags": ["mine", "fantasy"]})
+    assert fields["tags"] == ["fantasy", "mine"]  # one spelling, Komga's
+    # nothing differs when Komga already has the genre (any case) and the user's own tag
+    assert komga.changes({"tags": ["Fantasy", "mine"]}, {"tags": ["fantasy", "mine"], "tagsLock": True},
+                         komga.BOOK_LOCKS, True) == ({}, [])
+
+
+def test_the_series_gets_summary_link_status_and_the_count_of_numbered_albums():
+    fields = komga.series_fields([{**ALBUM, "series_record": SERIES_RECORD}])
+    assert fields["summary"] == "Des nains." and fields["status"] == "ONGOING"
+    assert fields["totalBookCount"] == 2  # the album without a number (an integral) is not counted
+    assert fields["links"] == [{"label": "Bédéthèque", "url": SERIES_RECORD["url"]}]
+
+
+def test_the_status_words_of_bedetheque():
+    assert [komga.status_of(w) for w in ("En cours", "Terminée", "Série abandonnée", "Suspendue", "Une autre", None)] == [
+        "ONGOING", "ENDED", "ABANDONED", "HIATUS", None, None]
+
+
+def test_a_series_without_a_record_sends_only_what_it_had(cmd_env):
+    fields = komga.series_fields([ALBUM])
+    assert set(fields) == {"title", "publisher", "language", "genres"}
+
+
+def test_fields_can_name_the_new_ones(cmd_env):
+    _, _, session, _ = send(["push", "-y", "--fields", "tags,series-total"], cmd_env)
+    assert [p for m, p, _ in session.calls if m == "PATCH"] == ["api/v1/books/b1/metadata"]  # no total known here
+    patches = {p: b for m, p, b in session.calls if m == "PATCH"}
+    assert set(patches["api/v1/books/b1/metadata"]) <= {"tags", "tagsLock"}
