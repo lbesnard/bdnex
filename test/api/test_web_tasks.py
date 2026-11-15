@@ -84,7 +84,7 @@ def test_reset_only_runs_after_the_page_asks_and_is_answered_yes(env):
     assert unasked.status_code == 400 and "confirm" in unasked.json()["detail"]
     started = post(web, command="reset", preview=False, interactive=True).json()
     job = waiting(web, started["id"])
-    assert job["question"]["message"] == "Delete all of this from the library?"
+    assert job["question"]["message"] == "Forget these records? The downloaded pages and covers and your comic files stay."
     yes = next(c for c in job["question"]["choices"] if c["key"] == "y")
     assert answer(web, job, choice=yes["index"]).status_code == 200
     done = wait(web, started["id"])

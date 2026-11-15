@@ -252,7 +252,7 @@ and nothing is copied when the library is already current. Delete the copies whe
 ## Starting from scratch
 
 ```bash
-bdnex reset -n         # show what would be deleted
+bdnex reset -n         # show what would be forgotten, and what is kept
 bdnex reset            # asks, copies the database aside, then empties the library
 ```
 

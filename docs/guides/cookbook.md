@@ -220,8 +220,8 @@ bdnex repair                 # rebuild archives with a wrong page checksum as a 
 ## …start again from scratch?
 
 ```bash
-bdnex reset -n         # what would be deleted, and what is kept
-bdnex reset            # asks, backs the database up, then empties the library
+bdnex reset -n         # what would be forgotten, and what is kept
+bdnex reset            # asks, backs the database up, then forgets the records (pages and covers stay)
 ```
 
 This forgets your albums, files, edits and import history, and **keeps the downloaded sitemaps and
