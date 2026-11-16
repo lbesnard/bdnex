@@ -22,6 +22,7 @@ tasks; [Getting started](guides/getting-started.md) is the walk-through.
 :caption: User guide
 
 guides/getting-started
+guides/safe-workflows
 guides/cookbook
 guides/importing
 guides/versions
