@@ -60,7 +60,9 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    album's name. Those matches never count as strong.
    **The file's own tags help.** A file that already has a `ComicInfo.xml` (inside a CBZ or CBR, or attached to a PDF, where `write.pdf: tag` puts it) is read first. If its `Web` field is the
    address of a Bédéthèque album page (bdnex writes it, and so do other tools that took it from the site), that album
-   is the first choice with a score of 100, whatever the file is called; a `Series` and a `Number` add a
+   is the first choice with a score of 100, whatever the file is called, **provided it is in the album list** (an
+   address that is not there, such as a stale or wrong one, or an album newer than your list, is not trusted: the name
+   is used instead, and `bdnex init` refreshes the list; `-vv` says when an address was not trusted); a `Series` and a `Number` add a
    `series number` search like those made from the name. `match.use_embedded: false` turns this off. So a collection that is already tagged with bdnex, or by a tool that wrote the
    Bédéthèque address, matches without a guess from the file name. A wrong tag
    is not trusted blindly: the cover check still compares the covers.

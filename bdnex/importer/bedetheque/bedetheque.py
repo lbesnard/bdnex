@@ -186,6 +186,7 @@ class Bedetheque:
         self._sleep = sleep
         self._index: Optional[list[Candidate]] = None
         self._words: Optional[dict[str, list[int]]] = None
+        self._by_id: Optional[dict[str, Candidate]] = None
 
     # --------------------------------------------------------------- fetching
     def _get(self, kind: str, url: str, recache: bool = False, store: bool = True) -> bytes:
@@ -320,6 +321,7 @@ class Bedetheque:
                 break
         self._index = None
         self._words = None
+        self._by_id: Optional[dict[str, Candidate]] = None
         return fetched
 
     # -- MetadataSource protocol
@@ -373,6 +375,20 @@ class Bedetheque:
             return None
         return Candidate(source_id, url, sitemap.normalise_slug(url), sitemap.volume_from_url(url))
 
+    def known_candidate_from_url(self, url: str) -> Optional[Candidate]:
+        """The album of the album list that an address stands for, or ``None``: not an album page, or an album
+        that is not in the list (a stale or wrong address, a list older than the album: ``bdnex init`` refreshes it).
+        Used for a file's own tag, which must not name an album that cannot be found."""
+        named = self.candidate_from_url(url)
+        if named is None:
+            return None
+        return self._ids().get(named.source_id)
+
+    def _ids(self) -> dict[str, Candidate]:
+        if self._by_id is None:
+            self._by_id = {c.source_id: c for c in self._load_index()}
+        return self._by_id
+
     def album_count(self) -> int:
         """Albums in the cached sitemaps (0 when there are none)."""
         try:
@@ -383,6 +399,7 @@ class Bedetheque:
     def warm(self) -> None:
         """Load the matching index now, so worker processes forked later share it."""
         self._word_index()
+        self._ids()
 
     def _word_index(self) -> dict[str, list[int]]:
         """word -> positions in the index of the candidates containing it (built once)."""
