@@ -140,3 +140,24 @@ def test_a_file_that_names_its_album_matches_it_first(tmp_path):
     assert matches[0].candidate.url == url and matches[0].score == 100.0
     source.use_embedded = False
     assert find_matches(source, str(path)) == []  # without the tags nothing in the name leads anywhere
+
+
+def test_a_pdf_that_names_its_album_matches_it_first(tmp_path, make_pdf):
+    import pymupdf
+    from bdnex.importer.bedetheque import Bedetheque
+    from bdnex.importer.matching import find_matches
+    from bdnex.library import Library
+    from bdnex.library.scan import inspect_file, read_embedded
+    source = Bedetheque(Library(":memory:"), fetch=lambda url: b"", sleep=lambda s: None)
+    source._index = []
+    path = make_pdf("whatever.pdf")
+    url = "https://www.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html"
+    assert read_embedded(path) is None and inspect_file(path).has_metadata is False
+    with pymupdf.open(path) as doc:  # what `bdnex write` does to a PDF with write.pdf: tag
+        doc.embfile_add("ComicInfo.xml", f"<ComicInfo><Series>Nains</Series><Web>{url}</Web></ComicInfo>".encode())
+        doc.saveIncr()
+    assert read_embedded(path)["Web"] == url
+    info = inspect_file(path)
+    assert info.has_metadata is True and info.embedded["Series"] == "Nains" and info.format == "pdf"
+    matches = find_matches(source, path)
+    assert matches[0].candidate.url == url and matches[0].score == 100.0
