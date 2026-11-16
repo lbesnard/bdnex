@@ -80,6 +80,37 @@ bdnex import --match --auto ~/comics     # link everything; no page is requested
 bdnex import --fetch                     # later, as long as you like; Ctrl-C and resume
 ```
 
+## …do the first import of a big, already tidy collection?
+
+Do it in two passes. The first one is slow and needs no attention; the second one is quick and is where you decide.
+
+```bash
+# pass 1: let it run, for days if need be (Ctrl-C and run it again whenever you like)
+bdnex import --database-only --auto=all -vv ~/comics
+
+# pass 2: forget the matches, keep everything downloaded, check them yourself
+bdnex reset
+bdnex import --database-only --auto ~/comics
+```
+
+Pass 1 matches every file by itself, reads the album pages and fills the library. It changes no comic file
+(`--database-only`) and asks nothing (`--auto=all`). Most matches are right, and what matters is that their pages
+and covers are now stored on your disk.
+
+`bdnex reset` forgets the matches and keeps the stored pages and covers. Pass 2 matches again, but a page that is
+already stored is read from disk, so it needs no network and no waiting. With `--auto`, strong matches are applied
+without a question and you are asked only about the doubtful ones, which is the few percent that pass 1 got wrong.
+Use `--no-auto` instead if you want to see every file. Only the right albums of those few files are new to the
+cache, so those are the only requests.
+
+Before you start pass 2:
+
+- `reset` also forgets your `bdnex edit` changes and the files you skipped, so do it **before** you edit anything.
+  It copies the database aside first (`.before-reset-<date>`).
+- A wrong match in pass 1 only cost a download: nothing was written to a file.
+- To see the doubtful ones without resetting, `bdnex review` lists the files flagged for a look
+  (`bdnex import --select` redoes chosen files).
+
 ## …import again? Redo a file?
 
 Running `bdnex import ~/comics` again is cheap (and plain `bdnex import` does the same on the library folder of
