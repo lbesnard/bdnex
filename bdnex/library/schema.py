@@ -203,4 +203,24 @@ MIGRATIONS = [
     );
     CREATE INDEX idx_origins_origin ON origins(origin);
     """,
+    # --- version 10 ------------------------------------------------------
+    # Your own marks on files and albums (`bdnex mark`): a name and a text value, no schema change per use.
+    # They follow the file or album: deleting one deletes its marks.
+    """
+    CREATE TABLE file_attrs (
+        file_id INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+        key     TEXT NOT NULL,
+        value   TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (file_id, key)
+    );
+
+    CREATE TABLE album_attrs (
+        album_id INTEGER NOT NULL REFERENCES albums(id) ON DELETE CASCADE,
+        key      TEXT NOT NULL,
+        value    TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (album_id, key)
+    );
+    CREATE INDEX idx_file_attrs_key ON file_attrs(key, value);
+    CREATE INDEX idx_album_attrs_key ON album_attrs(key, value);
+    """,
 ]

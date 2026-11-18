@@ -57,7 +57,8 @@ the reason, for you to read. `bdnex candidates --low --json` gives, for each fil
 report per file keep / another album / leave with a confidence and why. To check one: `bdnex ls --files <name> -l` for the album, the cover (`bdnex review` shows
 both covers) and the evidence. To fix it, never edit the database: `bdnex import --album <address|number> <file>` (applies the album you name; ask the
 user first), `bdnex import --match --force <file>` (the user chooses again), `bdnex edit` for a wrong field, or `bdnex review` (keep, unlink, rematch). Propose each change to the
-user with your evidence and your confidence; do not change matches on your own.
+user with your evidence and your confidence; do not change matches on your own. Record what you checked with
+`bdnex mark <query> --set checked=<keep|other:ID|leave>` and ask for the rest with `bdnex candidates --low ^attr:checked --json`.
 
 ## Queries (`ls`, `write`, `move`, `komga` ...)
 

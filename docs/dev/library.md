@@ -21,6 +21,7 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 | `operations` | files `move` renamed or moved, per run (`batch`): old and new path (stored like `files.path`), when, and whether `bdnex undo` took it back |
 | `roots` | the import sources the library knows: `alias` and the folder's `path`. A file under one is stored in `files.path` as `@alias/path below it`, so moving the folder is one UPDATE (`bdnex relocate`) |
 | `origins` | for a file that was copied into the collection: the source path it came from (stored like `files.path`), its size and date then. A later import of the source skips it |
+| `file_attrs`, `album_attrs` | your own marks (`bdnex mark`): a name and a text value per file or album, deleted with their owner. No migration is needed to add a kind of mark |
 | `staged_files` | files imported without being moved into the library folder, with the path they came from |
 | `meta` | small values: that paths are stored relative, when the album list last grew |
 

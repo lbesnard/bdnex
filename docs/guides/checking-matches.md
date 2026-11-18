@@ -49,6 +49,11 @@ needs OpenCV, and, for an album whose page was not read, looks at the address th
 wrong (that candidate is then not compared). A cover that is *very* like the file's settles most questions of a reissue
 against an original; a low similarity alone proves nothing (scans are cropped and compressed).
 
+To remember what was looked at, so that a long check can stop and resume, the assistant marks each file it dealt with
+(`bdnex mark FILE-QUERY --set checked=keep`, or `checked=other:245127`), and asks only for the others:
+`bdnex candidates --low ^attr:checked --json`. You can list what it decided with `bdnex ls --files attr:checked=keep`.
+The mark says what was decided, not that it was applied: only `bdnex import --album` changes a match.
+
 An assistant is a reader of the evidence, not an authority: it can be wrong, it cannot see your files, and it does not know
 which edition you want. Keep it to **proposals**, check the ones it is not sure about with `bdnex review`, and
 back up the library first ([Safe workflows](safe-workflows.md)). Nothing leaves your machine except what the assistant

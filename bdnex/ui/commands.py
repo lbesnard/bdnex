@@ -33,6 +33,7 @@ GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     )),
     ("Change the library", (
         Command("edit", "edit_cmd", "change the metadata of albums or series by hand (kept across re-imports)"),
+        Command("mark", "mark_cmd", "put your own marks on files or albums (checked=keep), to find them again with attr:"),
         Command("reparse", "reparse_cmd", "re-read the pages stored in the library (offline) to fill in more details"),
         Command("reset", "reset_cmd", "empty the library (albums, files, edits), keep the downloaded sitemaps and pages"),
         Command("check", "check_cmd",

@@ -87,13 +87,20 @@ def _details(library, rows, args) -> dict:
         album = library.get_album(album_id) if album_id else None
         if args.files:
             label = describe.label(album) if album else "(not imported)"
-            text.append(describe.file_block(row, label))
-            records.append({**row, "album_record": album})
+            marks = library.attrs_of("file", row["file_id"])
+            text.append(describe.file_block(row, label) + _marks_line(marks))
+            records.append({**row, "album_record": album, "marks": marks})
         else:
             files = library.files_for_album(album_id)
-            text.append(describe.long(album, files))
-            records.append({**album, "file_records": files})
+            marks = library.attrs_of("album", album_id)
+            text.append(describe.long(album, files) + _marks_line(marks))
+            records.append({**album, "file_records": files, "marks": marks})
     return records if args.json else {"text": text, "records": records}
+
+
+def _marks_line(marks: dict[str, str]) -> str:
+    """The marks of `bdnex mark`, one line (nothing when there are none)."""
+    return "\n  marks: " + ", ".join(f"{k}={v}" if v else k for k, v in marks.items()) if marks else ""
 
 
 def _file_problems(settings, args, out) -> int:

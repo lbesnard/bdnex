@@ -23,6 +23,10 @@ command runs, never while an import is fetching).
   `Imprint`/`StoryArc`. Run `bdnex reparse`, then `bdnex write`.
 - `bdnex candidates` shows where each score comes from (the title score, then the volume, year and author), and the four
   adjustments are the options `match.volume_bonus`, `volume_penalty`, `year_bonus`, `author_bonus`.
+- `bdnex mark` puts your own marks on files or albums (`--set checked=keep`, `--remove`), and any query finds them with
+  `attr:checked` or `attr:checked=keep` (and `^attr:checked` for the others). **Library schema v10**: the first
+  command after upgrading copies your library to `<library>.bak-v9` and then migrates it; an older bdnex can no longer
+  open it.
 - Docs: *Checking the matches* (by hand or with an assistant).
 
 ### Changed

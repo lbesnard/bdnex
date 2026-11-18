@@ -35,6 +35,7 @@ bdnex ls --files tagged:false         # registered files not yet matched to an a
 | `field:true` / `false` | yes/no fields |
 | `^term` | negation |
 | `a b , c` | a lone comma is **or**: albums matching `a` and `b`, or `c` (each side is ANDed). The comma must be a word of its own |
+| `attr:name`, `attr:name=value` | a mark you put with [`bdnex mark`](maintaining.md#your-own-marks-bdnex-mark): the file (or album) has it, or has it with that value |
 | `year-`, `title+` | sorts by that field, newest/last first (`-`) or oldest/first (`+`); several give several keys. See `bdnex fields` |
 
 `bdnex fields` lists every field with its kind (text, number, yes/no). `bdnex ls year- --limit 10` shows the ten most
@@ -51,7 +52,7 @@ A word before a colon that is not a field name (as in `Tintin: Le Lotus`) is sea
 
 ## Fields
 
-- **Everywhere:** `any` (see above).
+- **Everywhere:** `any` (see above), and `attr` (your own marks, `attr:name` or `attr:name=value`: see `bdnex mark`).
 - **Text:** `title`, `series`, `publisher`, `isbn`, `language`, `summary`, `kind` (`series` or `oneshot`),
   `url`, `source`, `genre`, `author` (any credit), `writer`, `penciller`, `inker`, `colorist`, `letterer`, `coverartist`.
 - **Numbers:** `id` (the album's number, as the web page and `bdnex edit` know it), `year`, `volume`, `pages`, `rating`, `files` (files per album; `files:0` finds albums without a file).
