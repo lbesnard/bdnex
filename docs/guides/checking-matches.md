@@ -6,8 +6,8 @@ changes a comic file, and nothing is unlinked or rematched without a decision.**
 
 | Step | Command | What it does |
 |---|---|---|
-| 1. Find | `bdnex review --scan -n` | weighs every match against its album's page; lists the ones that look wrong, flags nothing |
-| 2. Flag | `bdnex review --scan` | the same, and flags them (`review:true`) |
+| 1. Find | `bdnex check --matches` | weighs every match against its album's page; lists the ones that look wrong, changes nothing |
+| 2. Flag | `bdnex check --matches --fix` | the same, and flags them (`review:true`) |
 | 3. List | `bdnex review --list` (`--json`) | the flagged files and why |
 | 4. Alternatives | `bdnex candidates --low` (`--json`, `--cover`) | for each file in doubt, the other albums it could be, with the evidence |
 | 5. Decide | `bdnex review`, `bdnex import --match --force FILE`, `bdnex edit` | keep, unlink, choose again, or fix a field |
@@ -20,8 +20,8 @@ files are `unverified`.
 ## By hand
 
 ```bash
-bdnex review --scan -n              # how many look wrong, and why
-bdnex review --scan                 # flag them
+bdnex check --matches               # how many look wrong, and why (changes nothing)
+bdnex check --matches --fix         # flag them for `bdnex review`
 bdnex candidates --low --limit 5    # the other albums they could be
 bdnex review                        # one by one, with the two covers side by side
 ```
@@ -32,7 +32,7 @@ The repository ships a skill, `skills/using-bdnex` (see [Getting started](gettin
 assistant the safety rules and these commands. Copy it to `~/.claude/skills/`, open Claude Code in your project and ask,
 for instance:
 
-> Check the matches of my library. Run `bdnex review --scan -n`, then `bdnex candidates --low --json`, and for each
+> Check the matches of my library. Run `bdnex check --matches`, then `bdnex candidates --low --json`, and for each
 > file say which album it is, how sure you are and why. Don't change anything until I say so.
 
 What the assistant does with it:

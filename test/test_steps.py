@@ -180,16 +180,13 @@ def test_fetch_on_a_file_that_is_not_matched_says_so(cli):
     assert "not matched yet" in text and "1 skipped" in text
 
 
-def test_old_option_names_still_work_and_say_what_replaced_them(cli, capsys):
+def test_the_old_option_names_are_gone(cli, capsys):
     web, db, make_cbz = cli
     init()
-    path = make_cbz(FILE)
-    code, text = run_import("--no-fetch", path)
-    assert "1 matched" in text and "--no-fetch is now --match" in capsys.readouterr().err
-    code, text = run_import("--retry-partial", path)
-    assert "1 complete" in text and "--retry-partial is now --fetch" in capsys.readouterr().err
-    code, text = run_import("--recache", path)
-    assert "--recache is now --fetch --force" in capsys.readouterr().err
+    for old in ("--no-fetch", "--retry-partial", "--recache"):
+        with pytest.raises(SystemExit):
+            run_import(old, make_cbz(FILE))
+    capsys.readouterr()
 
 
 def test_already_imported_files_are_counted_and_not_listed_unless_verbose(cli):

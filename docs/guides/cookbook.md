@@ -108,8 +108,8 @@ Before you start pass 2:
 - `reset` also forgets your `bdnex edit` changes and the files you skipped, so do it **before** you edit anything.
   It copies the database aside first (`.before-reset-<date>`).
 - A wrong match in pass 1 only cost a download: nothing was written to a file.
-- To see the doubtful ones without resetting, run `bdnex review --scan`: it weighs every match against its album
-  page (credits, year, volume, the file's own tags) and flags the ones that look wrong, then `bdnex review` goes
+- To see the doubtful ones without resetting, run `bdnex check --matches`: it weighs every match against its album
+  page (credits, year, volume, the file's own tags) and lists the ones that look wrong (`--fix` flags them), then `bdnex review` goes
   through them with the two covers side by side (`bdnex candidates --low` lists the other albums each could be) (`bdnex import --select` redoes chosen files).
 
 ## …import again? Redo a file?
@@ -358,7 +358,7 @@ bdnex relink -n ~/comics   # files moved or renamed outside bdnex: found again b
 ## …look at the doubtful covers and the duplicates?
 
 ```bash
-bdnex review -l            # list the matches whose cover looked different, ask nothing
+bdnex review --list         # list the flagged matches and why, ask nothing
 bdnex review               # one by one: keep, unlink, rematch or leave
 bdnex duplicates           # the same book in several files (add --covers to compare first pages)
 ```

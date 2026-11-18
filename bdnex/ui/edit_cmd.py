@@ -2,7 +2,7 @@
 
 The albums found by a query are opened as YAML in ``$VISUAL`` / ``$EDITOR``; what you change is
 checked, shown, and stored. Your edits are kept on top of what the source says: a re-import,
-``--recache`` or ``reparse`` does not undo them.
+``--fetch --force`` or ``reparse`` does not undo them.
 """
 
 from __future__ import annotations

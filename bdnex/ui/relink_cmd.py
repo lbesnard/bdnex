@@ -16,7 +16,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
         prog="bdnex relink", description=__doc__,
         epilog="A file the library knows but that is no longer where it was (`bdnex ls --missing`) is looked for "
                "in the folders you give (default: your library folder), by size and checksum. A single copy is "
-               "linked again, with its album and history. Nothing on disk is touched.")
+               "linked again, with its album and history. Nothing on disk is touched. If your whole folder moved, "
+               "`bdnex relocate OLD NEW` is the quicker fix.")
     parser.add_argument("folders", nargs="*", help="where to look (default: your collection, `collection_path` in the configuration)")
     add_pretend(parser, "be linked")
     add_workers(parser, "files read")

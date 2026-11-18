@@ -79,25 +79,13 @@ def build_parser() -> argparse.ArgumentParser:
                         help="match every file by itself, never as a folder")
     add_workers(parser, "processes matching file names in the background, and reading the files for --as-is")
     add_verbosity(parser)
-    legacy = parser.add_argument_group("old names (still work)")
-    legacy.add_argument("--no-fetch", action="store_true", help="same as --match")
-    legacy.add_argument("--retry-partial", action="store_true", help="same as --fetch")
-    legacy.add_argument("--recache", action="store_true", help="same as --fetch --force")
     return parser
 
 
 def resolve_steps(args) -> tuple[tuple[str, ...], list[str]]:
-    """The steps to run and the notices about old option names."""
-    notes = []
-    for old, new in (("no_fetch", "--match"), ("retry_partial", "--fetch"), ("recache", "--fetch --force")):
-        if getattr(args, old):
-            notes.append(f"note: --{old.replace('_', '-')} is now {new}")
-            if old == "recache":
-                args.fetch = args.force = True
-            else:
-                setattr(args, "match" if old == "no_fetch" else "fetch", True)
+    """The steps to run (both when none is named) and notices about options that changed (none now)."""
     chosen = tuple(step for step in ("match", "fetch") if getattr(args, step))
-    return chosen or ("match", "fetch"), notes
+    return chosen or ("match", "fetch"), []
 
 
 def ensure_album_list(source, library, settings, out=sys.stdout) -> bool:

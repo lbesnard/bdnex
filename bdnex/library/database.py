@@ -405,7 +405,7 @@ class Library:
         return dataclasses.replace(info, **changes)
 
     def edit_album(self, album_id: int, changes: dict[str, Any]) -> None:
-        """Change an album by hand; the change survives re-imports, ``--recache`` and ``reparse``.
+        """Change an album by hand; the change survives re-imports, ``--fetch --force`` and ``reparse``.
 
         ``changes`` may hold any of :attr:`EDIT_SCALARS` (``None`` clears a value), ``series`` (renames
         the series, so every album of it), ``credits`` (``{role: [names]}``: the listed roles are
@@ -783,7 +783,7 @@ class Library:
             self.conn.execute("DELETE FROM source_cache WHERE source = ? AND kind = ? AND url = ?", (source, kind, url))
 
     def cache_clear(self, source: str, kind: Optional[str] = None) -> int:
-        """Drop cached entries (the ``--recache`` option). Returns rows removed."""
+        """Drop cached entries (the ``--fetch --force`` option). Returns rows removed."""
         sql, params = "DELETE FROM source_cache WHERE source = ?", [source]
         if kind:
             sql, params = sql + " AND kind = ?", params + [kind]

@@ -226,5 +226,22 @@ def album_of_candidate(source, candidate) -> Optional[dict[str, Any]]:
     return {**album, **{key: value for key, value in (facts or {}).items() if value}}
 
 
+def judge(path: str, album: dict[str, Any], embedded: Optional[dict] = None, outlier: Optional[str] = None) -> Evidence:
+    """The one place that decides whether a match looks wrong: :func:`assess`, plus the folder's opinion (``outlier``,
+    from :func:`folder_outliers`) when there is one. An import, ``bdnex check --matches`` and ``bdnex candidates --low``
+    all call this, so they can not disagree about a file."""
+    ev = assess(path, album, embedded)
+    if outlier:
+        ev.weak.append(outlier)
+        if ev.verdict in (CONFIRMED, UNVERIFIED):
+            ev.verdict = DOUBTFUL
+    return ev
+
+
+def review_reason(ev: Evidence) -> str:
+    """The text kept with a flagged file (``bdnex review`` shows it)."""
+    return f"the match looks {ev.verdict}: {ev.reason}"
+
+
 def worth_a_look(ev: Evidence) -> bool:
     return ev.verdict in NEEDS_LOOK

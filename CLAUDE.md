@@ -7,10 +7,14 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 (Read the Docs). Python via **uv**; run things with `uv run`.
 
 ## Layout
-- `bdnex/ui/*_cmd.py`: one module per command, each with a `run(argv)`; dispatch in `bdnex/ui/__init__.py`.
+- `bdnex/ui/*_cmd.py`: one module per command, each with a `run(argv)`. **`bdnex/ui/commands.py` is the one table of commands**
+  (name, module, summary, group): the usage text and the dispatch read it; the tab completion reads the usage text. A new command =
+  a row there, its module, its docs page entry (the sync tests say what is missing).
 - `bdnex/ui/prompts.py` (match question, keys, Back, search, URL), `thumbnail.py`, `color.py`.
 - `bdnex/importer/`: `matching.py` (fuzzy), `folders.py` (series/versions/unclear), `pipeline.py` (background matching),
-  `session.py` (the import loop, Journal/undo), `covers.py`, `bedetheque/` (source plugin).
+  `session.py` (the import loop; its early page fetching is the `EarlyFetch` mixin in `session_early.py`, the cover and
+  match-weighing pass is `CoverPass` in `session_covers.py`, the result types and exceptions are in `session_types.py`
+  and re-exported by `session`), `covers.py`, `bedetheque/` (source plugin).
 - `bdnex/organizer/`: `organizer.py` (write/move/repair: `process` is a few small steps, keep it that way),
   `archive.py` (lossless CBZ/CBR/PDF reading and writing), `comicinfo.py`, `template.py`; `bdnex/trash.py`, `versions.py`.
 - `bdnex/komga.py` + `bdnex/ui/komga_cmd.py`: `bdnex komga show|push` (see "Komga" below).
@@ -83,12 +87,12 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   executor open (its threads would hold the exit).
 - Fetching writes to the library only: `--database-only` must still change no comic file (`test/test_outside.py`).
 
-## A second look at a match (`importer/confirm.py`, `bdnex review --scan`)
+## A second look at a match (`importer/confirm.py`, `bdnex check --matches`)
 - `confirm.assess(path, album, embedded)` weighs a file against its *complete* album (credits, year, volume, the file's own
   tags): pure, offline, no file read. Strong against = another volume, a "supplément" for a tome, the file's tags naming
   another series; weak = another year (a reissue), unknown names in a `(group)`. The **volume agreeing confirms nothing**
   (the match was ranked on it). A match that looks wrong is flagged (`files.review`), never unlinked.
-- It runs when a page arrives (`ImportSession._confirm`) and for the whole library with `bdnex review --scan`.
+- It runs when a page arrives (`ImportSession._confirm`) and for the whole library with `bdnex check --matches` (`library/health.doubtful_matches`). `confirm.judge` is the one place that decides; never re-implement it.
   Credit labels of a page are mapped in `parser.OTHER_CREDIT_ROLES` (`Encrage` is `Inker`); `LEGACY_ROLES` reads old names back.
 
 - **Precision before coverage**: a wrong match costs more than an unasked one. A strong first choice is still asked about

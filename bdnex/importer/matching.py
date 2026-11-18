@@ -216,7 +216,7 @@ def find_matches(source, path: str, limit: int = 5) -> list[Match]:
                for m in matches]
     matches = sorted(matches, key=lambda m: m.score, reverse=True)
     facts_of = getattr(source, "facts_of", None)
-    if facts_of is not None and getattr(source, "use_facts", True):
+    if facts_of is not None:
         matches = adjust_by_facts(matches, path, embedded, facts_of)
     matches = _doubts(source, path, matches, embedded, named)
     if named is not None:  # the file itself names its album: that is the first choice, whatever the file name says

@@ -18,7 +18,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
                "change `collection_path`. A folder listed in `import.sources` is one record in the library: "
                "`relocate OLD NEW` with its old path updates that record and its files follow (then change the path in "
                "`import.sources` too). For other files stored with their full path, `relocate` rewrites the stored "
-               "paths. It touches nothing on disk. `bdnex ls --missing` lists what is not found.")
+               "paths. It touches nothing on disk. `bdnex ls --missing` lists what is not found. To find individual files that "
+               "were moved or renamed, by their content, use `bdnex relink` instead.")
     parser.add_argument("old", help="the folder the files used to be in")
     parser.add_argument("new", help="the folder they are in now")
     add_pretend(parser, "change")

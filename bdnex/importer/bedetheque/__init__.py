@@ -13,7 +13,6 @@ def create_source(library, settings):
                         image_fetch=image_fetch,
                         delay=tuple(section.delay), sitemap_delay=tuple(section.sitemap_delay))
     source.use_embedded = settings.match.use_embedded
-    source.use_facts = settings.match.use_facts
     source.min_margin = settings.match.min_margin
     if not uses_saved_pages(settings):  # several endpoints (or `parallel`) fetch several pages at once
         source.parallel = section.parallel or max(1, len(section.fetcher_endpoint))
