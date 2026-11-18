@@ -194,3 +194,35 @@ def test_a_pdf_that_names_its_album_matches_it_first(tmp_path, make_pdf):
     assert info.has_metadata is True and info.embedded["Series"] == "Nains" and info.format == "pdf"
     matches = find_matches(source, path)
     assert matches[0].candidate.url == url and matches[0].score == 100.0
+
+
+# ------------------------------------------------------------------ the score says where its points come from
+def test_a_match_says_what_moved_its_score():
+    from bdnex.importer.matching import rerank
+    from bdnex.importer.source import Candidate
+
+    same, other = Candidate("1", "u1", "nains", 2), Candidate("2", "u2", "nains", 5)
+    ranked = rerank("Nains 2", [(same, 80.0), (other, 80.0)])
+    assert ranked[0].candidate is same and ranked[0].score == 85 and "found: +5" in ranked[0].parts[0]
+    assert ranked[1].score == 65 and "-15" in ranked[1].parts[0]
+
+
+def test_the_weights_of_the_configuration_replace_the_defaults():
+    from bdnex.importer.matching import rerank
+    from bdnex.importer.source import Candidate
+
+    class Source:
+        weights = {"volume_match": 1.0}
+
+    (match,) = rerank("Nains 2", [(Candidate("1", "u1", "nains", 2), 80.0)], source=Source())
+    assert match.score == 81
+
+
+def test_the_title_score_is_explained_and_unchanged(tmp_path):
+    from helpers import FakeWeb
+
+    plugin = Bedetheque(Library(tmp_path / "e.sqlite"), fetch=FakeWeb(), sleep=lambda s: None)
+    plugin.update_sitemaps()
+    cand, score = plugin.candidates("Nains Redwin de la forge", limit=1)[0]
+    explained, parts = plugin.explain("Nains Redwin de la forge", cand)
+    assert explained == score and any("words of the name found" in p for p in parts)

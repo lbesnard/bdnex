@@ -21,6 +21,8 @@ command runs, never while an import is fetching).
 - The parser reads the inking (`Encrage` is an Inker), the other credits Bédéthèque lists (preface, storyboard,
   background, design, adapted from), the icons of "Autres infos" and writes `Collection`/`Cycle` as ComicInfo
   `Imprint`/`StoryArc`. Run `bdnex reparse`, then `bdnex write`.
+- `bdnex candidates` shows where each score comes from (the title score, then the volume, year and author), and the four
+  adjustments are the options `match.volume_bonus`, `volume_penalty`, `year_bonus`, `author_bonus`.
 - Docs: *Checking the matches* (by hand or with an assistant).
 
 ### Changed
