@@ -17,9 +17,9 @@ STYLES = {
     # put off, or odd
     "skipped": "yellow", "partial": "yellow", "problem": "yellow", "ambiguous": "yellow", "no stored page": "yellow",
     # failed
-    "failed": "red_bold", "lost": "red_bold",
+    "failed": "red_bold", "lost": "red_bold", "missing": "red_bold",
     # a preview, or a group to look at
-    "pretend": "cyan_bold", "would do": "cyan_bold", "would update": "cyan_bold", "would move back": "cyan_bold",
+    "pretend": "cyan_bold", "would do": "cyan_bold", "would update": "cyan_bold", "would move back": "cyan_bold", "would read": "cyan_bold",
     "duplicate": "cyan", "group": "cyan",
     # nothing to do
     "unchanged": "dim", "already": "dim", "note": "dim",

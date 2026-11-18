@@ -38,6 +38,11 @@ watch:
   enabled: false                        # `bdnex serve` looks at the import sources by itself and imports what is new, asking nothing
   interval: 15                          # minutes between two looks
 
+hooks:                                  # commands of your own, run (not through a shell) after bdnex changed something
+  after_import: []                      # e.g. ["bdnex komga push -y"]: after an import that linked files
+  after_write: []                       # after `bdnex write` wrote files
+  after_move: []                        # after `bdnex move` moved or copied files
+
 cover:
   download: true                        # keep each album's cover as a file in `dir` (linked from the library)
   dir: ~/.local/share/bdnex/covers      # where the cover files are kept

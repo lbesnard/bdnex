@@ -4,6 +4,8 @@ Thanks for helping. A few things that make a change easy to review:
 
 - **Run the checks** (see `CLAUDE.md`, section *Checks before a PR*): `uv run pytest -q`, `uv run ruff check --select F bdnex`,
   `uv run python -m compileall -q bdnex` and `uv run sphinx-build -W -E -q docs <folder>`.
+- **The command reference is generated.** After changing an option, refresh it:
+  `uv run python -m bdnex.ui.cli_reference > docs/reference/commands.md` (a test fails when it is stale).
 - **Docs are tested.** Every command, option, config key and query field must appear in `docs/`
   (`test/test_docs_in_sync.py` says what is missing). A new command is a row in `bdnex/ui/commands.py`.
 - **Measure matching changes.** `tools/eval_matching.py run|report` re-runs the matcher on a library and reports how

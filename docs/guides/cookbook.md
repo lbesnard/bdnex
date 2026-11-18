@@ -137,6 +137,16 @@ bdnex stats series:nains    # for part of it
 bdnex ls partial:true -c    # how many albums still wait for their page
 ```
 
+## …tell Komga (or anything else) every time I import or write?
+
+```yaml
+hooks:
+  after_import: ["bdnex komga push -y"]
+```
+
+See [Hooks](configuration.md#hooks-your-own-commands-after-bdnex-did-something): the command runs after an import that
+linked files, never for a preview, and its failure never fails the import.
+
 ## …say which album a file is, when the match is wrong?
 
 ```bash

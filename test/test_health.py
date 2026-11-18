@@ -133,3 +133,18 @@ def test_cover_hashes_are_worked_out_in_several_processes_and_stored(env, make_i
         parallel = duplicates(lib, compute_covers=True, workers=3)
         assert {path: lib.get_file(path)["cover_hash"] for path in paths} == hashes  # the same hashes
         assert [g["why"] for g in parallel] == [g["why"] for g in serial]
+
+
+def test_check_lists_comic_files_of_the_collection_that_the_library_does_not_know(env, tmp_path):
+    db, settings, make_cbz = env
+    collection = tmp_path / "comics"
+    collection.mkdir()
+    known = make_cbz("known.cbz")
+    stranger = make_cbz("stranger.cbz")
+    os.replace(known, collection / "known.cbz")
+    os.replace(stranger, collection / "stranger.cbz")
+    settings = settings.model_copy(update={"collection_path": str(collection)})
+    with Library(db, root=str(collection)) as lib:
+        lib.add_file(str(collection / "known.cbz"), lib.add_album(AlbumInfo("bedetheque", "1", "Un", language="fr")))
+        found = {f.key: f for f in check(lib, settings)}
+    assert "unimported" in found and found["unimported"].items == [str(collection / "stranger.cbz")]

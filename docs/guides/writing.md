@@ -246,6 +246,14 @@ paths:
 - `$field` or `${field}`; `$volume:02` zero-pads a number. A special such as *Hors-série* is used
   as `$volume` when there is no number.
 - Fields: `kind series title volume language year publisher isbn genre authors writer penciller colorist`.
+- **Functions**, written `%name{argument,argument}`; arguments can hold `$fields` and other functions:
+  `%upper{}` `%lower{}` `%title{}` `%capitalize{}`, `%left{text,n}` and `%right{text,n}` (the first or last `n`
+  characters), `%asciify{text}` (no accents), `%first{text,count,skip,sep,join}` (some of the items of a list such as
+  `$authors`: `%first{$authors}` is the first author, `%first{$authors,2}` the first two),
+  `%if{test,then,else}` (the test is true when it is not empty, `0` or `false`) and `%ifdef{field,then,else}`
+  (the field has a value; give its name without `$`). `if` and `ifdef` only work out the branch they take, and testing a
+  field never asks for it when it is empty (`paths.missing_field`). Example: `Series/$series/%if{$year,($year) }$title`.
+  A function can not contain a `/` (a folder separator), and a typo in a function name is refused when the configuration is read.
 - Every value is made safe for file names (`/ \ : * ? " < > |` become `_`), so a value can never
   create a folder. The extension `.cbz` is added for you.
 - If a name already exists, bdnex shows both files and asks which to keep: the existing one, the new one (the existing goes to the [trash](versions.md#the-trash)), or both (the new one becomes a spare version in `_versions/`, numbered if there are several). `--force` keeps both.

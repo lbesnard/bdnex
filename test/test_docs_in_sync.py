@@ -14,7 +14,7 @@ from bdnex.config import load_defaults
 from bdnex.library import Library
 from bdnex.library.query import ALL_FIELDS
 
-COMMANDS = "init import ls write move repair convert reparse edit relocate check duplicates undo relink review reset trash series config completion serve komga candidates stats fields mark".split()
+COMMANDS = "init import ls write move repair convert reparse edit relocate check duplicates undo relink review reset trash series config completion serve komga candidates stats fields mark update".split()
 ROOT = __file__.rsplit("/test/", 1)[0]
 
 
@@ -24,7 +24,9 @@ def read(path):
 
 
 def all_docs():
-    pages = glob.glob(f"{ROOT}/docs/**/*.md", recursive=True) + [f"{ROOT}/README.md"]
+    # the generated reference is left out: it lists every option, so it would make the guides look complete
+    pages = [p for p in glob.glob(f"{ROOT}/docs/**/*.md", recursive=True) if not p.endswith("reference/commands.md")]
+    pages += [f"{ROOT}/README.md"]
     return "\n".join(open(page, encoding="utf-8").read() for page in pages)
 
 
@@ -94,3 +96,14 @@ def test_every_flag_of_a_command_is_documented(helps, command):
 def test_every_command_has_a_page_or_a_section():
     docs = all_docs()
     assert [c for c in COMMANDS if f"bdnex {c}" not in docs] == []
+
+
+def test_the_command_reference_is_the_current_help_of_every_command():
+    from bdnex.ui import cli_reference
+
+    def squash(text):
+        # argparse differs between Python versions in its line breaks, and 3.13 writes `-s, --select TERM` for `-s TERM, --select TERM`
+        return re.sub(r"(-\w) (\S+), (--[\w-]+) \2", r"\1, \3 \2", " ".join(text.split()))
+    assert squash(read("docs/reference/commands.md")) == squash(cli_reference.build()), \
+        "run: uv run python -m bdnex.ui.cli_reference > docs/reference/commands.md"
+    assert [c for c in COMMANDS if f"### `bdnex {c}`" not in read("docs/reference/commands.md")] == []

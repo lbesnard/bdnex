@@ -85,6 +85,10 @@ def check(library: Library, settings, matches: bool = False) -> list[Finding]:
     if unlinked:
         found.append(Finding("unmatched", f"{len(unlinked)} file(s) have no album", unlinked[:SHOWN],
                              "`bdnex import --select tagged:false` matches them"))
+    unimported = _unimported(settings, {r["path"] for r in rows})
+    if unimported:
+        found.append(Finding("unimported", f"{len(unimported)} comic file(s) in your collection folder are not in the library",
+                             unimported[:SHOWN], "`bdnex import --as-is` records them, `bdnex import` matches them"))
     waiting = [r["path"] for r in rows if r.get("review")]
     if waiting:
         found.append(Finding("review", f"{len(waiting)} match(es) wait for a review", waiting[:SHOWN], "`bdnex review`"))
@@ -134,6 +138,20 @@ def check(library: Library, settings, matches: bool = False) -> list[Finding]:
         found.append(Finding("leftovers", f"{len(leftovers)} temporary file(s) left by an interrupted write", leftovers[:SHOWN],
                              "safe to delete", fixable=True))
     return found
+
+
+def _unimported(settings, known: set[str]) -> list[str]:
+    """Comic files under ``collection_path`` that the library does not know (nothing when it is not set or not there)."""
+    from bdnex.config import ConfigError
+    from bdnex.library.scan import iter_comic_files
+
+    try:
+        root = settings.require_collection()
+    except ConfigError:
+        return []
+    if not os.path.isdir(root):
+        return []
+    return sorted(path for path in iter_comic_files(str(root)) if os.path.abspath(path) not in known)
 
 
 def _changed(row: dict[str, Any]) -> bool:

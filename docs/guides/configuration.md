@@ -104,6 +104,11 @@ watch:
   enabled: false                         # `bdnex serve` looks at the import sources by itself and imports what is new, asking nothing
   interval: 15                           # minutes between two looks
 
+hooks:                                   # commands of your own, run (not through a shell) after bdnex changed something
+  after_import: []                       # e.g. ["bdnex komga push -y"]: after an import that linked files
+  after_write: []                        # after `bdnex write` wrote files
+  after_move: []                         # after `bdnex move` moved or copied files
+
 cover:
   download: true                         # keep each album's cover as a file in `dir` (linked from the library)
   dir: ~/.local/share/bdnex/covers       # where the cover files are kept
@@ -177,6 +182,21 @@ paths:
 
 `match` may be one string. Anything the query language knows works: `publisher:`, `genre:`, `language:`, `year:`,
 `kind:oneshot`, `any:`... Check the result with `bdnex move -n`.
+
+## Hooks: your own commands after bdnex did something
+
+```yaml
+hooks:
+  after_import: ["bdnex komga push -y"]   # after an import that linked files
+  after_write: []                          # after `bdnex write` wrote files
+  after_move: ["/home/me/rescan-komga.sh"] # after `bdnex move` moved or copied files
+```
+
+Each entry is a command, split like a shell would split it but **not run by a shell**: no pipes, no `&&`, no `~`; put
+those in a small script and name the script. A hook runs only when the command changed something (nothing for a preview or
+when no file was linked), gets `BDNEX_EVENT`, `BDNEX_COMMAND` and `BDNEX_CHANGED` (how many files) in its environment, and
+may take ten minutes. One that fails, is missing or takes too long is reported and never makes the bdnex command fail.
+The web page (`bdnex serve`) runs the same commands, so its jobs fire your hooks too.
 
 ## Metadata source
 

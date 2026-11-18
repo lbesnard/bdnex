@@ -27,7 +27,13 @@ command runs, never while an import is fetching).
   `attr:checked` or `attr:checked=keep` (and `^attr:checked` for the others). **Library schema v10**: the first
   command after upgrading copies your library to `<library>.bak-v9` and then migrates it; an older bdnex can no longer
   open it.
-- Docs: *Checking the matches* (by hand or with an assistant).
+- `bdnex update` reads the files again after another tool changed them (size, checksum, pages, damage, their own tags);
+  the opposite of `write`. `bdnex check` also lists comic files of the collection folder that the library does not know.
+- Path templates have functions: `%upper{}`, `%lower{}`, `%title{}`, `%capitalize{}`, `%left{}`, `%right{}`, `%asciify{}`,
+  `%first{}`, `%if{}`, `%ifdef{}`; a typo in one is refused when the configuration is read.
+- `hooks:` in the configuration (`after_import`, `after_write`, `after_move`): commands of your own that run afterwards.
+- Docs: a *Command reference* generated from the commands' own `--help` (a test keeps it current), and *Checking the
+  matches* (by hand or with an assistant).
 
 ### Changed
 - **Breaking:** `bdnex review --scan` is now `bdnex check --matches --fix` (the old spelling still works for a release);
