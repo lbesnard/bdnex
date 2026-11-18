@@ -201,7 +201,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
             if report.aborted_at:
                 organize_results, placement_notes = [], _after_abort(library, report)
             else:
-                organize_results, placement_notes = (_place(args, settings, library, report) if not args.pretend else ([], []))
+                organize_results, placement_notes = (_place(args, settings, library, report) if not (args.pretend or args.database_only) else ([], []))
         except ConfigError as err:
             print(f"The import was recorded, but the files were not touched: {err}", file=sys.stderr)
             organize_results, placement_notes = [], []

@@ -144,3 +144,17 @@ def test_the_plain_import_also_downloads_the_missing_covers_of_albums_already_do
     result = env.session.run([path]).results[0]
     assert result.outcome == "already" and COVER_URL in web.calls
     assert env.lib.get_album(env.lib.get_file(path)["album_id"])["cover_file"]
+
+
+def test_stopping_gives_up_the_requests_not_yet_sent(tmp_path):
+    from bdnex.importer.bedetheque.bedetheque import RequestsStopped
+
+    env = env_for(web_with_cover(), check=True, download=True)
+    env.source.stop_requests()
+    try:
+        env.source.fetch_cover(COVER_URL)
+        raise AssertionError("the request was sent")
+    except RequestsStopped:
+        pass
+    env.source.allow_requests()
+    assert env.source.fetch_cover(COVER_URL)  # a new run sends requests again

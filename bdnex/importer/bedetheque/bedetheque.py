@@ -68,6 +68,10 @@ VOLUME_TIEBREAK = 10.0  # only orders the candidates; the reported score does no
 MAX_POSTINGS = 4000  # a word in more albums than this ('integrale') is no use to find candidates
 
 
+class RequestsStopped(Exception):
+    """A request was given up because the import was stopped."""
+
+
 class PageQueue:
     """Album and series pages downloaded in worker threads as soon as their address is known, while matching goes on.
 
@@ -86,6 +90,7 @@ class PageQueue:
         self.stored = 0  # pages put in the cache by this queue
         source.active = source.downloaded = 0
         source._fetching = []
+        source.allow_requests()
 
     def submit(self, url: str, kind: str = "album") -> str:
         """Start downloading a page. Says what happened: ``new`` (started), ``queued`` (already asked for, not here yet),
@@ -180,6 +185,7 @@ class Bedetheque:
         self._fetching: list[str] = []  # their addresses, in the order they started
         self.downloaded = 0   # pages fetched since `prefetch` started
         self._stats = threading.Lock()
+        self._stopped = threading.Event()  # set by `stop_requests`: requests not yet sent are given up
         self._sitemap_fetch = sitemap_fetch or fetch
         self.delay = delay
         self.sitemap_delay = sitemap_delay
@@ -206,7 +212,13 @@ class Bedetheque:
 
     def _download(self, kind: str, url: str) -> bytes:
         """One real request, after the polite wait. Touches no database: it can run in a worker thread."""
-        self._sleep(uniform(*(self.sitemap_delay if kind == "sitemap" else self.delay)))
+        wait = uniform(*(self.sitemap_delay if kind == "sitemap" else self.delay))
+        if self._sleep is time.sleep:
+            self._stopped.wait(wait)  # the polite wait ends at once when the import is stopped
+        else:
+            self._sleep(wait)
+        if self._stopped.is_set():
+            raise RequestsStopped(f"{url}: the import was stopped")
         logger.debug(f"Fetching {url}")
         content = {"sitemap": self._sitemap_fetch, "cover": self._image_fetch}.get(kind, self._fetch)(url)
         if kind not in ("sitemap", "cover") and looks_blocked(200, content):  # whichever fetcher it came from
@@ -568,6 +580,14 @@ class Bedetheque:
             raise BlockedError(f"{url}: the saved page is an anti-bot challenge page, not the album page")
         self.library.cache_put(SOURCE, "album", url, html)
         return self.album_info(url)
+
+    def stop_requests(self) -> None:
+        """The import is being stopped (Ctrl-C): the waiting and queued requests give up, only the ones in flight end."""
+        self._stopped.set()
+
+    def allow_requests(self) -> None:
+        """A new run starts: requests are sent again."""
+        self._stopped.clear()
 
     def fetch_cover(self, url: str) -> bytes:
         """One polite request for a cover. Touches no database (nor the cache): it can run in a worker thread."""
