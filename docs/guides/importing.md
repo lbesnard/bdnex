@@ -296,6 +296,21 @@ bdnex review --scan                  # flag the ones that look wrong, then go th
 bdnex review --list --json           # the flagged files with the reason, for a script or an assistant
 ```
 
+### The other albums a file could be: `bdnex candidates`
+
+```bash
+bdnex candidates --low                       # the files whose match is in doubt, each with its best albums
+bdnex candidates series:nains --limit 8      # chosen files, whatever their state
+bdnex candidates --low --json                # for a script or an assistant
+```
+
+`--low` selects the files with **no album**, **flagged** for review, whose match **looks doubtful or contradicted**
+(see below) or that were matched with a score under `match.strong_threshold`. For each file it lists the best albums
+of the album list (`*` is the one now linked) with their score and the evidence for and against: the file's own tags,
+volume, year and authors. Only an album whose page was read has a year and credits to weigh; the others say
+`page not read`, so a candidate that looks right is worth a `bdnex import --fetch` before you decide. Nothing is
+requested and nothing changes. To redo a file: `bdnex import --match --force FILE`.
+
 #### Weighing a match: `--scan`
 
 The first match only has names. Once the album page is read, `bdnex review --scan` (and every import, as each page
