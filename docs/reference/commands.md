@@ -138,9 +138,10 @@ options:
                    wrong (see `bdnex check --matches`), or matched with a score under
                    `match.strong_threshold`
   --limit N        candidates per file (default 5)
-  --cover          also compare the file's cover with the cover of each candidate (one
-                   request per candidate, so keep `--limit` small; needs OpenCV). The
-                   candidate whose cover is most like the file's is marked
+  --cover          also compare the file's cover with the cover of each candidate (a
+                   cover the import already saved is read from disk; any other is one
+                   request, so keep `--limit` small; needs OpenCV). The candidate
+                   whose cover is most like the file's is marked
   --json           JSON, for a script or an assistant
   -v, --verbose    more detail: -v what is decided and why (every file), -vv how
                    (reads, cache, requests, threads), -vvv everything, libraries and

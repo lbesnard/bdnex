@@ -6,7 +6,7 @@ import argparse
 import json
 import logging
 import sys
-from typing import Any
+from typing import Any, Optional
 
 from bdnex.importer import confirm, covers
 from bdnex.importer.matching import find_matches
@@ -68,6 +68,16 @@ def describe_candidate(library, source, match, file, current_id) -> dict[str, An
             "verdict": evidence.verdict, "for": evidence.agree, "against": evidence.strong + evidence.weak}
 
 
+def saved_cover(source, settings, source_id: str, album) -> Optional[bytes]:
+    """The cover file the import kept for this album (``cover.download``), or ``None``: then it has to be requested."""
+    kept = (album or {}).get("cover_file") or covers.find_cover(settings.cover_path, source.name, source_id)
+    path = settings.cover_path / kept if kept else None
+    try:
+        return path.read_bytes() if path and path.exists() else None
+    except OSError:
+        return None
+
+
 def compare_covers(source, settings, path: str, fmt, matches, found: list[dict[str, Any]]) -> None:
     """Add ``cover`` (0-100, or ``None`` when it could not be compared) to each candidate, and mark the best one."""
     local = covers.front_cover(path, fmt or "cbz")
@@ -80,7 +90,9 @@ def compare_covers(source, settings, path: str, fmt, matches, found: list[dict[s
         album = source.library.get_album(known) if known else None
         url = (album or {}).get("cover_url") or source.guess_cover_url(match.candidate)
         try:
-            online = source.cover_image(url)
+            online = saved_cover(source, settings, match.candidate.source_id, album)  # the import already downloaded it
+            if online is None:
+                online = source.cover_image(url)
             covers.check_cover_image(online)
             entry["cover"] = round(covers.sift_similarity(local, online))
         except (covers.CoverError, *source.fetch_errors) as err:
@@ -104,8 +116,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
                              "--matches`), or matched with a score under `match.strong_threshold`")
     parser.add_argument("--limit", type=int, default=5, metavar="N", help="candidates per file (default 5)")
     parser.add_argument("--cover", action="store_true",
-                        help="also compare the file's cover with the cover of each candidate (one request per candidate, "
-                             "so keep `--limit` small; needs OpenCV). The candidate whose cover is most like the file's "
+                        help="also compare the file's cover with the cover of each candidate (a cover the import already saved "
+                             "is read from disk; any other is one request, so keep `--limit` small; needs OpenCV). The candidate whose cover is most like the file's "
                              "is marked")
     parser.add_argument("--json", action="store_true", help="JSON, for a script or an assistant")
     add_verbosity(parser)
