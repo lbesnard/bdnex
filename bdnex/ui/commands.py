@@ -36,6 +36,7 @@ GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command("mark", "mark_cmd", "put your own marks on files or albums (checked=keep), to find them again with attr:"),
         Command("reparse", "reparse_cmd", "re-read the pages stored in the library (offline) to fill in more details"),
         Command("reset", "reset_cmd", "empty the library (albums, files, edits), keep the downloaded sitemaps and pages"),
+        Command("update", "update_cmd", "read the files again after another tool changed them (the opposite of write)"),
         Command("check", "check_cmd",
                 "is the library consistent with itself and the disk? (--matches: do the matches look right?)"),
     )),

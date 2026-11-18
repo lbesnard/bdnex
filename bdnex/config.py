@@ -126,6 +126,13 @@ class Watch(_Section):
     interval: int = Field(ge=1, le=1440)  # minutes between two looks at the import sources
 
 
+class Hooks(_Section):
+    """Commands run after bdnex has done something (``bdnex/ui/hooks.py``)."""
+    after_import: list[str]
+    after_write: list[str]
+    after_move: list[str]
+
+
 class Cover(_Section):
     download: bool
     dir: str = Field(min_length=1)
@@ -210,12 +217,20 @@ class PathRule(_Section):
 
 def _check_template(value: str) -> str:
     """A path template may only use the variables bdnex has (``$series``, ``$title``...)."""
-    from bdnex.organizer.template import FIELD_NAMES, unknown_fields
+    from bdnex.organizer.template import FIELD_NAMES, FUNCTIONS, render, unknown_fields
 
     unknown = unknown_fields(value)
     if unknown:
-        raise ValueError(f"unknown variable(s) {', '.join('$' + name for name in unknown)} in {value!r}; "
-                         f"the known ones are {', '.join('$' + name for name in FIELD_NAMES)}")
+        names = [name for name in unknown if not name.startswith("%")]
+        functions = [name for name in unknown if name.startswith("%")]
+        problems = ([f"unknown variable(s) {', '.join('$' + name for name in names)}"] if names else []) \
+            + ([f"unknown function(s) {', '.join(functions)}"] if functions else [])
+        raise ValueError(f"{' and '.join(problems)} in {value!r}; the variables are {', '.join('$' + name for name in FIELD_NAMES)}, "
+                         f"the functions {', '.join('%' + name for name in FUNCTIONS)}")
+    try:
+        render(value, {name: "x" for name in FIELD_NAMES}, lambda name: "x")  # an unclosed %function{ is found now, not at the first file
+    except ValueError as err:
+        raise ValueError(f"{err} in {value!r}") from None
     return value
 
 
@@ -283,6 +298,7 @@ class Settings(_Section):
     duplicates: Duplicates
     trash: Trash
     watch: Watch
+    hooks: Hooks
     cover: Cover
     api: Api
     komga: Komga

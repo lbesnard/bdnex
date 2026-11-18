@@ -11,7 +11,8 @@ from bdnex.config import ConfigError
 from bdnex.formatting import short_path
 from bdnex.library import Library
 from bdnex.library.query import QueryError
-from bdnex.organizer.organizer import auto_workers, COPY, FAILED, MOVE, WRITE, Organizer, WriteAborted
+from bdnex.organizer.organizer import (auto_workers, COPIED, COPY, FAILED, MOVE, MOVED, WRITE, WRITTEN, Organizer,
+                                      WriteAborted)
 from bdnex.ui import color, context, results
 from bdnex.ui.output import Bar, add_pretend, add_verbosity, add_workers, banner, setup_logging
 from bdnex.ui.prompts import new_prompter
@@ -205,6 +206,11 @@ def run(command: str, argv: list[str], out=sys.stdout) -> int:
     code = summary(results, out)
     if organizer.aborted_at:
         print(aborted_message(organizer.aborted_at, command), file=out)
+    if not args.pretend and command in ("write", "move"):
+        from bdnex.ui.hooks import run_hooks
+
+        done = sum(1 for r in results if r.outcome in (WRITTEN, MOVED, COPIED))
+        run_hooks(settings, "after_write" if command == "write" else "after_move", done, command)
     return code
 
 

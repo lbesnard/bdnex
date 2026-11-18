@@ -249,6 +249,23 @@ When a new bdnex has to change the structure of your library (the schema version
 upgraded file; to go back, put the copy in place of `bdnex.sqlite`. There is one copy per version, never overwritten,
 and nothing is copied when the library is already current. Delete the copies when you no longer need them.
 
+## Reading the files again: `bdnex update`
+
+When another tool changed your files (a page added, a tag edited, a repair), the library still holds what it recorded:
+size, checksum, page count, whether the file is damaged, what its own `ComicInfo.xml` says. `bdnex update` reads them
+again. It is the opposite of `bdnex write`: `write` puts the library's metadata into the files, `update` records what the
+files are now.
+
+```bash
+bdnex update -n                 # which files changed (size or date differ from the record); reads nothing
+bdnex update                    # read those, and say what is different
+bdnex update --all series:nains # read every file of a query, changed or not
+```
+
+The albums are never touched and no file is changed; a file that is gone is listed (`bdnex relink` finds moved files).
+`bdnex check` lists files that changed or went missing, and also the comic files of your collection folder that the
+library does not know (`bdnex import --as-is` records them).
+
 ## Your own marks: `bdnex mark`
 
 A mark is a name and a text value that bdnex keeps with a file (or an album) and never changes by itself: a way to

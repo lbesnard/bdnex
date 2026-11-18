@@ -250,6 +250,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
         organizer_report(organize_results, out)
     for note in placement_notes:
         print(note, file=out)
+    if not args.pretend:
+        from bdnex.ui.hooks import run_hooks
+
+        run_hooks(settings, "after_import", report.count(TAGGED) + report.count(PARTIAL), "import")
     if report.aborted_at:
         print(f"\nAborted at {os.path.basename(report.aborted_at)} ({len(report.results)} of {report.total} files looked at). "
               "Everything decided so far is saved and no album page was fetched: run the same command again to continue "

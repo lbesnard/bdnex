@@ -58,3 +58,44 @@ def test_missing_field_skip():
 
 def test_template_fields():
     assert template.template_fields("A/$series - T$volume:02/${title}") == ["series", "volume", "title"]
+
+
+# ------------------------------------------------------------------ %functions{...}
+VALUES = {"series": "Les Nains", "title": "Redwin é", "volume": 3, "authors": "A, B, C", "year": "", "kind": "series"}
+
+
+def parts(template):
+    from bdnex.organizer.template import render
+
+    return render(template, VALUES, lambda name: "Unknown").parts
+
+
+def test_text_functions():
+    assert parts("%upper{$series}/%lower{$series}/%title{$title}") == ["LES NAINS", "les nains", "Redwin É"]
+    assert parts("%capitalize{LES NAINS}") == ["Les nains"] and parts("%left{$series,3}/%right{$series,5}") == ["Les", "Nains"]
+    assert parts("%asciify{$title}") == ["Redwin e"]
+
+
+def test_if_and_ifdef_use_only_the_branch_they_take_and_never_ask_for_the_value_they_test():
+    from bdnex.organizer.template import render
+
+    asked = []
+    result = render("%if{$year,($year) }$title/%ifdef{year,yes,no}/%if{$volume,T$volume:02}",
+                    VALUES, lambda name: asked.append(name) or "Unknown")
+    assert result.parts == ["Redwin é", "no", "T03"] and asked == []  # an empty year was tested, not asked for
+
+
+def test_first_takes_some_items_of_a_list():
+    assert parts("%first{$authors}") == ["A"] and parts("%first{$authors,2}") == ["A, B"]
+    assert parts("%first{$authors,2,1}") == ["B, C"]
+
+
+def test_functions_nest_and_a_typo_is_found_when_the_configuration_is_read():
+    import pytest
+
+    from bdnex.config import _check_template
+    assert parts("%upper{%left{$series,3}}") == ["LES"]
+    for bad in ("%uper{$series}", "%ifdef{nofield,x}", "%upper{$series"):
+        with pytest.raises(ValueError):
+            _check_template(bad)
+    assert _check_template("%upper{$series}/%if{$volume,T$volume:02}$title") 
