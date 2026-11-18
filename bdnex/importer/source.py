@@ -41,7 +41,7 @@ class MetadataSource(Protocol):
         """True when local data needed for :meth:`candidates` is available (e.g. a downloaded index)."""
 
     def prepare(self, recache: bool = False, progress: Optional[Callable[[str], None]] = None) -> None:
-        """Download or refresh that local data. Called when not ready, or with ``--recache``."""
+        """Download or refresh that local data. Called when not ready, or with ``--fetch --force``."""
 
     def candidates(self, query: str, limit: int = 5) -> list[tuple[Candidate, float]]:
         """Best matches for a file name as (candidate, score 0-100). Must not use the network."""

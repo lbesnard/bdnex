@@ -6,7 +6,7 @@ import pytest
 import yaml
 
 from bdnex.library import AlbumInfo, Library
-from bdnex.ui import review_cmd
+from bdnex.ui import check_cmd, review_cmd
 
 
 class Choosing:
@@ -108,28 +108,34 @@ def matched(tmp_path, monkeypatch, make_cbz):
     return db, good, bad
 
 
-def test_scan_flags_the_matches_that_look_wrong_and_only_those(matched):
+def test_check_matches_lists_the_matches_that_look_wrong_and_changes_nothing(matched):
     db, good, bad = matched
     out = io.StringIO()
-    assert review_cmd.run(["--scan", "--list"], out=out) == 0
+    assert check_cmd.run(["--matches"], out=out) == 1  # something to look at
     text = out.getvalue()
-    assert "1 confirmed" in text and "1 doubtful" in text and "reissue" in text
+    assert "1 match(es) look wrong" in text and bad in text and "reissue" in text and good not in text
+    assert all(r["review"] is None for r in rows(db).values())
+
+
+def test_fix_flags_them_for_review(matched):
+    db, good, bad = matched
+    assert check_cmd.run(["--matches", "--fix"], out=io.StringIO()) == 0
     now = rows(db)
     assert now[good]["review"] is None and "looks doubtful" in now[bad]["review"]
 
 
-def test_scan_preview_flags_nothing(matched):
+def test_the_former_review_scan_still_flags_and_says_where_it_went(matched, capsys):
     db, good, bad = matched
-    out = io.StringIO()
-    assert review_cmd.run(["--scan", "-n"], out=out) == 0 and "Not flagged" in out.getvalue()
-    assert all(r["review"] is None for r in rows(db).values())
+    review_cmd.run(["--scan", "--list"], out=io.StringIO())
+    assert "bdnex check --matches --fix" in capsys.readouterr().err
+    assert "looks doubtful" in rows(db)[bad]["review"]
 
 
 def test_list_as_json_gives_the_reason_for_a_script(matched):
     import json
 
     db, good, bad = matched
-    review_cmd.run(["--scan"], out=io.StringIO())
+    check_cmd.run(["--matches", "--fix"], out=io.StringIO())
     out = io.StringIO()
     assert review_cmd.run(["--list", "--json"], out=out) == 0
     data = json.loads(out.getvalue())

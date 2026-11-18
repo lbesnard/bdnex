@@ -1,4 +1,4 @@
-"""``bdnex review``: look at the matches whose cover looked different, one by one."""
+"""``bdnex review``: go through the flagged matches one by one, with the file's cover and the album's side by side."""
 
 from __future__ import annotations
 
@@ -10,32 +10,31 @@ from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.ui.describe import label
 from bdnex.ui import context
-from bdnex.ui.output import add_pretend
 
 
 def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     parser = argparse.ArgumentParser(
         prog="bdnex review", description=__doc__,
-        epilog="`bdnex import` flags a file when its cover is not like its album's cover (similarity below "
-               "`cover.match_percentage`) and nobody was there to look at it. Each flagged file is shown with both "
-               "covers side by side (the file's on the left, the album's on the right) and you keep the match, "
-               "unlink the file, ask for another album, or leave it for later.")
+        epilog="A match is flagged when its cover is not like its album's cover (similarity below `cover.match_percentage`) "
+               "or the album's page contradicts the file (year, volume, the file's own tags, its folder: see `bdnex check "
+               "--matches`), and nobody was there to look at it. Each flagged file is shown with both covers side by side "
+               "(the file's on the left, the album's on the right) and you keep the match, unlink the file, ask for "
+               "another album, or leave it for later. `bdnex candidates` lists the other albums a file could be.")
     parser.add_argument("query", nargs="*", help="only these files, same terms as `bdnex ls --files` (e.g. series:nains)")
-    parser.add_argument("-l", "--list", action="store_true", help="only list the flagged files and why; ask nothing")
-    parser.add_argument("--scan", action="store_true",
-                        help="first weigh every matched file against its album's credits, year, volume and the file's "
-                             "own tags (offline, no file is read) and flag the ones that look wrong")
+    parser.add_argument("--list", action="store_true", help="only list the flagged files and why; ask nothing")
+    parser.add_argument("--scan", action="store_true", help=argparse.SUPPRESS)  # now `bdnex check --matches --fix`
     parser.add_argument("--json", action="store_true",
                         help="with --list: the flagged files as JSON, with the evidence, for a script or an agent")
-    add_pretend(parser, "be flagged (with --scan)")
     args = parser.parse_args(argv)
     settings = context.settings()
     if settings is None:
         return 1
-    if args.scan:
-        status = scan(settings, args, out)
-        if status or args.pretend:
-            return status
+    if args.scan:  # the former spelling, kept for a release
+        print("`bdnex review --scan` is now `bdnex check --matches --fix`.", file=sys.stderr)
+        from bdnex.ui import check_cmd
+
+        if check_cmd.run(["--matches", "--fix"], out) > 1:
+            return 1
 
     rematch: list[str] = []
     counts = {"keep": 0, "unlink": 0, "rematch": 0, "skip": 0}
@@ -99,43 +98,3 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
         return import_cmd.run([*rematch, "--match", "--force"], out)
     return 0
 
-
-def scan(settings, args, out) -> int:
-    """Weigh every matched file with :func:`bdnex.importer.confirm.assess`; flag the doubtful and contradicted ones."""
-    from bdnex.importer import confirm
-
-    counts = {confirm.CONFIRMED: 0, confirm.UNVERIFIED: 0, confirm.DOUBTFUL: 0, confirm.CONTRADICTED: 0}
-    flagged = []
-    with Library.for_settings(settings, readonly=args.pretend) as library:
-        try:
-            rows = library.query(list(args.query), files=True)
-        except QueryError as err:
-            return context.bad_query(err)
-        albums: dict[int, dict] = {}
-        weighed = []
-        for row in rows:
-            file = library.get_file(row["path"])
-            if file is None or file["album_id"] is None or file["review"]:
-                continue
-            album = albums.get(file["album_id"]) or albums.setdefault(file["album_id"], library.get_album(file["album_id"]))
-            if not album or album["extra"].get("partial"):
-                continue
-            weighed.append((row["path"], album, confirm.assess(row["path"], album, file["embedded"] or None)))
-        outliers = confirm.folder_outliers([(path, album) for path, album, _ in weighed])
-        for path, album, evidence in weighed:
-            if path in outliers:  # the folder disagrees: one more sign against
-                evidence.weak.append(outliers[path])
-                if evidence.verdict in (confirm.CONFIRMED, confirm.UNVERIFIED):
-                    evidence.verdict = confirm.DOUBTFUL
-            counts[evidence.verdict] += 1
-            if confirm.worth_a_look(evidence):
-                flagged.append((path, label(album), evidence))
-                if not args.pretend:
-                    library.flag_review(path, f"the match looks {evidence.verdict}: {evidence.reason}")
-    for path, name, evidence in flagged:
-        print(f"{evidence.verdict:>12}  {path}\n              {name}\n              {evidence.reason}", file=out)
-    print(f"\nWeighed {sum(counts.values())} file(s): {counts[confirm.CONFIRMED]} confirmed, "
-          f"{counts[confirm.UNVERIFIED]} with nothing to compare, {counts[confirm.DOUBTFUL]} doubtful, "
-          f"{counts[confirm.CONTRADICTED]} contradicted. "
-          + ("Not flagged (preview)." if args.pretend else "The doubtful and contradicted ones are flagged: `bdnex review` goes through them."), file=out)
-    return 0

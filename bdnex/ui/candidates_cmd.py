@@ -21,13 +21,13 @@ logger = logging.getLogger(__name__)
 OFFLINE = "bdnex.importer.registry:offline_fetch"
 
 
-def is_low(library, settings, path: str, file: dict | None, album: dict | None, last: dict | None) -> str:
+def is_low(settings, path: str, file: dict | None, album: dict | None, last: dict | None) -> str:
     """Why this file's match is in doubt (``""``: it is not): no album, flagged, looks wrong, or a weak score."""
     if album is None:
         return "no album"
     if file and file.get("review"):
         return "flagged for review"
-    evidence = confirm.assess(path, album, (file or {}).get("embedded") or None)
+    evidence = confirm.judge(path, album, (file or {}).get("embedded") or None)
     if confirm.worth_a_look(evidence):
         return f"looks {evidence.verdict}"
     strong = settings.match.strong_threshold
@@ -80,8 +80,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
                "library. To redo a file: `bdnex import --match --force FILE`.")
     parser.add_argument("query", nargs="*", help="files to look at, same terms as `bdnex ls --files`")
     parser.add_argument("--low", action="store_true",
-                        help="only the files whose match is in doubt: no album, flagged, looking wrong (see `bdnex review "
-                             "--scan`), or matched with a score under `match.strong_threshold`")
+                        help="only the files whose match is in doubt: no album, flagged, looking wrong (see `bdnex check "
+                             "--matches`), or matched with a score under `match.strong_threshold`")
     parser.add_argument("--limit", type=int, default=5, metavar="N", help="candidates per file (default 5)")
     parser.add_argument("--cover", action="store_true",
                         help="also compare the file's cover with the cover of each candidate (one request per candidate, "
@@ -123,7 +123,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         for path, album_id in sorted(work.items()):
             file = library.get_file(path)
             album = library.get_album(album_id) if album_id is not None else None
-            why = is_low(library, settings, path, file, album, library.last_import(path)) if args.low else "asked for"
+            why = is_low(settings, path, file, album, library.last_import(path)) if args.low else "asked for"
             if not why:
                 continue
             matches = find_matches(source, path, limit=args.limit)

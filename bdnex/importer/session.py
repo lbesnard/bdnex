@@ -15,14 +15,12 @@ from __future__ import annotations
 import json
 import logging
 import os
-from pathlib import Path
 import time
-from dataclasses import dataclass, field
-from typing import Callable, Optional, Protocol
+from typing import Callable, Optional
 
 from bdnex import trash
 from bdnex.config import Settings
-from bdnex.importer import confirm, covers, folders
+from bdnex.importer import covers, folders
 from bdnex.importer.matching import Match, Recommendation, find_matches, recommend
 from bdnex.importer.pipeline import match_ahead, resolve_workers
 from bdnex.importer.source import Candidate, MetadataSource
@@ -35,77 +33,17 @@ from bdnex.versions import compare, facts_of
 
 logger = logging.getLogger(__name__)
 
-TAGGED, PARTIAL, SKIPPED, DUPLICATE, FAILED, PRETEND, ALREADY = (
-    "tagged", "partial", "skipped", "duplicate", "failed", "pretend", "already")
-# What a user reads for the outcomes that were named after the database (stored values do not change).
-OUTCOME_LABELS = {TAGGED: "complete", PARTIAL: "matched"}
-STEPS = ("match", "fetch")
+# The result types and exceptions live in session_types (the cover and early-fetch parts need them too); they are
+# re-exported here because this is where the rest of bdnex, and its tests, have always imported them from.
+from bdnex.importer.session_covers import CoverPass  # noqa: E402
+from bdnex.importer.session_early import EarlyFetch  # noqa: E402
+from bdnex.importer.session_types import (  # noqa: E402,F401
+    ALREADY, DUPLICATE, FAILED, OUTCOME_LABELS, PARTIAL, PRETEND, SKIPPED, STEPS, TAGGED, GoBack, ImportAborted,
+    ImportReport, ImportResult, Journal, NeedsTerminal, Prompter, SkipFolder, album_label)
 
 
-class ImportAborted(RuntimeError):
-    """The user chose to stop the import: what was decided so far stays, nothing else is started."""
 
-
-class GoBack(RuntimeError):
-    """The user wants to take the previous decision back and make it again."""
-
-
-class SkipFolder(RuntimeError):
-    """The user wants to skip this file and every other one still to come from its folder."""
-
-
-class NeedsTerminal(RuntimeError):
-    """A question has to be asked but there is nobody to ask: the import stops instead of failing file by file."""
-
-
-class Prompter(Protocol):
-    def choose_match(self, path: str, matches: list[Match]) -> Optional[Candidate]:
-        """Pick a candidate (or None to skip). ``matches`` may be empty."""
-
-    def duplicate_action(self, path: str, others: list[str], what: str) -> str:
-        """Return ``skip``, ``keep_both`` or ``replace``."""
-
-
-@dataclass
-class Journal:
-    """What matching one file recorded, to be able to take it back."""
-
-    logged: bool = False  # an import-log row
-    linked: bool = False  # the file was linked to an album
-    new_file: bool = False  # ... and its row in the library did not exist before
-    created_album: Optional[int] = None  # an album that was added for it
-    trashed: list[int] = field(default_factory=list)  # files it replaced (trash ids)
-
-
-@dataclass
-class ImportResult:
-    path: str
-    outcome: str
-    score: Optional[float] = None
-    album_id: Optional[int] = None
-    note: str = ""
-    journal: Optional[Journal] = field(default=None, repr=False, compare=False)
-
-
-@dataclass
-class ImportReport:
-    results: list[ImportResult] = field(default_factory=list)
-    aborted_at: Optional[str] = None  # the file being decided when the user aborted
-    total: int = 0  # files the run had to look at (only set when it was aborted)
-
-    def count(self, outcome: str) -> int:
-        return sum(1 for r in self.results if r.outcome == outcome)
-
-
-def album_label(album: dict) -> str:
-    """``Nains - T01 - Redwin de la Forge`` for messages."""
-    title, series, volume = album.get("title") or "", album.get("series"), album.get("volume")
-    if series and volume is not None:
-        return f"{series} - T{int(volume):02d}" + (f" - {title}" if title and title != series else "")
-    return title or series or "?"
-
-
-class ImportSession:
+class ImportSession(EarlyFetch, CoverPass):
     """Import files in steps: ``match`` (file -> album, offline) and ``fetch`` (album -> metadata).
 
     ``steps`` selects them; both by default. A step that is already done for a file is skipped,
@@ -514,123 +452,14 @@ class ImportSession:
             self._fetch_pending()
         return result
 
-    def _open_early(self) -> None:
-        """Start downloading each album page as soon as its file is matched, instead of after the last file.
 
-        The pages go through the same polite delay and ``parallel`` limit as before; only the waiting changes."""
-        self._early = None
-        self._by_page, self._by_series, self._done, self._completed_early = {}, {}, set(), 0
-        if "fetch" in self.steps and not self.pretend and not self.recache and hasattr(self.source, "page_queue"):
-            self._early = self.source.page_queue(getattr(self.source, "parallel", 1))
 
-    def _finish_stored(self) -> None:
-        """Leaving early: complete the albums whose pages are already here (no request), drop the rest."""
-        try:
-            if self._early is not None:
-                self._handle_arrivals(self._early.store())
-        except Exception as err:  # leaving must not fail
-            logger.debug(f"could not finish the stored pages: {err}")
-        self._close_early()
 
-    def _close_early(self) -> None:
-        if self._early is not None:
-            self._early.close()
-            self._early = None
 
-    def _queue_page(self, item) -> None:
-        """Ask for the album page of a pending item now; the album is completed when the page (and its series page) is here."""
-        if self._early is None:
-            return
-        url = item[1].url
-        self._by_page.setdefault(url, []).append(item)
-        self.detail(f"    page queued: {url.rsplit('/', 1)[-1]}")
-        state = self._early.submit(url)
-        if state == "cached":
-            self._page_ready(url)
-        elif state == "failed":
-            self._by_page.pop(url, None)  # asked for before and it did not come: the fetch phase tries again
 
-    def _handle_arrivals(self, events) -> None:
-        """What to do with the pages that arrived: a page of an album needs its series page, which is asked for in
-        turn; an album is completed (from the library's cache: no request) once both are here."""
-        for kind, url, error in events:
-            if kind == "album":
-                if error is None:
-                    self._page_ready(url)
-                else:
-                    self._by_page.pop(url, None)  # the fetch phase reports it
-            else:
-                items = self._by_series.pop(url, [])
-                if error is None:
-                    self._complete_early(items)
 
-    def _page_ready(self, url: str) -> None:
-        items = self._by_page.pop(url, [])
-        if not items:
-            return
-        try:
-            href = self.source.series_href_of(url)
-        except Exception as err:  # a page that does not parse: the fetch phase says so for its file
-            logger.debug(f"{url}: {err}")
-            return
-        state = "cached" if href is None else self._early.submit(href, "series")
-        if state == "cached":
-            self._complete_early(items)
-        elif state != "failed":
-            self._by_series.setdefault(href, []).extend(items)
 
-    def _complete_early(self, items) -> None:
-        journal, self._journal = self._journal, None  # what is recorded here belongs to no file being matched
-        try:
-            for item in items:
-                if id(item[0]) in self._done:
-                    continue
-                try:
-                    self._complete(item)
-                except Exception as err:  # the fetch phase reports it, with the file
-                    logger.debug(f"{item[1].url}: {err}")
-                    continue
-                self._done.add(id(item[0]))
-                self._completed_early += 1
-                self.detail(f"    album completed: {item[1].url.rsplit('/', 1)[-1]}")
-        finally:
-            self._journal = journal
 
-    def _complete(self, item) -> None:
-        """Build the album's record from its stored pages and say so in the file's result."""
-        result, candidate, damaged = item
-        album_id, partial, note = self._album_for(candidate)
-        result.album_id = album_id
-        result.outcome = PARTIAL if partial else TAGGED
-        result.note = "; ".join(n for n in (note, damaged) if n)
-        self._log(result.path, result.outcome, result.score, album_id)
-        if not partial:
-            self._confirm(result)
-        if not partial and (self.cover_check or self.settings.cover.download):
-            self._covers.append(result)  # its cover is got later, so that nothing waits for it here
-
-    def _drain_early(self) -> None:
-        """The matching is over: wait for the pages still on their way, completing each album as its pages arrive."""
-        waiting = sum(1 for items in (*self._by_page.values(), *self._by_series.values()) for i in items
-                      if id(i[0]) not in self._done)
-        if self._early is None or not waiting:
-            return
-        self.phase("fetch", f"Waiting for {waiting} album page(s) still on their way "
-                            "(Ctrl-C stops and keeps what is complete; `bdnex import --fetch` resumes)")
-        bar = self.bar(waiting, "Album pages") if self.bar else None
-        shown = self._completed_early
-        try:
-            while self._early.outstanding():
-                self._handle_arrivals(self._early.wait(0.5))
-                names = getattr(self.source, "fetching_now", lambda: [])()
-                if bar and self._completed_early > shown:
-                    bar.update(" · ".join(names), step=self._completed_early - shown)
-                elif bar:
-                    bar.refresh(" · ".join(names))
-                shown = self._completed_early
-        finally:
-            if bar:
-                bar.finish()
 
     def _fetch_pending(self) -> None:
         """Read the album pages of the files linked so far: one polite request each."""
@@ -718,128 +547,11 @@ class ImportSession:
                 bar.finish()
         self._check_covers()
 
-    # ------------------------------------------------------------- covers
-    def _check_covers(self) -> None:
-        """Save and compare the covers of complete albums that were not part of this run's fetching."""
-        waiting, self._covers = self._covers, []
-        if waiting:
-            self.progress(f"Getting {len(waiting)} cover(s) (one request each, politely)...")
-        try:
-            for result in waiting:
-                self._check_cover(result)
-        except KeyboardInterrupt:
-            self.progress("Interrupted: the other covers are downloaded by the next `bdnex import --fetch`.")
 
-    def _cover_missing(self, album: dict) -> bool:
-        """Should this album's cover be downloaded (``cover.download``) and is it not there?"""
-        if not self.settings.cover.download or not album.get("cover_url"):
-            return False
-        return self._kept_cover(album) is None
 
-    def _kept_cover(self, album: dict) -> Optional[Path]:
-        """The saved cover file of an album, if there is one. A file from an earlier library (the album was
-        forgotten by `bdnex reset`, the folder was kept) is taken up again."""
-        kept = album.get("cover_file")
-        if kept and (self.settings.cover_path / kept).exists():
-            return self.settings.cover_path / kept
-        found = covers.find_cover(self.settings.cover_path, album["source"], album["source_id"])
-        if found is not None and not self.pretend:
-            self.library.set_cover_file(album["id"], found)
-            album["cover_file"] = found
-        return self.settings.cover_path / found if found else None
 
-    def _cover_bytes(self, album: dict) -> Optional[bytes]:
-        """The album's cover: the saved file, else downloaded now (and saved when ``cover.download``)."""
-        kept = self._kept_cover(album)
-        if kept is not None and not self.recache:
-            data = kept.read_bytes()
-            try:
-                covers.check_cover_image(data)
-                return data
-            except covers.CoverError:  # a bad file left by an earlier run (an error page saved as a picture)
-                if not self.pretend:
-                    kept.unlink(missing_ok=True)
-                    self.library.set_cover_file(album["id"], None)
-                    album["cover_file"] = None
-        fetch_image = getattr(self.source, "cover_image", None)
-        if fetch_image is None or not album.get("cover_url"):
-            return None
-        data = fetch_image(album["cover_url"], recache=self.recache)
-        covers.check_cover_image(data)  # never keep (or compare) what is not a picture
-        if data and self.settings.cover.download and not self.pretend:
-            relative = covers.save_cover(self.settings.cover_path, album["source"], album["source_id"], data)
-            self.library.set_cover_file(album["id"], relative)
-            album["cover_file"] = relative
-        return data
 
-    def _confirm(self, result: ImportResult) -> None:
-        """Weigh the match with what the album page says (credits, year, volume, the file's own tags): a match that
-        looks wrong is flagged for ``bdnex review`` with the reason, and left in place."""
-        path = result.path
-        album, row = (self.library.get_album(result.album_id) if result.album_id else None), self.library.get_file(path)
-        if not album or row is None or self.pretend or album["extra"].get("partial") or row.get("review"):
-            return
-        try:  # (a partial album has no page to weigh against; a flag already there says why)
-            embedded = row.get("embedded") or None
-            evidence = confirm.assess(path, album, embedded)
-        except (ValueError, TypeError, AttributeError) as err:
-            logger.debug(f"{result.path}: match not weighed ({err})")
-            return
-        if confirm.worth_a_look(evidence):
-            self.library.flag_review(path, f"the match looks {evidence.verdict}: {evidence.reason}")
-            result.note = "; ".join(n for n in (result.note, f"the match looks {evidence.verdict}: `bdnex review` to look at it") if n)
 
-    def _check_cover(self, result: ImportResult) -> None:
-        """Keep the album's cover as a file; and, with ``cover.check``, compare the file's cover with it: below
-        ``cover.match_percentage`` it is probably the wrong album. The score is kept with the file
-        (``ls --files cover:..40``)."""
-        path = result.path
-        if result.album_id is None:
-            return
-        album, row = self.library.get_album(result.album_id), self.library.get_file(path)
-        if not album or not album["cover_url"] or row is None:
-            return
-        try:
-            online = self._cover_bytes(album) if (self.settings.cover.download or self.cover_check) else None
-        except (covers.CoverError, *self.source.fetch_errors) as err:
-            result.note = "; ".join(n for n in (result.note, f"cover not downloaded: {err}") if n)
-            return
-        if not self.cover_check or self._cover_off:
-            return
-        try:
-            local = covers.front_cover(path, row["format"])
-            if not local or not online:
-                return
-            score = round(covers.sift_similarity(local, online), 1)
-        except covers.CoverUnavailable as err:
-            self.progress(f"cover.check is on but {err}")
-            self._cover_off = True
-            return
-        except (covers.CoverError, *self.source.fetch_errors) as err:
-            result.note = "; ".join(n for n in (result.note, f"cover not compared: {err}") if n)
-            return
-        self.library.set_file_fields(path, cover_score=score)
-        threshold = self.settings.cover.match_percentage
-        if score >= threshold:
-            return
-        choice, decided = "keep", False
-        asking = self.prompter is not None and self.auto != "all" and not self.pretend
-        if asking and hasattr(self.prompter, "cover_mismatch"):
-            try:
-                choice = self.prompter.cover_mismatch(path, album_label(album), score, threshold)
-                decided = True  # you looked at it: nothing is left to review
-            except NeedsTerminal:
-                choice = "keep"
-        if choice == "unlink":
-            self.library.set_file_album(path, None)
-            self.library.log_import(path, SKIPPED, score)
-            result.outcome, result.album_id = SKIPPED, None
-            result.note = f"cover differs ({score:.0f}% < {threshold:.0f}%): unlinked from {album_label(album)}"
-        else:
-            if not decided and not self.pretend:
-                self.library.flag_review(path, f"the cover differs from the album's ({score:.0f}% < {threshold:.0f}%)")
-            result.note = "; ".join(n for n in (result.note, f"the cover differs from the album's ({score:.0f}% < {threshold:.0f}%)"
-                                                + ("" if decided else ": `bdnex review` to look at it")) if n)
 
     @staticmethod
     def _collect(paths: list[str]) -> list[str]:

@@ -15,7 +15,11 @@ def run(argv: list[str], out=sys.stdout) -> int:
         prog="bdnex check", description=__doc__,
         epilog="Looks at the database (integrity, links between tables), at the files it points to (missing, changed), "
                "at covers, the trash and leftovers of interrupted writes. Nothing is changed unless you add --fix, "
-               "which only settles what is safe: empty series, dead trash records, covers that are gone, temporary files.")
+               "which only settles what is safe: empty series, dead trash records, covers that are gone, temporary files "
+               "(and, with --matches, flags the doubtful matches for `bdnex review`).")
+    parser.add_argument("--matches", action="store_true",
+                        help="also weigh every match against its album's page (the file's own tags, volume, year, authors, "
+                             "its folder) and list the ones that look wrong; with --fix they are flagged for `bdnex review`")
     parser.add_argument("--fix", action="store_true", help="settle what is safe to settle (listed as [fixable])")
     args = parser.parse_args(argv)
     settings = context.settings()
@@ -24,7 +28,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
 
     on = color.enabled(out)
     with Library.for_settings(settings, readonly=not args.fix) as library:
-        findings = check(library, settings)
+        findings = check(library, settings, matches=args.matches)
         if not findings:
             print(color.paint("The library is consistent.", "green", on), file=out)
             return 0

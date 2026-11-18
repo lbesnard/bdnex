@@ -70,7 +70,7 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    tags) within a year of the album's earns 2 points and an author in a `(group)` of the name that is among the credits
    earns 3. Nothing is ever taken away (an album whose page was never read has no year to compare, so a penalty would
    push every known album behind the unknown ones; measured on a real library it moved right matches to wrong ones).
-   `match.use_facts: false` turns this off. The albums read *during* a run are not in it until the next run.
+   The albums read *during* a run are not in it until the next run.
    **A strong score is not always enough.** A first choice is not applied unasked, even above `match.strong_threshold`,
    when **another album is fewer than `match.min_margin` points behind it** (10 by default; a tie between tome 1 and
    tome 2 of a series is the usual case), or when the file's own tags name another series, or the file is a supplement
@@ -309,8 +309,8 @@ bdnex import --auto=all ~/comics     # match, read the pages, save and compare t
 bdnex review                         # go through the flagged files, one by one
 bdnex review series:nains            # only some of them (same terms as `bdnex ls --files`)
 bdnex review --list                  # just list them, and why
-bdnex review --scan -n               # weigh every match against its album page (preview: flags nothing)
-bdnex review --scan                  # flag the ones that look wrong, then go through them
+bdnex check --matches                # weigh every match against its album page and list the ones that look wrong
+bdnex check --matches --fix          # the same, and flag them; then `bdnex review` goes through them
 bdnex review --list --json           # the flagged files with the reason, for a script or an assistant
 ```
 
@@ -321,6 +321,7 @@ bdnex candidates --low                       # the files whose match is in doubt
 bdnex candidates series:nains --limit 8      # chosen files, whatever their state
 bdnex candidates --low --json                # for a script or an assistant
 bdnex candidates --low --limit 3 --cover     # also compare the covers (one request per candidate)
+bdnex candidates --low series:nains          # a query narrows it: the same terms as `bdnex ls --files`
 ```
 
 `--low` selects the files with **no album**, **flagged** for review, whose match **looks doubtful or contradicted**
@@ -335,9 +336,9 @@ requested and nothing changes (with `--cover`, one cover per candidate is reques
 candidate most like it. An album whose page was not read has no known cover address: the usual one, built from the
 album's number, is tried, and a candidate whose cover can not be got is simply not compared.
 
-#### Weighing a match: `--scan`
+#### Weighing a match: `check --matches`
 
-The first match only has names. Once the album page is read, `bdnex review --scan` (and every import, as each page
+The first match only has names. Once the album page is read, `bdnex check --matches` (and every import, as each page
 arrives) compares the file with what the page says, offline and without reading any file:
 
 | Signal | Agrees when | Against |
@@ -346,7 +347,7 @@ arrives) compares the file with what the page says, offline and without reading 
 | the volume | the file's volume is the album's | another volume, or a "supplément", "hors-série" or "intégrale" matched to a numbered tome: **strong**, unless the album's title is written in the file name (then it is probably another numbering, and only noted) |
 | the year | a year in the file name or tags is within a year of the album's | another year: weak (a reissue has one) |
 | the authors | a name in a `(group)` of the file name is among the credits | none of them is: weak (a group is often a publisher or a scanner) |
-| the folder | (`--scan` only) the album is of the series most files of the folder are of | a folder of four files or more, mostly one series, and this album is of another series sharing no word with it: weak |
+| the folder | (`check --matches` only) the album is of the series most files of the folder are of | a folder of four files or more, mostly one series, and this album is of another series sharing no word with it: weak |
 
 The verdict is `confirmed` (the year, an author or the file's tags agree), `unverified` (nothing independent to
 compare: the volume alone confirms nothing, since the match was ranked on it), `doubtful` (a strong sign against but
@@ -504,9 +505,7 @@ reported as you typed it.
 | `--workers N` | processes that match names and read each file ahead (overrides `import.workers`) |
 | `-v` | list the `already` files too, and more detail |
 
-The former names still work and say what replaced them: `--no-fetch` is `--match`,
-`--retry-partial` is `--fetch`, `--recache` is `--fetch --force`. Note that `--force` no longer
-means "never ask": that is `--auto=all`.
+Note that `--force` does not mean "never ask": that is `--auto=all`.
 
 Defaults for thresholds and duplicate handling live in the
 [configuration](configuration.md) (`match:`, `duplicates:`, `import:`).

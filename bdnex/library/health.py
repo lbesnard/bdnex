@@ -21,12 +21,48 @@ class Finding:
     items: list[str] = field(default_factory=list)
     advice: str = ""
     fixable: bool = False            # `bdnex check --fix` can settle it
+    data: Any = None                 # what `fix` needs (for `matches`: the paths to flag, with the reason)
 
 
-def check(library: Library, settings) -> list[Finding]:
-    """Everything that looks wrong, most serious first. Reads the library and looks at the disk; changes nothing."""
+def doubtful_matches(library: Library) -> list[tuple[str, str, Any]]:
+    """The matches that look wrong, weighed against their album's page: ``[(path, album label, evidence)]``.
+
+    Offline, and no file is read. Files already flagged are left out, and so are albums whose page was not read (there
+    is nothing to weigh them with). The folder is consulted too: an album of another series than most of its folder.
+    """
+    from bdnex.importer import confirm
+    from bdnex.ui.describe import label
+
+    albums: dict[int, dict] = {}
+    weighed = []
+    for row in library.query([], files=True):
+        file = library.get_file(row["path"])
+        if file is None or file["album_id"] is None or file["review"]:
+            continue
+        album = albums.get(file["album_id"]) or albums.setdefault(file["album_id"], library.get_album(file["album_id"]))
+        if album and not album["extra"].get("partial"):
+            weighed.append((row["path"], album, file["embedded"] or None))
+    outliers = confirm.folder_outliers([(path, album) for path, album, _ in weighed])
+    judged = [(path, label(album), confirm.judge(path, album, embedded, outliers.get(path))) for path, album, embedded in weighed]
+    return [entry for entry in judged if confirm.worth_a_look(entry[2])]
+
+
+def check(library: Library, settings, matches: bool = False) -> list[Finding]:
+    """Everything that looks wrong, most serious first. Reads the library and looks at the disk; changes nothing.
+
+    ``matches`` also weighs every match against its album's page (:func:`doubtful_matches`): slower, so asked for."""
     conn = library.conn
     found: list[Finding] = []
+    if matches:
+        from bdnex.importer import confirm
+
+        doubtful = doubtful_matches(library)
+        if doubtful:
+            found.append(Finding(
+                "matches", f"{len(doubtful)} match(es) look wrong", [line for path, name, ev in doubtful for line in (path, f"    {name}", f"    {ev.reason}")],
+                "`bdnex check --matches --fix` flags them for `bdnex review`, which shows both covers; "
+                "`bdnex candidates --low` lists the other albums each could be", fixable=True,
+                data=[(path, confirm.review_reason(ev)) for path, _, ev in doubtful]))
 
     integrity = [row[0] for row in conn.execute("PRAGMA integrity_check")]
     if integrity != ["ok"]:
@@ -140,6 +176,11 @@ def fix(library: Library, settings, findings: list[Finding]) -> list[str]:
         for entry in dead:
             library.delete_trash(entry["id"])
         done.append(f"removed {len(dead)} dead trash record(s)")
+    if "matches" in keys:
+        flagged = [finding.data for finding in findings if finding.key == "matches"][0]
+        for path, reason in flagged:
+            library.flag_review(path, reason)
+        done.append(f"flagged {len(flagged)} match(es) for `bdnex review`")
     if "leftovers" in keys:
         files = _leftovers(settings, library)
         for path in files:

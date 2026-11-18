@@ -174,7 +174,7 @@ your own (a summary, a list of writers separated by commas, a year...).
 
 **What you choose is kept in the library.** Whatever won over the database's value is stored as a hand edit
 of the album (the same as `bdnex edit`), so the library says what the file now says, and a later
-`bdnex import --recache` or `bdnex reparse` keeps it. The page fetched from the source is not touched: it
+`bdnex import --fetch --force` or `bdnex reparse` keeps it. The page fetched from the source is not touched: it
 stays stored as it was, and the edits are laid over it. `Series` is never changed this way (it would rename
 the series of every album; use `bdnex edit` for that), nor are the page count, rating, notes and web address,
 which the library does not take from a file. Nothing is stored in a preview (`--pretend`).
