@@ -10,6 +10,7 @@ from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.ui.describe import label
 from bdnex.ui import context
+from bdnex.ui.output import add_pretend
 
 
 def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
@@ -21,10 +22,20 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                "unlink the file, ask for another album, or leave it for later.")
     parser.add_argument("query", nargs="*", help="only these files, same terms as `bdnex ls --files` (e.g. series:nains)")
     parser.add_argument("-l", "--list", action="store_true", help="only list the flagged files and why; ask nothing")
+    parser.add_argument("--scan", action="store_true",
+                        help="first weigh every matched file against its album's credits, year, volume and the file's "
+                             "own tags (offline, no file is read) and flag the ones that look wrong")
+    parser.add_argument("--json", action="store_true",
+                        help="with --list: the flagged files as JSON, with the evidence, for a script or an agent")
+    add_pretend(parser, "be flagged (with --scan)")
     args = parser.parse_args(argv)
     settings = context.settings()
     if settings is None:
         return 1
+    if args.scan:
+        status = scan(settings, args, out)
+        if status or args.pretend:
+            return status
 
     rematch: list[str] = []
     counts = {"keep": 0, "unlink": 0, "rematch": 0, "skip": 0}
@@ -36,6 +47,12 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
             return context.bad_query(err)
         if not rows:
             print("Nothing to review.", file=out)
+            return 0
+        if args.list and args.json:
+            import json
+
+            print(json.dumps([{"path": row["path"], "album": label(row), "album_url": row.get("url"), "why": row["review"]}
+                              for row in rows], ensure_ascii=False, indent=2), file=out)
             return 0
         if args.list:
             for row in rows:
@@ -80,4 +97,39 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
 
         print("\nMatching again the files you chose:", file=out)
         return import_cmd.run([*rematch, "--match", "--force"], out)
+    return 0
+
+
+def scan(settings, args, out) -> int:
+    """Weigh every matched file with :func:`bdnex.importer.confirm.assess`; flag the doubtful and contradicted ones."""
+    from bdnex.importer import confirm
+
+    counts = {confirm.CONFIRMED: 0, confirm.UNVERIFIED: 0, confirm.DOUBTFUL: 0, confirm.CONTRADICTED: 0}
+    flagged = []
+    with Library.for_settings(settings, readonly=args.pretend) as library:
+        try:
+            rows = library.query(list(args.query), files=True)
+        except QueryError as err:
+            return context.bad_query(err)
+        albums: dict[int, dict] = {}
+        for row in rows:
+            file = library.get_file(row["path"])
+            if file is None or file["album_id"] is None or file["review"]:
+                continue
+            album = albums.get(file["album_id"]) or albums.setdefault(file["album_id"], library.get_album(file["album_id"]))
+            if not album or album["extra"].get("partial"):
+                continue
+            embedded = file["embedded"] or None
+            evidence = confirm.assess(row["path"], album, embedded)
+            counts[evidence.verdict] += 1
+            if confirm.worth_a_look(evidence):
+                flagged.append((row["path"], label(album), evidence))
+                if not args.pretend:
+                    library.flag_review(row["path"], f"the match looks {evidence.verdict}: {evidence.reason}")
+    for path, name, evidence in flagged:
+        print(f"{evidence.verdict:>12}  {path}\n              {name}\n              {evidence.reason}", file=out)
+    print(f"\nWeighed {sum(counts.values())} file(s): {counts[confirm.CONFIRMED]} confirmed, "
+          f"{counts[confirm.UNVERIFIED]} with nothing to compare, {counts[confirm.DOUBTFUL]} doubtful, "
+          f"{counts[confirm.CONTRADICTED]} contradicted. "
+          + ("Not flagged (preview)." if args.pretend else "The doubtful and contradicted ones are flagged: `bdnex review` goes through them."), file=out)
     return 0

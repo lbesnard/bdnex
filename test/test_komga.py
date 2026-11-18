@@ -298,3 +298,8 @@ def test_fields_can_name_the_new_ones(cmd_env):
     assert [p for m, p, _ in session.calls if m == "PATCH"] == ["api/v1/books/b1/metadata"]  # no total known here
     patches = {p: b for m, p, b in session.calls if m == "PATCH"}
     assert set(patches["api/v1/books/b1/metadata"]) <= {"tags", "tagsLock"}
+
+
+def test_the_credits_bedetheque_has_and_comicinfo_has_not_are_sent_with_their_own_role():
+    authors = komga.authors_of({"credits": {"Inker": ["A"], "Préface": ["B"], "Storyboard": ["C"], "Adapté de": ["D"]}})
+    assert {(a["name"], a["role"]) for a in authors} == {("A", "inker"), ("B", "foreword"), ("C", "storyboard"), ("D", "adapted from")}

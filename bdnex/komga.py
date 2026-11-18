@@ -17,7 +17,8 @@ import requests
 PAGE_SIZE = 500
 ROLES = {"Writer": "writer", "Penciller": "penciller", "Inker": "inker", "Colorist": "colorist",
          "Letterer": "letterer", "CoverArtist": "cover", "Editor": "editor", "Translator": "translator",
-         "Other": "other"}
+         "Other": "other", "Storyboard": "storyboard", "Décors": "background", "Design": "design",
+         "Préface": "foreword", "Adapté de": "adapted from"}
 BOOK_LOCKS = {"title": "titleLock", "summary": "summaryLock", "number": "numberLock", "numberSort": "numberSortLock",
               "releaseDate": "releaseDateLock", "authors": "authorsLock", "isbn": "isbnLock", "links": "linksLock",
               "tags": "tagsLock"}

@@ -291,7 +291,28 @@ bdnex import --auto=all ~/comics     # match, read the pages, save and compare t
 bdnex review                         # go through the flagged files, one by one
 bdnex review series:nains            # only some of them (same terms as `bdnex ls --files`)
 bdnex review --list                  # just list them, and why
+bdnex review --scan -n               # weigh every match against its album page (preview: flags nothing)
+bdnex review --scan                  # flag the ones that look wrong, then go through them
+bdnex review --list --json           # the flagged files with the reason, for a script or an assistant
 ```
+
+#### Weighing a match: `--scan`
+
+The first match only has names. Once the album page is read, `bdnex review --scan` (and every import, as each page
+arrives) compares the file with what the page says, offline and without reading any file:
+
+| Signal | Agrees when | Against |
+|---|---|---|
+| the file's own tags | their series or title is the album's (or inside it) | they name another book: **strong** |
+| the volume | the file's volume is the album's | another volume, or a "supplément", "hors-série" or "intégrale" matched to a numbered tome: **strong**, unless the album's title is written in the file name (then it is probably another numbering, and only noted) |
+| the year | a year in the file name or tags is within a year of the album's | another year: weak (a reissue has one) |
+| the authors | a name in a `(group)` of the file name is among the credits | none of them is: weak (a group is often a publisher or a scanner) |
+
+The verdict is `confirmed` (the year, an author or the file's tags agree), `unverified` (nothing independent to
+compare: the volume alone confirms nothing, since the match was ranked on it), `doubtful` (a strong sign against but
+something agrees, or two weak ones and nothing for) or `contradicted` (a strong sign against and nothing for). The
+last two are flagged, with the reason, and **left linked**: nothing is unlinked without you. Most files are
+`unverified`: a file name with no author or year gives nothing to weigh.
 
 Each flagged file is shown with the file's cover on the left and the album's cover on the right (in one picture, when
 the terminal can show pictures; see the thumbnails above), and you choose:

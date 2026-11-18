@@ -36,6 +36,10 @@ def album_to_fields(album: dict[str, Any], page_count: Optional[int] = None) -> 
                       ("language", "LanguageISO"), ("format", "Format")):
         if album.get(key):
             fields[name] = str(album[key])
+    edition = (album.get("extra") or {}).get("edition_fields") or {}
+    for key, name in (("Collection", "Imprint"), ("Cycle", "StoryArc")):  # the publisher's collection, the cycle of a series
+        if edition.get(key):
+            fields[name] = edition[key]
     if album["genres"]:
         fields["Genre"] = ", ".join(album["genres"])
     if album.get("rating") is not None:

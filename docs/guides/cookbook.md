@@ -108,8 +108,9 @@ Before you start pass 2:
 - `reset` also forgets your `bdnex edit` changes and the files you skipped, so do it **before** you edit anything.
   It copies the database aside first (`.before-reset-<date>`).
 - A wrong match in pass 1 only cost a download: nothing was written to a file.
-- To see the doubtful ones without resetting, `bdnex review` lists the files flagged for a look
-  (`bdnex import --select` redoes chosen files).
+- To see the doubtful ones without resetting, run `bdnex review --scan`: it weighs every match against its album
+  page (credits, year, volume, the file's own tags) and flags the ones that look wrong, then `bdnex review` goes
+  through them with the two covers side by side (`bdnex import --select` redoes chosen files).
 
 ## …import again? Redo a file?
 

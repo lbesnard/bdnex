@@ -22,7 +22,7 @@ from typing import Callable, Optional, Protocol
 
 from bdnex import trash
 from bdnex.config import Settings
-from bdnex.importer import covers, folders
+from bdnex.importer import confirm, covers, folders
 from bdnex.importer.matching import Match, Recommendation, find_matches, recommend
 from bdnex.importer.pipeline import match_ahead, resolve_workers
 from bdnex.importer.source import Candidate, MetadataSource
@@ -604,6 +604,8 @@ class ImportSession:
         result.outcome = PARTIAL if partial else TAGGED
         result.note = "; ".join(n for n in (note, damaged) if n)
         self._log(result.path, result.outcome, result.score, album_id)
+        if not partial:
+            self._confirm(result)
         if not partial and (self.cover_check or self.settings.cover.download):
             self._covers.append(result)  # its cover is got later, so that nothing waits for it here
 
@@ -699,6 +701,8 @@ class ImportSession:
                 result.outcome = PARTIAL if partial else TAGGED
                 result.note = "; ".join(n for n in (note, damaged) if n)
                 self._log(result.path, result.outcome, result.score, album_id)
+                if not partial:
+                    self._confirm(result)
                 if not partial and (self.cover_check or self.settings.cover.download):
                     self._check_cover(result)
         except KeyboardInterrupt:
@@ -767,6 +771,23 @@ class ImportSession:
             self.library.set_cover_file(album["id"], relative)
             album["cover_file"] = relative
         return data
+
+    def _confirm(self, result: ImportResult) -> None:
+        """Weigh the match with what the album page says (credits, year, volume, the file's own tags): a match that
+        looks wrong is flagged for ``bdnex review`` with the reason, and left in place."""
+        path = result.path
+        album, row = (self.library.get_album(result.album_id) if result.album_id else None), self.library.get_file(path)
+        if not album or row is None or self.pretend or album["extra"].get("partial") or row.get("review"):
+            return
+        try:  # (a partial album has no page to weigh against; a flag already there says why)
+            embedded = row.get("embedded") or None
+            evidence = confirm.assess(path, album, embedded)
+        except (ValueError, TypeError, AttributeError) as err:
+            logger.debug(f"{result.path}: match not weighed ({err})")
+            return
+        if confirm.worth_a_look(evidence):
+            self.library.flag_review(path, f"the match looks {evidence.verdict}: {evidence.reason}")
+            result.note = "; ".join(n for n in (result.note, f"the match looks {evidence.verdict}: `bdnex review` to look at it") if n)
 
     def _check_cover(self, result: ImportResult) -> None:
         """Keep the album's cover as a file; and, with ``cover.check``, compare the file's cover with it: below
@@ -905,6 +926,8 @@ class ImportSession:
         if partial and "fetch" not in self.steps:
             note = "; ".join(n for n in (note, "details not fetched: `bdnex import --fetch` gets them") if n)
         result = ImportResult(path, outcome, score=score, album_id=album_id, note=note)
+        if not partial and not defer_fetch:
+            self._confirm(result)
         if not partial and not defer_fetch and (self.cover_check or self.settings.cover.download):
             self._check_cover(result)  # the page was read just now: keep (and compare) the cover too
         if defer_fetch and partial and "fetch" in self.steps:

@@ -83,6 +83,14 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   executor open (its threads would hold the exit).
 - Fetching writes to the library only: `--database-only` must still change no comic file (`test/test_outside.py`).
 
+## A second look at a match (`importer/confirm.py`, `bdnex review --scan`)
+- `confirm.assess(path, album, embedded)` weighs a file against its *complete* album (credits, year, volume, the file's own
+  tags): pure, offline, no file read. Strong against = another volume, a "supplément" for a tome, the file's tags naming
+  another series; weak = another year (a reissue), unknown names in a `(group)`. The **volume agreeing confirms nothing**
+  (the match was ranked on it). A match that looks wrong is flagged (`files.review`), never unlinked.
+- It runs when a page arrives (`ImportSession._confirm`) and for the whole library with `bdnex review --scan`.
+  Credit labels of a page are mapped in `parser.OTHER_CREDIT_ROLES` (`Encrage` is `Inker`); `LEGACY_ROLES` reads old names back.
+
 ## Several files at once (`Organizer.run(workers=)`, `bdnex/parallel.py`)
 - `parallel.map_ordered(function, items, workers)` is the helper for read-only work (hashing, reading first pages): forked processes,
   results in order, an exception is the item's result. It must not touch a database; the caller stores the results.

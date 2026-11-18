@@ -90,3 +90,47 @@ def test_a_query_narrows_the_files(flagged):
     prompter = Choosing("skip")
     review_cmd.run(["filename:book2"], out=io.StringIO(), prompter=prompter)
     assert [s[1] for s in prompter.seen] == [paths[1]]
+
+
+@pytest.fixture
+def matched(tmp_path, monkeypatch, make_cbz):
+    """Two files linked to complete albums: one right (author and year agree), one wrong (year and author disagree)."""
+    db = tmp_path / "scan.sqlite"
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(db)}))
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    good, bad = make_cbz("Nains (Dupont) [2015].cbz", pages=3), make_cbz("Even (Zidrou, Alexei) (2021).cbz", pages=4)
+    with Library(db) as lib:
+        right = lib.add_album(AlbumInfo("bedetheque", "1", "Nains", year=2015, credits={"Writer": ["Dupont, Marc"]}, language="fr"))
+        wrong = lib.add_album(AlbumInfo("bedetheque", "2", "Even If", year=2012, credits={"Writer": ["Smith, John"]}, language="fr"))
+        lib.add_file(good, right)
+        lib.add_file(bad, wrong)
+    return db, good, bad
+
+
+def test_scan_flags_the_matches_that_look_wrong_and_only_those(matched):
+    db, good, bad = matched
+    out = io.StringIO()
+    assert review_cmd.run(["--scan", "--list"], out=out) == 0
+    text = out.getvalue()
+    assert "1 confirmed" in text and "1 doubtful" in text and "reissue" in text
+    now = rows(db)
+    assert now[good]["review"] is None and "looks doubtful" in now[bad]["review"]
+
+
+def test_scan_preview_flags_nothing(matched):
+    db, good, bad = matched
+    out = io.StringIO()
+    assert review_cmd.run(["--scan", "-n"], out=out) == 0 and "Not flagged" in out.getvalue()
+    assert all(r["review"] is None for r in rows(db).values())
+
+
+def test_list_as_json_gives_the_reason_for_a_script(matched):
+    import json
+
+    db, good, bad = matched
+    review_cmd.run(["--scan"], out=io.StringIO())
+    out = io.StringIO()
+    assert review_cmd.run(["--list", "--json"], out=out) == 0
+    data = json.loads(out.getvalue())
+    assert [d["path"] for d in data] == [bad] and "looks doubtful" in data[0]["why"]

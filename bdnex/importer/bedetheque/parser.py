@@ -21,7 +21,8 @@ SOURCE = "bedetheque"
 logger = logging.getLogger(__name__)
 
 # Credit labels that have no ComicInfo element: kept in the library under these roles
-OTHER_CREDIT_ROLES = {"Traduction": "Translator", "Autres": "Other"}
+OTHER_CREDIT_ROLES = {"Traduction": "Translator", "Autres": "Other", "Encrage": "Inker"}
+
 
 # Bédéthèque label -> ComicInfo credit role
 CREDIT_LABELS = {
@@ -181,6 +182,8 @@ def _edition_table(soup) -> dict[str, str]:
     for term in table.find_all("dt"):
         value = term.find_next_sibling("dd")
         text = " ".join(value.get_text(" ", strip=True).split()) if value is not None else ""
+        if not text and value is not None:  # "Autres infos" are icons: the words are in their titles
+            text = ", ".join(dict.fromkeys(i["title"].strip() for i in value.find_all(title=True) if i["title"].strip()))
         if text:
             rows[term.get_text(" ", strip=True)] = text
     return rows
