@@ -116,3 +116,19 @@ def test_a_cover_that_cannot_be_downloaded_stops_nothing(tmp_path):
     result = env.session.run([path]).results[0]
     assert result.outcome == "tagged" and "cover not downloaded" in result.note
     assert env.lib.get_file(path)["cover_score"] is None  # the next `import --fetch` tries again
+
+
+def test_fetch_gets_the_missing_covers_of_albums_already_complete_in_the_background(tmp_path):
+    import threading
+
+    web = web_with_cover()
+    env = env_for(web, check=False, download=False)
+    path = cbz_with_cover(tmp_path, FILE, 1)
+    env.session.run([path])  # complete, but no cover kept and none compared
+    assert env.lib.get_file(path)["cover_score"] is None
+    env.session.settings.cover.download, env.session.steps = True, frozenset(["fetch"])
+    env.session.cover_check = True
+    seen, original = [], env.source.fetch_cover
+    env.source.fetch_cover = lambda url: seen.append(threading.current_thread().name) or original(url)
+    env.session.run([path])
+    assert seen[0].startswith("bdnex-cover") and env.lib.get_file(path)["cover_score"] is not None

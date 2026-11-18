@@ -442,7 +442,7 @@ class ImportSession(EarlyFetch, CoverPass):
         if kind == "cover":
             result = ImportResult(path, ALREADY, album_id=album["id"], note=f"already imported as {album_label(album)}")
             if not self.pretend:
-                self._covers.append(result)
+                self._queue_cover(result)  # complete albums that lack a cover: downloaded in the background too
                 if not defer_fetch:
                     self._fetch_pending()
             return result
