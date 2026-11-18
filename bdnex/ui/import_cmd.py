@@ -65,6 +65,10 @@ def build_parser() -> argparse.ArgumentParser:
     where.add_argument("--no-move", action="store_true",
                        help="leave files from outside your library folder where they are (`import.outside`); "
                             "`bdnex move staged:true` places them later")
+    parser.add_argument("--album", metavar="ADDRESS|NUMBER",
+                        help="use this Bédéthèque album for the one file given (its page address, or its number), instead of "
+                             "searching: nothing is asked, and a file already imported is redone. `bdnex candidates` finds "
+                             "the numbers")
     parser.add_argument("--database-only", action="store_true",
                         help="only fill the library: no comic file is moved, copied, written, converted, replaced or "
                              "deleted, whatever the configuration says (a duplicate is skipped, not replaced)")
@@ -120,6 +124,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
             parser.error("--database-only changes no file: it can not be combined with --write, --move or --copy")
         args.no_move = True  # nothing from outside the collection is moved or copied either
     setup_logging(args.verbose)
+    if args.album:
+        if len(args.paths) != 1 or os.path.isdir(args.paths[0]) or args.sources or args.select or args.skipped:
+            parser.error("--album names the album of ONE file: give exactly that file (not a folder, --select or --sources)")
+        args.force = True  # a file that already has an album is matched again
     steps, notes = resolve_steps(args)
     for note in notes:
         print(note, file=sys.stderr)
@@ -169,10 +177,18 @@ def run(argv: list[str], out=sys.stdout) -> int:
                   file=sys.stderr)
         if "match" in steps and not ensure_album_list(source, library, settings, out):
             return 1
+        pinned = None
+        if args.album:
+            pinned = source.candidate_for(args.album)
+            if pinned is None:
+                print(f"{args.album!r} is not an album: give the address of its Bédéthèque page (BD-...-123456.html), or its "
+                      "number if the album is in the album list (`bdnex init` refreshes the list).", file=sys.stderr)
+                return 2
+            print(f"Using the album {pinned.url} for {args.paths[0]}", file=sys.stderr)
         steps_order = [step for step in ("match", "fetch") if step in steps]
         session = ImportSession(library, source, settings, prompter=None if args.unattended else new_prompter(source=source, thumbnails=settings.import_.thumbnails),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps, retry_skipped=getattr(args, "retry_skipped", False),
-                                workers=args.workers, cover_check=args.cover_check, series=args.series, files_untouched=args.database_only, verbosity=args.verbose, progress=progress, bar=lambda total, label: Bar(total, label),
+                                workers=args.workers, cover_check=args.cover_check, series=args.series, files_untouched=args.database_only, verbosity=args.verbose, pinned=pinned, progress=progress, bar=lambda total, label: Bar(total, label),
                                 phase=lambda step, title: banner(title, steps_order.index(step) + 1, len(steps_order)))
         try:
             report = session.run(args.paths)

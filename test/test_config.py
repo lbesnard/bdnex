@@ -400,3 +400,14 @@ def test_fetcher_endpoint_is_one_address_or_a_list():
         build_settings({"config_version": 2, "bedetheque": {"fetcher_endpoint": ["http://a/v1", "http://a/v1"]}})
     with pytest.raises(ConfigError, match="parallel"):
         build_settings({"config_version": 2, "bedetheque": {"parallel": 0}})
+
+
+def test_bdnex_config_hides_the_secrets_unless_asked(conf_path, capsys):
+    write(conf_path, {"config_version": 2, "collection_path": str(conf_path.parent),
+                      "komga": {"url": "http://k", "api_key": "s3cret"},
+                      "bedetheque": {"fetcher_endpoint": ["http://private:8191"]}})
+    assert config_cmd.run([]) == 0
+    shown = capsys.readouterr().out
+    assert "s3cret" not in shown and "private" not in shown and "<hidden>" in shown and "http://k" in shown
+    assert config_cmd.run(["--clear"]) == 0
+    assert "s3cret" in capsys.readouterr().out

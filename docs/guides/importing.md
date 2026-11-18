@@ -314,6 +314,17 @@ bdnex check --matches --fix          # the same, and flag them; then `bdnex revi
 bdnex review --list --json           # the flagged files with the reason, for a script or an assistant
 ```
 
+### Saying which album it is: `import --album`
+
+```bash
+bdnex import --album 'https://www.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html' ~/comics/nains1.cbz
+bdnex import --album 245127 ~/comics/nains1.cbz       # the number at the end of the address, if the album is in the album list
+```
+
+For **one file**, uses that album: nothing is searched or asked, and a file that already has an album is redone (the
+page is read again). It is the way to apply what `bdnex candidates` found, from a script or by hand. An address of any
+album page works, even a very recent one; a number must be in the album list (`bdnex init` refreshes it).
+
 ### The other albums a file could be: `bdnex candidates`
 
 ```bash

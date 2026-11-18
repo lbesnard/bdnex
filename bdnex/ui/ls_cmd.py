@@ -35,11 +35,13 @@ def decorate(row: dict[str, Any]) -> dict[str, Any]:
 
 def run(argv: list[str], out=sys.stdout) -> int:
     parser = argparse.ArgumentParser(
-        prog="bdnex ls", description="List albums (or files) of the library. Terms are ANDed.",
+        prog="bdnex ls", description="List albums (or files) of the library. Terms are ANDed; a lone `,` means or; "
+                                     "`year-` or `title+` sorts.",
         epilog="fields: " + ", ".join(ALL_FIELDS))
     parser.add_argument("query", nargs="*", help="terms such as  series:nains  author:uderzo  year:2010..2015  ^genre:humour")
     parser.add_argument("--files", action="store_true", help="list files instead of albums")
     parser.add_argument("--format", help="output template, e.g. '$series T$vol $title'")
+    parser.add_argument("--limit", type=int, metavar="N", help="at most N results (after sorting: `year-` puts the newest first)")
     parser.add_argument("-c", "--count", action="store_true", help="print only the number of results")
     parser.add_argument("-l", "--long", action="store_true",
                         help="show everything known about each result (with --json: the complete records)")
@@ -59,7 +61,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
 
     with Library.for_settings(settings) as library:
         try:
-            rows = library.query(args.query, files=args.files)
+            rows = library.query(args.query, files=args.files, limit=args.limit)
         except QueryError as err:
             return context.bad_query(err)
         details = _details(library, rows, args) if args.long else None

@@ -13,10 +13,10 @@ from typing import Any
 
 import yaml
 
-from bdnex.config import ConfigError, Settings, build_settings, load_defaults
+from bdnex.config import SECRET_KEYS, ConfigError, Settings, build_settings, load_defaults
 from bdnex.config_template import _help_of, packaged, set_value
 
-HIDDEN = {"api.token", "api.password", "komga.api_key", "komga.password", "bedetheque.fetcher_endpoint"}  # secrets: never sent to the page
+HIDDEN = SECRET_KEYS  # secrets: never sent to the page
 FIXED = {"collection_path", "library"}  # where the volumes are: set in the file, not from the page
 
 

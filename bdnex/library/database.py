@@ -11,7 +11,7 @@ import sys
 from typing import Any, Iterable, Optional
 
 from bdnex.library.hashing import file_md5
-from bdnex.library.query import FROM_JOINS, compile_query, fold, register_functions, run_query
+from bdnex.library.query import FROM_JOINS, compile_query, fold, register_functions, run_query, split_query
 from bdnex.library.models import LEGACY_ROLES, AlbumInfo, SeriesInfo
 from bdnex.library.scan import inspect_file, iter_comic_files
 from bdnex.library.schema import MIGRATIONS
@@ -748,12 +748,14 @@ class Library:
         return groups
 
     # ---------------------------------------------------------------- query
-    def query(self, terms: list[str], files: bool = False) -> list[dict[str, Any]]:
-        """Albums (or files with ``files=True``) matching the query terms. See ``library.query``."""
+    def query(self, terms: list[str], files: bool = False, limit: int | None = None) -> list[dict[str, Any]]:
+        """Albums (or files with ``files=True``) matching the query terms, at most ``limit``. See ``library.query``."""
         rows = run_query(self.conn, terms, files_mode=files)
-        if not files:
-            return rows
-        return sorted((self._file_row(r) for r in rows), key=lambda r: r["path"])  # stored paths do not sort like real ones
+        if files:
+            rows = [self._file_row(r) for r in rows]
+            if not split_query(terms)[1]:  # stored paths do not sort like real ones (unless the query sorts)
+                rows.sort(key=lambda r: r["path"])
+        return rows[:limit] if limit else rows
 
     def album_matches(self, album_id: int, terms: list[str]) -> bool:
         """Does this album satisfy all the query ``terms`` (same syntax as ``bdnex ls``)?"""

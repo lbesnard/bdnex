@@ -213,3 +213,28 @@ def test_known_facts_are_those_of_the_albums_whose_page_was_read(tmp_path):
         facts = lib.known_facts("bedetheque")
     assert set(facts) == {"1"} and facts["1"]["year"] == 2001 and facts["1"]["publisher"] == "Dargaud"
     assert facts["1"]["credits"] == {"Writer": ["A"]}
+
+
+# ------------------------------------------------------------------ or, sort and limit in queries
+def _three(tmp_path):
+    from bdnex.library import AlbumInfo, Library
+
+    lib = Library(tmp_path / "q.sqlite")
+    for n, (title, year) in enumerate([("Alpha", 2001), ("Bravo", 2003), ("Charlie", 2002)], start=1):
+        lib.add_album(AlbumInfo("bedetheque", str(n), title, year=year, language="fr"))
+    return lib
+
+
+def test_a_lone_comma_is_or(tmp_path):
+    with _three(tmp_path) as lib:
+        assert [a["title"] for a in lib.query(["alpha", ",", "charlie"])] == ["Alpha", "Charlie"]
+        assert [a["title"] for a in lib.query(["alpha", "year:2003"])] == []  # still AND inside a side
+        assert [a["title"] for a in lib.query(["alpha", ",", "year:2003"])] == ["Alpha", "Bravo"]
+
+
+def test_a_field_with_a_sign_sorts_and_limit_cuts_after_sorting(tmp_path):
+    with _three(tmp_path) as lib:
+        assert [a["title"] for a in lib.query(["year-"])] == ["Bravo", "Charlie", "Alpha"]
+        assert [a["title"] for a in lib.query(["year+"])] == ["Alpha", "Charlie", "Bravo"]
+        assert [a["title"] for a in lib.query(["year-"], limit=2)] == ["Bravo", "Charlie"]
+        assert [a["title"] for a in lib.query(["title-", "alpha", ",", "bravo"])] == ["Bravo", "Alpha"]

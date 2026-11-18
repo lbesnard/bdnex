@@ -352,3 +352,33 @@ def test_series_flags():
     assert parse(["--series", "x"]).series == "always" and parse(["--no-series", "x"]).series == "never"
     with pytest.raises(SystemExit):
         parse(["--series", "--no-series", "x"])
+
+
+# ------------------------------------------------------------------ --album: name the album yourself
+def test_album_uses_the_album_you_name_without_searching_or_asking(cli, capsys):
+    web, db, make_cbz = cli
+    init()
+    path = make_cbz("Quelque chose de tout a fait different.cbz")  # no name could ever find the album
+    code, text = run_import("--album", ALBUM_URL, path)
+    assert code == 0 and "1 complete" in text
+    with Library(db) as lib:
+        album = lib.get_album(lib.get_file(path)["album_id"])
+    assert album["source_id"] == "245127" and "Using the album" in capsys.readouterr().err
+
+
+def test_album_takes_a_number_of_the_list_and_redoes_a_file_that_has_an_album(cli):
+    web, db, make_cbz = cli
+    init()
+    path = make_cbz(FILE)
+    run_import(path)
+    code, text = run_import("--album", "245127", path)  # already imported: redone, not "already"
+    assert code == 0 and "already" not in text and "complete" in text
+
+
+def test_album_refuses_what_is_not_an_album_and_more_than_one_file(cli, capsys, tmp_path):
+    web, db, make_cbz = cli
+    init()
+    path = make_cbz(FILE)
+    assert run_import("--album", "not-an-album", path)[0] == 2 and "is not an album" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        run_import("--album", "245127", path, str(tmp_path))

@@ -521,3 +521,18 @@ FIRST_RUN_MESSAGE = (
     "Created a new bdnex configuration file: {path}\n"
     "Please edit it before importing: at least set `collection_path` to your comics folder\n"
     "(`bdnex config --edit` opens it, `bdnex config --defaults` lists every option).")
+
+
+# Options that hold a secret: ``bdnex config`` hides them (``--clear`` shows them) and the web page never sends them.
+SECRET_KEYS = {"api.token", "api.password", "komga.api_key", "komga.password", "bedetheque.fetcher_endpoint"}
+HIDDEN_VALUE = "<hidden>"
+
+
+def masked(raw: dict) -> dict:
+    """A copy of a raw configuration with every secret replaced by ``<hidden>`` (an unset secret stays unset)."""
+    copy = {key: dict(value) if isinstance(value, dict) else value for key, value in raw.items()}
+    for dotted in SECRET_KEYS:
+        section, _, name = dotted.partition(".")
+        if isinstance(copy.get(section), dict) and copy[section].get(name) not in (None, "", []):
+            copy[section][name] = HIDDEN_VALUE
+    return copy

@@ -14,6 +14,8 @@ Each argument is one term; all terms must match (AND)::
     genre:fantasy  publisher:soleil  kind:oneshot
     filename:redwin  format:cbz  corrupted:true  complete:false
     ^genre:humour            a leading ^ negates the term
+    nains , elfes            a lone comma is "or": albums matching either side (each side is ANDed)
+    year-  title+            sort by a field, descending (-) or ascending (+); the order of the terms is the order of the keys
 """
 
 from __future__ import annotations
@@ -218,11 +220,48 @@ def compile_term(term: str, files_mode: bool) -> Compiled:
     return Compiled(sql, params)
 
 
+SORT_TERM = re.compile(r"^([a-z]+)([+-])$")
+
+
+def sort_fields() -> dict[str, tuple[str, bool]]:
+    """Fields a query can sort on: name -> (SQL expression, is text)."""
+    fields = {name: (expr, True) for name, expr in {**TEXT_FIELDS, **FILE_TEXT_FIELDS}.items()}
+    fields.update({name: (expr, False) for name, expr in {**NUMERIC_FIELDS, **FILE_NUMERIC_FIELDS}.items()})
+    return fields
+
+
+def split_query(terms: list[str]) -> tuple[list[list[str]], list[str]]:
+    """``(alternatives, sort terms)``: the terms cut at each lone ``,`` (OR) and the ``field+`` / ``field-`` ones set aside."""
+    groups: list[list[str]] = [[]]
+    sort: list[str] = []
+    for term in terms:
+        if term.strip() == ",":
+            groups.append([])
+        elif SORT_TERM.match(term) and SORT_TERM.match(term).group(1) in sort_fields():
+            sort.append(term)
+        elif term.strip():
+            groups[-1].append(term)
+    return [g for g in groups if g] or [[]], sort
+
+
+def order_by(sort: list[str]) -> str:
+    fields = sort_fields()
+    parts = []
+    for term in sort:
+        name, sign = SORT_TERM.match(term).groups()
+        expr, text = fields[name]
+        parts.append(f"{'fold(' + expr + ')' if text else expr} {'DESC' if sign == '-' else 'ASC'}")
+    return ", ".join(parts)
+
+
 def compile_query(terms: list[str], files_mode: bool = False) -> Compiled:
-    parts = [compile_term(t, files_mode) for t in terms if t.strip()]
-    if not parts:
-        return Compiled("1 = 1", [])
-    return Compiled(" AND ".join(p.where for p in parts), [x for p in parts for x in p.params])
+    groups, _ = split_query(terms)
+    clauses, params = [], []
+    for group in groups:
+        parts = [compile_term(t, files_mode) for t in group]
+        clauses.append("(" + (" AND ".join(p.where for p in parts) if parts else "1 = 1") + ")")
+        params += [x for p in parts for x in p.params]
+    return Compiled(clauses[0] if len(clauses) == 1 else "(" + " OR ".join(clauses) + ")", params)
 
 
 ALBUM_COLUMNS = """a.id AS id, a.kind, s.name AS series, a.volume, a.alternate_number, a.title,
@@ -245,13 +284,16 @@ FILE_ORDER = "ORDER BY f.path"
 
 def build_sql(terms: list[str], files_mode: bool) -> tuple[str, list[Any]]:
     compiled = compile_query(terms, files_mode)
+    _, sort = split_query(terms)
     if files_mode:
+        order = f"ORDER BY {order_by(sort)}" if sort else FILE_ORDER
         sql = (f"SELECT {FILE_COLUMNS}, {ALBUM_COLUMNS}, 1 AS files "
                f"FROM files f LEFT JOIN albums a ON a.id = f.album_id {FROM_JOINS} "
-               f"WHERE {compiled.where} {FILE_ORDER}")
+               f"WHERE {compiled.where} {order}")
     else:
+        order = f"ORDER BY {order_by(sort)}" if sort else ALBUM_ORDER
         sql = (f"SELECT {ALBUM_COLUMNS}, (SELECT COUNT(*) FROM files f WHERE f.album_id = a.id) AS files "
-               f"FROM albums a {FROM_JOINS} WHERE {compiled.where} {ALBUM_ORDER}")
+               f"FROM albums a {FROM_JOINS} WHERE {compiled.where} {order}")
     return sql, compiled.params
 
 
@@ -260,4 +302,4 @@ def run_query(conn, terms: list[str], files_mode: bool = False) -> list[dict[str
     return [dict(row) for row in conn.execute(sql, params)]
 
 
-__all__ = ["QueryError", "compile_query", "run_query", "fold", "register_functions", "ALL_FIELDS"]
+__all__ = ["QueryError", "compile_query", "run_query", "fold", "register_functions", "ALL_FIELDS", "split_query"]
