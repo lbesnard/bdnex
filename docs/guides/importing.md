@@ -337,7 +337,7 @@ album page works, even a very recent one; a number must be in the album list (`b
 bdnex candidates --low                       # the files whose match is in doubt, each with its best albums
 bdnex candidates series:nains --limit 8      # chosen files, whatever their state
 bdnex candidates --low --json                # for a script or an assistant
-bdnex candidates --low --limit 3 --cover     # also compare the covers (one request per candidate)
+bdnex candidates --low --limit 3 --cover     # also compare the covers (saved ones are read from disk)
 bdnex candidates --low series:nains          # a query narrows it: the same terms as `bdnex ls --files`
 ```
 
