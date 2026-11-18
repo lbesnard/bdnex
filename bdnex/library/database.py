@@ -6,6 +6,7 @@ import dataclasses
 import json
 import logging
 import os
+import re
 import sqlite3
 import sys
 from typing import Any, Iterable, Optional
@@ -629,6 +630,36 @@ class Library:
                WHERE ag.album_id = ? ORDER BY g.name""", (album_id,))]
         return album
 
+    # ------------------------------------------------------------------ your own marks (`bdnex mark`)
+    ATTR_NAME = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+
+    def _attr_table(self, kind: str) -> tuple[str, str]:
+        if kind not in ("file", "album"):
+            raise ValueError(f"marks are on files or albums, not {kind!r}")
+        return f"{kind}_attrs", f"{kind}_id"
+
+    def set_attr(self, kind: str, target_id: int, name: str, value: str = "") -> None:
+        """Mark a file or an album: ``name`` (lower case letters, digits, ``_``) with a text ``value`` (up to 200 characters)."""
+        if not self.ATTR_NAME.match(name):
+            raise ValueError(f"{name!r} is not a mark name: lower case letters, digits and _, starting with a letter, up to 32")
+        if len(value) > 200:
+            raise ValueError("a mark's value is at most 200 characters")
+        table, column = self._attr_table(kind)
+        with self.conn:
+            self.conn.execute(
+                f"INSERT INTO {table}({column}, key, value) VALUES (?, ?, ?) "
+                f"ON CONFLICT({column}, key) DO UPDATE SET value = excluded.value", (target_id, name, value))
+
+    def remove_attr(self, kind: str, target_id: int, name: str) -> bool:
+        table, column = self._attr_table(kind)
+        with self.conn:
+            return self.conn.execute(f"DELETE FROM {table} WHERE {column} = ? AND key = ?", (target_id, name)).rowcount > 0
+
+    def attrs_of(self, kind: str, target_id: int) -> dict[str, str]:
+        table, column = self._attr_table(kind)
+        return {r["key"]: r["value"] for r in self.conn.execute(
+            f"SELECT key, value FROM {table} WHERE {column} = ? ORDER BY key", (target_id,))}
+
     def known_facts(self, source: str) -> dict[str, dict[str, Any]]:
         """What the albums whose page was read say, by their id at the source: ``{source_id: {year, publisher,
         series, credits: {role: [names]}}}``. Three queries for the whole library (matching reads it once, before
@@ -1050,7 +1081,7 @@ class Library:
         importing again needs no network for what was already fetched. Files on disk are not
         touched. Returns what is (or would be) deleted, by table.
         """
-        tables = ("import_log", "files", "album_genres", "album_credits", "albums", "series", "genres",
+        tables = ("import_log", "file_attrs", "album_attrs", "files", "album_genres", "album_credits", "albums", "series", "genres",
                   "people", "publishers")  # children first
         counts = {t: self.conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in tables}
         if apply:

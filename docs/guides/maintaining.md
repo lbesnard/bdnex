@@ -249,6 +249,24 @@ When a new bdnex has to change the structure of your library (the schema version
 upgraded file; to go back, put the copy in place of `bdnex.sqlite`. There is one copy per version, never overwritten,
 and nothing is copied when the library is already current. Delete the copies when you no longer need them.
 
+## Your own marks: `bdnex mark`
+
+A mark is a name and a text value that bdnex keeps with a file (or an album) and never changes by itself: a way to
+remember that you looked at something, or to set files aside. They are not written into the files.
+
+```bash
+bdnex mark filename:valise --set checked=keep         # the files whose name has "valise"
+bdnex mark series:nains --albums --set wanted         # a mark on albums, without a value
+bdnex mark series:nains --remove wanted --albums
+bdnex ls --files attr:checked=keep                    # find them again, in any query
+bdnex ls --files ^attr:checked -c                     # how many nobody looked at
+```
+
+Names are lower case letters, digits and `_`; a value is up to 200 characters. `attr:name` in a query also matches
+the marks of the file's album (and, for albums, of their files). `bdnex ls -l` shows them. Deleting a file or an album
+deletes its marks; `bdnex reset` deletes them all. An assistant checking your matches uses them to remember what it has
+looked at (see [Checking the matches](checking-matches.md)).
+
 ## Starting from scratch
 
 ```bash

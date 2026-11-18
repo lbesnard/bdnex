@@ -14,6 +14,7 @@ Each argument is one term; all terms must match (AND)::
     genre:fantasy  publisher:soleil  kind:oneshot
     filename:redwin  format:cbz  corrupted:true  complete:false
     ^genre:humour            a leading ^ negates the term
+    attr:checked             files or albums you marked with `bdnex mark` (attr:checked=keep: with that value)
     nains , elfes            a lone comma is "or": albums matching either side (each side is ANDed)
     year-  title+            sort by a field, descending (-) or ascending (+); the order of the terms is the order of the keys
 """
@@ -74,7 +75,7 @@ FILE_BOOL_FIELDS = {"corrupted": "f.corrupted", "tagged": "(f.album_id IS NOT NU
                     "staged": "EXISTS (SELECT 1 FROM staged_files sf WHERE sf.file_id = f.id)"}
 
 ALL_FIELDS = sorted({*TEXT_FIELDS, *FILE_TEXT_FIELDS, *NUMERIC_FIELDS, *FILE_NUMERIC_FIELDS, *BOOL_FIELDS,
-                     *FILE_BOOL_FIELDS, *ROLES, "author", "genre", "files", "any"})
+                     *FILE_BOOL_FIELDS, *ROLES, "author", "genre", "files", "any", "attr"})
 
 # what `any:` looks in (everything text-like; credits and genres included)
 ANY_FIELDS = ("title", "series", "publisher", "isbn", "language", "summary", "kind", "url", "source", "author",
@@ -203,6 +204,19 @@ def compile_term(term: str, files_mode: bool) -> Compiled:
         if name == "tagged" and not files_mode:
             raise QueryError("`tagged:` applies to files: use `bdnex ls --files tagged:false`")
         sql = on_file(cond)
+    elif name == "attr":  # your own marks (`bdnex mark`), on the file or on the album
+        mark, equals, wanted = value.partition("=")
+        mark = mark.strip().lower()
+        if not mark:
+            raise QueryError("attr: needs a mark name, e.g. attr:checked or attr:checked=keep")
+        test, extra = ("", []) if not equals else (" AND fold(x.value) = ?", [fold(wanted)])
+        on_f = f"EXISTS (SELECT 1 FROM file_attrs x WHERE x.file_id = f.id AND x.key = ?{test})"
+        on_a = f"EXISTS (SELECT 1 FROM album_attrs x WHERE x.album_id = a.id AND x.key = ?{test})"
+        if files_mode:
+            sql, params = f"({on_f} OR {on_a})", [mark, *extra, mark, *extra]
+        else:
+            in_files = f"EXISTS (SELECT 1 FROM files f WHERE f.album_id = a.id AND {on_f})"
+            sql, params = f"({on_a} OR {in_files})", [mark, *extra, mark, *extra]
     elif name == "genre":
         cond, params = _text("g.name", mode, value)
         sql = ("EXISTS (SELECT 1 FROM album_genres ag JOIN genres g ON g.id = ag.genre_id "
