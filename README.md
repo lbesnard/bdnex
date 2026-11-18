@@ -104,6 +104,16 @@ albums from the stored pages later without any network. See the documentation, *
 
 Requires Python 3.10 to 3.13. [uv](https://docs.astral.sh/uv/) is the recommended installer.
 
+**Programs bdnex needs on your system**
+
+| For | You need | Without it |
+|---|---|---|
+| reading `.cbr` files (match, covers, `write`, `move`, `repair`) | `unrar`, or `unar`, or `bsdtar` (a `7z` only if it has the RAR codec: many builds do not) | every CBR fails with `Failed the read enough data` in the log |
+| the cover check (`cover.check`, `candidates --cover`) | OpenCV: `pip install 'bdnex[cover]'` (optional) | covers are still downloaded, but not compared |
+| fetching pages (the default fetcher) | a [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) address in `bedetheque.fetcher_endpoint`, or your own fetcher | no page can be fetched (see [Album pages](#album-pages-read-this-first)) |
+
+On Debian or Ubuntu: `sudo apt install unrar` (it needs the `non-free` / `multiverse` repository), or `sudo apt install libarchive-tools` for `bsdtar` (the package is called `bsdtar` on the newest releases).
+
 ### Stable release (recommended)
 
 ```bash
