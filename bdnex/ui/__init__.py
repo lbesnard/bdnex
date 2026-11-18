@@ -26,6 +26,7 @@ commands:
   repair   rebuild damaged archives (wrong page checksums) as clean CBZ files
   convert  convert the PDF files of the library to CBZ (next to the original)
   config   show or edit the configuration
+  candidates  for files whose match is in doubt: the other albums they could be, with the evidence
   komga    see what a Komga server holds for your files (show), or send it the library's metadata (push)
   serve    open the library in a browser (web page and JSON API; read-only unless you allow changes)
   completion  print a tab-completion script for bash, zsh or fish
@@ -128,6 +129,9 @@ def _main(argv):
         from bdnex.ui.reparse_cmd import run as run_reparse
         sys.exit(run_reparse(argv[1:]))
 
+    if argv and argv[0] == "candidates":
+        from bdnex.ui.candidates_cmd import run as run_candidates
+        sys.exit(run_candidates(argv[1:]))
     if argv and argv[0] == "komga":
         from bdnex.ui.komga_cmd import run as run_komga
         sys.exit(run_komga(argv[1:]))
