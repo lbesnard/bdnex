@@ -629,6 +629,25 @@ class Library:
                WHERE ag.album_id = ? ORDER BY g.name""", (album_id,))]
         return album
 
+    def known_facts(self, source: str) -> dict[str, dict[str, Any]]:
+        """What the albums whose page was read say, by their id at the source: ``{source_id: {year, publisher,
+        series, credits: {role: [names]}}}``. Three queries for the whole library (matching reads it once, before
+        its workers fork), so a file can be ranked against the year and the authors of the albums that are known."""
+        facts: dict[str, dict[str, Any]] = {}
+        by_id: dict[int, dict[str, Any]] = {}
+        for r in self.conn.execute(
+                """SELECT a.id, a.source_id, a.year, p.name AS publisher, s.name AS series FROM albums a
+                   LEFT JOIN publishers p ON p.id = a.publisher_id LEFT JOIN series s ON s.id = a.series_id
+                   WHERE a.source = ? AND COALESCE(json_extract(a.extra, '$.partial'), 0) = 0""", (source,)):
+            by_id[r["id"]] = facts[r["source_id"]] = {"year": r["year"], "publisher": r["publisher"],
+                                                      "series": r["series"], "credits": {}}
+        for r in self.conn.execute(
+                """SELECT c.album_id, c.role, pe.name FROM album_credits c JOIN people pe ON pe.id = c.person_id
+                   JOIN albums a ON a.id = c.album_id WHERE a.source = ?""", (source,)):
+            if r["album_id"] in by_id:
+                by_id[r["album_id"]]["credits"].setdefault(r["role"], []).append(r["name"])
+        return facts
+
     def find_album(self, source: str, source_id: str) -> Optional[int]:
         row = self.conn.execute("SELECT id FROM albums WHERE source = ? AND source_id = ?",
                                 (source, source_id)).fetchone()

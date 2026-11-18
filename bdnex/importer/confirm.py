@@ -74,28 +74,44 @@ def _title_in_file(path: str, album: dict) -> bool:
     return len(words) >= 2 and sum(w in stem for w in words) / len(words) >= 0.8
 
 
-def _year_signal(stem: str, embedded: dict, album: dict, ev: Evidence) -> None:
-    wanted = album.get("year")
-    if not wanted:
-        return
+def years_named(stem: str, embedded: dict) -> set[int]:
+    """The years a file says it is from: in its name, and in its own tags."""
     years = {int(y) for y in YEAR.findall(stem)}
     if str(embedded.get("Year", "")).isdigit() and int(embedded["Year"]) >= 1950:
         years.add(int(embedded["Year"]))
-    if not years:
-        return
-    if any(abs(y - wanted) <= 1 for y in years):
-        ev.agree.append(f"the year {wanted}")
-    else:
-        ev.weak.append(f"the file says {min(years)}, the album is from {wanted} (a reissue, or another album)")
+    return years
+
+
+def year_agrees(years: set[int], wanted: Optional[int]) -> Optional[bool]:
+    """Do the file's years fit the album's (within one year)? ``None``: nothing to compare."""
+    if not wanted or not years:
+        return None
+    return any(abs(y - wanted) <= 1 for y in years)
+
+
+def author_words(stem: str, album: dict) -> set[str]:
+    """The words of the ``(groups)`` of a file name that could be authors (not the publisher, the series, a scanner)."""
+    noise = set(fold(album.get("publisher")).split()) | set(fold(album.get("series")).split())
+    return {w for group in re.findall(r"[(\[]([^()\[\]]*)[)\]]", stem) for w in fold(group).split()
+            if len(w) > 2 and not w.isdigit() and w not in NOT_AN_AUTHOR and w not in noise}
+
+
+def credit_words(album: dict) -> set[str]:
+    return {w for names in (album.get("credits") or {}).values() for name in names for w in fold(name).split()}
+
+
+def _year_signal(stem: str, embedded: dict, album: dict, ev: Evidence) -> None:
+    years = years_named(stem, embedded)
+    agrees = year_agrees(years, album.get("year"))
+    if agrees:
+        ev.agree.append(f"the year {album['year']}")
+    elif agrees is False:
+        ev.weak.append(f"the file says {min(years)}, the album is from {album['year']} (a reissue, or another album)")
 
 
 def _author_signal(stem: str, album: dict, ev: Evidence) -> None:
-    known = {w for names in (album.get("credits") or {}).values() for name in names for w in fold(name).split()}
-    if not known:
-        return
-    noise = {w for w in fold(album.get("publisher")).split()} | {w for w in fold(album.get("series")).split()}
-    words = {w for group in re.findall(r"[(\[]([^()\[\]]*)[)\]]", stem) for w in fold(group).split()
-             if len(w) > 2 and not w.isdigit() and w not in NOT_AN_AUTHOR and w not in noise}
+    known = credit_words(album)
+    words = author_words(stem, album) if known else set()
     if not words:
         return
     shared = words & known
@@ -155,6 +171,59 @@ def assess(path: str, album: dict[str, Any], embedded: Optional[dict] = None) ->
     elif independent:
         ev.verdict = CONFIRMED
     return ev
+
+
+FOLDER_MIN = 4  # files linked in a folder before it says anything
+FOLDER_SHARE = 0.6  # of them in one series: the folder is that series' folder
+
+
+def folder_outliers(items: list[tuple[str, dict[str, Any]]]) -> dict[str, str]:
+    """Files whose album is of another series than their folder's: ``{path: reason}``.
+
+    ``items`` are ``(path, album)`` pairs. A folder with at least :data:`FOLDER_MIN` linked files, :data:`FOLDER_SHARE` of
+    them in one series, is that series' folder. A file whose series shares no word with it is an outlier: wrong
+    album, or a file in the wrong folder, either way worth a look. A folder of many series (an author, a publisher)
+    has no majority, so says nothing.
+    """
+    by_folder: dict[str, list[tuple[str, dict[str, Any]]]] = {}
+    for path, album in items:
+        if album.get("series"):
+            by_folder.setdefault(os.path.dirname(path), []).append((path, album))
+    found: dict[str, str] = {}
+    for files in by_folder.values():
+        if len(files) < FOLDER_MIN:
+            continue
+        names: dict[str, int] = {}
+        for _, album in files:
+            names[album["series"]] = names.get(album["series"], 0) + 1
+        main, count = max(names.items(), key=lambda item: item[1])
+        if count / len(files) < FOLDER_SHARE:
+            continue
+        main_words = {w for w in fold(main).split() if len(w) > 2 and w not in NOT_AN_AUTHOR}
+        for path, album in files:
+            words = {w for w in fold(album["series"]).split() if len(w) > 2 and w not in NOT_AN_AUTHOR}
+            if album["series"] != main and main_words and words and not (main_words & words):
+                found[path] = f"its folder holds {count} album(s) of \"{main}\", this one is of \"{album['series']}\""
+    return found
+
+
+def album_from_info(info) -> dict[str, Any]:
+    """An :class:`AlbumInfo` as the flat dict :func:`assess` reads (a library album is one already)."""
+    if isinstance(info, dict):
+        return info
+    return {"title": info.title, "series": info.series.name if info.series else None, "volume": info.volume,
+            "year": info.year, "publisher": info.publisher, "credits": info.credits, "extra": info.extra}
+
+
+def album_of_candidate(source, candidate) -> Optional[dict[str, Any]]:
+    """What is known of a candidate without a request: its address (title, series, volume) and, when its page was
+    read, the year, publisher and credits the library holds."""
+    try:
+        album = album_from_info(source.partial_info(candidate))
+    except Exception:  # a source without partial_info, or an address it can not read: no opinion
+        return None
+    facts = getattr(source, "facts_of", lambda c: None)(candidate)
+    return {**album, **{key: value for key, value in (facts or {}).items() if value}}
 
 
 def worth_a_look(ev: Evidence) -> bool:

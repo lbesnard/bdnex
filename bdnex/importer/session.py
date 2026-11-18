@@ -946,7 +946,8 @@ class ImportSession:
         if self._asked:
             return f"you chose none of the candidates (best guess {title}, {best.score:.0f})"
         if best.score >= medium:
-            return f"best guess {title} scored {best.score:.0f}: not applied without asking (sure from {strong:.0f}, or --auto=all)"
+            why = f"sure from {strong:.0f}" if not best.doubt else best.doubt
+            return f"best guess {title} scored {best.score:.0f}: not applied without asking ({why}, or --auto=all)"
         return f"no match: best guess {title} scored {best.score:.0f}, under {medium:.0f}, the lowest score applied"
 
     def _log(self, path, outcome, score=None, album_id=None):
@@ -1047,6 +1048,8 @@ class ImportSession:
         strong, medium = self.settings.match.strong_threshold, self.settings.match.medium_threshold
         best = matches[0] if matches else None
         rec = recommend(best.score, strong, medium) if best else Recommendation.NONE
+        if rec is Recommendation.STRONG and best.doubt:
+            rec = Recommendation.MEDIUM  # sure by its score, but something says to look: ask, or (--auto=all) apply as a medium match
         never_ask = self.auto == "all" or self.pretend  # a preview must not stop at every file
         if rec is Recommendation.STRONG and (self.auto or never_ask or self.prompter is None):
             return best.candidate, best.score  # otherwise the user confirms it, pre-selected

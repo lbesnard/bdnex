@@ -66,6 +66,24 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    `series number` search like those made from the name. `match.use_embedded: false` turns this off. So a collection that is already tagged with bdnex, or by a tool that wrote the
    Bédéthèque address, matches without a guess from the file name. A wrong tag
    is not trusted blindly: the cover check still compares the covers.
+   **What the library already knows helps.** Among the candidates whose album page was read, a year in the file name (or
+   tags) within a year of the album's earns 2 points and an author in a `(group)` of the name that is among the credits
+   earns 3. Nothing is ever taken away (an album whose page was never read has no year to compare, so a penalty would
+   push every known album behind the unknown ones; measured on a real library it moved right matches to wrong ones).
+   `match.use_facts: false` turns this off. The albums read *during* a run are not in it until the next run.
+   **A strong score is not always enough.** A first choice is not applied unasked, even above `match.strong_threshold`,
+   when **another album is fewer than `match.min_margin` points behind it** (10 by default; a tie between tome 1 and
+   tome 2 of a series is the usual case), or when the file's own tags name another series, or the file is a supplement
+   or an "intégrale" and the album a numbered tome. It is then asked about (or, with `--auto=all`, treated as a medium
+   match). `bdnex import -v` says which. `match.min_margin: 0` turns the margin off. A file that names its album by its
+   address is never doubted.
+
+   *How reliable is it?* Measured on a library of 16,343 linked files, using the 3,588 whose album was confirmed by something
+   other than the name (the year, an author, the file's own tags) as the answer key: a first choice scoring 90 or more
+   was wrong 11 times in 2,876 (0.4%); with the margin, 2 times in 2,632 (0.08%), and 244 files that were right 96% of
+   the time were asked about instead. Between 85 and 89 it was wrong 4.4% of the time, which is why `--auto` asks
+   about those and why a first pass with `--auto=all` is best followed by a checked one (see the cookbook).
+   `tools/eval_matching.py` makes the same measurement on your own library.
 5. **Decide.** By default **you check every file**: the best match is pre-selected, you
    confirm, pick another candidate or skip. With `--auto` (or `import.auto: true`) a score
    at or above `match.strong_threshold` is applied without asking; between
@@ -302,6 +320,7 @@ bdnex review --list --json           # the flagged files with the reason, for a 
 bdnex candidates --low                       # the files whose match is in doubt, each with its best albums
 bdnex candidates series:nains --limit 8      # chosen files, whatever their state
 bdnex candidates --low --json                # for a script or an assistant
+bdnex candidates --low --limit 3 --cover     # also compare the covers (one request per candidate)
 ```
 
 `--low` selects the files with **no album**, **flagged** for review, whose match **looks doubtful or contradicted**
@@ -309,7 +328,12 @@ bdnex candidates --low --json                # for a script or an assistant
 of the album list (`*` is the one now linked) with their score and the evidence for and against: the file's own tags,
 volume, year and authors. Only an album whose page was read has a year and credits to weigh; the others say
 `page not read`, so a candidate that looks right is worth a `bdnex import --fetch` before you decide. Nothing is
-requested and nothing changes. To redo a file: `bdnex import --match --force FILE`.
+requested and nothing changes (with `--cover`, one cover per candidate is requested, politely). To redo a file:
+`bdnex import --match --force FILE`. See [Checking the matches](checking-matches.md) for the whole procedure, by hand or with an assistant.
+
+`--cover` compares the file's cover with each candidate's (needs OpenCV, see [covers](#checking-covers)) and marks the
+candidate most like it. An album whose page was not read has no known cover address: the usual one, built from the
+album's number, is tried, and a candidate whose cover can not be got is simply not compared.
 
 #### Weighing a match: `--scan`
 
@@ -322,6 +346,7 @@ arrives) compares the file with what the page says, offline and without reading 
 | the volume | the file's volume is the album's | another volume, or a "supplément", "hors-série" or "intégrale" matched to a numbered tome: **strong**, unless the album's title is written in the file name (then it is probably another numbering, and only noted) |
 | the year | a year in the file name or tags is within a year of the album's | another year: weak (a reissue has one) |
 | the authors | a name in a `(group)` of the file name is among the credits | none of them is: weak (a group is often a publisher or a scanner) |
+| the folder | (`--scan` only) the album is of the series most files of the folder are of | a folder of four files or more, mostly one series, and this album is of another series sharing no word with it: weak |
 
 The verdict is `confirmed` (the year, an author or the file's tags agree), `unverified` (nothing independent to
 compare: the volume alone confirms nothing, since the match was ranked on it), `doubtful` (a strong sign against but

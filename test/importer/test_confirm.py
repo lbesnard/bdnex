@@ -98,3 +98,118 @@ def test_an_import_flags_a_match_the_album_page_contradicts(make_cbz):
     env.session.run([doubtful])
     row = env.lib.get_file(doubtful)
     assert row["album_id"] is not None and "looks doubtful" in (row["review"] or "")  # linked, and flagged for a look
+
+
+# ------------------------------------------------------------------ folders
+def in_folder(*series, folder="/c/Comics"):
+    return [(f"{folder}/f{n}.cbz", {"series": name}) for n, name in enumerate(series)]
+
+
+def test_a_file_of_another_series_than_its_folders_is_an_outlier():
+    items = in_folder("Blanche Neige (Trif)", "Blanche Neige (Trif)", "Blanche Neige (Trif)", "La poussière des Anges")
+    found = confirm.folder_outliers(items)
+    assert list(found) == ["/c/Comics/f3.cbz"] and "Blanche Neige (Trif)" in found["/c/Comics/f3.cbz"]
+
+
+def test_a_folder_of_many_series_or_few_files_says_nothing():
+    assert confirm.folder_outliers(in_folder("Batman Le Soir", "Batman Anthologie", "Spirou", "Lucky Luke", "Tintin")) == {}
+    assert confirm.folder_outliers(in_folder("Nains", "Nains", "Elfes")) == {}  # three files: too few to say
+    assert confirm.folder_outliers(in_folder("Batman", "Batman", "Batman", "Batman Année Un")) == {}  # share a word
+
+
+# ------------------------------------------------------------------ ranking by what the album pages say
+def test_a_contradicting_year_takes_nothing_away_and_an_unread_album_is_left_alone():
+    from bdnex.importer.matching import Match, adjust_by_facts
+    from bdnex.importer.source import Candidate
+
+    read = Candidate("1", "u1", "plastique", 2)
+    unread = Candidate("2", "u2", "plastique", 1)
+    matches = [Match(read, 90.0, 90.0), Match(unread, 90.0, 90.0)]
+    facts = {"1": {"year": 2005, "credits": {}, "publisher": None, "series": None}}
+    ranked = adjust_by_facts(matches, "/c/Le Plastique (2017).cbz", {}, lambda c: facts.get(c.source_id))
+    assert [m.score for m in ranked] == [90.0, 90.0]
+
+
+def test_a_year_or_an_author_that_agrees_earns_a_few_points():
+    from bdnex.importer.matching import Match, adjust_by_facts
+    from bdnex.importer.source import Candidate
+
+    cand = Candidate("1", "u1", "x", 1)
+    facts = {"1": {"year": 2017, "credits": {"Writer": ["Even, Katia"]}, "publisher": "Dargaud", "series": None}}
+    (match,) = adjust_by_facts([Match(cand, 80.0, 80.0)], "/c/Plastique (Katia Even) (2017).cbz", {}, lambda c: facts["1"])
+    assert match.score == 85  # +2 for the year, +3 for the author
+
+
+def test_a_source_without_facts_is_ranked_as_before():
+    from bdnex.importer.matching import find_matches
+
+    class Plain:
+        def candidates(self, text, limit=5):
+            from bdnex.importer.source import Candidate
+            return [(Candidate("1", "u", "nains", 1), 90.0)]
+
+    assert find_matches(Plain(), "/c/nains 1.cbz")[0].score >= 85
+
+
+# ------------------------------------------------------------------ doubts: asked about even when the score is strong
+class Index:
+    """A source with a fixed candidate list, as `find_matches` needs one."""
+
+    def __init__(self, hits, **kw):
+        from bdnex.library.models import AlbumInfo, SeriesInfo
+
+        self.hits, self._info = hits, lambda c: AlbumInfo("x", c.source_id, c.name, volume=c.volume,
+                                                          series=SeriesInfo("x", "s", "Nains") if c.volume else None)
+        self.__dict__.update(kw)
+
+    def candidates(self, text, limit=5):
+        return self.hits
+
+    def partial_info(self, candidate):
+        return self._info(candidate)
+
+
+def cands(*scores):
+    from bdnex.importer.source import Candidate
+
+    return [(Candidate(str(n), f"u{n}", "nains redwin", 1), s) for n, s in enumerate(scores, start=1)]
+
+
+def test_a_close_second_makes_a_strong_first_choice_doubtful():
+    from bdnex.importer.matching import find_matches
+
+    close = find_matches(Index(cands(97.0, 94.0)), "/c/Nains Redwin.cbz")
+    assert close[0].score >= 90 and "3 point(s) behind" in close[0].doubt
+    clear = find_matches(Index(cands(97.0, 80.0)), "/c/Nains Redwin.cbz")
+    assert clear[0].doubt == ""
+
+
+def test_the_margin_can_be_turned_off_and_a_named_album_is_never_doubted():
+    from bdnex.importer.matching import find_matches
+
+    assert find_matches(Index(cands(97.0, 96.0), min_margin=0), "/c/Nains Redwin.cbz")[0].doubt == ""
+
+
+def test_the_files_own_tags_naming_another_series_make_it_doubtful(monkeypatch):
+    from bdnex.importer import matching
+    from bdnex.importer.matching import find_matches
+
+    monkeypatch.setattr(matching, "_embedded_of", lambda source, path: {"Series": "Tout Autre Chose"})
+    first = find_matches(Index(cands(99.0, 60.0)), "/c/Nains Redwin.cbz")[0]
+    assert "own tags say" in first.doubt
+
+
+def test_a_doubtful_strong_match_is_not_applied_unasked(make_cbz):
+    """With --auto (strong only) a first choice that has a doubt is asked about, not applied."""
+    from dataclasses import replace
+
+    from .test_session import Env, make_settings
+    from helpers import FakeWeb
+
+    env = Env(FakeWeb(), make_settings(**{"import": {"auto": True, "series": "never"}}), None)
+    from bdnex.importer.matching import Match
+    from bdnex.importer.source import Candidate
+
+    best = Match(Candidate("1", "u", "n", 1), 97.0, 97.0, doubt="another album is only 2 point(s) behind")
+    assert env.session._select("/c/x.cbz", [best]) == (None, None)  # no prompter: not applied
+    assert env.session._select("/c/x.cbz", [replace(best, doubt="")])[0] is not None

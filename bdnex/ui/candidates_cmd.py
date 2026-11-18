@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
 from typing import Any
 
-from bdnex.importer import confirm
+from bdnex.importer import confirm, covers
 from bdnex.importer.matching import find_matches
 from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.library import Library
@@ -16,15 +17,8 @@ from bdnex.ui import context
 from bdnex.ui.describe import label
 from bdnex.ui.output import add_verbosity, setup_logging
 
+logger = logging.getLogger(__name__)
 OFFLINE = "bdnex.importer.registry:offline_fetch"
-
-
-def as_album(info) -> dict[str, Any]:
-    """An :class:`AlbumInfo` (or a library album) as the flat dict :func:`confirm.assess` reads."""
-    if isinstance(info, dict):
-        return info
-    return {"title": info.title, "series": info.series.name if info.series else None, "volume": info.volume,
-            "year": info.year, "publisher": info.publisher, "credits": info.credits, "extra": info.extra}
 
 
 def is_low(library, settings, path: str, file: dict | None, album: dict | None, last: dict | None) -> str:
@@ -46,12 +40,37 @@ def describe_candidate(library, source, match, file, current_id) -> dict[str, An
     known = library.find_album(source.name, match.candidate.source_id)
     album = library.get_album(known) if known is not None else None
     complete = bool(album) and not album["extra"].get("partial")
-    shown = album if complete else as_album(source.partial_info(match.candidate))
+    shown = album if complete else confirm.album_from_info(source.partial_info(match.candidate))
     evidence = confirm.assess(file["path"], shown, file.get("embedded") or None)
     return {"score": round(match.score), "album": label(shown), "url": match.candidate.url,
             "year": shown.get("year"), "publisher": shown.get("publisher"), "complete": complete,
             "current": known is not None and known == current_id,
             "verdict": evidence.verdict, "for": evidence.agree, "against": evidence.strong + evidence.weak}
+
+
+def compare_covers(source, settings, path: str, fmt, matches, found: list[dict[str, Any]]) -> None:
+    """Add ``cover`` (0-100, or ``None`` when it could not be compared) to each candidate, and mark the best one."""
+    local = covers.front_cover(path, fmt or "cbz")
+    threshold = settings.cover.match_percentage
+    for match, entry in zip(matches, found):
+        entry["cover"] = None
+        if not local:
+            continue
+        known = source.library.find_album(source.name, match.candidate.source_id)
+        album = source.library.get_album(known) if known else None
+        url = (album or {}).get("cover_url") or source.guess_cover_url(match.candidate)
+        try:
+            online = source.cover_image(url)
+            covers.check_cover_image(online)
+            entry["cover"] = round(covers.sift_similarity(local, online))
+        except (covers.CoverError, *source.fetch_errors) as err:
+            logger.debug(f"{path}: cover of {url} not compared ({err})")
+            continue
+        (entry["for"] if entry["cover"] >= threshold else entry["against"]).append(f"its cover is {entry['cover']}% like the file's")
+    scored = [e for e in found if e.get("cover") is not None]
+    best = max(scored, key=lambda e: e["cover"], default=None)
+    for entry in found:
+        entry["cover_best"] = entry is best and best["cover"] >= threshold
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -64,6 +83,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
                         help="only the files whose match is in doubt: no album, flagged, looking wrong (see `bdnex review "
                              "--scan`), or matched with a score under `match.strong_threshold`")
     parser.add_argument("--limit", type=int, default=5, metavar="N", help="candidates per file (default 5)")
+    parser.add_argument("--cover", action="store_true",
+                        help="also compare the file's cover with the cover of each candidate (one request per candidate, "
+                             "so keep `--limit` small; needs OpenCV). The candidate whose cover is most like the file's "
+                             "is marked")
     parser.add_argument("--json", action="store_true", help="JSON, for a script or an assistant")
     add_verbosity(parser)
     args = parser.parse_args(argv)
@@ -71,10 +94,13 @@ def run(argv: list[str], out=sys.stdout) -> int:
     settings = context.settings()
     if settings is None:
         return 1
-    offline = settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
+    offline = settings if args.cover else settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
         update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
 
     report = []
+    if args.cover and not covers.opencv_installed():
+        print("--cover needs OpenCV (`pip install 'bdnex[cover]'`): the covers are not compared.", file=sys.stderr)
+        args.cover = False
     with Library.for_settings(settings, readonly=True) as library:
         try:
             source = create_source(settings.source, library, offline)
@@ -101,9 +127,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
             if not why:
                 continue
             matches = find_matches(source, path, limit=args.limit)
-            report.append({"path": path, "why": why, "now": label(album) if album else None,
-                           "candidates": [describe_candidate(library, source, m, file or {"path": path}, album_id)
-                                          for m in matches]})
+            found = [describe_candidate(library, source, m, file or {"path": path}, album_id) for m in matches]
+            if args.cover:
+                compare_covers(source, settings, path, (file or {}).get("format"), matches, found)
+            report.append({"path": path, "why": why, "now": label(album) if album else None, "candidates": found})
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2), file=out)
         return 0
@@ -111,8 +138,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
         print(f"\n{entry['path']}\n  now: {entry['now'] or '(no album)'}   [{entry['why']}]", file=out)
         for number, c in enumerate(entry["candidates"], start=1):
             mark = "*" if c["current"] else " "
+            cover = "" if c.get("cover") is None else f"  cover {c['cover']}%" + (" <- most like the file's" if c.get("cover_best") else "")
             print(f" {mark}{number}. {c['score']:>3}  {c['album']}  {c['year'] or ''} {c['publisher'] or ''}".rstrip()
-                  + f"  [{c['verdict']}{'' if c['complete'] else ', page not read'}]", file=out)
+                  + f"  [{c['verdict']}{'' if c['complete'] else ', page not read'}]{cover}", file=out)
             for text in c["for"]:
                 print(f"        + {text}", file=out)
             for text in c["against"]:

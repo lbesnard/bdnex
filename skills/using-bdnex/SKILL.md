@@ -52,7 +52,9 @@ An import can be stopped with Ctrl-C and run again: decisions and the albums alr
 `bdnex review --scan -n` weighs every match against its album page (credits, year, volume, the file's own tags) and
 lists the ones that look wrong; without `-n` it flags them. `bdnex review --list --json` gives the flagged files with
 the reason, for you to read. `bdnex candidates --low --json` gives, for each file in doubt, the other albums it could be
-(score, evidence for and against, `page not read` when only the sitemap is known). To check one: `bdnex ls --files <name> -l` for the album, the cover (`bdnex review` shows
+(score, evidence for and against, `page not read` when only the sitemap is known); add `--cover --limit 3` to compare covers
+(one request per candidate; ask first). The procedure is the docs page *Checking the matches*: find, list the alternatives, then
+report per file keep / another album / leave with a confidence and why. To check one: `bdnex ls --files <name> -l` for the album, the cover (`bdnex review` shows
 both covers) and the evidence. To fix it, never edit the database: `bdnex import --match --force <file>` (the user
 chooses again), `bdnex edit` for a wrong field, or `bdnex review` (keep, unlink, rematch). Propose each change to the
 user with your evidence and your confidence; do not change matches on your own.

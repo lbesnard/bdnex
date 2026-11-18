@@ -15,6 +15,9 @@ logger = logging.getLogger(__name__)
 
 VOLUME_MATCH_BONUS = 5.0
 VOLUME_MISMATCH_PENALTY = 15.0
+YEAR_MATCH_BONUS = 2.0
+AUTHOR_MATCH_BONUS = 3.0
+MIN_MARGIN = 10.0  # a first choice with another album this close behind is not sure
 SERIES_QUERY_CAP = 89.0  # matched on series + volume only: always ask, never apply silently
 NO_VOLUME_CAP = 85.0  # the file has a volume but the album has none (e.g. an album named like the series)
 VOLUME_MISMATCH_CAP = 85.0  # a wrong volume is never a strong match, whatever the title says
@@ -31,6 +34,7 @@ class Match:
     candidate: Candidate
     score: float  # 0-100, after the volume adjustment
     base_score: float  # plain title similarity
+    doubt: str = ""  # why it must not be applied unasked even with a strong score ("" = no reason to doubt it)
 
 
 VOLUME_GROUP = re.compile(r"^\s*(?:t|tome|vol\.?|n°|#)?\s*0*\d{1,3}\s*$", re.I)
@@ -161,6 +165,30 @@ def rerank(query: str, hits: list[tuple[Candidate, float]], wanted: Optional[lis
     return sorted(matches, key=lambda m: m.score, reverse=True)
 
 
+def adjust_by_facts(matches: list[Match], path: str, embedded: Optional[dict], facts_of) -> list[Match]:
+    """Rank candidates whose page was read by what it says: a year or an author that agrees earns a few points. Nothing is
+    ever taken away: a candidate whose page was never read has no facts, so a penalty would push every album that is
+    known below the ones that are not (measured on a real library: it moved correct matches to wrong ones). A
+    contradiction is dealt with by :func:`contradicted`, which only keeps a match from being applied unasked."""
+    from bdnex.importer import confirm
+
+    stem = os.path.splitext(os.path.basename(path))[0]
+    years = confirm.years_named(stem, embedded or {})
+    adjusted = []
+    for match in matches:
+        facts = facts_of(match.candidate)
+        if not facts:
+            adjusted.append(match)
+            continue
+        score = match.score
+        if confirm.year_agrees(years, facts.get("year")):
+            score += YEAR_MATCH_BONUS
+        if confirm.author_words(stem, facts) & confirm.credit_words(facts):
+            score += AUTHOR_MATCH_BONUS
+        adjusted.append(replace(match, score=max(0.0, min(100.0, score))) if score != match.score else match)
+    return sorted(adjusted, key=lambda m: m.score, reverse=True)
+
+
 def find_matches(source, path: str, limit: int = 5) -> list[Match]:
     """The best albums of ``source`` for one file, scored 0-100 and best first. No network access.
 
@@ -169,7 +197,8 @@ def find_matches(source, path: str, limit: int = 5) -> list[Match]:
     above :data:`SERIES_QUERY_CAP` since nothing confirms the title.
     """
     best: dict[str, tuple] = {}  # source_id -> (candidate, best score, found by a series query)
-    named, extra = embedded_hint(source, path)
+    embedded = _embedded_of(source, path) or {}  # {}: looked at, nothing there (not read twice)
+    named, extra = embedded_hint(source, path, embedded)
     title_numbers, _ = numeric_title(query_from_filename(path).lower().split())
     by_number = getattr(source, "numeric_title_candidates", None)
     if title_numbers and by_number:  # a title made of numbers (14-18, 666) has no word to look an album up by
@@ -186,12 +215,51 @@ def find_matches(source, path: str, limit: int = 5) -> list[Match]:
     matches = [replace(m, score=min(m.score, SERIES_QUERY_CAP)) if m.candidate.source_id in series_only else m
                for m in matches]
     matches = sorted(matches, key=lambda m: m.score, reverse=True)
+    facts_of = getattr(source, "facts_of", None)
+    if facts_of is not None and getattr(source, "use_facts", True):
+        matches = adjust_by_facts(matches, path, embedded, facts_of)
+    matches = _doubts(source, path, matches, embedded, named)
     if named is not None:  # the file itself names its album: that is the first choice, whatever the file name says
         matches = [Match(named, 100.0, 100.0)] + [m for m in matches if m.candidate.source_id != named.source_id]
     return matches[:limit]
 
 
-def embedded_hint(source, path: str):
+def _doubts(source, path: str, matches: list[Match], embedded: Optional[dict], named) -> list[Match]:
+    """Give the first choice a reason to be asked about when one exists, whatever its score:
+
+    * **a close second**: another album is within ``min_margin`` points (measured on a real library: with a margin of
+      10, the wrong matches among those scoring 90 or more went from 11 in 2,876 to 2, and the 257 files asked about
+      instead were right 248 times);
+    * **a strong contradiction**: the file's own tags name another series, or it is a supplement or an integral for a
+      numbered tome (see :mod:`bdnex.importer.confirm`).
+
+    A file that names its album by its address (``named``) is not doubted.
+    """
+    if not matches or (named is not None and matches[0].candidate.source_id == named.source_id):
+        return matches
+    first, reason = matches[0], ""
+    margin = getattr(source, "min_margin", MIN_MARGIN)
+    second = next((m for m in matches[1:] if m.candidate.source_id != first.candidate.source_id), None)
+    if margin and second is not None and first.score - second.score < margin:
+        reason = f"another album is only {first.score - second.score:.0f} point(s) behind"
+    if not reason:
+        from bdnex.importer import confirm
+
+        album = confirm.album_of_candidate(source, first.candidate)
+        if album is not None:
+            reason = "; ".join(confirm.assess(path, album, embedded).strong)
+    return [replace(first, doubt=reason)] + matches[1:] if reason else matches
+
+
+def _embedded_of(source, path: str) -> Optional[dict]:
+    if not getattr(source, "use_embedded", True):
+        return None
+    from bdnex.library.scan import read_embedded
+
+    return read_embedded(path)
+
+
+def embedded_hint(source, path: str, embedded: Optional[dict] = None):
     """What the file's own ComicInfo.xml says about its album: ``(candidate or None, extra queries)``.
 
     A ``Web`` field with the address of an album page (bdnex writes it) names the album exactly, **if that album is in
@@ -201,9 +269,8 @@ def embedded_hint(source, path: str):
     """
     if not getattr(source, "use_embedded", True):
         return None, []
-    from bdnex.library.scan import read_embedded
-
-    embedded = read_embedded(path)
+    if embedded is None:
+        embedded = _embedded_of(source, path)
     if not embedded:
         return None, []
     from_url = getattr(source, "known_candidate_from_url", None) or getattr(source, "candidate_from_url", None)

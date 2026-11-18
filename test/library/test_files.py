@@ -202,3 +202,14 @@ def test_relink_reads_the_candidates_in_several_processes_with_the_same_answer(l
     serial = lib.relink([str(tmp_path)], apply=False, workers=1)
     parallel = lib.relink([str(tmp_path)], apply=False, workers=3)
     assert len(serial["found"]) == 5 and serial == parallel
+
+
+def test_known_facts_are_those_of_the_albums_whose_page_was_read(tmp_path):
+    from bdnex.library import AlbumInfo, Library
+
+    with Library(tmp_path / "l.sqlite") as lib:
+        lib.add_album(AlbumInfo("bedetheque", "1", "Lu", year=2001, publisher="Dargaud", credits={"Writer": ["A"]}))
+        lib.add_album(AlbumInfo("bedetheque", "2", "Pas lu", extra={"partial": True}))
+        facts = lib.known_facts("bedetheque")
+    assert set(facts) == {"1"} and facts["1"]["year"] == 2001 and facts["1"]["publisher"] == "Dargaud"
+    assert facts["1"]["credits"] == {"Writer": ["A"]}

@@ -57,6 +57,8 @@ class _Section(BaseModel):
 
 class Match(_Section):
     use_embedded: bool
+    use_facts: bool  # rank albums whose page was read by their year and authors
+    min_margin: float = Field(ge=0, le=100)  # a first choice this close to another album is not applied unasked
     strong_threshold: float = Field(ge=0, le=100)
     medium_threshold: float = Field(ge=0, le=100)
 

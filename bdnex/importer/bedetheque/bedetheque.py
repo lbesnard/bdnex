@@ -187,6 +187,7 @@ class Bedetheque:
         self._index: Optional[list[Candidate]] = None
         self._words: Optional[dict[str, list[int]]] = None
         self._by_id: Optional[dict[str, Candidate]] = None
+        self._facts: Optional[dict[str, dict]] = None
 
     # --------------------------------------------------------------- fetching
     def _get(self, kind: str, url: str, recache: bool = False, store: bool = True) -> bytes:
@@ -322,6 +323,7 @@ class Bedetheque:
         self._index = None
         self._words = None
         self._by_id: Optional[dict[str, Candidate]] = None
+        self._facts: Optional[dict[str, dict]] = None
         return fetched
 
     # -- MetadataSource protocol
@@ -400,6 +402,23 @@ class Bedetheque:
         """Load the matching index now, so worker processes forked later share it."""
         self._word_index()
         self._ids()
+        self.facts()
+
+    def facts(self) -> dict[str, dict]:
+        """The year, publisher, series and credits of the albums whose page was read (loaded once, before the
+        workers fork: a worker never touches the database). Albums read later in the run are not in it."""
+        if getattr(self, "_facts", None) is None:
+            self._facts = self.library.known_facts(SOURCE)
+        return self._facts
+
+    def guess_cover_url(self, candidate: Candidate) -> str:
+        """Where the cover of an album whose page was not read most likely is: the site names it after the album's id
+        (``Couv_<id>.jpg``). A guess, not a read address: a missing picture is simply not compared."""
+        return f"https://www.bedetheque.com/media/Couvertures/Couv_{candidate.source_id}.jpg"
+
+    def facts_of(self, candidate: Candidate) -> Optional[dict]:
+        """What the library knows of a candidate beyond its address (``None``: its page was never read)."""
+        return self.facts().get(candidate.source_id)
 
     def _word_index(self) -> dict[str, list[int]]:
         """word -> positions in the index of the candidates containing it (built once)."""
