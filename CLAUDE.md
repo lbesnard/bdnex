@@ -91,6 +91,12 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 - It runs when a page arrives (`ImportSession._confirm`) and for the whole library with `bdnex review --scan`.
   Credit labels of a page are mapped in `parser.OTHER_CREDIT_ROLES` (`Encrage` is `Inker`); `LEGACY_ROLES` reads old names back.
 
+- **Precision before coverage**: a wrong match costs more than an unasked one. A strong first choice is still asked about
+  when a *doubt* is set (`Match.doubt`, `matching._doubts`): another album within `match.min_margin` points, or a strong
+  contradiction. Candidates whose page was read get a few points when year/author agree and **never lose any** (a penalty
+  biases against known albums; measured). Change the matcher only with `tools/eval_matching.py run/report` on a real
+  library (answer key = matches `confirm.assess` calls confirmed); look at wrong-at-strong, not just totals.
+
 ## Several files at once (`Organizer.run(workers=)`, `bdnex/parallel.py`)
 - `parallel.map_ordered(function, items, workers)` is the helper for read-only work (hashing, reading first pages): forked processes,
   results in order, an exception is the item's result. It must not touch a database; the caller stores the results.

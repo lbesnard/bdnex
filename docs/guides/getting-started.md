@@ -112,4 +112,5 @@ The script is read from the program's own `--help`, so it follows the version yo
 If you use Claude Code to run bdnex for you, the repository ships a skill that teaches it the safety rules (preview
 first, a first import that touches no file, a backup before bulk changes, no secrets in commands): copy the folder
 `skills/using-bdnex` of the repository to `~/.claude/skills/`. It is a short guide that points at these pages; the
-commands and their options are always the ones `bdnex <command> --help` prints.
+commands and their options are always the ones `bdnex <command> --help` prints. To have it check your matches, see
+[Checking the matches](checking-matches.md).

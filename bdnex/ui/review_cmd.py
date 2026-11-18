@@ -112,6 +112,7 @@ def scan(settings, args, out) -> int:
         except QueryError as err:
             return context.bad_query(err)
         albums: dict[int, dict] = {}
+        weighed = []
         for row in rows:
             file = library.get_file(row["path"])
             if file is None or file["album_id"] is None or file["review"]:
@@ -119,13 +120,18 @@ def scan(settings, args, out) -> int:
             album = albums.get(file["album_id"]) or albums.setdefault(file["album_id"], library.get_album(file["album_id"]))
             if not album or album["extra"].get("partial"):
                 continue
-            embedded = file["embedded"] or None
-            evidence = confirm.assess(row["path"], album, embedded)
+            weighed.append((row["path"], album, confirm.assess(row["path"], album, file["embedded"] or None)))
+        outliers = confirm.folder_outliers([(path, album) for path, album, _ in weighed])
+        for path, album, evidence in weighed:
+            if path in outliers:  # the folder disagrees: one more sign against
+                evidence.weak.append(outliers[path])
+                if evidence.verdict in (confirm.CONFIRMED, confirm.UNVERIFIED):
+                    evidence.verdict = confirm.DOUBTFUL
             counts[evidence.verdict] += 1
             if confirm.worth_a_look(evidence):
-                flagged.append((row["path"], label(album), evidence))
+                flagged.append((path, label(album), evidence))
                 if not args.pretend:
-                    library.flag_review(row["path"], f"the match looks {evidence.verdict}: {evidence.reason}")
+                    library.flag_review(path, f"the match looks {evidence.verdict}: {evidence.reason}")
     for path, name, evidence in flagged:
         print(f"{evidence.verdict:>12}  {path}\n              {name}\n              {evidence.reason}", file=out)
     print(f"\nWeighed {sum(counts.values())} file(s): {counts[confirm.CONFIRMED]} confirmed, "

@@ -25,6 +25,7 @@ guides/getting-started
 guides/safe-workflows
 guides/cookbook
 guides/importing
+guides/checking-matches
 guides/versions
 guides/queries
 guides/writing

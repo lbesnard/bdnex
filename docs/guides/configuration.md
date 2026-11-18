@@ -70,7 +70,9 @@ collection_path: ~/comics                 # your collection (required); file pat
 library: ~/.local/share/bdnex/bdnex.sqlite
 
 match:
+  use_facts: true                        # an album whose page was read is given a few points when its year or an author agrees with the file
   use_embedded: true                     # a file's own ComicInfo.xml (its album's web address, series and number) helps to match it
+  min_margin: 10                         # a first choice with another album fewer points behind is asked about, not applied unasked (0: off)
   strong_threshold: 90                   # applied without asking when import.auto is true
   medium_threshold: 70                   # between medium and strong: ask
 
