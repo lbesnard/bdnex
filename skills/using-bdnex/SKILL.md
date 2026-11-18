@@ -47,6 +47,15 @@ An import can be stopped with Ctrl-C and run again: decisions and the albums alr
 `bdnex import --fetch` continues the page downloads. Pages are requested politely (`bedetheque.delay`,
 `bedetheque.parallel`); a large collection takes hours.
 
+## Checking the matches
+
+`bdnex review --scan -n` weighs every match against its album page (credits, year, volume, the file's own tags) and
+lists the ones that look wrong; without `-n` it flags them. `bdnex review --list --json` gives the flagged files with
+the reason, for you to read. To check one: `bdnex ls --files <name> -l` for the album, the cover (`bdnex review` shows
+both covers) and the evidence. To fix it, never edit the database: `bdnex import --match --force <file>` (the user
+chooses again), `bdnex edit` for a wrong field, or `bdnex review` (keep, unlink, rematch). Propose each change to the
+user with your evidence and your confidence; do not change matches on your own.
+
 ## Queries (`ls`, `write`, `move`, `komga` ...)
 
 Terms are ANDed: `series:nains author:uderzo year:2010..2015 format:pdf ^genre:humour`; `partial:true` / `complete:true`

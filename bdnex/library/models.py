@@ -54,3 +54,7 @@ class AlbumInfo:
     @property
     def kind(self) -> str:
         return KIND_SERIES if self.series is not None else KIND_ONESHOT
+
+
+# What the library called a credit role before the source's labels were mapped: read back as the new name
+LEGACY_ROLES = {"Encrage": "Inker"}

@@ -32,7 +32,9 @@ The schema version is stored in `PRAGMA user_version`; migrations live in
 - The **raw pages** (`source_cache`): the complete record of what a source said, whether or not bdnex
   understands all of it yet.
 - The **parsed albums**: columns for what is queried (`ls`), `album_credits` for every role the page
-  names (including `Translator` and `Other`, which ComicInfo has no element for), and `extra`
+  names (including `Translator` and `Other`, which ComicInfo has no element for, and Bédéthèque's own `Préface`,
+  `Storyboard`, `Décors`, `Design` and `Adapté de`; its `Encrage` is read as `Inker`, and a library that stored it
+  as `Encrage` reads it back as `Inker` on `bdnex reparse`), and `extra`
   (JSON) for everything else: the whole edition table (`format`, `Poids`, `Achevé impr.`,
   `Estimation`...), the edition note, the vote count, the image links.
 - Albums do not depend on files: removing or replacing a file never removes an album.

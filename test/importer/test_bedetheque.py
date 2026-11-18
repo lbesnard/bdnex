@@ -431,3 +431,41 @@ def test_a_page_queue_reports_a_failed_page_and_skips_a_stored_one(lib):
     assert results[urls[0]] is None and results[urls[1]] is not None and results[urls[2]] is None
     assert urls[2] not in web.calls  # already in the library: not asked again
     queue.close()
+
+
+INKED_PAGE = """
+<html><body><section class="bdt-ah"><h1><a href="https://www.bedetheque.com/serie-1-BD-S.html">Série S</a></h1>
+<div class="bdt-ah-auteurs"><span><a>Dupont</a> <small>(Scénario)</small></span><span><a>Martin</a> <small>(Encrage)</small></span>
+<span><a>Leroy</a> <small>(Préface)</small></span></div></section>
+<article class="bdt-edition bdt-edition--detail"><div class="bdt-edition-body"><dl>
+<dt>Titre</dt><dd>Un titre</dd><dt>Collection</dt><dd>Aire Libre</dd><dt>Cycle</dt><dd>Premier cycle</dd>
+<dt>Autres infos</dt><dd><i title="Edition originale"></i><i title="Couverture souple"></i></dd></dl></div></article></body></html>"""
+
+
+def test_inking_is_an_inker_and_other_roles_keep_their_name():
+    fields, _ = parser.parse_album_page(INKED_PAGE, "https://www.bedetheque.com/BD-S-Tome-1-Titre-1.html")
+    info = parser.build_album_info(fields)
+    assert info.credits["Inker"] == ["Martin"] and "Encrage" not in info.credits
+    assert info.credits["Préface"] == ["Leroy"] and info.credits["Writer"] == ["Dupont"]
+
+
+def test_the_icons_of_other_infos_are_read_from_their_titles():
+    fields, _ = parser.parse_album_page(INKED_PAGE, "https://www.bedetheque.com/BD-S-Tome-1-Titre-1.html")
+    assert fields["edition_fields"]["Autres infos"] == "Edition originale, Couverture souple"
+
+
+def test_collection_and_cycle_go_to_comicinfo():
+    from bdnex.organizer.comicinfo import album_to_fields
+
+    fields, _ = parser.parse_album_page(INKED_PAGE, "https://www.bedetheque.com/BD-S-Tome-1-Titre-1.html")
+    info = parser.build_album_info(fields)
+    out = album_to_fields({"title": "T", "series": "S", "credits": info.credits, "genres": [], "extra": info.extra})
+    assert out["Imprint"] == "Aire Libre" and out["StoryArc"] == "Premier cycle" and out["Inker"] == "Martin"
+
+
+def test_a_library_that_stored_encrage_reads_it_back_as_inker(lib):
+    from bdnex.library import AlbumInfo
+
+    album = lib.add_album(AlbumInfo("bedetheque", "9", "T", credits={"Encrage": ["Martin"], "Writer": ["A"]}))
+    lib.merge_album(AlbumInfo("bedetheque", "9", "T", credits={"Writer": ["A"]}))  # a re-read that has no inking
+    assert lib.get_album(album)["credits"].get("Inker") == ["Martin"] and "Encrage" not in lib.get_album(album)["credits"]

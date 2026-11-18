@@ -12,7 +12,7 @@ from typing import Any, Iterable, Optional
 
 from bdnex.library.hashing import file_md5
 from bdnex.library.query import FROM_JOINS, compile_query, fold, register_functions, run_query
-from bdnex.library.models import AlbumInfo, SeriesInfo
+from bdnex.library.models import LEGACY_ROLES, AlbumInfo, SeriesInfo
 from bdnex.library.scan import inspect_file, iter_comic_files
 from bdnex.library.schema import MIGRATIONS
 
@@ -557,7 +557,8 @@ class Library:
             row = self.conn.execute(
                 "SELECT s.* FROM series s JOIN albums a ON a.series_id = s.id WHERE a.id = ?", (old["id"],)).fetchone()
             series = SeriesInfo(row["source"], row["source_id"], row["name"], row["summary"], row["url"]) if row else None
-        credits = {**old["credits"], **{role: names for role, names in info.credits.items() if names}}
+        kept = {LEGACY_ROLES.get(role, role): names for role, names in old["credits"].items()}  # an old role name
+        credits = {**kept, **{role: names for role, names in info.credits.items() if names}}
         extra = {**old["extra"], **info.extra}
         if not info.extra.get("partial"):
             extra.pop("partial", None)  # a full parse replaces a sitemap-only record
