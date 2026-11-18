@@ -14,6 +14,9 @@ def create_source(library, settings):
                         delay=tuple(section.delay), sitemap_delay=tuple(section.sitemap_delay))
     source.use_embedded = settings.match.use_embedded
     source.min_margin = settings.match.min_margin
+    from bdnex.config import MATCH_WEIGHTS
+
+    source.weights = {name: getattr(settings.match, option) for option, name in MATCH_WEIGHTS.items()}
     if not uses_saved_pages(settings):  # several endpoints (or `parallel`) fetch several pages at once
         source.parallel = section.parallel or max(1, len(section.fetcher_endpoint))
     return source

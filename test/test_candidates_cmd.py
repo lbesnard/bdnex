@@ -89,3 +89,10 @@ def test_cover_marks_the_candidate_whose_cover_is_like_the_files(env, tmp_path, 
     best = [c for c in entry["candidates"] if c.get("cover_best")]
     assert code == 0 and len(best) == 1 and best[0]["url"].endswith("245127.html") and best[0]["cover"] >= 40
     assert all(c["cover"] is not None for c in entry["candidates"]) and len(asked) >= len(entry["candidates"])
+
+
+def test_each_candidate_says_where_its_score_comes_from(env):
+    code, text = run("--limit", "2", "--json")
+    best = json.loads(text)[0]["candidates"][0]
+    assert code == 0 and best["why_score"] and best["why_score"][0].startswith("title: ")
+    assert "words of the name found" in best["why_score"][0]

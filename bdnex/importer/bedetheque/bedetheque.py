@@ -455,8 +455,8 @@ class Bedetheque:
         return pool
 
     @staticmethod
-    def _score(words: list[str], cand: Candidate) -> float:
-        """0-100: how many query words the candidate has, and how close the texts are.
+    def _score_parts(words: list[str], cand: Candidate) -> tuple[float, list[str]]:
+        """0-100: how many query words the candidate has, and how close the texts are; and the same in words.
 
         The volume is not part of this: the importer adjusts for it (``matching.rerank``).
         """
@@ -468,13 +468,31 @@ class Bedetheque:
         extra = sum(1 for c in cand_words if c not in words and not c.isdigit())  # years do not count
         closeness = fuzz.ratio(" ".join(words), " ".join(cand_words))
         score = 60 * coverage + 0.4 * closeness - min(extra, 6) * 1.5 * coverage
+        parts = [f"{hits} of {len(words)} words of the name found: {60 * coverage:.0f}",
+                 f"the texts are {closeness:.0f}% alike: {0.4 * closeness:.0f}"]
+        if extra:
+            parts.append(f"{extra} word(s) of the album not in the name: -{min(extra, 6) * 1.5 * coverage:.0f}")
         # every word of the album name is in the file name: the rest is probably author names
         title = {c for c in cand_words if not c.isdigit()}
         distinctive = len(title) >= 3 or (len(title) == 2 and sum(map(len, title)) >= 12)
         if distinctive and all(c in words for c in title):
             unexplained = sum(1 for w in words if w not in known)
-            score = max(score, 85 - 2 * min(unexplained, 5))
-        return max(0.0, min(100.0, score))
+            floor = 85 - 2 * min(unexplained, 5)
+            if floor > score:
+                parts.append(f"every word of the album's name is in the file name: at least {floor}")
+            score = max(score, floor)
+        return max(0.0, min(100.0, score)), parts
+
+    @classmethod
+    def _score(cls, words: list[str], cand: Candidate) -> float:
+        return cls._score_parts(words, cand)[0]
+
+    def explain(self, name: str, cand: Candidate) -> tuple[float, list[str]]:
+        """The title score of a candidate for a name, and where its points come from (what ``candidates`` shows)."""
+        words, _ = sitemap.query_tokens(name)
+        if not words:
+            return 0.0, []
+        return self._score_parts(words, cand)
 
     def candidates(self, name: str, limit: int = 5) -> list[tuple[Candidate, float]]:
         """Best matches for ``name`` (score 0-100). No network access.

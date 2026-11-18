@@ -36,6 +36,26 @@ def is_low(settings, path: str, file: dict | None, album: dict | None, last: dic
     return ""
 
 
+def why_score(source, path: str, match) -> list[str]:
+    """Where a candidate's score comes from, in words: the title score (of the query that gave the most), then what moved it."""
+    from bdnex.importer.matching import queries_for, series_queries
+
+    explain = getattr(source, "explain", None)
+    best: tuple[float, list[str]] = (-1.0, [])
+    if explain is not None:
+        for text in [*queries_for(path), *series_queries(path)]:
+            try:
+                found = explain(text, match.candidate)
+            except Exception as err:  # an explanation is a help: never a reason to fail
+                logger.debug(f"{path}: no explanation for {text!r} ({err})")
+                continue
+            if found[0] > best[0]:
+                best = found
+    lines = [f"title: {best[0]:.0f}" + (f" ({'; '.join(best[1])})" if best[1] else "")] if best[0] >= 0 else []
+    lines += list(match.parts)
+    return lines
+
+
 def describe_candidate(library, source, match, file, current_id) -> dict[str, Any]:
     known = library.find_album(source.name, match.candidate.source_id)
     album = library.get_album(known) if known is not None else None
@@ -44,7 +64,7 @@ def describe_candidate(library, source, match, file, current_id) -> dict[str, An
     evidence = confirm.assess(file["path"], shown, file.get("embedded") or None)
     return {"score": round(match.score), "album": label(shown), "url": match.candidate.url,
             "year": shown.get("year"), "publisher": shown.get("publisher"), "complete": complete,
-            "current": known is not None and known == current_id,
+            "current": known is not None and known == current_id, "why_score": why_score(source, file["path"], match),
             "verdict": evidence.verdict, "for": evidence.agree, "against": evidence.strong + evidence.weak}
 
 
@@ -141,6 +161,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
             cover = "" if c.get("cover") is None else f"  cover {c['cover']}%" + (" <- most like the file's" if c.get("cover_best") else "")
             print(f" {mark}{number}. {c['score']:>3}  {c['album']}  {c['year'] or ''} {c['publisher'] or ''}".rstrip()
                   + f"  [{c['verdict']}{'' if c['complete'] else ', page not read'}]{cover}", file=out)
+            for text in c["why_score"]:
+                print(f"        = {text}", file=out)
             for text in c["for"]:
                 print(f"        + {text}", file=out)
             for text in c["against"]:

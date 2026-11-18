@@ -13,10 +13,12 @@ from bdnex.importer.source import Candidate
 
 logger = logging.getLogger(__name__)
 
-VOLUME_MATCH_BONUS = 5.0
-VOLUME_MISMATCH_PENALTY = 15.0
-YEAR_MATCH_BONUS = 2.0
-AUTHOR_MATCH_BONUS = 3.0
+# What the adjustments after the title score are worth, in points of the 0-100 score (``match.volume_bonus`` and the other options override them).
+DEFAULT_WEIGHTS = {"volume_match": 5.0, "volume_mismatch": 15.0, "year_match": 2.0, "author_match": 3.0}
+VOLUME_MATCH_BONUS = DEFAULT_WEIGHTS["volume_match"]  # (kept for the code and tests that name them)
+VOLUME_MISMATCH_PENALTY = DEFAULT_WEIGHTS["volume_mismatch"]
+YEAR_MATCH_BONUS = DEFAULT_WEIGHTS["year_match"]
+AUTHOR_MATCH_BONUS = DEFAULT_WEIGHTS["author_match"]
 MIN_MARGIN = 10.0  # a first choice with another album this close behind is not sure
 SERIES_QUERY_CAP = 89.0  # matched on series + volume only: always ask, never apply silently
 NO_VOLUME_CAP = 85.0  # the file has a volume but the album has none (e.g. an album named like the series)
@@ -35,6 +37,7 @@ class Match:
     score: float  # 0-100, after the volume adjustment
     base_score: float  # plain title similarity
     doubt: str = ""  # why it must not be applied unasked even with a strong score ("" = no reason to doubt it)
+    parts: tuple[str, ...] = ()  # what moved the score after the title score, in words (`bdnex candidates` shows them)
 
 
 VOLUME_GROUP = re.compile(r"^\s*(?:t|tome|vol\.?|n°|#)?\s*0*\d{1,3}\s*$", re.I)
@@ -148,24 +151,36 @@ def volumes_in(query: str) -> list[int]:
     return found
 
 
-def rerank(query: str, hits: list[tuple[Candidate, float]], wanted: Optional[list[int]] = None) -> list[Match]:
+def weight(source, name: str) -> float:
+    """What an adjustment is worth: the ``match.*_bonus`` and ``*_penalty`` options of the configuration, else :data:`DEFAULT_WEIGHTS`."""
+    return float((getattr(source, "weights", None) or {}).get(name, DEFAULT_WEIGHTS[name]))
+
+
+def rerank(query: str, hits: list[tuple[Candidate, float]], wanted: Optional[list[int]] = None,
+           source=None) -> list[Match]:
     """Adjust title scores with the volume number found in the file name (``wanted``: the volumes already worked out)."""
     wanted = volumes_in(query) if wanted is None else wanted
+    bonus, penalty = weight(source, "volume_match"), weight(source, "volume_mismatch")
     matches = []
     for cand, base in hits:
-        score = base
+        score, parts = base, []
         if wanted and cand.volume is not None:
             if cand.volume in wanted:
-                score += VOLUME_MATCH_BONUS
+                score += bonus
+                parts.append(f"volume {cand.volume} asked for and found: +{bonus:g}")
             else:
-                score = min(score - VOLUME_MISMATCH_PENALTY, VOLUME_MISMATCH_CAP)
+                score = min(score - penalty, VOLUME_MISMATCH_CAP)
+                parts.append(f"the file says volume {', '.join(map(str, wanted[:2]))}, the album is volume {cand.volume}: "
+                             f"-{penalty:g}, at most {VOLUME_MISMATCH_CAP:g}")
         elif wanted and cand.volume is None:
+            if score > NO_VOLUME_CAP:
+                parts.append(f"the file has a volume, the album has none: at most {NO_VOLUME_CAP:g}")
             score = min(score, NO_VOLUME_CAP)
-        matches.append(Match(cand, max(0.0, min(100.0, score)), base))
+        matches.append(Match(cand, max(0.0, min(100.0, score)), base, parts=tuple(parts)))
     return sorted(matches, key=lambda m: m.score, reverse=True)
 
 
-def adjust_by_facts(matches: list[Match], path: str, embedded: Optional[dict], facts_of) -> list[Match]:
+def adjust_by_facts(matches: list[Match], path: str, embedded: Optional[dict], facts_of, source=None) -> list[Match]:
     """Rank candidates whose page was read by what it says: a year or an author that agrees earns a few points. Nothing is
     ever taken away: a candidate whose page was never read has no facts, so a penalty would push every album that is
     known below the ones that are not (measured on a real library: it moved correct matches to wrong ones). A
@@ -174,18 +189,22 @@ def adjust_by_facts(matches: list[Match], path: str, embedded: Optional[dict], f
 
     stem = os.path.splitext(os.path.basename(path))[0]
     years = confirm.years_named(stem, embedded or {})
+    year_bonus, author_bonus = weight(source, "year_match"), weight(source, "author_match")
     adjusted = []
     for match in matches:
         facts = facts_of(match.candidate)
         if not facts:
             adjusted.append(match)
             continue
-        score = match.score
+        score, parts = match.score, list(match.parts)
         if confirm.year_agrees(years, facts.get("year")):
-            score += YEAR_MATCH_BONUS
-        if confirm.author_words(stem, facts) & confirm.credit_words(facts):
-            score += AUTHOR_MATCH_BONUS
-        adjusted.append(replace(match, score=max(0.0, min(100.0, score))) if score != match.score else match)
+            score += year_bonus
+            parts.append(f"the year {facts['year']} agrees: +{year_bonus:g}")
+        shared = confirm.author_words(stem, facts) & confirm.credit_words(facts)
+        if shared:
+            score += author_bonus
+            parts.append(f"an author ({', '.join(sorted(shared)[:2])}) agrees: +{author_bonus:g}")
+        adjusted.append(replace(match, score=max(0.0, min(100.0, score)), parts=tuple(parts)) if parts != list(match.parts) else match)
     return sorted(adjusted, key=lambda m: m.score, reverse=True)
 
 
@@ -211,13 +230,14 @@ def find_matches(source, path: str, limit: int = 5) -> list[Match]:
                 best[cand.source_id] = (cand, score, by_series)
     series_only = {sid for sid, (_, _, by_series) in best.items() if by_series}
     hits = sorted(((c, sc) for c, sc, _ in best.values()), key=lambda hit: hit[1], reverse=True)[:limit + 3]
-    matches = rerank(query_from_filename(path), hits, volumes_for(path))  # volumes are read from the file name only
-    matches = [replace(m, score=min(m.score, SERIES_QUERY_CAP)) if m.candidate.source_id in series_only else m
-               for m in matches]
+    matches = rerank(query_from_filename(path), hits, volumes_for(path), source)  # volumes are read from the file name only
+    matches = [replace(m, score=min(m.score, SERIES_QUERY_CAP),
+                       parts=(*m.parts, f"found by series and volume only: at most {SERIES_QUERY_CAP:g}") if m.score > SERIES_QUERY_CAP else m.parts)
+               if m.candidate.source_id in series_only else m for m in matches]
     matches = sorted(matches, key=lambda m: m.score, reverse=True)
     facts_of = getattr(source, "facts_of", None)
     if facts_of is not None:
-        matches = adjust_by_facts(matches, path, embedded, facts_of)
+        matches = adjust_by_facts(matches, path, embedded, facts_of, source)
     matches = _doubts(source, path, matches, embedded, named)
     if named is not None:  # the file itself names its album: that is the first choice, whatever the file name says
         matches = [Match(named, 100.0, 100.0)] + [m for m in matches if m.candidate.source_id != named.source_id]

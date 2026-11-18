@@ -71,6 +71,12 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    earns 3. Nothing is ever taken away (an album whose page was never read has no year to compare, so a penalty would
    push every known album behind the unknown ones; measured on a real library it moved right matches to wrong ones).
    The albums read *during* a run are not in it until the next run.
+   **Where a score comes from.** The score (0-100) is the *title score* (how many words of the name the album has, and how
+   alike the texts are, with a floor when every word of the album's name is in the file name), then adjusted: the volume
+   (+5 when the file's volume is the album's, -15 and at most 85 when it is another), the year (+2), an author (+3).
+   `bdnex candidates` prints each candidate's breakdown on `=` lines. The four adjustments are `match.volume_bonus`, `volume_penalty`, `year_bonus` and
+   `author_bonus` in the configuration, so you can make the volume count more or less; `tools/eval_matching.py` tells you what a change does to
+   the wrong matches before you keep it.
    **A strong score is not always enough.** A first choice is not applied unasked, even above `match.strong_threshold`,
    when **another album is fewer than `match.min_margin` points behind it** (10 by default; a tie between tome 1 and
    tome 2 of a series is the usual case), or when the file's own tags name another series, or the file is a supplement

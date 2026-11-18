@@ -55,8 +55,17 @@ class _Section(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True)  # a value changed later is checked too
 
 
+# What the adjustments after the title score are worth, in points of the 0-100 match score: option -> weight name.
+MATCH_WEIGHTS = {"volume_bonus": "volume_match", "volume_penalty": "volume_mismatch",
+                 "year_bonus": "year_match", "author_bonus": "author_match"}
+
+
 class Match(_Section):
     use_embedded: bool
+    volume_bonus: float = Field(ge=0, le=50)  # the file's volume is the album's
+    volume_penalty: float = Field(ge=0, le=50)  # it is another volume
+    year_bonus: float = Field(ge=0, le=50)  # the album's page has the year of the file
+    author_bonus: float = Field(ge=0, le=50)  # ... an author of the file name
     min_margin: float = Field(ge=0, le=100)  # a first choice this close to another album is not applied unasked
     strong_threshold: float = Field(ge=0, le=100)
     medium_threshold: float = Field(ge=0, le=100)

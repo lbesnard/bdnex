@@ -411,3 +411,12 @@ def test_bdnex_config_hides_the_secrets_unless_asked(conf_path, capsys):
     assert "s3cret" not in shown and "private" not in shown and "<hidden>" in shown and "http://k" in shown
     assert config_cmd.run(["--clear"]) == 0
     assert "s3cret" in capsys.readouterr().out
+
+
+def test_match_weights_are_checked(conf_path):
+    write(conf_path, {"config_version": 2, "collection_path": str(conf_path.parent), "match": {"volume_bonus": 9}})
+    match = load_config().settings.match
+    assert match.volume_bonus == 9 and match.year_bonus == 2
+    write(conf_path, {"config_version": 2, "collection_path": str(conf_path.parent), "match": {"year_bonus": 99}})
+    with pytest.raises(ConfigError, match="year_bonus"):
+        load_config()
