@@ -36,6 +36,9 @@ command runs, never while an import is fetching).
   matches* (by hand or with an assistant).
 
 ### Changed
+- Covers are downloaded (and compared with the file's cover) in the background as each album completes, no longer
+  all at the end of the run: an interrupted or still-running import already has the covers and scores of what it did.
+  `bdnex candidates --cover` reads the saved covers instead of requesting them again.
 - **Breaking:** `bdnex review --scan` is now `bdnex check --matches --fix` (the old spelling still works for a release);
   `bdnex review -l` is `--list`.
 - **Breaking:** the import options `--no-fetch`, `--retry-partial` and `--recache` are gone (`--match`, `--fetch`,

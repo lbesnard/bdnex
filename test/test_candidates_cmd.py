@@ -6,6 +6,7 @@ import json
 import pytest
 import yaml
 
+from bdnex.importer import covers
 from bdnex.importer.bedetheque import Bedetheque
 from bdnex.library import AlbumInfo, Library
 from bdnex.ui import candidates_cmd
@@ -89,6 +90,31 @@ def test_cover_marks_the_candidate_whose_cover_is_like_the_files(env, tmp_path, 
     best = [c for c in entry["candidates"] if c.get("cover_best")]
     assert code == 0 and len(best) == 1 and best[0]["url"].endswith("245127.html") and best[0]["cover"] >= 40
     assert all(c["cover"] is not None for c in entry["candidates"]) and len(asked) >= len(entry["candidates"])
+
+
+def test_cover_uses_the_saved_cover_without_a_request(env, tmp_path, monkeypatch):
+    pytest.importorskip("cv2")
+    import zipfile
+
+    from bdnex.config import load_config
+    from importer.test_covers import art, jpeg  # noqa: F401
+
+    db, _ = env
+    path = tmp_path / "Nains - T01 - Redwin de la forge.cbz"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("page-1.jpg", jpeg(art(1)))
+    with Library(db) as lib:
+        lib.add_file(str(path), None)
+    cover_dir = load_config().settings.cover_path
+    for source_id, seed in (("245127", 1),):  # the import kept this one; the others are not saved
+        covers.save_cover(cover_dir, "bedetheque", source_id, jpeg(art(seed)))
+    asked = []
+    monkeypatch.setattr("bdnex.importer.covers.opencv_installed", lambda: True)
+    monkeypatch.setattr(Bedetheque, "cover_image", lambda self, url, recache=False: asked.append(url) or jpeg(art(2)))
+    code, text = run("Redwin", "--cover", "--limit", "3", "--json")
+    entry = next(d for d in json.loads(text) if d["path"] == str(path))
+    saved = next(c for c in entry["candidates"] if c["url"].endswith("245127.html"))
+    assert code == 0 and saved["cover"] >= 40 and not any(u.endswith("Couv_245127.jpg") for u in asked)
 
 
 def test_each_candidate_says_where_its_score_comes_from(env):

@@ -569,6 +569,10 @@ class Bedetheque:
         self.library.cache_put(SOURCE, "album", url, html)
         return self.album_info(url)
 
+    def fetch_cover(self, url: str) -> bytes:
+        """One polite request for a cover. Touches no database (nor the cache): it can run in a worker thread."""
+        return self._download("cover", url)
+
     def cover_image(self, url: str, recache: bool = False) -> Optional[bytes]:
         """The image at ``url`` (an album's ``cover_url``): one polite request. It is not kept in the library
         cache: the importer saves it as a file (``cover.dir``)."""

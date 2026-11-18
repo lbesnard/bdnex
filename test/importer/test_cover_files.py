@@ -93,3 +93,42 @@ def test_covers_saved_by_earlier_versions_move_into_their_folders(tmp_path):
     assert again["cover_file"] == f"bedetheque/{album['source_id']}/cover.jpg"
     assert (root / again["cover_file"]).read_bytes() == jpeg(art(1)) and not old.exists()
     assert any("folder per album" in m for m in messages)
+
+
+def test_a_cover_is_downloaded_in_the_background_as_soon_as_the_album_is_complete(tmp_path):
+    import threading
+
+    env = env_for(web_with_cover(), check=True, download=True)
+    seen = []
+    original = env.source.fetch_cover
+    env.source.fetch_cover = lambda url: seen.append(threading.current_thread().name) or original(url)
+    path = cbz_with_cover(tmp_path, FILE, 1)
+    env.session.run([path])
+    row = env.lib.get_file(path)
+    assert seen and seen[0].startswith("bdnex-cover")  # not the main thread: nothing waited for it
+    assert row["cover_score"] is not None and env.lib.get_album(row["album_id"])["cover_file"]
+
+
+def test_a_cover_that_cannot_be_downloaded_stops_nothing(tmp_path):
+    env = env_for(FakeWeb(), check=True, download=True)  # no picture at COVER_URL
+    env.source.fetch_cover = lambda url: (_ for _ in ()).throw(env.source.fetch_errors[0]("no cover"))
+    path = cbz_with_cover(tmp_path, FILE, 1)
+    result = env.session.run([path]).results[0]
+    assert result.outcome == "tagged" and "cover not downloaded" in result.note
+    assert env.lib.get_file(path)["cover_score"] is None  # the next `import --fetch` tries again
+
+
+def test_fetch_gets_the_missing_covers_of_albums_already_complete_in_the_background(tmp_path):
+    import threading
+
+    web = web_with_cover()
+    env = env_for(web, check=False, download=False)
+    path = cbz_with_cover(tmp_path, FILE, 1)
+    env.session.run([path])  # complete, but no cover kept and none compared
+    assert env.lib.get_file(path)["cover_score"] is None
+    env.session.settings.cover.download, env.session.steps = True, frozenset(["fetch"])
+    env.session.cover_check = True
+    seen, original = [], env.source.fetch_cover
+    env.source.fetch_cover = lambda url: seen.append(threading.current_thread().name) or original(url)
+    env.session.run([path])
+    assert seen[0].startswith("bdnex-cover") and env.lib.get_file(path)["cover_score"] is not None

@@ -44,7 +44,7 @@ What the assistant does with it:
 3. after you approve, runs the command that does it: `bdnex import --album ADDRESS FILE` (the album it found, nothing asked),
    `bdnex review` (keep or unlink) or `bdnex edit` (a wrong field). It never edits the database file.
 
-`--cover` compares the file's cover with each candidate's: it makes one request per candidate (so keep `--limit` small),
+`--cover` compares the file's cover with each candidate's: it reads the cover the import already saved (`cover.download`) and makes one request for any other candidate (so keep `--limit` small),
 needs OpenCV, and, for an album whose page was not read, looks at the address the site uses for covers, which can be
 wrong (that candidate is then not compared). A cover that is *very* like the file's settles most questions of a reissue
 against an original; a low similarity alone proves nothing (scans are cropped and compressed).

@@ -98,6 +98,7 @@ class EarlyFetch:
                 self.detail(f"    album completed: {item[1].url.rsplit('/', 1)[-1]}")
         finally:
             self._journal = journal
+        self._take_covers()  # the covers that arrived meanwhile are weighed now
 
     def _complete(self, item) -> None:
         """Build the album's record from its stored pages and say so in the file's result."""
@@ -110,7 +111,7 @@ class EarlyFetch:
         if not partial:
             self._confirm(result)
         if not partial and (self.cover_check or self.settings.cover.download):
-            self._covers.append(result)  # its cover is got later, so that nothing waits for it here
+            self._queue_cover(result)  # downloaded in the background: nothing waits for it here
 
     def _drain_early(self) -> None:
         """The matching is over: wait for the pages still on their way, completing each album as its pages arrive."""

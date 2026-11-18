@@ -91,6 +91,9 @@ class ImportSession(EarlyFetch, CoverPass):
         self._covers: list[ImportResult] = []  # complete albums whose file's cover was never compared
         wanted_check = settings.cover.check if cover_check is None else cover_check
         self.cover_check = covers.opencv_installed() if wanted_check == "auto" else bool(wanted_check)
+        self._cover_pool = None  # worker threads that download covers while the matching goes on (CoverPass._queue_cover)
+        self._cover_jobs: list = []  # (result, future) of the covers on their way
+        self._ask_covers = True  # False while the matching still runs: a cover that differs is flagged, not asked about
         self._cover_off = False  # set when the check turns out to be impossible (no OpenCV)
 
     @property
@@ -439,7 +442,7 @@ class ImportSession(EarlyFetch, CoverPass):
         if kind == "cover":
             result = ImportResult(path, ALREADY, album_id=album["id"], note=f"already imported as {album_label(album)}")
             if not self.pretend:
-                self._covers.append(result)
+                self._queue_cover(result)  # complete albums that lack a cover: downloaded in the background too
                 if not defer_fetch:
                     self._fetch_pending()
             return result
@@ -471,7 +474,7 @@ class ImportSession(EarlyFetch, CoverPass):
         try:
             self._drain_early()  # the albums whose pages were asked for during the matching complete as they arrive
         except KeyboardInterrupt:
-            self._covers = []
+            self._drop_covers()
             self._pending = []
             self._close_early()
             self.progress("Interrupted: the albums already complete are saved; `bdnex import --fetch` reads the rest "
@@ -537,7 +540,7 @@ class ImportSession(EarlyFetch, CoverPass):
                 if not partial and (self.cover_check or self.settings.cover.download):
                     self._check_cover(result)
         except KeyboardInterrupt:
-            self._covers = []  # stop means stop: no cover pass afterwards (the next `--fetch` gets them)
+            self._drop_covers()  # stop means stop: no cover pass afterwards (the next `--fetch` gets them)
             self.progress("Interrupted: the files stay linked; `bdnex import --fetch` reads the rest of the pages "
                           "and downloads the covers that are missing.")
             return
