@@ -19,7 +19,8 @@ import re
 import zipfile
 from typing import Optional
 
-import rarfile
+
+from bdnex import rartool
 
 from bdnex.organizer.archive import IMAGE_EXTS, PDF_EXTRACTABLE
 
@@ -76,7 +77,7 @@ def front_cover(path: str, fmt: str) -> Optional[bytes]:
                                key=_natural_key)
                 return (archive.read(names[0]) or None) if names else None  # an empty page is no cover
         if fmt == "cbr":
-            with rarfile.RarFile(path) as archive:
+            with rartool.RarFile(path) as archive:
                 names = sorted((i.filename for i in archive.infolist() if not i.is_dir()
                                 and _is_page(i.filename.replace("\\", "/"))), key=_natural_key)
                 return (archive.read(names[0]) or None) if names else None

@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
-import rarfile
+
+from bdnex import rartool
 
 logger = logging.getLogger(__name__)
 
@@ -118,7 +119,7 @@ def inspect_file(path) -> FileInfo:
                 has_metadata = any(os.path.basename(n) == "ComicInfo.xml" for n in names)
                 embedded = _embedded(zf, names)
         elif fmt == "cbr":
-            with rarfile.RarFile(path) as rf:
+            with rartool.RarFile(path) as rf:
                 names = rf.namelist()
                 page_count = _count_images(names)
                 has_metadata = any(os.path.basename(n) == "ComicInfo.xml" for n in names)
@@ -151,7 +152,7 @@ def read_embedded(path) -> Optional[dict]:
             with zipfile.ZipFile(path) as archive:
                 return _embedded(archive, archive.namelist())
         if fmt == "cbr":
-            with rarfile.RarFile(path) as archive:
+            with rartool.RarFile(path) as archive:
                 return _embedded(archive, archive.namelist())
         if fmt == "pdf":
             import pymupdf

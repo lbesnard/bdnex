@@ -10,7 +10,8 @@ import zlib
 from dataclasses import dataclass
 from typing import Optional
 
-import rarfile
+
+from bdnex import rartool
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp")
 STORED_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif")  # already compressed: do not deflate again
@@ -90,7 +91,7 @@ def _read_zip(path):
 
 def _read_rar(path):
     entries, info = [], None
-    with rarfile.RarFile(path) as rf:
+    with rartool.RarFile(path) as rf:
         for item in rf.infolist():
             if item.is_dir():
                 continue
@@ -469,7 +470,7 @@ def _lenient_zip(path: str) -> LenientRead:
 
 def _lenient_rar(path: str) -> LenientRead:
     result = LenientRead([], None, [], [])
-    with rarfile.RarFile(path) as rf:
+    with rartool.RarFile(path) as rf:
         for info in rf.infolist():
             if info.is_dir():
                 continue

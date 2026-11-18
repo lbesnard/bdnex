@@ -421,5 +421,5 @@ downloaded again.
 | `The destination is already taken by another file` | two files for one album: choose keep existing / new / both (see [Duplicates](versions.md)) |
 | `This import has to ask you about a file, and there is no terminal` | run it in a terminal, or add `--auto` / `--auto=all` / `-n` |
 | `There is no album list yet` | run `bdnex init` |
-| a `.cbr` cannot be read | install `unrar` (or `7z` / `bsdtar`) |
+| a `.cbr` cannot be read (`Failed the read enough data` in the log) | install `unrar` (or `unar` / `bsdtar`); a `7z` without the RAR codec cannot read them |
 | a wrong match was linked | `bdnex import --match --force path/to/file` asks again and relinks it; `bdnex edit` corrects an album's metadata |

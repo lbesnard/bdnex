@@ -36,6 +36,8 @@ command runs, never while an import is fetching).
   matches* (by hand or with an assistant).
 
 ### Fixed
+- CBR files that a `7z` without the RAR codec could not read (`Failed the read enough data` in the log, no cover, no
+  write): `unrar`, `unar` and `bsdtar` are tried before `7z`.
 - Ctrl-C during an import stops at once: the requests waiting for their polite delay give up (they kept the
   program alive for up to ten seconds each, so it took several Ctrl-C), and `import --database-only` no longer goes
   through the file-placement step, which looked up every imported file again for nothing.

@@ -22,7 +22,8 @@ uv sync --extra dev
 uv run bdnex --help        # `uv run` uses the clone; a bdnex installed earlier may be older
 ```
 
-`.cbr` files need an `unrar` (or `7z` / `bsdtar`) program on your system to be read.
+`.cbr` files need an `unrar` (or `unar` / `bsdtar`, or a `7z` that has the RAR codec) program on your system to be read.
+bdnex tries `unrar`, `unar` and `bsdtar` before `7z`: many `7z` builds cannot extract RAR (`Unsupported Method`).
 
 The optional cover check needs OpenCV: `pip install 'bdnex[cover]'` (or `uv tool install 'bdnex[cover]'`).
 
