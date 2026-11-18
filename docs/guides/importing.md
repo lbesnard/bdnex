@@ -136,7 +136,7 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    waits `bedetheque.delay`, and no more than `bedetheque.parallel` run at a time. As soon as an album's pages are
    here, **the album's record is built in the library** (authors, summary, date, series): `bdnex ls complete:true -c`
    grows while the import runs, and the progress line says how many albums are complete. Nothing waits for the
-   network: the building reads the stored pages. The covers are downloaded at the end. When the last file is
+   network: the building reads the stored pages. The covers are downloaded in the background too, as each album becomes complete. When the last file is
    decided, the pages still on their way are waited for, with a progress bar. If a page cannot be fetched the
    album stays matched, with the URL to save. Ctrl-C stops everything: the albums already complete (and those whose
    pages are stored) are kept, and `bdnex import --fetch` continues with the rest. Nothing is requested with `-n`;
@@ -283,9 +283,10 @@ Covers are downloaded with a plain web request, not with the page fetcher of you
 returns the little HTML page that wraps an image, a few hundred bytes, not the picture). What comes back is checked:
 anything that is not an image of at least 100 pixels (an error page, a placeholder) is **not** saved, and the report
 says what was received (`cover not downloaded: 446 bytes were received, which is not an image (it starts with ...)`).
-A bad file left by an earlier run is deleted and downloaded again the next time. Each cover is downloaded right after
-its album page is read; the albums that are complete but still lack a cover are done in a second pass at the end, and
-Ctrl-C stops both.
+A bad file left by an earlier run is deleted and downloaded again the next time. Each cover is downloaded in the background (two
+at a time) as soon as its album is complete, and compared with the file's cover when it is here (a cover that differs
+is flagged for `bdnex review` rather than asked about while files are still being matched). Albums that were already
+complete but lack a cover are done at the end. Ctrl-C stops all of it; `bdnex import --fetch` resumes.
 
 A cover that is not there yet is downloaded the next time the album goes through `bdnex import --fetch`, which
 covers albums imported before this existed (`bdnex import --fetch` on your library). A deleted cover file is
