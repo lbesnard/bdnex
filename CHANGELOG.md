@@ -35,6 +35,11 @@ command runs, never while an import is fetching).
 - Docs: a *Command reference* generated from the commands' own `--help` (a test keeps it current), and *Checking the
   matches* (by hand or with an assistant).
 
+### Fixed
+- Ctrl-C during an import stops at once: the requests waiting for their polite delay give up (they kept the
+  program alive for up to ten seconds each, so it took several Ctrl-C), and `import --database-only` no longer goes
+  through the file-placement step, which looked up every imported file again for nothing.
+
 ### Changed
 - Covers are downloaded (and compared with the file's cover) in the background as each album completes, no longer
   all at the end of the run: an interrupted or still-running import already has the covers and scores of what it did.

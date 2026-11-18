@@ -22,6 +22,7 @@ class EarlyFetch:
 
         The pages go through the same polite delay and ``parallel`` limit as before; only the waiting changes."""
         self._early = None
+        getattr(self.source, "allow_requests", lambda: None)()  # a stop of an earlier run must not stop this one
         self._by_page, self._by_series, self._done, self._completed_early = {}, {}, set(), 0
         if "fetch" in self.steps and not self.pretend and not self.recache and hasattr(self.source, "page_queue"):
             self._early = self.source.page_queue(getattr(self.source, "parallel", 1))

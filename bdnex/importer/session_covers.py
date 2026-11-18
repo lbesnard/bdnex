@@ -69,6 +69,9 @@ class CoverPass:
         """Stop means stop: forget the covers still waiting (the next `--fetch` gets them)."""
         self._covers = []
         self._cover_jobs = []
+        stop = getattr(self.source, "stop_requests", None)
+        if stop:
+            stop()  # the waiting threads would keep the program from exiting until their polite delay ended
         if self._cover_pool is not None:
             self._cover_pool.shutdown(wait=False, cancel_futures=True)
             self._cover_pool = None
