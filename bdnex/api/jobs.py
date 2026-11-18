@@ -370,6 +370,7 @@ class JobManager:
     def _run(self, job: Job, function: Callable) -> None:
         log = _Log(job, self._lock)
         job.thread_id = threading.get_ident()
+        status = "failed"
         try:
             from bdnex.ui import prompts
 
@@ -385,17 +386,19 @@ class JobManager:
                 except SystemExit as stop:  # argparse said no
                     code = stop.code if isinstance(stop.code, int) else 2
             job.exit_code = code or 0
-            job.status = "done" if not job.exit_code else "failed"
+            status = "done" if not job.exit_code else "failed"
         except KeyboardInterrupt:
-            job.status = "cancelled"
+            status = "cancelled"
         except Exception as err:  # the job failed; the page shows why
             log.write(f"error: {err}\n")
-            job.status = "failed"
         finally:
             log.flush()
             job.finished = time.time()
-            self._save()
+            # The slot is freed *before* the status says the job is over: whoever sees "done" can start the next job at
+            # once (the other order made that request fail with "another job is running" on a slow machine).
             self._running.release()
+            job.status = status
+            self._save()
 
     def get(self, job_id: int) -> Optional[Job]:
         return self.jobs.get(job_id)

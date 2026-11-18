@@ -10,7 +10,7 @@ changes a comic file, and nothing is unlinked or rematched without a decision.**
 | 2. Flag | `bdnex check --matches --fix` | the same, and flags them (`review:true`) |
 | 3. List | `bdnex review --list` (`--json`) | the flagged files and why |
 | 4. Alternatives | `bdnex candidates --low` (`--json`, `--cover`) | for each file in doubt, the other albums it could be, with the evidence |
-| 5. Decide | `bdnex review`, `bdnex import --match --force FILE`, `bdnex edit` | keep, unlink, choose again, or fix a field |
+| 5. Decide | `bdnex review`, `bdnex import --album ADDRESS FILE`, `bdnex edit` | keep, unlink, choose again, or fix a field |
 
 What the checks compare (the file's own tags, the volume, the year, the authors, the other files of the folder) is
 described in [Importing](importing.md). The page of an album has to be read for the year and
@@ -41,7 +41,7 @@ What the assistant does with it:
    and against, and with `--cover` the cover similarity);
 2. proposes, per file, **keep**, **another album** (its address) or **leave**, with a confidence (high when several
    independent signs agree, such as the year, an author and the cover; low when only the name matches);
-3. after you approve, runs the command that does it: `bdnex import --match --force FILE` (you choose again),
+3. after you approve, runs the command that does it: `bdnex import --album ADDRESS FILE` (the album it found, nothing asked),
    `bdnex review` (keep or unlink) or `bdnex edit` (a wrong field). It never edits the database file.
 
 `--cover` compares the file's cover with each candidate's: it makes one request per candidate (so keep `--limit` small),

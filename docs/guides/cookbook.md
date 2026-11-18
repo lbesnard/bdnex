@@ -129,6 +129,21 @@ remembered and not asked about again.
 | look again at the files I skipped | `bdnex import --force ~/comics` (or `bdnex init` first, if new albums may exist now) |
 | see which files were already done | `bdnex import -v ~/comics` |
 
+## …know how much of my library has been read?
+
+```bash
+bdnex stats                 # albums complete (page read) or only matched, files by format and size
+bdnex stats series:nains    # for part of it
+bdnex ls partial:true -c    # how many albums still wait for their page
+```
+
+## …say which album a file is, when the match is wrong?
+
+```bash
+bdnex candidates filename:valise            # the other albums that file could be (a query, not a path)
+bdnex import --album 245127 ~/comics/La\ Valise.cbz
+```
+
 ## …see what is in my library?
 
 ```bash

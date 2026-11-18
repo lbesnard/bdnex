@@ -40,6 +40,7 @@ guides/configuration
 :maxdepth: 2
 :caption: Reference
 
+changelog
 roadmap
 dev/plugins
 dev/library

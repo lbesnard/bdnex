@@ -13,6 +13,7 @@ class Command:
     summary: str
     needs_config: bool = True  # False: works before a configuration exists
     by_name: bool = False  # ``run(name, argv)``: one module serves several commands (write, move, repair, convert)
+    by_function: str = ""  # the function of the module to call instead of ``run`` (``fields_run``)
 
 
 GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
@@ -26,6 +27,8 @@ GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     ("Look at the library", (
         Command("ls", "ls_cmd", "list and search the library"),
         Command("series", "series_cmd", "what you have of each series, and what is missing"),
+        Command("stats", "stats_cmd", "how much the library holds: albums read or only matched, files, formats, sizes"),
+        Command("fields", "stats_cmd", "the fields a query can use, with their kind", by_function="fields_run"),
         Command("duplicates", "duplicates_cmd", "the same book in several files"),
     )),
     ("Change the library", (
@@ -75,5 +78,6 @@ def usage() -> str:
 
 def runner(command: Command):
     """``run(argv) -> int`` of a command (its module is imported only when it is used: starting stays quick)."""
-    run = importlib.import_module(f"bdnex.ui.{command.module}").run
+    module = importlib.import_module(f"bdnex.ui.{command.module}")
+    run = getattr(module, command.by_function) if command.by_function else module.run
     return (lambda argv: run(command.name, argv)) if command.by_name else run

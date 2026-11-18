@@ -41,7 +41,8 @@ comments kept). Folders (`collection_path`, `library`), secrets (`api.token`, `a
 
 | Command | Effect |
 |---|---|
-| `bdnex config` | print the effective configuration (defaults + yours) |
+| `bdnex config` | print the effective configuration (defaults + yours); the secrets (API keys, passwords, the fetcher address) are shown as `<hidden>` |
+| `bdnex config --clear` | the same, with the secrets in clear (do not paste it into a bug report) |
 | `bdnex config --defaults` | print every option with its default |
 | `bdnex config --update` | add the options your file does not list yet, commented out, and restore the list of possible values after options that lost it or that have an old one (`# convert | skip`); a comment with your own words is never touched |
 | `bdnex config --path` | print the config file path |

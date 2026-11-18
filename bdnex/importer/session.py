@@ -58,7 +58,8 @@ class ImportSession(EarlyFetch, CoverPass):
                  workers: Optional[int] = None, bar: Optional[Callable] = None,
                  cover_check: Optional[bool] = None, series: Optional[str] = None,
                  phase: Optional[Callable[[str, str], None]] = None, retry_skipped: bool = False,
-                 files_untouched: bool = False, verbosity: int = 1):
+                 files_untouched: bool = False, verbosity: int = 1,
+                 pinned: Optional[Candidate] = None):
         self.library = library
         self._loop_started = time.monotonic()
         self.verbosity = verbosity  # 0: a count now and then and what needs a look; 1 (-v): every file and why; 2 (-vv): + logging
@@ -67,6 +68,7 @@ class ImportSession(EarlyFetch, CoverPass):
         self.prompter = prompter
         self.pretend = pretend
         self.force = force
+        self.pinned = pinned  # `--album`: the album to use for the file, instead of searching
         self.steps = frozenset(steps)
         self.progress = progress or (lambda message: None)
         self._analysed: dict = {}  # file -> (FileInfo, md5) read ahead by the matching workers
@@ -598,6 +600,8 @@ class ImportSession(EarlyFetch, CoverPass):
             return dup
 
         matches = matches if matches is not None else self._matches(path)
+        if self.pinned is not None:
+            matches = [Match(self.pinned, 100.0, 100.0)]
         via = ""
         if chosen is not None:  # decided for the whole folder
             candidate, score, via = chosen
@@ -759,6 +763,8 @@ class ImportSession(EarlyFetch, CoverPass):
     def _select(self, path, matches: list[Match]) -> tuple[Optional[Candidate], Optional[float]]:
         strong, medium = self.settings.match.strong_threshold, self.settings.match.medium_threshold
         best = matches[0] if matches else None
+        if self.pinned is not None and best is not None:
+            return best.candidate, 100.0  # you named the album: nothing to ask
         rec = recommend(best.score, strong, medium) if best else Recommendation.NONE
         if rec is Recommendation.STRONG and best.doubt:
             rec = Recommendation.MEDIUM  # sure by its score, but something says to look: ask, or (--auto=all) apply as a medium match

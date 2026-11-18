@@ -11,7 +11,7 @@ import sys
 
 import yaml
 
-from bdnex.config import ConfigError, load_config, load_defaults, user_config_path
+from bdnex.config import ConfigError, load_config, load_defaults, masked, user_config_path
 
 
 def run(argv: list[str]) -> int:
@@ -20,6 +20,8 @@ def run(argv: list[str]) -> int:
     parser.add_argument("-e", "--edit", action="store_true", help="open the config file in $EDITOR")
     parser.add_argument("-u", "--update", action="store_true",
                         help="add the options your file does not list yet, commented out (a .bak copy is kept)")
+    parser.add_argument("--clear", action="store_true",
+                        help="show the secrets too (API keys, passwords, the fetcher address); they are hidden by default")
     parser.add_argument("-d", "--defaults", action="store_true", help="print every option with its default")
     args = parser.parse_args(argv)
 
@@ -47,7 +49,8 @@ def run(argv: list[str]) -> int:
 
     for warning in loaded.warnings:
         print(f"warning: {warning}", file=sys.stderr)
-    print(yaml.safe_dump(loaded.raw, sort_keys=False, allow_unicode=True), end="")
+    shown = loaded.raw if args.clear else masked(loaded.raw)
+    print(yaml.safe_dump(shown, sort_keys=False, allow_unicode=True), end="")
     return 0
 
 

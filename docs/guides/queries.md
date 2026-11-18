@@ -34,6 +34,15 @@ bdnex ls --files tagged:false         # registered files not yet matched to an a
 | `field:2010..2015` | numeric range; `2010..` and `..2015` are open ended |
 | `field:true` / `false` | yes/no fields |
 | `^term` | negation |
+| `a b , c` | a lone comma is **or**: albums matching `a` and `b`, or `c` (each side is ANDed). The comma must be a word of its own |
+| `year-`, `title+` | sorts by that field, newest/last first (`-`) or oldest/first (`+`); several give several keys. See `bdnex fields` |
+
+`bdnex fields` lists every field with its kind (text, number, yes/no). `bdnex ls year- --limit 10` shows the ten most
+recent albums. Or and sort work in every command that takes a query (`review`, `write`, `komga`, `candidates`...);
+`--limit N` is an option of `bdnex ls`.
+
+`bdnex stats [QUERY]` counts what a query matches (the whole library without one): albums whose page was read and
+those only matched, files by format and size, damaged and flagged files, and the pages stored. `--json` for a script.
 
 Write the pattern in quotes in your shell if it has `^`, `$`, `*` or spaces. Add `-l` or `--json -l` to see
 everything known about the results.

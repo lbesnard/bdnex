@@ -377,6 +377,16 @@ class Bedetheque:
             return None
         return Candidate(source_id, url, sitemap.normalise_slug(url), sitemap.volume_from_url(url))
 
+    def candidate_for(self, text: str) -> Optional[Candidate]:
+        """The album a user means by an address or an album number (``None``: neither is an album of the site).
+
+        A number is looked up in the album list; an address of an album page is accepted even when the list is older
+        than the album (the person who gives it is looking at the page)."""
+        text = (text or "").strip()
+        if text.isdigit():
+            return self._ids().get(text)
+        return self.candidate_from_url(text)
+
     def known_candidate_from_url(self, url: str) -> Optional[Candidate]:
         """The album of the album list that an address stands for, or ``None``: not an album page, or an album
         that is not in the list (a stale or wrong address, a list older than the album: ``bdnex init`` refreshes it).

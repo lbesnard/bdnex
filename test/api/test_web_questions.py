@@ -148,3 +148,21 @@ def test_the_real_questions_run_unchanged_on_the_page_prompter():
     assert chosen == "database" and any(c["key"] == "w" for c in seen[0]["choices"])
     text, _ = asked(lambda p: p.ask_value("title", "Nains"), [{"text": " The title "}])
     assert text == "The title"
+
+
+def test_a_job_that_reports_done_has_already_freed_the_slot(env, monkeypatch):
+    """Starting the next job the moment the last one says it is over must never be refused as "another job is running".
+    Saving the job list is made slow, as on a loaded machine, so that the old order (status first, slot later) shows."""
+    settings, book, album = env
+    web = client(settings, allow_changes=True)
+    original = jobs.JobManager._save
+
+    def slow_save(self):
+        time.sleep(0.05)
+        return original(self)
+
+    monkeypatch.setattr(jobs.JobManager, "_save", slow_save)
+    for _ in range(5):
+        started = web.post("/api/jobs", json={"command": "write"}, headers=HEADERS)  # a preview: quick
+        assert started.status_code == 200, started.text
+        wait(web, started.json()["id"])
