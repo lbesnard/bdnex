@@ -24,7 +24,7 @@ class Finding:
     data: Any = None                 # what `fix` needs (for `matches`: the paths to flag, with the reason)
 
 
-def doubtful_matches(library: Library) -> list[tuple[str, str, Any]]:
+def doubtful_matches(library: Library, terms: list[str] | None = None) -> list[tuple[str, str, Any]]:
     """The matches that look wrong, weighed against their album's page: ``[(path, album label, evidence)]``.
 
     Offline, and no file is read. Files already flagged are left out, and so are albums whose page was not read (there
@@ -35,7 +35,7 @@ def doubtful_matches(library: Library) -> list[tuple[str, str, Any]]:
 
     albums: dict[int, dict] = {}
     weighed = []
-    for row in library.query([], files=True):
+    for row in library.query(list(terms or []), files=True):
         file = library.get_file(row["path"])
         if file is None or file["album_id"] is None or file["review"]:
             continue
@@ -47,7 +47,7 @@ def doubtful_matches(library: Library) -> list[tuple[str, str, Any]]:
     return [entry for entry in judged if confirm.worth_a_look(entry[2])]
 
 
-def check(library: Library, settings, matches: bool = False) -> list[Finding]:
+def check(library: Library, settings, matches: bool = False, terms: list[str] | None = None) -> list[Finding]:
     """Everything that looks wrong, most serious first. Reads the library and looks at the disk; changes nothing.
 
     ``matches`` also weighs every match against its album's page (:func:`doubtful_matches`): slower, so asked for."""
@@ -56,7 +56,7 @@ def check(library: Library, settings, matches: bool = False) -> list[Finding]:
     if matches:
         from bdnex.importer import confirm
 
-        doubtful = doubtful_matches(library)
+        doubtful = doubtful_matches(library, terms)
         if doubtful:
             found.append(Finding(
                 "matches", f"{len(doubtful)} match(es) look wrong", [line for path, name, ev in doubtful for line in (path, f"    {name}", f"    {ev.reason}")],

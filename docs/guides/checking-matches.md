@@ -21,6 +21,7 @@ files are `unverified`.
 
 ```bash
 bdnex check --matches               # how many look wrong, and why (changes nothing)
+bdnex check --matches series:nains  # only some files (the terms of `bdnex ls --files`)
 bdnex check --matches --fix         # flag them for `bdnex review`
 bdnex candidates --low --limit 5    # the other albums they could be
 bdnex review                        # one by one, with the two covers side by side

@@ -140,3 +140,16 @@ def test_list_as_json_gives_the_reason_for_a_script(matched):
     assert review_cmd.run(["--list", "--json"], out=out) == 0
     data = json.loads(out.getvalue())
     assert [d["path"] for d in data] == [bad] and "looks doubtful" in data[0]["why"]
+
+
+def test_check_matches_can_be_narrowed_by_a_query(matched):
+    db, good, bad = matched
+    out = io.StringIO()
+    assert check_cmd.run(["--matches", "filename:Nains"], out=out) == 0  # the good one only: nothing wrong
+    assert bad not in out.getvalue()
+    assert check_cmd.run(["--matches", "filename:Even"], out=io.StringIO()) == 1
+
+
+def test_a_query_without_matches_is_refused(matched, capsys):
+    with pytest.raises(SystemExit):
+        check_cmd.run(["series:nains"], out=io.StringIO())

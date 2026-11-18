@@ -6,6 +6,7 @@ import argparse
 import sys
 
 from bdnex.library import Library
+from bdnex.library.query import QueryError
 from bdnex.library.health import check, fix
 from bdnex.ui import color, context, results
 
@@ -17,6 +18,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
                "at covers, the trash and leftovers of interrupted writes. Nothing is changed unless you add --fix, "
                "which only settles what is safe: empty series, dead trash records, covers that are gone, temporary files "
                "(and, with --matches, flags the doubtful matches for `bdnex review`).")
+    parser.add_argument("query", nargs="*", help="with --matches: only these files, same terms as `bdnex ls --files` "
+                                                 "(e.g. series:nains)")
     parser.add_argument("--matches", action="store_true",
                         help="also weigh every match against its album's page (the file's own tags, volume, year, authors, "
                              "its folder) and list the ones that look wrong; with --fix they are flagged for `bdnex review`")
@@ -26,9 +29,14 @@ def run(argv: list[str], out=sys.stdout) -> int:
     if settings is None:
         return 1
 
+    if args.query and not args.matches:
+        parser.error("a query narrows --matches only")
     on = color.enabled(out)
     with Library.for_settings(settings, readonly=not args.fix) as library:
-        findings = check(library, settings, matches=args.matches)
+        try:
+            findings = check(library, settings, matches=args.matches, terms=args.query)
+        except QueryError as err:
+            return context.bad_query(err)
         if not findings:
             print(color.paint("The library is consistent.", "green", on), file=out)
             return 0
