@@ -132,3 +132,15 @@ def test_fetch_gets_the_missing_covers_of_albums_already_complete_in_the_backgro
     env.source.fetch_cover = lambda url: seen.append(threading.current_thread().name) or original(url)
     env.session.run([path])
     assert seen[0].startswith("bdnex-cover") and env.lib.get_file(path)["cover_score"] is not None
+
+
+def test_the_plain_import_also_downloads_the_missing_covers_of_albums_already_done(tmp_path):
+    web = web_with_cover()
+    env = env_for(web, check=False, download=False)
+    path = cbz_with_cover(tmp_path, FILE, 1)
+    env.session.run([path])
+    env.session.settings.cover.download = True  # both steps, as `import --database-only` runs them
+    web.calls.clear()
+    result = env.session.run([path]).results[0]
+    assert result.outcome == "already" and COVER_URL in web.calls
+    assert env.lib.get_album(env.lib.get_file(path)["album_id"])["cover_file"]
