@@ -623,7 +623,10 @@ class Library:
                 """SELECT c.role, pe.name FROM album_credits c
                    JOIN people pe ON pe.id = c.person_id
                    WHERE c.album_id = ? ORDER BY c.role, pe.name""", (album_id,)):
-            credits.setdefault(r["role"], []).append(r["name"])
+            role = LEGACY_ROLES.get(r["role"], r["role"])  # an album not re-read since the role was renamed (`Encrage`)
+            names = credits.setdefault(role, [])
+            if r["name"] not in names:
+                names.append(r["name"])
         album["credits"] = credits
         album["genres"] = [r["name"] for r in self.conn.execute(
             """SELECT g.name FROM album_genres ag JOIN genres g ON g.id = ag.genre_id

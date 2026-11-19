@@ -31,6 +31,9 @@ def run(argv: list[str], out=sys.stdout, prompter=None, session=None) -> int:
                              + ", ".join(FIELD_NAMES))
     parser.add_argument("--no-lock", action="store_true",
                         help="push: do not lock the fields sent (a Komga rescan may then undo them); default: komga.lock")
+    parser.add_argument("--with-review", action="store_true",
+                        help="push: also send the files whose match waits for a look (`bdnex review`); by default they are "
+                             "left out, so that a doubtful match never puts wrong metadata (and a lock) in Komga")
     parser.add_argument("--json", action="store_true", help="show: print what Komga holds as JSON")
     parser.add_argument("--missing", action="store_true",
                         help="show: list the Komga books that no library file matches (instead of the matches)")
@@ -56,6 +59,11 @@ def run(argv: list[str], out=sys.stdout, prompter=None, session=None) -> int:
                 rows = [r for r in library.query(args.query, files=True) if r.get("id")]
             except QueryError as err:
                 return context.bad_query(err)
+            waiting = [r for r in rows if r.get("review")]
+            if waiting and args.action == "push" and not args.with_review:
+                rows = [r for r in rows if not r.get("review")]  # a doubtful match must not lock wrong data in Komga
+                print(f"{len(waiting)} file(s) whose match waits for a review are left out (`bdnex review`; "
+                      "`--with-review` sends them anyway).", file=sys.stderr)
             print(f"Reading the books of Komga ({client.base})...", file=sys.stderr if args.action == "show" else out)
             books = list(client.books())
             found = komga.match(rows, books)

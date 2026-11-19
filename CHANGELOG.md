@@ -39,6 +39,8 @@ command runs, never while an import is fetching).
   matches* (by hand or with an assistant).
 
 ### Fixed
+- Albums stored with the old role `Encrage` (not yet re-read) lost their inkers in the Komga push and the written
+  ComicInfo: the old name is read as `Inker`.
 - CBR files that a `7z` without the RAR codec could not read (`Failed the read enough data` in the log, no cover, no
   write): `unrar`, `unar` and `bsdtar` are tried before `7z`.
 - Ctrl-C during an import stops at once: the requests waiting for their polite delay give up (they kept the
@@ -46,6 +48,10 @@ command runs, never while an import is fetching).
   through the file-placement step, which looked up every imported file again for nothing.
 
 ### Changed
+- `bdnex komga push` leaves out the files whose match waits for a review (`--with-review` sends them): a doubtful
+  match no longer puts another album's metadata, locked, in Komga.
+- The web page's review answers and `bdnex review` share one function; a test checks every flag a web task builds
+  against its command's `--help`.
 - Covers are downloaded (and compared with the file's cover) in the background as each album completes, no longer
   all at the end of the run: an interrupted or still-running import already has the covers and scores of what it did.
   `bdnex candidates --cover` reads the saved covers instead of requesting them again.

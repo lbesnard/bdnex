@@ -303,3 +303,29 @@ def test_fields_can_name_the_new_ones(cmd_env):
 def test_the_credits_bedetheque_has_and_comicinfo_has_not_are_sent_with_their_own_role():
     authors = komga.authors_of({"credits": {"Inker": ["A"], "Préface": ["B"], "Storyboard": ["C"], "Adapté de": ["D"]}})
     assert {(a["name"], a["role"]) for a in authors} == {("A", "inker"), ("B", "foreword"), ("C", "storyboard"), ("D", "adapted from")}
+
+
+def test_an_album_not_read_again_since_a_role_was_renamed_still_sends_its_inker():
+    """`Encrage` was stored before the parser called it `Inker`: until `bdnex reparse`, it must not be dropped."""
+    from bdnex.library import AlbumInfo, Library
+
+    lib = Library(":memory:")
+    album_id = lib.add_album(AlbumInfo("bedetheque", "1", "T", credits={"Writer": ["A"]}))
+    person = lib.conn.execute("INSERT INTO people(name) VALUES ('Encreur')").lastrowid
+    lib.conn.execute("INSERT INTO album_credits(album_id, person_id, role) VALUES (?, ?, 'Encrage')", (album_id, person))
+    album = lib.get_album(album_id)
+    assert album["credits"]["Inker"] == ["Encreur"] and "Encrage" not in album["credits"]
+    assert {"name": "Encreur", "role": "inker"} in komga.authors_of(album)
+
+
+def test_push_leaves_out_the_files_whose_match_waits_for_a_review(cmd_env, tmp_path, capsys):
+    db = tmp_path / "lib.sqlite"
+    with Library(db) as lib:
+        lib.flag_review(lib.query([], files=True)[0]["path"], "another year")
+    code, _, session, _ = send(["push", "-y"], cmd_env)
+    assert code == 0 and not [c for c in session.calls if c[0] == "PATCH"]
+    assert "left out" in capsys.readouterr().err
+    _, _, session, _ = send(["push", "-y", "--with-review"], cmd_env)
+    assert [p for m, p, _ in session.calls if m == "PATCH"] == ["api/v1/books/b1/metadata", "api/v1/series/s1/metadata"]
+    _, text, _, _ = send(["show"], cmd_env)
+    assert "Nains T01.cbz" in text  # `show` is read-only: it still lists it

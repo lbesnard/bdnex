@@ -120,6 +120,10 @@ ambiguous. The summary also counts the files Komga does not know yet: start a sc
 The series values need the series page: an album that is only linked (`bdnex ls partial:true`) has none of them, and
 an album of a one-shot has no series. The status is only there when the page says it.
 
+**Doubtful matches are not pushed.** A file whose match waits for a look (`bdnex review`, `ls review:true`) is left out of
+`push`, and the run says how many: a wrong match would put another album's title and credits in Komga, locked.
+`--with-review` sends them anyway; `show` still lists them.
+
 Only what differs from Komga's current value is sent, so a second run says `already up to date`. The fields sent are
 **locked** (`komga.lock`, `--no-lock` to skip) so that a Komga rescan does not replace them with what it reads in the
 file.
