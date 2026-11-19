@@ -28,6 +28,8 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
     "review": [
         ("bdnex review", "go through the flagged matches one by one, both covers side by side"),
         ("bdnex review series:nains", "only the files of one series"),
+        ("bdnex review --batch 50", "a table of the next 50 files to check; keep, unlink or pick another album; continue later"),
+        ("bdnex review --batch 50 --unmatched", "the same, with the files that have no album too"),
         ("bdnex review --list", "only list the flagged files and why; ask nothing"),
         ("bdnex review --auto -n", "preview the rule: how many are confirmed, switched, unlinked; changes nothing"),
         ("bdnex review --auto", "settle the doubtful matches by rule (asks once before changing anything)"),

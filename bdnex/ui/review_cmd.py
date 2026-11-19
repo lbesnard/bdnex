@@ -28,6 +28,56 @@ def add_candidate_options(parser) -> None:
     add(parser)
 
 
+def _batch(args, settings, out) -> int:
+    """``--batch N``: the table (Textual) over the next N doubtful files; every decision is saved as it is made."""
+    import sys
+
+    try:
+        from bdnex.ui import review_tui
+    except ImportError:
+        print("`bdnex review --batch` needs Textual: `pip install 'bdnex[tui]'` (or `uv sync --extra tui`). "
+              "`bdnex review` and `bdnex review --auto` work without it.", file=sys.stderr)
+        return 2
+    if not (sys.stdin.isatty() and sys.stdout.isatty()):
+        print("`bdnex review --batch` is a screen: run it in a terminal (`bdnex review --list` lists the files).", file=sys.stderr)
+        return 2
+    if args.batch < 1:
+        print("--batch takes a number of files, at least 1.", file=sys.stderr)
+        return 2
+    from bdnex.importer.registry import create_source
+    from bdnex.ui import color
+    from bdnex.ui.candidates_cmd import OFFLINE
+
+    if not context.has_library(settings, "nothing to review."):
+        return 1
+    offline = settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
+        update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})  # searching the list needs no request
+    with Library.for_settings(settings) as library:
+        try:
+            source = create_source(settings.source, library, offline)
+        except Exception as err:
+            print(err, file=sys.stderr)
+            return 1
+        if not source.is_ready():
+            print("The album list is not downloaded yet: run `bdnex init` first.", file=sys.stderr)
+            return 1
+        warm = getattr(source, "warm", None)
+        if warm:
+            warm()
+        try:
+            library.query(args.query, files=True, limit=1)  # a bad query is said now, not from inside the screen
+        except QueryError as err:
+            return context.bad_query(err)
+        decided = review_tui.run(library, settings, source, args.batch, args.query, args.unmatched)
+    on = color.enabled(out)
+    total = sum(decided.values())
+    parts = ", ".join(f"{n} {what}" for what, n in sorted(decided.items()) if n)
+    print(f"{color.role(str(total), 'count', on)} file(s) checked" + (f" ({parts})" if parts else "") + ".", file=out)
+    print(color.hints("Run `bdnex review --batch " + str(args.batch) + "` again to continue; "
+                      "`bdnex import --skipped --auto=all` decides the unlinked ones again.", on), file=out)
+    return 0
+
+
 def _auto(args, settings, out, prompter) -> int:
     """``--auto``: weigh every flagged file and every match applied under the strong threshold, and settle them by rule."""
     import json
@@ -109,6 +159,12 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                              "flag; the ones something contradicts are switched to another album whose cover is clearly "
                              "the file's (see --candidates), else unlinked (`bdnex import --skipped --auto=all` decides "
                              "them again); the ones nothing confirms or contradicts are left as they are")
+    parser.add_argument("--batch", type=int, metavar="N",
+                        help="a table of the next N files to check (for example `--batch 50`): file, folder, album now, "
+                             "match score, cover score; keep, unlink or pick another album from the album list. Every decision "
+                             "is saved at once and the files checked are not shown again: run it again to continue. Needs the "
+                             "`tui` extra (`pip install 'bdnex[tui]'`)")
+    parser.add_argument("--unmatched", action="store_true", help="with --batch: also the files that have no album")
     add_candidate_options(parser)
     parser.add_argument("-y", "--yes", action="store_true", help="with --auto: do not ask for confirmation before unlinking or switching")
     add_pretend(parser, "be settled (with --auto)")
@@ -118,6 +174,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     settings = context.settings()
     if settings is None:
         return 1
+    if args.batch:
+        return _batch(args, settings, out)
     if args.auto:
         return _auto(args, settings, out, prompter)
     if args.scan:  # the former spelling, kept for a release
