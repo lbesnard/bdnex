@@ -223,4 +223,11 @@ MIGRATIONS = [
     CREATE INDEX idx_file_attrs_key ON file_attrs(key, value);
     CREATE INDEX idx_album_attrs_key ON album_attrs(key, value);
     """,
+    # --- version 11 ------------------------------------------------------
+    # Stored album and series pages are compressed (zlib, about a tenth of their size). No table changes: the upgrade compresses the
+    # pages stored before in Python (`Library._compress_stored_pages`). The version bump is what makes an older bdnex, which cannot
+    # read a compressed page, refuse this library instead of failing on each page.
+    """
+    SELECT 1;
+    """,
 ]

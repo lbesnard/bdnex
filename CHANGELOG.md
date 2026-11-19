@@ -11,8 +11,8 @@ command runs, never while an import is fetching).
   missing (or only matched) with its series page and its cover, through the same endpoints and polite delay as an import, several at once.
   `-n` counts what is missing and the room it takes; `--limit N`, `--covers-only`, `--no-covers`, `--workers`. Stop and run again at any time.
 - Stored album and series pages are **compressed** (about a tenth of the size); pages stored before stay readable. *Back up the database
-  first*: an older bdnex can not read the compressed pages. `bdnex check` lists the pages stored before as not compressed, and `check --fix`
-  copies the database (`<library>.before-compress-<date>`) and compresses them.
+  first*: an older bdnex can not read the compressed pages. The first bdnex command after the upgrade compresses the pages stored before,
+  once, as a library upgrade (schema v11): the old database is kept as `<library>.bak-v10` and the older bdnex refuses the new one.
 - Path templates have **`$special`**: what the site calls the tome when it is no number (`INT` for an intégrale, `HS`...), empty otherwise:
   `$series - %if{$special,$special,T$volume:02} - $title`.
 - `review --batch`: **`space` marks files, `a` attaches them to a series**: pick any album of the series and each marked file (or the files of the
@@ -28,6 +28,9 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- **Candidates' covers that gave a 404** (`Nikopol INT La trilogie Nikopol`): for an album whose page was never read, bdnex guessed the cover
+  address (`Couv_<id>.jpg`), which is wrong for about one album in five (3,197 of the 16,402 albums read so far have another name). When the guess
+  is not there, the album's page now says where the cover is (one request, the page is kept) and that address is tried. Same for the cover vote of an import.
 - Albums of a series **without tome numbers** (`Les 40 commandements du jardinage`, `...du bricoleur`) were all stored under the series' title,
   `Les 40 commandements`: the album's own title is now read from the page's sub-title (and so is the tome, `16B6` or `INT`, instead of the
   address). `bdnex import --reparse` rebuilds the albums already stored, offline.

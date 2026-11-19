@@ -91,27 +91,28 @@ def test_an_album_only_matched_is_fetched_too_and_a_missing_cover_alone_is_found
     assert result.covers == 1 and not mirror.plan(source, library).no_cover
 
 
-def test_check_fix_backs_up_then_compresses_the_pages_stored_before(tmp_path):
+def test_upgrading_from_v10_keeps_a_copy_and_compresses_the_pages_stored_before(tmp_path, capsys):
     import glob
+    import sqlite3
 
-    from bdnex.library import health
+    from bdnex.library import SCHEMA_VERSION
+    from bdnex.library.schema import MIGRATIONS
 
     path = tmp_path / "lib.sqlite"
     html = b"<html>" + b"<p>Les 40 commandements</p>" * 800 + b"</html>"
+    conn = sqlite3.connect(path)  # a library as bdnex v10 left it: the pages are plain
+    for number, script in enumerate(MIGRATIONS[:10], start=1):
+        conn.executescript(script)
+    conn.execute("PRAGMA user_version = 10")
+    for n in range(5):
+        conn.execute("INSERT INTO source_cache(source, kind, url, content) VALUES ('bedetheque', 'album', ?, ?)", (f"u{n}", html))
+    conn.execute("INSERT INTO source_cache(source, kind, url, content) VALUES ('bedetheque', 'sitemap', 's', ?)", (b"<urlset/>",))
+    conn.commit()
+    conn.close()
     with Library(path) as library:
-        for n in range(5):  # pages as an older bdnex stored them: plain
-            library.conn.execute("INSERT INTO source_cache(source, kind, url, content) VALUES ('bedetheque', 'album', ?, ?)", (f"u{n}", html))
-        library.conn.commit()
-        assert library.uncompressed_pages() == (5, 5 * len(html))
-        assert any(f.key == "pages-uncompressed" and f.fixable for f in _findings(library, tmp_path))
-        said = health.compress_pages(library)
-        assert "compressed 5 stored page(s)" in said and glob.glob(f"{path}.before-compress-*")
-        assert library.uncompressed_pages() == (0, 0) and library.cache_get("bedetheque", "album", "u3") == html
-        assert health.compress_pages(library).startswith("compressed 0")  # nothing is done twice
-
-
-def _findings(library, tmp_path):
-    from bdnex.library import health
-
-    settings = load_config().settings
-    return health.check(library, settings)
+        assert library.schema_version == SCHEMA_VERSION
+        stored = library.conn.execute("SELECT LENGTH(content) FROM source_cache WHERE kind = 'album'").fetchall()
+        assert all(size < len(html) / 5 for (size,) in stored) and library.cache_get("bedetheque", "album", "u3") == html
+        assert library.conn.execute("SELECT content FROM source_cache WHERE kind = 'sitemap'").fetchone()[0] == b"<urlset/>"
+    assert glob.glob(f"{path}.bak-v10")  # the copy the upgrade keeps (plain pages inside)
+    assert "compressing the 5 stored pages" in capsys.readouterr().err

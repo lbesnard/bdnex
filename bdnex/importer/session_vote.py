@@ -60,6 +60,24 @@ class CoverVote:
                 urls[match.candidate.source_id] = url
         return urls
 
+    def _cover_from_page(self, candidate, guessed: str, fetch, fetched: dict) -> None:
+        """A cover address that was only a guess (the page was never read) is not there: the page says where the cover is
+        (one request, here in the main thread: the page is stored). Everything is best effort."""
+        known = self.library.find_album(self.source.name, candidate.source_id)
+        if known is not None and (self.library.get_album(known) or {}).get("cover_url"):
+            return  # that address was read from the page, not guessed
+        read = getattr(self.source, "cover_url_of", None)
+        if read is None or fetch is None:
+            return
+        try:
+            real = read(candidate)
+            if real and real != guessed:
+                data = fetch(real)
+                covers.check_cover_image(data)
+                fetched[candidate.source_id] = data
+        except (covers.CoverError, *self.source.fetch_errors) as err:
+            logger.debug(f"{candidate.url}: the cover its page names did not come ({err})")
+
     def _vote(self, path: str, matches: list[Match]):
         """``(candidate, score, similarity)`` of the candidate whose cover wins, or ``None``."""
         settings = self.settings.match
@@ -83,6 +101,8 @@ class CoverVote:
                     fetched[source_id] = data
                 except (covers.CoverError, *self.source.fetch_errors) as err:
                     logger.debug(f"{path}: cover of {urls[source_id]} not compared ({err})")
+                    self._cover_from_page(next(m.candidate for m in pool if m.candidate.source_id == source_id),
+                                          urls[source_id], fetch, fetched)
         scored = []
         for match in pool:
             online = self._candidate_cover(match.candidate, fetched)
