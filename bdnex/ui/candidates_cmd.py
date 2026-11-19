@@ -154,8 +154,9 @@ def build_report(settings, library, query: list[str], low: bool = False, limit: 
 def run(argv: list[str], out=sys.stdout) -> int:
     parser = argparse.ArgumentParser(
         prog="bdnex candidates", description=__doc__,
-        epilog="Nothing is changed and nothing is requested: the candidates come from the album list stored in the "
-               "library. To redo a file: `bdnex import --match --force FILE`.")
+        epilog="Nothing is changed. The candidates come from the album list stored in the library, so without --cover "
+               "nothing is requested. To redo a file: `bdnex import --match --force FILE`, or `bdnex review --auto` to "
+               "settle the doubtful ones by rule.")
     parser.add_argument("query", nargs="*", help="files to look at, same terms as `bdnex ls --files`")
     parser.add_argument("--low", action="store_true",
                         help="only the files whose match is in doubt: no album, flagged, looking wrong (see `bdnex check "

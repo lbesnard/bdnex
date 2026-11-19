@@ -133,7 +133,7 @@ The ones nothing confirms are left alone: no evidence is no reason to ask you. S
 ## …shorten a command I type often?
 
 Add an alias to your configuration (`bdnex config --edit`): `aliases: ["settle-doubtful-matches = review --auto  # what it does"]`.
-Then `bdnex settle-doubtful-matches -n` is `bdnex review --auto -n`, and `bdnex --help` lists it with its explanation. See [Aliases](configuration.md#aliases-your-own-short-commands).
+Then `bdnex settle-doubtful-matches -n` is `bdnex review --auto -n`, and `bdnex --help` lists it with its explanation. See [Aliases](configuration.md#aliases-commands-with-a-name-that-says-what-they-do).
 
 ## …import again? Redo a file?
 

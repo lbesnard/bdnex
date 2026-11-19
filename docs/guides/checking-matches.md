@@ -51,7 +51,7 @@ bdnex review                          # what is still flagged, one by one
 
 `-n` shows only the counts. `--json` prints the verdicts, with the evidence and the better album found, and changes
 nothing. A digital edition whose cover differs from the print album's is contradicted by its cover alone: with no better
-album it is unlinked, and `bdnex import --album` links it back. A shorter way to type it: an [alias](configuration.md#aliases-your-own-short-commands).
+album it is unlinked, and `bdnex import --album` links it back. A shorter way to type it: an [alias](configuration.md#aliases-commands-with-a-name-that-says-what-they-do).
 
 ## By hand
 

@@ -24,6 +24,9 @@ options:
 
 The matching of file names works offline from this list (about 55 files, 70 MB). Run
 it once before your first import, and again whenever you want to pick up new albums.
+
+Examples:
+  bdnex init  download the album list that file names are matched against (once; run it again to refresh)
 ```
 
 ### `bdnex import`
@@ -122,6 +125,15 @@ steps (default: both):
 
 With neither --match nor --fetch, both steps run. A step that is already done for a
 file is skipped (the report says so); --force redoes it.
+
+Examples:
+  bdnex import --database-only --auto=all ~/comics     bring a folder in, touching no file and asking nothing
+  bdnex import -n ~/comics                             preview: what would be matched, nothing is recorded
+  bdnex import --skipped --auto=all                    ask again about the files skipped earlier (run `bdnex init` first)
+  bdnex import --fetch --select partial:true           read the pages of the albums that are only matched so far
+  bdnex import --album 123456 ~/comics/Nains-T01.cbz   use this album (the number at the end of its page address) for one file
+  bdnex import --match --force ~/comics/Nains-T01.cbz  choose the album of one file again
+  bdnex import --reparse --select series:nains         rebuild some albums from the pages already stored (offline)
 ```
 
 ### `bdnex candidates`
@@ -156,8 +168,15 @@ options:
   --log-file PATH  also write everything, at the debug level and with the time, to
                    this file (for a long run)
 
-Nothing is changed and nothing is requested: the candidates come from the album list
-stored in the library. To redo a file: `bdnex import --match --force FILE`.
+Nothing is changed. The candidates come from the album list stored in the library, so
+without --cover nothing is requested. To redo a file: `bdnex import --match --force
+FILE`, or `bdnex review --auto` to settle the doubtful ones by rule.
+
+Examples:
+  bdnex candidates --low                                the files whose match is in doubt, with the other albums each could be
+  bdnex candidates series:nains --limit 3               the 3 best albums for each file of one series (any file, in doubt or not)
+  bdnex candidates --low --cover --limit 3 series:saga  also compare covers (one request per cover not saved yet)
+  bdnex candidates --low --json                         the same as JSON, for a script or an assistant
 ```
 
 ### `bdnex review`
@@ -211,6 +230,13 @@ look at it. Each flagged file is shown with both covers side by side (the file's
 the left, the album's on the right) and you keep the match, unlink the file, ask for
 another album, or leave it for later. `bdnex candidates` lists the other albums a file
 could be.
+
+Examples:
+  bdnex review               go through the flagged matches one by one, both covers side by side
+  bdnex review series:nains  only the files of one series
+  bdnex review --list        only list the flagged files and why; ask nothing
+  bdnex review --auto -n     preview the rule: how many are confirmed, switched, unlinked; changes nothing
+  bdnex review --auto        settle the doubtful matches by rule (asks once before changing anything)
 ```
 
 ## Look at the library
@@ -250,6 +276,14 @@ embedded, fileid, filename, filepages, files, format, genre, id, inker, isbn, ki
 language, letterer, md5, metadata, pages, partial, path, penciller, publisher, rating,
 review, series, size, source, spare, staged, summary, tagged, title, url, volume,
 writer, year
+
+Examples:
+  bdnex ls series:nains                                  the albums of a series
+  bdnex ls author:uderzo year:2010..2015 ^genre:humour   terms are ANDed; `^` negates; `a..b` is a range
+  bdnex ls complete:true -c                              only count them
+  bdnex ls --unmatched                                   files that have no album
+  bdnex ls --missing                                     files the library knows that are no longer on disk
+  bdnex ls series:nains --format '$series T$vol $title'  choose what is printed
 ```
 
 ### `bdnex series`
@@ -272,6 +306,11 @@ options:
 
 The albums a series has come from its page, read when one of its albums is fetched
 (`bdnex import --fetch`). Until then only what you own is known.
+
+Examples:
+  bdnex series                     what you have of each series
+  bdnex series --missing           only the series that lack albums
+  bdnex series nains --missing -l  the missing albums of one series, with their address
 ```
 
 ### `bdnex stats`
@@ -292,6 +331,10 @@ options:
 
 Without a query the whole library; with one (the terms of `bdnex ls`) only the albums
 and files it matches. Read-only, no file is touched.
+
+Examples:
+  bdnex stats               how much the library holds
+  bdnex stats series:nains  the same for a query
 ```
 
 ### `bdnex fields`
@@ -308,6 +351,9 @@ options:
 
 Use them as `field:value` in `bdnex ls`, `review`, `write`, `komga`... (see the page
 *Querying the library*). `year-` or `title+` sorts.
+
+Examples:
+  bdnex fields  the fields a query can use (`series:`, `author:`, `year:`...), with their kind
 ```
 
 ### `bdnex duplicates`
@@ -330,6 +376,10 @@ Groups files with the same content, several files for one album (not marked as s
 versions), and files whose first page looks alike. It only reports: `bdnex import`
 asks what to do about a duplicate when it meets one, and `bdnex trash` holds what was
 replaced.
+
+Examples:
+  bdnex duplicates           the same book in several files, found by name and size
+  bdnex duplicates --covers  also compare the first pages (reads every file: slow on a big library)
 ```
 
 ## Change the library
@@ -355,6 +405,10 @@ options:
   -n, --pretend    show what would change; change nothing
 
 Afterwards, `bdnex write <same query>` puts the new values into the files.
+
+Examples:
+  bdnex edit series:nains                            change the albums in your editor
+  bdnex edit series:nains --set publisher=Soleil -n  preview a change to a field, without the editor
 ```
 
 ### `bdnex mark`
@@ -384,6 +438,11 @@ A mark is a name and a text value that bdnex keeps with a file (or an album, wit
 `attr:NAME=VALUE` in any query, e.g. `bdnex ls --files attr:checked=keep`, or `bdnex
 candidates --low ^attr:checked` for the files nobody looked at. They are not written
 into the files.
+
+Examples:
+  bdnex mark series:nains --set checked=keep  put your own mark on the files of a query
+  bdnex mark series:nains --remove checked    take it off
+  bdnex ls --files attr:checked               find them again
 ```
 
 ### `bdnex reset`
@@ -405,6 +464,10 @@ Deletes the files, albums, series, credits, genres and publishers recorded in th
 library, with your `bdnex edit` changes and the import history. Kept: the sitemaps and
 every album / series page and cover already fetched, so the next import needs no
 network for them. Your comic files are not touched.
+
+Examples:
+  bdnex reset -n  preview: what would be deleted (the albums, files and edits; sitemaps and pages are kept)
+  bdnex reset     empty the library, after copying it to `<library>.before-reset-<date>`
 ```
 
 ### `bdnex update`
@@ -432,6 +495,10 @@ own ComicInfo.xml) after you changed them with another tool. By default only the
 whose size or date differs from what was recorded are read; --all reads every file of
 the query. The albums are not touched, and no file is changed. A file that is gone is
 listed (`bdnex relocate --find` finds moved files).
+
+Examples:
+  bdnex update -n                  which files changed since they were read (after another tool changed them)
+  bdnex update --all series:nains  read every file of a series again, changed or not
 ```
 
 ### `bdnex check`
@@ -455,6 +522,11 @@ Looks at the database (integrity, links between tables), at the files it points 
 is changed unless you add --fix, which only settles what is safe: empty series, dead
 trash records, covers that are gone, temporary files (and, with --matches, flags the
 doubtful matches for `bdnex review`).
+
+Examples:
+  bdnex check            is the library consistent with itself and the disk?
+  bdnex check --matches  also weigh every match against its album's page
+  bdnex check --fix      settle what is safe to settle
 ```
 
 ## Change the files
@@ -485,6 +557,10 @@ options:
                    SQL included
   --log-file PATH  also write everything, at the debug level and with the time, to
                    this file (for a long run)
+
+Examples:
+  bdnex write -n            preview: which files would get a ComicInfo.xml
+  bdnex write series:nains  write the tags into the files of one series
 ```
 
 ### `bdnex move`
@@ -515,6 +591,11 @@ options:
                    SQL included
   --log-file PATH  also write everything, at the debug level and with the time, to
                    this file (for a long run)
+
+Examples:
+  bdnex move -n                   preview: where each file would go in the collection
+  bdnex move series:nains         write tags and rename the files into the tree
+  bdnex move --copy series:nains  copy them in and leave the originals untouched
 ```
 
 ### `bdnex repair`
@@ -544,6 +625,10 @@ options:
                    SQL included
   --log-file PATH  also write everything, at the debug level and with the time, to
                    this file (for a long run)
+
+Examples:
+  bdnex repair -n  preview: which archives are damaged
+  bdnex repair     rebuild them as clean CBZ files (the damaged one goes to the trash)
 ```
 
 ### `bdnex convert`
@@ -575,6 +660,10 @@ options:
                    SQL included
   --log-file PATH  also write everything, at the debug level and with the time, to
                    this file (for a long run)
+
+Examples:
+  bdnex convert -n          preview: which PDF files would become CBZ
+  bdnex convert --from cbr  convert CBR files instead
 ```
 
 ### `bdnex undo`
@@ -598,6 +687,10 @@ Every `bdnex move` (and `import --move`) run remembers the files it renamed or m
 back to where they were, in the library too. What cannot be taken back: tags written
 into a file (the file keeps them), a CBR or PDF that was converted (the original is in
 the trash: `bdnex trash`), copies, and files that were changed or moved again since.
+
+Examples:
+  bdnex undo          list the runs of `bdnex move` you can take back
+  bdnex undo last -n  preview taking back the last one
 ```
 
 ### `bdnex trash`
@@ -626,6 +719,11 @@ options:
 When you choose to keep a new file instead of an existing one, the existing file is
 moved here (to `trash.dir` in your library folder), never deleted. Emptying the trash
 deletes the files and their records for good.
+
+Examples:
+  bdnex trash                             list the files that were replaced
+  bdnex trash --restore 12                put one back where it came from
+  bdnex trash --empty --older-than 30 -n  preview deleting what was trashed more than 30 days ago
 ```
 
 ## Files that moved
@@ -663,6 +761,10 @@ stored with their full path, `relocate` rewrites the stored paths. It touches no
 on disk. `bdnex ls --missing` lists what is not found. To find individual files that
 were moved or renamed, by their content, use `--find` (`bdnex relocate --find
 FOLDER...`).
+
+Examples:
+  bdnex relocate /old/comics /new/comics  your whole folder moved: tell the library
+  bdnex relocate --find -n ~/comics       files were moved by hand: find them again by their content
 ```
 
 ## Other programs
@@ -715,6 +817,11 @@ Komga does not read the ComicInfo.xml inside a PDF, so `push` is how a PDF gets 
 title, summary, credits and the rest in Komga. A Komga book is matched to a library
 file by its file name and size (the folders may differ). No comic file is read or
 changed.
+
+Examples:
+  bdnex komga show format:pdf      what Komga holds for these files, next to the library's values
+  bdnex komga push -n              preview what would be sent
+  bdnex komga push --fields title  send only some fields
 ```
 
 ### `bdnex serve`
@@ -744,6 +851,10 @@ options:
                        and SQL included
   --log-file PATH      also write everything, at the debug level and with the time, to
                        this file (for a long run)
+
+Examples:
+  bdnex serve                  open the library in a browser (read-only), at http://127.0.0.1:8765
+  bdnex serve --allow-changes  let the page run tasks and change the library
 ```
 
 ## Setup
@@ -766,6 +877,11 @@ options:
   --clear         show the secrets too (API keys, passwords, the fetcher address);
                   they are hidden by default
   -d, --defaults  print every option with its default
+
+Examples:
+  bdnex config           show the configuration in use (secrets hidden)
+  bdnex config --edit    open it in your editor
+  bdnex config --update  add the options your file does not list yet, commented out
 ```
 
 ### `bdnex completion`
@@ -783,4 +899,7 @@ positional arguments:
 
 options:
   -h, --help       show this help message and exit
+
+Examples:
+  bdnex completion bash  print a tab-completion script (also zsh and fish)
 ```

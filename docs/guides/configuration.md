@@ -201,13 +201,12 @@ when no file was linked), gets `BDNEX_EVENT`, `BDNEX_COMMAND` and `BDNEX_CHANGED
 may take ten minutes. One that fails, is missing or takes too long is reported and never makes the bdnex command fail.
 The web page (`bdnex serve`) runs the same commands, so its jobs fire your hooks too.
 
-## Aliases: your own short commands
+## Aliases: commands with a name that says what they do
 
 ```yaml
 aliases:
-  - "settle-doubtful-matches = review --auto  # weigh the flagged and medium matches, settle them by rule"
-  - "first-import = import --database-only --auto=all -vv  # bring a folder in, touching no file"
-  - "match-skipped-again = import --skipped --auto=all  # ask again about the files skipped earlier"
+  - "settle-doubtful-matches = review --auto  # weigh flagged and medium matches, confirm, switch or unlink them (asks once)"
+  - "list-files-without-album = ls --unmatched  # files that are skipped, failed or not linked"
 ```
 
 `bdnex settle-doubtful-matches -n` is then `bdnex review --auto -n`: what you type after the alias is added. Each alias is
@@ -215,6 +214,12 @@ aliases:
 dashes), not already a command, and the command is a bdnex command, not another alias. **Long names are the point**: they say
 what they do, and `bdnex --help` lists your aliases with their explanation. Nothing else is run: an alias is only a shorter way
 to type bdnex, never a shell command.
+
+**bdnex ships a list of them** (`bdnex config --defaults` prints it, and `bdnex --help` shows them): `first-import`,
+`import-skipped-files-again`, `fetch-albums-not-read-yet`, `rebuild-albums-from-stored-pages`, `list-doubtful-matches`,
+`settle-doubtful-matches`, `preview-settle-doubtful-matches`, `check-every-match`, `list-files-without-album`,
+`list-series-with-missing-albums` and `find-files-moved-by-hand`. They work without any change to your file. Writing
+`aliases:` in your own file **replaces** that list, so copy the ones you want to keep, then add yours.
 
 ## Metadata source
 

@@ -120,13 +120,14 @@ def expand_alias(argv: list[str], aliases: list[str]) -> list[str]:
 
 def alias_lines(aliases: list[str]) -> list[str]:
     """The ``Your aliases`` part of the usage text: each name, what it runs, and what it is for."""
-    lines = []
+    parsed = []
     for text in aliases:
         try:
-            name, words, why = parse_alias(text)
+            parsed.append(parse_alias(text))
         except ValueError:
             continue
-        lines.append(f"  {name:<28} bdnex {' '.join(words)}" + (f"   # {why}" if why else ""))
+    width = max((len(name) for name, _, _ in parsed), default=0)
+    lines = [f"  {name:<{width}}  bdnex {' '.join(words)}" + (f"   # {why}" if why else "") for name, words, why in parsed]
     return ["Your aliases (`aliases` in the configuration):", *lines, ""] if lines else []
 
 
@@ -142,7 +143,21 @@ def usage() -> str:
 
 
 def runner(command: Command):
-    """``run(argv) -> int`` of a command (its module is imported only when it is used: starting stays quick)."""
+    """``run(argv) -> int`` of a command (its module is imported only when it is used: starting stays quick).
+
+    ``--help`` is followed by the command's examples (``ui/examples.py``), so no command is without one."""
     module = importlib.import_module(f"bdnex.ui.{command.module}")
     run = getattr(module, command.by_function) if command.by_function else module.run
-    return (lambda argv: run(command.name, argv)) if command.by_name else run
+    call = (lambda argv: run(command.name, argv)) if command.by_name else run
+
+    def with_examples(argv):
+        try:
+            return call(argv)
+        except SystemExit as stop:
+            if stop.code in (0, None) and any(arg in ("-h", "--help") for arg in argv):
+                from bdnex.ui.examples import text
+
+                print(text(command.name))
+            raise
+
+    return with_examples
