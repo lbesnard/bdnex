@@ -102,6 +102,8 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 
 - **`--auto=all` never asks and applies only strong matches without a doubt** (`match.auto_all`); a medium one is queued and
   decided at the end by its cover (`importer/session_vote.py`, `match.cover_vote`): never apply a medium match unasked.
+- `bdnex recheck` (`library/recheck.py`) weighs the matches applied under `match.strong_threshold`, offline (page, tags, saved
+  covers); it flags or (`--unlink`) unlinks, never touches a file chosen by the user (no score in the import log).
 - **Precision before coverage**: a wrong match costs more than an unasked one. A strong first choice is still asked about
   when a *doubt* is set (`Match.doubt`, `matching._doubts`): another album within `match.min_margin` points, or a strong
   contradiction. Candidates whose page was read get a few points when year/author agree and **never lose any** (a penalty
