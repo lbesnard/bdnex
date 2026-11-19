@@ -31,6 +31,9 @@ and kept for the next time).
 | `wrong` | something contradicts it (another volume, another series in its tags, a cover that looks little like the album's) | flags it for `bdnex review` (or unlinks it with `--unlink`) |
 | `unconfirmed` | nothing confirms it, nothing contradicts it | flags it for `bdnex review` (or unlinks it with `--unlink --unconfirmed`) |
 
+**`recheck` judges the link a file has; it never picks another album.** Searching again is what `bdnex import
+--skipped` does, for the files `recheck --unlink` unlinked (or that you unlinked yourself).
+
 Files linked at a confident score, the ones you chose (`import --album`, `review`) and the ones read from their own
 tags are never looked at. The usual order:
 

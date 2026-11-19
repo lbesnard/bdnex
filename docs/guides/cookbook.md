@@ -94,8 +94,10 @@ bdnex import --database-only --auto ~/comics
 ```
 
 Pass 1 matches every file by itself, reads the album pages and fills the library. It changes no comic file
-(`--database-only`) and asks nothing (`--auto=all`). Most matches are right, and what matters is that their pages
-and covers are now stored on your disk.
+(`--database-only`) and asks nothing (`--auto=all`): only the strong matches are applied, the files in the middle stay
+skipped, and at the end of the run the covers of their best candidates decide some of them (the *cover vote*, see
+[Importing](importing.md#the-cover-vote-deciding-what-the-title-could-not)). Most matches are right, and what matters is
+that their pages and covers are now stored on your disk.
 
 `bdnex reset` forgets the matches and keeps the stored pages and covers. Pass 2 matches again, but a page that is
 already stored is read from disk, so it needs no network and no waiting. With `--auto`, strong matches are applied
@@ -112,6 +114,24 @@ Before you start pass 2:
   page (credits, year, volume, the file's own tags) and lists the ones that look wrong (`--fix` flags them), then `bdnex review` goes
   through them with the two covers side by side (`bdnex candidates --low` lists the other albums each could be) (`bdnex import --select` redoes chosen files).
 
+## …recheck the matches an older import applied at a medium score?
+
+Before `--auto=all` became strict, it applied the matches in the middle (a score under `match.strong_threshold`)
+without asking. Running the import again does not look at them: a file that is already matched is only counted.
+`bdnex recheck` does, **without searching for another album** and without any request: it only asks whether something
+other than the name (the album page's year and authors, the file's own tags, its cover against the saved cover)
+confirms the link it already has.
+
+```bash
+bdnex recheck -n                      # how many are confirmed, contradicted, unconfirmed; changes nothing
+bdnex recheck                         # flag the ones not confirmed, for `bdnex review` (nothing is unlinked)
+bdnex recheck --unlink                # or unlink the contradicted ones (asks first)
+bdnex import --skipped --auto=all     # re-match the unlinked ones: strict, then the covers of the best candidates vote
+```
+
+Two steps because they do different work: `recheck` judges the existing links (offline), and the import is what
+searches again, only for the files that were unlinked. See [Checking the matches](checking-matches.md).
+
 ## …import again? Redo a file?
 
 Running `bdnex import ~/comics` again is cheap (and plain `bdnex import` does the same on the library folder of
@@ -126,7 +146,7 @@ remembered and not asked about again.
 | redo the match of a file that got the wrong album | `bdnex import --match --force file.cbz` (you choose again) |
 | read the pages again from the site | `bdnex import --fetch --force ~/comics/Series/Nains` |
 | redo everything for some files | `bdnex import --force file.cbz` |
-| look again at the files I skipped | `bdnex import --force ~/comics` (or `bdnex init` first, if new albums may exist now) |
+| look again at the files I skipped | `bdnex import --skipped ~/comics` (or `bdnex init` first, if new albums may exist now) |
 | see which files were already done | `bdnex import -v ~/comics` |
 
 ## …know how much of my library has been read?
