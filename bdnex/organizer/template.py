@@ -38,6 +38,7 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
         "series": album.get("series") or "",
         "title": album["title"],
         "volume": volume if volume is not None else (album.get("alternate_number") or ""),
+        "special": album.get("alternate_number") or "",  # an intégrale (INT), hors-série (HS)...: what the site calls the tome when it is no number
         "language": album.get("language") or "",
         "year": album.get("year") or "",
         "publisher": album.get("publisher") or "",
@@ -50,7 +51,7 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-FIELD_NAMES = ("kind", "series", "title", "volume", "language", "year", "publisher", "isbn", "genre", "authors",
+FIELD_NAMES = ("kind", "series", "title", "volume", "special", "language", "year", "publisher", "isbn", "genre", "authors",
                "writer", "penciller", "colorist")  # what `fields_for` provides (a test keeps the two together)
 
 

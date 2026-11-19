@@ -319,6 +319,8 @@ class ReviewApp(App):
         Binding("l", "leave", "Leave"),
         Binding("p", "page", "Open page"),
         Binding("c", "cover", "Covers"),
+        Binding("space", "mark", "Mark"),
+        Binding("a", "attach", "Attach marked to a series"),
         Binding("n", "next_batch", "Next batch"),
         Binding("q", "quit", "Quit"),
         *[Binding(str(number), f"sort({number - 1})", f"Sort by {name}", show=False) for number, (name, _) in enumerate(COLUMNS, start=1)],
@@ -338,6 +340,7 @@ class ReviewApp(App):
         self.timing = ""
         self.sort_column: Optional[int] = None  # a column of COLUMNS, sorted by a click on its header or by a number key
         self.sort_reverse = False
+        self.marked: set[int] = set()  # ids of the rows marked with space (to attach to a series together)
         self.order: dict[int, int] = {}  # each row's place when the batch was made (``#`` sorts back to it)
         self.started = 0.0  # when the files started to be weighed
         self.weighed_in: Optional[float] = None  # how long weighing took, once it did
@@ -438,6 +441,7 @@ class ReviewApp(App):
         self.show_loading(False)
         self.query_one(DataTable).focus()
         self.rows = rows
+        self.marked.clear()
         self.order = {id(row): place for place, row in enumerate(rows)}
         self.sort_column, self.sort_reverse = None, False
         self.timing = f"weighed in {seconds:.1f} s"
@@ -523,7 +527,7 @@ class ReviewApp(App):
             state = Text(KIND_WORD.get(row.kind, row.kind) + (f" (was {row.previous})" if row.previous else ""),
                          style=KIND_STYLE.get(row.kind, ""))
         match = Text("you", style="cyan") if row.status == "linked" else score_text(row.score)
-        return [Text(str(number), style="cyan"), Text(os.path.basename(row.path), style="bold"),
+        return [Text(str(number), style="bold reverse magenta" if id(row) in self.marked else "cyan"), Text(os.path.basename(row.path), style="bold"),
                 Text(row.folder, style="dim"), album_text(row), page_text(row.album_url), match, score_text(row.cover), state]
 
     def show_detail(self, index: int) -> None:
@@ -618,6 +622,77 @@ class ReviewApp(App):
             row.status = "skipped"  # nothing is saved: it is in the next batch again
             self.refresh_row(row)
             self.advance()
+
+    # -- several files at once: mark them (space), then give them the series of an album
+    def action_mark(self) -> None:
+        row = self.current()
+        if row is None or row.busy:
+            return
+        self.marked.symmetric_difference_update({id(row)})
+        self.refresh_row(row)
+        self.notify(f"{len(self.marked)} file(s) marked: `a` attaches them to a series", timeout=3)
+        table = self.query_one(DataTable)
+        table.move_cursor(row=min(table.cursor_row + 1, len(self.rows) - 1))
+
+    def action_attach(self) -> None:
+        """Pick an album of a series: each marked file (without a mark: the files of this folder not decided yet) gets the
+        album of that series with the volume number in its name."""
+        row = self.current()
+        if row is None:
+            return
+        chosen = [r for r in self.rows if id(r) in self.marked and not r.busy]
+        if not chosen:
+            chosen = [r for r in self.rows if r.folder == row.folder and not r.status and not r.busy]
+        if not chosen:
+            self.notify("Nothing to attach: mark files with space.", severity="warning")
+            return
+        self.push_screen(FuzzyScreen(self.hub, self.search_start(chosen[0]),
+                                     f"An album of the series for these {len(chosen)} file(s)"),
+                         lambda candidate: self.run_worker(self.propose(chosen, candidate)) if candidate is not None else None)
+
+    async def propose(self, chosen: list, candidate) -> None:
+        paths = [r.path for r in chosen]
+        found = await asyncio.wrap_future(self.hub.run(lambda hub: batch.propose_for_series(hub.source, candidate, paths)))
+        if found is None:
+            self.notify("That album is not in a series, or no file name has a volume number (T03, Tome 3...).", severity="warning")
+            return
+        pairs = [(r, found.mapping[r.path]) for r in chosen if r.path in found.mapping]
+        lines = [f"{os.path.basename(r.path)}  ->  {c.url.rsplit('/', 1)[-1].removesuffix('.html')}" for r, c in pairs[:8]]
+        more = f"\n... and {len(pairs) - 8} more" if len(pairs) > 8 else ""
+        left = len(chosen) - len(pairs)
+        question = (f"{found.name}: {len(pairs)} of {len(chosen)} file(s) find their volume"
+                    + (f" ({left} left as they are)" if left else "") + ". Link them?\n" + "\n".join(lines) + more)
+        self.push_screen(AskScreen(question, None), lambda yes: self.link_many(pairs) if yes else None)
+
+    def link_many(self, pairs: list) -> None:
+        """Link each file to its album, one after the other (an import at a time: they write to the same library)."""
+        todo = []
+        for row, candidate in pairs:
+            before = (self.library.get_file(row.path) or {}).get("album_id")
+            row.busy, row.message = True, "waiting to be linked..."
+            self.refresh_row(row)
+            todo.append((row, candidate, before))
+
+        def work() -> None:
+            from bdnex.ui import verdicts
+
+            for row, candidate, before in todo:
+                self.call_from_thread(self.say_linking, row, candidate)
+                captured, error = io.StringIO(), ""
+                try:
+                    with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+                        verdicts.rematch(row.path, candidate.url, False)
+                except Exception as err:
+                    error = str(err) or err.__class__.__name__
+                self.call_from_thread(self.linked, row, before, error, None)
+
+        self.run_worker(work, thread=True, exclusive=False, group="link")
+
+    def say_linking(self, row: batch.Row, candidate) -> None:
+        from bdnex.ui.prompts import display_name
+
+        row.message = f"linking to {display_name(candidate)}: reading the album page, a few seconds..."
+        self.refresh_row(row)
 
     def action_cover(self) -> None:
         """A popup with the file's cover and the album's saved cover, side by side."""
@@ -725,6 +800,7 @@ class ReviewApp(App):
         import os
 
         row.busy = False
+        self.marked.discard(id(row))
         if error:
             row.message = f"failed: {error}"
             self.notify(f"{os.path.basename(row.path)}: {row.message}", severity="error")

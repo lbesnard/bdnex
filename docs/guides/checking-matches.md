@@ -95,6 +95,7 @@ spare version (`bdnex duplicates` decides later which one stays). On the command
 | `i` | an album's page address or number |
 | `s` | skip for now (nothing is saved: it is in the next batch again) |
 | `l` | leave it as it is, and do not show it again |
+| `space`, then `a` | **several files of one series at once**: `space` marks the file under the cursor, `a` asks for any album of the series (the same search as `o`) and gives each marked file the album of that series with the volume number in its name (`T03`, `Tome 3`). Without a mark, `a` takes the files of this folder that are not decided yet. It shows what it will do and asks before linking one by one |
 | `c` | a popup with the **file's cover** next to the album's **saved cover**, drawn with coloured text (works over SSH, no picture protocol needed). Nothing is fetched: when the album's cover was never saved it says so (`bdnex import --fetch` saves it). `c` or Esc closes it |
 | `p` | open the page of the album now linked, in your browser. Over SSH (where a browser would open on the other machine) the address is copied to your clipboard (where the terminal allows it) and shown; the **Page** column and the address under the table are links too: ctrl/cmd-click them in a terminal that knows links |
 | `n` | the next batch |

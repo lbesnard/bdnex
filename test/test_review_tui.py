@@ -510,3 +510,39 @@ def test_an_integrale_is_known_from_the_address_when_the_page_has_no_tome_line()
     info = parser.build_album_info(fields)
     assert info.alternate_number == "INT" and info.series is not None
     assert parser.build_album_info({**fields, "Série": None}).alternate_number is None  # no series: a one-shot, as before
+
+
+def test_marked_files_get_the_album_of_a_series_by_their_volume_after_one_question(env, monkeypatch):
+    from bdnex.importer.folders import SeriesProposal
+
+    db, files = env
+    release = threading.Event()
+    release.set()
+    seen_calls.clear()
+    _linking(monkeypatch, db, release)
+    asked = {}
+
+    def propose(source, candidate, paths):
+        asked["paths"] = paths
+        return SeriesProposal("Nains", "s1", {files["wrong"]: FORGE}, with_volume=1, total=len(paths))
+
+    monkeypatch.setattr(batch, "propose_for_series", propose)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("space")  # marks the first row (the contradicted file); the cursor moves on
+        seen["marked"] = len(app.marked)
+        await pilot.press("up")
+        await pilot.press("a")
+        await settle(app, pilot)
+        assert app.screen.__class__.__name__ == "FuzzyScreen"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        seen["question"] = app.screen.__class__.__name__
+        await pilot.press("y")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert seen["marked"] == 1 and asked["paths"] == [files["wrong"]] and seen["question"] == "AskScreen"
+    assert result["cells"][0][7] == "linked" and seen_calls == [False]
+    assert not result["app"].marked  # the mark goes with the link

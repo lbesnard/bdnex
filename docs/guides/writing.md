@@ -245,7 +245,7 @@ paths:
 
 - `$field` or `${field}`; `$volume:02` zero-pads a number. A special such as *Hors-série* is used
   as `$volume` when there is no number.
-- Fields: `kind series title volume language year publisher isbn genre authors writer penciller colorist`.
+- Fields: `kind series title volume special language year publisher isbn genre authors writer penciller colorist`.
 - **Functions**, written `%name{argument,argument}`; arguments can hold `$fields` and other functions:
   `%upper{}` `%lower{}` `%title{}` `%capitalize{}`, `%left{text,n}` and `%right{text,n}` (the first or last `n`
   characters), `%asciify{text}` (no accents), `%first{text,count,skip,sep,join}` (some of the items of a list such as
@@ -253,6 +253,8 @@ paths:
   `%if{test,then,else}` (the test is true when it is not empty, `0` or `false`) and `%ifdef{field,then,else}`
   (the field has a value; give its name without `$`). `if` and `ifdef` only work out the branch they take, and testing a
   field never asks for it when it is empty (`paths.missing_field`). Example: `Series/$series/%if{$year,($year) }$title`.
+  `$special` is what the site calls the tome when it is no number: `INT` (an intégrale), `HS`, `16B6`; empty otherwise (`bdnex edit` changes it:
+  `alternate_number`). To put it in the name: `Series/$series/$series - %if{$special,$special,T$volume:02} - $title`.
   A function can not contain a `/` (a folder separator), and a typo in a function name is refused when the configuration is read.
 - Every value is made safe for file names (`/ \ : * ? " < > |` become `_`), so a value can never
   create a folder. The extension `.cbz` is added for you.

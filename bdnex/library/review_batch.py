@@ -207,3 +207,15 @@ def read_covers(path: str, fmt: str, saved) -> tuple[Optional[bytes], Optional[b
         except OSError as err:
             notes.append(f"the album's cover could not be read ({err})")
     return local, online, "; ".join(notes)
+
+
+def propose_for_series(source, candidate, paths: list[str]):
+    """The album of the series of ``candidate`` for each of ``paths`` (by the volume number in the file name): a
+    ``SeriesProposal`` (``mapping`` file -> album), or ``None`` when the album has no series or no file names a volume.
+    Reads the album list only (run it in the thread that owns the source)."""
+    from bdnex.importer import folders
+
+    series = folders._series_of(source, candidate)
+    if series is None:
+        return None
+    return folders.propose_for_series(source, series.source_id, series.name, paths, {})

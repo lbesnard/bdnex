@@ -132,3 +132,14 @@ def test_the_batch_options_need_batch(env, capsys):
     for flag in ("--all", "--again", "--unmatched"):
         assert review_cmd.run([flag]) == 2
     assert "go with --batch" in capsys.readouterr().err
+
+
+def test_an_album_without_series_proposes_nothing():
+    from bdnex.importer.source import Candidate
+    from bdnex.library import AlbumInfo
+
+    class Source:
+        def partial_info(self, candidate):
+            return AlbumInfo("bedetheque", "1", "Loose")  # no series
+
+    assert batch.propose_for_series(Source(), Candidate("1", "u", "loose"), ["/a/T01.cbz"]) is None

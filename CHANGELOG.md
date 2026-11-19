@@ -7,6 +7,10 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Added
+- Path templates have **`$special`**: what the site calls the tome when it is no number (`INT` for an intégrale, `HS`...), empty otherwise:
+  `$series - %if{$special,$special,T$volume:02} - $title`.
+- `review --batch`: **`space` marks files, `a` attaches them to a series**: pick any album of the series and each marked file (or the files of the
+  folder) gets the album with the volume number of its name, after one question.
 - `review --batch`: **`c` shows the covers**: the file's first page and the album's saved cover side by side in a popup, drawn with coloured text
   (so it works over SSH). Nothing is fetched.
 - `review --batch`: linking a file to an album that **already has a file** no longer ends in `refused`: the screen asks whether to keep
