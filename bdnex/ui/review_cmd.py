@@ -12,6 +12,15 @@ from bdnex.ui.describe import label
 from bdnex.ui import context
 
 
+def settle(library, row: dict, answer: str) -> None:
+    """Apply a ``keep`` or ``unlink`` answer to a flagged file: the one place, for the terminal and the web page."""
+    if answer == "keep":
+        library.clear_review(row["path"])
+    elif answer == "unlink":
+        library.set_file_album(row["path"], None)
+        library.log_import(row["path"], "skipped", row.get("cover_score"))
+
+
 def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     parser = argparse.ArgumentParser(
         prog="bdnex review", description=__doc__,
@@ -76,13 +85,10 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                 answer = prompter.review_file(f"[{number}/{len(rows)}]", row["path"], label(album), row["review"],
                                               file_cover, album_cover)
                 counts[answer] += 1
-                if answer == "keep":
-                    library.clear_review(row["path"])
-                elif answer == "unlink":
-                    library.set_file_album(row["path"], None)
-                    library.log_import(row["path"], "skipped", row.get("cover_score"))
-                elif answer == "rematch":
+                if answer == "rematch":
                     rematch.append(row["path"])
+                else:
+                    settle(library, row, answer)
         except NeedsTerminal:
             print("This has to ask you about each file, and there is no terminal. `bdnex review --list` lists them.",
                   file=sys.stderr)

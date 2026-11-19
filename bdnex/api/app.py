@@ -529,7 +529,7 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             raise HTTPException(404, "no first page could be read from this file")
         return Response(small[0], media_type="image/png", headers={"Cache-Control": "private, max-age=3600"})
 
-    @app.get("/api/review", dependencies=guarded, summary="Matches that wait for a look (their cover looked different)")
+    @app.get("/api/review", dependencies=guarded, summary="Matches that wait for a look (a different cover, or what the album page says)")
     def review(lib: Library = Depends(library)):
         items = []
         for row in lib.query(["review:true"], files=True):
@@ -549,11 +549,9 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             row = lib.file_by_id(file_id)
             if row is None or not row.get("review"):
                 raise HTTPException(404, f"file {file_id} is not waiting for a review")
-            if answer.action == "keep":
-                lib.clear_review(row["path"])
-            else:
-                lib.set_file_album(row["path"], None)
-                lib.log_import(row["path"], "skipped", row.get("cover_score"))
+            from bdnex.ui.review_cmd import settle
+
+            settle(lib, row, answer.action)  # the same answers, the same effects as `bdnex review`
         return {"ok": True}
 
     @app.get("/api/duplicates", dependencies=guarded, summary="The same book in several files")

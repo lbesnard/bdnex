@@ -682,8 +682,9 @@ were moved or renamed, by their content, use `bdnex relink` instead.
 See what a Komga server holds for your files (show), or send it the library's metadata (push).
 
 ```text
-usage: bdnex komga [-h] [--only {books,series}] [--fields LIST] [--no-lock] [--json]
-                   [--missing] [-y] [-n] [-v] [--log-file PATH]
+usage: bdnex komga [-h] [--only {books,series}] [--fields LIST] [--no-lock]
+                   [--with-review] [--json] [--missing] [-y] [-n] [-v]
+                   [--log-file PATH]
                    {show,push} [query ...]
 
 ``bdnex komga``: see what a Komga server holds for your files, and send the library's
@@ -706,6 +707,9 @@ options:
                         link
   --no-lock             push: do not lock the fields sent (a Komga rescan may then
                         undo them); default: komga.lock
+  --with-review         push: also send the files whose match waits for a look (`bdnex
+                        review`); by default they are left out, so that a doubtful
+                        match never puts wrong metadata (and a lock) in Komga
   --json                show: print what Komga holds as JSON
   --missing             show: list the Komga books that no library file matches
                         (instead of the matches)
