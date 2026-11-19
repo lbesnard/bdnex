@@ -3,7 +3,7 @@
 
 import sys
 
-from bdnex.ui.commands import COMMANDS, runner, usage
+from bdnex.ui.commands import COMMANDS, RENAMED, alias_lines, expand_alias, runner, usage
 
 USAGE = usage()
 
@@ -43,7 +43,24 @@ def main(argv=None):
         sys.exit(1)
 
 
+def _aliases() -> list[str]:
+    """The user's ``aliases`` (empty when there is no valid configuration yet: ``check_config`` then says why)."""
+    try:
+        from bdnex.config import load_config
+
+        return list(load_config().settings.aliases)
+    except Exception:
+        return []
+
+
 def _main(argv):
+    if argv and argv[0] in RENAMED:
+        new = RENAMED[argv[0]](argv[1:])
+        shown = " ".join(word for word in new if word not in argv[1:])
+        print(f"note: `bdnex {argv[0]}` is now `bdnex {shown}`.", file=sys.stderr)
+        argv = new
+    elif argv and argv[0] not in COMMANDS and not argv[0].startswith("-"):
+        argv = expand_alias(argv, _aliases())
     command = COMMANDS.get(argv[0]) if argv else None
     if command is not None:
         if command.needs_config and not check_config():
@@ -51,6 +68,9 @@ def _main(argv):
         sys.exit(runner(command)(argv[1:]))
     if not argv or argv[0] in ("-h", "--help"):
         print(USAGE)
+        extra = alias_lines(_aliases())
+        if extra:
+            print("\n".join(extra))
         sys.exit(0)
     if not check_config():
         sys.exit(1)

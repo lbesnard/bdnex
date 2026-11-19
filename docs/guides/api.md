@@ -30,7 +30,7 @@ Links can carry a filter: `#/albums?q=series:nains`, `#/series?name=nains`, `#/f
 
 Everything that changes your library or your files is a **task**: `check --fix`, download the album list (`init`), record
 files as they are, **import** (match and read the pages of new files), `reparse`, write tags, move into the collection,
-`convert` PDFs, repair, undo a move, relink, `relocate`, `update` (read again the files that changed on the disk), empty the trash (and restore a file from the Trash page), `komga-show` / `komga-push` (compare with and send to [Komga](komga.md)), and `reset`. A task is
+`convert` PDFs, repair, undo a move, `relink` (the task of `bdnex relocate --find`: files moved by hand), `relocate`, `update` (read again the files that changed on the disk), empty the trash (and restore a file from the Trash page), `komga-show` / `komga-push` (compare with and send to [Komga](komga.md)), and `reset`. A task is
 one of these commands run in the background, with the same code as the terminal. Each has a **Preview** (changes
 nothing: `-n`) and **Run for real**. Only one task runs at a time; you can watch its output and cancel it.
 

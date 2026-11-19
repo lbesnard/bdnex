@@ -123,7 +123,7 @@ In the editor, each album is a block:
 (names contain commas): `--set genres='Humour; Fantasy' --set credits.Writer='Jarry, Nicolas; Co'`.
 
 **Your edits are kept.** They are stored beside what the source said, and laid over it again
-whenever the album is re-imported, re-cached or re-read with `bdnex reparse`; the edited
+whenever the album is re-imported, re-cached or re-read with `bdnex import --reparse`; the edited
 values are never reported as changes. Run `bdnex write series:nains` afterwards to put the new
 values into the files.
 
@@ -191,14 +191,14 @@ For these, `relocate` rewrites the stored paths; it refuses to run if a new path
 whole folders (`/comics` does not rewrite `/comics2`). A path that lands under `collection_path` or a source is stored in
 that form.
 
-### Files moved or renamed by hand: `bdnex relink`
+### Files moved or renamed by hand: `bdnex relocate --find`
 
 If you moved or renamed files outside bdnex (a file manager, another tool), they show in `bdnex ls --missing`.
-`relink` looks for them by content:
+`relocate --find` looks for them by content:
 
 ```bash
-bdnex relink -n ~/comics            # preview: which missing file was found where
-bdnex relink ~/comics ~/Downloads   # link them again (default folder: `collection_path`)
+bdnex relocate --find -n ~/comics            # preview: which missing file was found where
+bdnex relocate --find ~/comics ~/Downloads   # link them again (default folder: `collection_path`)
 ```
 
 A missing file is looked for by size and checksum in the folders you give (only files of a size a missing file had are
@@ -262,7 +262,7 @@ bdnex update                    # read those, and say what is different
 bdnex update --all series:nains # read every file of a query, changed or not
 ```
 
-The albums are never touched and no file is changed; a file that is gone is listed (`bdnex relink` finds moved files).
+The albums are never touched and no file is changed; a file that is gone is listed (`bdnex relocate --find` finds moved files).
 `bdnex check` lists files that changed or went missing, and also the comic files of your collection folder that the
 library does not know (`bdnex import --as-is` records them).
 

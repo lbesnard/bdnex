@@ -32,8 +32,8 @@ Match comic files to Bédéthèque albums and record them in the library.
 
 ```text
 usage: bdnex import [-h] [-m] [-f] [--skipped] [--sources] [-s TERM] [--as-is]
-                    [--unattended] [--force] [--auto [=all]] [--no-auto] [-n] [-W]
-                    [--move | --copy | --no-move] [--album ADDRESS|NUMBER]
+                    [--unattended] [--force] [--auto [=all]] [--no-auto] [--reparse]
+                    [-n] [-W] [--move | --copy | --no-move] [--album ADDRESS|NUMBER]
                     [--database-only] [--cover-check | --no-cover-check]
                     [--series | --no-series] [--workers N] [-v] [--log-file PATH]
                     [paths ...]
@@ -75,6 +75,11 @@ options:
                         ones too), the rest is skipped, and the covers of its best
                         candidates decide some of it at the end (match.cover_vote)
   --no-auto             check every file, whatever import.auto says
+  --reparse             rebuild albums from the pages already stored in the library,
+                        offline (no request, no file read): after bdnex learned to
+                        read more of a page. `--select TERM` limits it to some albums
+                        (same terms as `bdnex ls`); values already in the library are
+                        never erased
   -n, --pretend         show what would be done; change nothing
   -W, --write           afterwards, write ComicInfo.xml into the imported files (in
                         place)
@@ -157,38 +162,47 @@ stored in the library. To redo a file: `bdnex import --match --force FILE`.
 
 ### `bdnex review`
 
-Go through the flagged matches one by one, with both covers.
+Go through the doubtful matches: one by one with both covers, or settled by rule with --auto.
 
 ```text
 usage: bdnex review [-h] [--list] [--json] [--auto] [--candidates N] [--no-cover] [-y]
-                    [-n]
+                    [-n] [-v] [--log-file PATH]
                     [query ...]
 
 ``bdnex review``: go through the flagged matches one by one, with the file's cover and
 the album's side by side.
 
 positional arguments:
-  query           only these files, same terms as `bdnex ls --files` (e.g.
-                  series:nains)
+  query            only these files, same terms as `bdnex ls --files` (e.g.
+                   series:nains)
 
 options:
-  -h, --help      show this help message and exit
-  --list          only list the flagged files and why; ask nothing
-  --json          with --list: the flagged files as JSON, with the evidence, for a
-                  script or an agent
-  --auto          settle the flagged files by rule, asking nothing: the ones confirmed
-                  by something other than the name lose their flag; the ones something
-                  contradicts are switched to another album whose cover is clearly the
-                  file's (see --candidates), else unlinked (`bdnex import --skipped
-                  --auto=all` decides them again); the others stay flagged
-  --candidates N  for each contradicted file, compare the covers of its N best other
-                  candidates (the saved cover when there is one, else one request
-                  each; needs OpenCV) and propose the album whose cover is clearly the
-                  file's; 0: do not (default 5)
-  --no-cover      do not compare covers at all (neither the album's, not yet compared,
-                  nor the candidates')
-  -y, --yes       with --auto: do not ask for confirmation
-  -n, --pretend   show what would be settled (with --auto); change nothing
+  -h, --help       show this help message and exit
+  --list           only list the flagged files and why; ask nothing
+  --json           with --list: the flagged files as JSON, with the evidence; with
+                   --auto: the verdicts as JSON (nothing is changed), for a script or
+                   an agent
+  --auto           settle by rule, asking nothing, every flagged file and every match
+                   applied under `match.strong_threshold`: the ones confirmed by
+                   something other than the name lose their flag; the ones something
+                   contradicts are switched to another album whose cover is clearly
+                   the file's (see --candidates), else unlinked (`bdnex import
+                   --skipped --auto=all` decides them again); the ones nothing
+                   confirms or contradicts are left as they are
+  --candidates N   for each contradicted file, compare the covers of its N best other
+                   candidates (the saved cover when there is one, else one request
+                   each; needs OpenCV) and propose the album whose cover is clearly
+                   the file's; 0: do not (default 5)
+  --no-cover       do not compare covers at all (neither the album's, not yet
+                   compared, nor the candidates')
+  -y, --yes        with --auto: do not ask for confirmation before unlinking or
+                   switching
+  -n, --pretend    show what would be settled (with --auto); change nothing
+  -v, --verbose    more detail: -v what is decided and why (every file), -vv how
+                   (reads, cache, requests, threads), -vvv everything, libraries and
+                   SQL included
+  --log-file PATH  also write everything, at the debug level and with the time, to
+                   this file (for a long run)
 
 A match is flagged when its cover is not like its album's cover (similarity below
 `cover.match_percentage`) or the album's page contradicts the file (year, volume, the
@@ -197,61 +211,6 @@ look at it. Each flagged file is shown with both covers side by side (the file's
 the left, the album's on the right) and you keep the match, unlink the file, ask for
 another album, or leave it for later. `bdnex candidates` lists the other albums a file
 could be.
-```
-
-### `bdnex recheck`
-
-Weigh again the matches applied under the strong threshold: flag or unlink the unconfirmed.
-
-```text
-usage: bdnex recheck [-h] [--unlink] [--unconfirmed] [--rematch] [--flag-unconfirmed]
-                     [--candidates N] [--no-cover] [--json] [-y] [-n] [-v]
-                     [--log-file PATH]
-                     [query ...]
-
-``bdnex recheck``: the matches applied below the strong threshold, weighed again with
-what the library knows.
-
-positional arguments:
-  query               only these files, same terms as `bdnex ls --files`
-
-options:
-  -h, --help          show this help message and exit
-  --unlink            unlink the ones something contradicts (and for which no better
-                      album was found), instead of flagging them
-  --unconfirmed       with --unlink: unlink the ones nothing confirms too (the most
-                      careful: a right match whose cover could not be compared comes
-                      back only if its cover votes)
-  --rematch           link a contradicted file to the better album that --candidates
-                      found (the library only)
-  --flag-unconfirmed  flag the ones nothing confirms for `bdnex review` too (by
-                      default they are left alone)
-  --candidates N      for each contradicted file, compare the covers of its N best
-                      other candidates (the saved cover when there is one, else one
-                      request each; needs OpenCV) and propose the album whose cover is
-                      clearly the file's; 0: do not (default 5)
-  --no-cover          do not compare covers at all (neither the album's, not yet
-                      compared, nor the candidates')
-  --json              the verdicts as JSON
-  -y, --yes           do not ask for confirmation before unlinking or switching
-  -n, --pretend       show what would be flagged, unlinked or switched; change nothing
-  -v, --verbose       more detail: -v what is decided and why (every file), -vv how
-                      (reads, cache, requests, threads), -vvv everything, libraries
-                      and SQL included
-  --log-file PATH     also write everything, at the debug level and with the time, to
-                      this file (for a long run)
-
-For each file linked with a score under `match.strong_threshold` (a medium match,
-applied before `import --auto=all` became strict): its album's page, the file's own
-tags and its cover against the album's saved cover. Confirmed ones are left alone, and
-so are the ones nothing confirms (they are not flagged: nothing says they are wrong).
-The contradicted ones are flagged for `bdnex review` (nothing is unlinked), or
-unlinked with --unlink so that `bdnex import --skipped --auto=all` decides them again
-(strict, and the covers of the best candidates vote). For each contradicted file the
-covers of its best other candidates are compared too (--candidates): when one clearly
-looks like the file's, it is proposed, and with --rematch the file is linked to it.
-Only those covers are requested; no page is. Files chosen by you or read from their
-own tags are never touched.
 ```
 
 ## Look at the library
@@ -427,31 +386,6 @@ candidates --low ^attr:checked` for the files nobody looked at. They are not wri
 into the files.
 ```
 
-### `bdnex reparse`
-
-Re-read the pages stored in the library (offline) to fill in more details.
-
-```text
-usage: bdnex reparse [-h] [-n] [-v] [--log-file PATH] [query ...]
-
-Read the album pages stored in the library again and update the albums from them,
-without any network access. Use it after bdnex learned to read more of a page. Values
-already in the library are never erased; run `bdnex write` afterwards to put them into
-the files.
-
-positional arguments:
-  query            albums to update, same terms as `bdnex ls` (default: all)
-
-options:
-  -h, --help       show this help message and exit
-  -n, --pretend    show what would change; change nothing
-  -v, --verbose    more detail: -v what is decided and why (every file), -vv how
-                   (reads, cache, requests, threads), -vvv everything, libraries and
-                   SQL included
-  --log-file PATH  also write everything, at the debug level and with the time, to
-                   this file (for a long run)
-```
-
 ### `bdnex reset`
 
 Empty the library (albums, files, edits), keep the downloaded sitemaps and pages.
@@ -497,7 +431,7 @@ files, `update` records what the files are now (size, checksum, pages, damage, t
 own ComicInfo.xml) after you changed them with another tool. By default only the files
 whose size or date differs from what was recorded are read; --all reads every file of
 the query. The albums are not touched, and no file is changed. A file that is gone is
-listed (`bdnex relink` finds moved files).
+listed (`bdnex relocate --find` finds moved files).
 ```
 
 ### `bdnex check`
@@ -696,48 +630,30 @@ deletes the files and their records for good.
 
 ## Files that moved
 
-### `bdnex relink`
-
-Files were moved or renamed outside bdnex: find them again by their content.
-
-```text
-usage: bdnex relink [-h] [-n] [--workers N] [folders ...]
-
-``bdnex relink``: files were moved or renamed outside bdnex; find them again by their
-content.
-
-positional arguments:
-  folders        where to look (default: your collection, `collection_path` in the
-                 configuration)
-
-options:
-  -h, --help     show this help message and exit
-  -n, --pretend  show what would be linked; change nothing
-  --workers N    files read at once (0: the cores less one; 1: one by one); default:
-                 `import.workers`
-
-A file the library knows but that is no longer where it was (`bdnex ls --missing`) is
-looked for in the folders you give (default: your library folder), by size and
-checksum. A single copy is linked again, with its album and history. Nothing on disk
-is touched. If your whole folder moved, `bdnex relocate OLD NEW` is the quicker fix.
-```
-
 ### `bdnex relocate`
 
 Your whole comics folder moved: tell the library the new place.
 
 ```text
-usage: bdnex relocate [-h] [-n] old new
+usage: bdnex relocate [-h] [--find] [--workers N] [-n] [OLD NEW | FOLDER ...]
 
-``bdnex relocate``: your comics moved to another folder; tell the library.
+``bdnex relocate``: your comics moved; tell the library (the whole folder: OLD NEW),
+or find the moved files (--find).
 
 positional arguments:
-  old            the folder the files used to be in
-  new            the folder they are in now
+  OLD NEW | FOLDER  the folder the files used to be in, then the folder they are in
+                    now; with --find: where to look (default: your collection,
+                    `collection_path` in the configuration)
 
 options:
-  -h, --help     show this help message and exit
-  -n, --pretend  show what would change; change nothing
+  -h, --help        show this help message and exit
+  --find            instead: look for the files the library knows but that are no
+                    longer where they were (`bdnex ls --missing`) in the folders
+                    given, by size and checksum, and link a single copy again, with
+                    its album and history. Nothing on disk is touched
+  --workers N       files read at once (0: the cores less one; with --find; 1: one by
+                    one); default: `import.workers`
+  -n, --pretend     show what would change; change nothing
 
 Files under `collection_path` are stored relative to it: after moving the whole
 collection, just change `collection_path`. A folder listed in `import.sources` is one
@@ -745,7 +661,8 @@ record in the library: `relocate OLD NEW` with its old path updates that record 
 its files follow (then change the path in `import.sources` too). For other files
 stored with their full path, `relocate` rewrites the stored paths. It touches nothing
 on disk. `bdnex ls --missing` lists what is not found. To find individual files that
-were moved or renamed, by their content, use `bdnex relink` instead.
+were moved or renamed, by their content, use `--find` (`bdnex relocate --find
+FOLDER...`).
 ```
 
 ## Other programs

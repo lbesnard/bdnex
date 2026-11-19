@@ -201,6 +201,21 @@ when no file was linked), gets `BDNEX_EVENT`, `BDNEX_COMMAND` and `BDNEX_CHANGED
 may take ten minutes. One that fails, is missing or takes too long is reported and never makes the bdnex command fail.
 The web page (`bdnex serve`) runs the same commands, so its jobs fire your hooks too.
 
+## Aliases: your own short commands
+
+```yaml
+aliases:
+  - "settle-doubtful-matches = review --auto  # weigh the flagged and medium matches, settle them by rule"
+  - "first-import = import --database-only --auto=all -vv  # bring a folder in, touching no file"
+  - "match-skipped-again = import --skipped --auto=all  # ask again about the files skipped earlier"
+```
+
+`bdnex settle-doubtful-matches -n` is then `bdnex review --auto -n`: what you type after the alias is added. Each alias is
+`long-name = a bdnex command and its options`, then, after ` # `, what it is for. The name is lower case (letters, digits and
+dashes), not already a command, and the command is a bdnex command, not another alias. **Long names are the point**: they say
+what they do, and `bdnex --help` lists your aliases with their explanation. Nothing else is run: an alias is only a shorter way
+to type bdnex, never a shell command.
+
 ## Metadata source
 
 ```yaml

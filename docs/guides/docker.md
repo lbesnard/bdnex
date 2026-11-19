@@ -52,5 +52,5 @@ middleware) and keep the page's own as a second lock.
 
 Browse, review, edit the metadata of an album (or of every album of a search), and run the tasks of the command line:
 `init`, `import` (the page asks you which album is right, which side wins a conflict...), `reparse`, `write`, `move`,
-`convert`, `repair`, `undo`, `relink`, the trash and `reset`. See [the web page and API](api.md) and, for editing, [Maintaining](maintaining.md#editing-an-album-or-a-series).
+`convert`, `repair`, `undo`, `relocate --find`, the trash and `reset`. See [the web page and API](api.md) and, for editing, [Maintaining](maintaining.md#editing-an-album-or-a-series).
 Still on the command line: `series`, `relocate` and `config` (edit `/config/bdnex.yaml` for settings).

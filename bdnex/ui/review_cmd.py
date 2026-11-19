@@ -10,7 +10,7 @@ from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.ui.describe import label
 from bdnex.ui import context
-from bdnex.ui.output import add_pretend
+from bdnex.ui.output import add_pretend, add_verbosity, setup_logging
 
 
 def settle(library, row: dict, answer: str) -> None:
@@ -23,44 +23,48 @@ def settle(library, row: dict, answer: str) -> None:
 
 
 def add_candidate_options(parser) -> None:
-    from bdnex.ui.recheck_cmd import add_candidate_options as add
+    from bdnex.ui.verdicts import add_candidate_options as add
 
     add(parser)
 
 
 def _auto(args, settings, out, prompter) -> int:
-    """``--auto``: the verdicts of ``bdnex recheck`` for every flagged file, applied by rule."""
+    """``--auto``: weigh every flagged file and every match applied under the strong threshold, and settle them by rule."""
+    import json
     from collections import Counter
 
     from bdnex.library.recheck import KEPT, UNCONFIRMED, WRONG, weak_matches
-    from bdnex.ui import recheck_cmd
+    from bdnex.ui import verdicts as rules
 
+    if not context.has_library(settings, "nothing to review."):
+        return 1
     with Library.for_settings(settings, readonly=args.pretend) as library:
         try:
-            verdicts = weak_matches(library, settings, args.query, compare=not args.no_cover, store=not args.pretend,
-                                    flagged=True)
+            found = weak_matches(library, settings, args.query, compare=not args.no_cover, store=not args.pretend,
+                                 flagged=True, weak=True)
         except QueryError as err:
             return context.bad_query(err)
         if not args.no_cover:
             try:
-                recheck_cmd.look_for_better(settings, library, verdicts, args.candidates,
-                                            say=lambda text: print(text, file=sys.stderr, flush=True))
+                rules.look_for_better(settings, library, found, args.candidates,
+                                      say=lambda text: print(text, file=sys.stderr, flush=True))
             except KeyboardInterrupt:
                 print("Interrupted: the covers of the other candidates are not all compared.", file=sys.stderr)
-        count = Counter(v.kind for v in verdicts)
-        better = sum(1 for v in verdicts if v.better)
-        print(f"{len(verdicts)} flagged file(s): {count[KEPT]} confirmed (the flag goes), {count[WRONG]} contradicted "
-              f"({better} switched to a better album, {count[WRONG] - better} unlinked), {count[UNCONFIRMED]} stay flagged.",
-              file=out)
+        count = Counter(v.kind for v in found)
+        if args.json:
+            print(json.dumps([v.as_dict() for v in found], ensure_ascii=False, indent=2), file=out)
+            return 0
+        better = sum(1 for v in found if v.better)
+        print(f"{len(found)} file(s) weighed (flagged, or matched under {settings.match.strong_threshold:.0f}): "
+              f"{count[KEPT]} confirmed, {count[WRONG]} contradicted ({better} switched to a better album, "
+              f"{count[WRONG] - better} unlinked), {count[UNCONFIRMED]} unconfirmed (left as they are).", file=out)
         if args.pretend:
             return 0
         try:
-            done = recheck_cmd.settle_verdicts(library, verdicts, unlink=True, use_better=True, own_flags_only=False,
-                                               yes=args.yes, prompter=prompter, out=out)
-        except recheck_cmd._Declined:
+            done = rules.settle_verdicts(library, found, yes=args.yes, prompter=prompter, out=out)
+        except rules.Declined:
             return 1
-    print(f"Done: {done['cleared']} flag(s) taken off, {done['switched']} switched, {done['unlinked']} unlinked; "
-          f"{count[UNCONFIRMED]} still flagged (`bdnex review` asks about them)."
+    print(f"Done: {done['cleared']} flag(s) taken off, {done['switched']} switched, {done['unlinked']} unlinked."
           + (" `bdnex import --skipped --auto=all` decides the unlinked ones again." if done["unlinked"] else ""), file=out)
     return 0
 
@@ -77,16 +81,20 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     parser.add_argument("--list", action="store_true", help="only list the flagged files and why; ask nothing")
     parser.add_argument("--scan", action="store_true", help=argparse.SUPPRESS)  # now `bdnex check --matches --fix`
     parser.add_argument("--json", action="store_true",
-                        help="with --list: the flagged files as JSON, with the evidence, for a script or an agent")
+                        help="with --list: the flagged files as JSON, with the evidence; with --auto: the verdicts as JSON (nothing "
+                             "is changed), for a script or an agent")
     parser.add_argument("--auto", action="store_true",
-                        help="settle the flagged files by rule, asking nothing: the ones confirmed by something other than "
-                             "the name lose their flag; the ones something contradicts are switched to another album whose "
-                             "cover is clearly the file's (see --candidates), else unlinked (`bdnex import --skipped "
-                             "--auto=all` decides them again); the others stay flagged")
+                        help="settle by rule, asking nothing, every flagged file and every match applied under "
+                             "`match.strong_threshold`: the ones confirmed by something other than the name lose their "
+                             "flag; the ones something contradicts are switched to another album whose cover is clearly "
+                             "the file's (see --candidates), else unlinked (`bdnex import --skipped --auto=all` decides "
+                             "them again); the ones nothing confirms or contradicts are left as they are")
     add_candidate_options(parser)
-    parser.add_argument("-y", "--yes", action="store_true", help="with --auto: do not ask for confirmation")
+    parser.add_argument("-y", "--yes", action="store_true", help="with --auto: do not ask for confirmation before unlinking or switching")
     add_pretend(parser, "be settled (with --auto)")
+    add_verbosity(parser)
     args = parser.parse_args(argv)
+    setup_logging(args.verbose)
     settings = context.settings()
     if settings is None:
         return 1

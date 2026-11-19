@@ -57,7 +57,7 @@ based on metadata and not an obscure filename.
 - a **web page** (`bdnex serve`): browse the library as a wall of covers, see which volumes of a series are missing,
   review doubtful matches, and, if you allow it, run the same tasks as the command line without a terminal
 - cover check: the file's cover against the album's, with SIFT (OpenCV, installed with bdnex)
-- `bdnex edit`, `reparse`, `reset`, `relocate`: fix, rebuild offline, start over, move your collection
+- `bdnex edit`, `import --reparse`, `reset`, `relocate`: fix, rebuild offline, start over, move your collection
 - `bdnex ls`: search the library (`series:nains author:uderzo year:2010..2015 ^genre:humour`)
 - `bdnex write` / `bdnex move`: write `ComicInfo.xml`, convert CBR and PDF to CBZ losslessly
   (verified before anything is replaced), rename into a library tree from your own templates
@@ -96,7 +96,7 @@ that comes from the page (`$authors` in the default one-shot template) asks for 
 
    How that function obtains a page is up to you, and so is respecting the site's terms of use.
 
-Each page is stored in the library when it is read, so it is fetched once, and `bdnex reparse` can rebuild the
+Each page is stored in the library when it is read, so it is fetched once, and `bdnex import --reparse` can rebuild the
 albums from the stored pages later without any network. See the documentation, *Getting started* and
 *Configuration*.
 

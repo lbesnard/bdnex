@@ -52,5 +52,5 @@ def test_a_changed_file_is_read_again_and_keeps_its_album(lib_path, tmp_path):
 def test_all_reads_every_file_and_a_missing_file_is_listed(lib_path, tmp_path):
     os.remove(tmp_path / "bravo.cbz")
     code, text = run("--all")
-    assert code == 0 and "1 missing" in text and "bravo.cbz" in text and "bdnex relink" in text
+    assert code == 0 and "1 missing" in text and "bravo.cbz" in text and "bdnex relocate --find" in text
     assert "1 read" in text  # alpha only

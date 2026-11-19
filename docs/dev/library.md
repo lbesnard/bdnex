@@ -15,7 +15,7 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 | `people`, `album_credits` | authors with a role (`Writer`, `Penciller`, `Colorist`, `Inker`, `Letterer`, `CoverArtist`) |
 | `genres`, `album_genres` | many-to-many |
 | `publishers` | |
-| `source_cache` | every page and sitemap fetched, **stored as received**, by source: a re-import never hits the website, and `bdnex reparse` can rebuild the albums from it offline |
+| `source_cache` | every page and sitemap fetched, **stored as received**, by source: a re-import never hits the website, and `bdnex import --reparse` can rebuild the albums from it offline |
 | `import_log` | outcome and score of each import, used for resume and for remembered skips |
 | `trash` | files that were replaced: where they were, the album, checksum, size, why, and where they are now |
 | `operations` | files `move` renamed or moved, per run (`batch`): old and new path (stored like `files.path`), when, and whether `bdnex undo` took it back |
@@ -35,7 +35,7 @@ The schema version is stored in `PRAGMA user_version`; migrations live in
 - The **parsed albums**: columns for what is queried (`ls`), `album_credits` for every role the page
   names (including `Translator` and `Other`, which ComicInfo has no element for, and Bédéthèque's own `Préface`,
   `Storyboard`, `Décors`, `Design` and `Adapté de`; its `Encrage` is read as `Inker`, and a library that stored it
-  as `Encrage` reads it back as `Inker` on `bdnex reparse`), and `extra`
+  as `Encrage` reads it back as `Inker` on `bdnex import --reparse`), and `extra`
   (JSON) for everything else: the whole edition table (`format`, `Poids`, `Achevé impr.`,
   `Estimation`...), the edition note, the vote count, the image links.
 - Albums do not depend on files: removing or replacing a file never removes an album.

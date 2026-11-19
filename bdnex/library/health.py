@@ -76,7 +76,7 @@ def check(library: Library, settings, matches: bool = False) -> list[Finding]:
     missing = [r["path"] for r in rows if not os.path.exists(r["path"])]
     if missing:
         found.append(Finding("missing", f"{len(missing)} file(s) are in the library but not on disk", missing[:SHOWN],
-                             "`bdnex relink <folder>` finds them if they were only moved or renamed"))
+                             "`bdnex relocate --find <folder>` finds them if they were only moved or renamed"))
     changed = [r["path"] for r in rows if r["path"] not in set(missing) and _changed(r)]
     if changed:
         found.append(Finding("changed", f"{len(changed)} file(s) changed on disk since they were recorded", changed[:SHOWN],

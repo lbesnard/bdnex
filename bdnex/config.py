@@ -308,10 +308,25 @@ class Settings(_Section):
     write: Write
     paths: Paths
     source: str = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
     plugins: dict[str, dict[str, Any]] = Field(default_factory=dict)
     bedetheque: Bedetheque
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True, validate_assignment=True)
+
+    @field_validator("aliases")
+    @classmethod
+    def _aliases_are_commands(cls, value):
+        """``"fix-flagged-matches = review --auto  # what it does"``: a new name for a command and its options."""
+        from bdnex.ui.commands import parse_alias
+
+        seen = set()
+        for text in value:
+            name = parse_alias(text)[0]
+            if name in seen:
+                raise ValueError(f"alias {name!r} is given twice")
+            seen.add(name)
+        return value
 
     @field_validator("import_")
     @classmethod

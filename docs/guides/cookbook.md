@@ -114,23 +114,26 @@ Before you start pass 2:
   page (credits, year, volume, the file's own tags) and lists the ones that look wrong (`--fix` flags them), then `bdnex review` goes
   through them with the two covers side by side (`bdnex candidates --low` lists the other albums each could be) (`bdnex import --select` redoes chosen files).
 
-## …recheck the matches an older import applied at a medium score?
+## …settle the doubtful matches (an older import's, or the flagged ones) without going through each?
 
 Before `--auto=all` became strict, it applied the matches in the middle (a score under `match.strong_threshold`)
-without asking. Running the import again does not look at them: a file that is already matched is only counted.
-`bdnex recheck` does. It asks whether something other than the name (the album page's year and authors, the file's own
-tags, its cover against the saved cover) confirms the link it already has, and, for the contradicted ones, whether
-the cover of another candidate is clearly the file's.
+without asking, and a cover check flags files whose cover is not like their album's. `bdnex review --auto` weighs all
+of them (the album page's year and authors, the file's own tags, its cover against the saved cover, and the covers
+of other candidates for the contradicted ones) and settles them by rule.
 
 ```bash
-bdnex recheck -n                      # confirmed, unconfirmed, contradicted, better albums found; changes nothing
-bdnex recheck --rematch --unlink      # switch to the better album, else unlink the contradicted ones (asks first)
+bdnex review --auto -n                # confirmed, contradicted (switched or unlinked), unconfirmed; changes nothing
+bdnex review --auto                   # settle them (asks once)
 bdnex import --skipped --auto=all     # decide the unlinked ones again: strict, then the covers of the best candidates vote
 ```
 
-The ones nothing confirms are left alone: no evidence is no reason to ask you. A library with thousands of files
-already flagged for review is settled by rule with `bdnex review --auto -n`, then without `-n`. See
+The ones nothing confirms are left alone: no evidence is no reason to ask you. See
 [Checking the matches](checking-matches.md).
+
+## …shorten a command I type often?
+
+Add an alias to your configuration (`bdnex config --edit`): `aliases: ["settle-doubtful-matches = review --auto  # what it does"]`.
+Then `bdnex settle-doubtful-matches -n` is `bdnex review --auto -n`, and `bdnex --help` lists it with its explanation. See [Aliases](configuration.md#aliases-your-own-short-commands).
 
 ## …import again? Redo a file?
 
@@ -264,8 +267,8 @@ options, all in [Getting started](getting-started.md#album-pages) and
 Every page ever read is stored as received. When bdnex learns to read more of a page:
 
 ```bash
-bdnex reparse -n             # preview, album by album
-bdnex reparse                # update the albums from the stored pages; no network
+bdnex import --reparse -n             # preview, album by album
+bdnex import --reparse                # update the albums from the stored pages; no network
 bdnex write                  # push the new details (format, edition note, translator…) to the files
 ```
 
@@ -387,16 +390,16 @@ bdnex ls --missing           # nothing listed: everything was found
 Paths under `collection_path` are stored relative to it, so nothing in the database changes. See
 [Maintaining](maintaining.md#paths-and-moving-your-collection).
 
-## …take back a move, or relink files I moved by hand?
+## …take back a move, or find files I moved by hand?
 
 ```bash
 bdnex undo                 # the runs of `bdnex move` that can be taken back
 bdnex undo last -n         # preview, then without -n
-bdnex relink -n ~/comics   # files moved or renamed outside bdnex: found again by their content
+bdnex relocate --find -n ~/comics   # files moved or renamed outside bdnex: found again by their content
 ```
 
 `undo` moves the files back to where they were; tags already written stay, a converted CBR or PDF is in
-`bdnex trash`. `relink` touches nothing on disk. If the whole folder moved, see "move my whole collection" above
+`bdnex trash`. `relocate --find` touches nothing on disk. If the whole folder moved, see "move my whole collection" above
 (`bdnex relocate OLD NEW` for folders stored with their full path).
 
 ## …look at the doubtful covers and the duplicates?

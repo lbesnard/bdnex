@@ -7,18 +7,24 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Changed
+- **`bdnex relink` is `bdnex relocate --find`** (find the files that were moved by hand, by their content; `relocate OLD NEW` is still for a moved folder). The old name still works, with a note.
+- **`bdnex reparse` is `bdnex import --reparse`** (offline, from the stored pages; `--select TERM` limits it to some albums). The old name still works, with a note.
+- **One command for the doubtful matches: `bdnex review`.** `bdnex recheck` is now `bdnex review --auto` (the old name still
+  works, with a note). **Breaking:** the flags `--unlink`, `--unconfirmed`, `--rematch`, `--flag-unconfirmed` are gone: `--auto`
+  switches a contradicted file to the better album found by the covers of its other candidates, else unlinks it; the
+  ones nothing confirms are left alone. `--auto` now weighs the flagged files *and* the matches applied under the strong
+  threshold, and prints, for each contradicted file, the covers it compared. `--json` prints the verdicts.
 - **OpenCV is a normal dependency** (the cover check, `recheck`, the cover vote need it): `uv sync` and `pip install bdnex`
   install it. An optional extra was dropped by every plain `uv sync`, and the covers were then silently not compared.
   `bdnex[cover]` still installs (an empty extra). The Docker image grows by about 100 MB.
 
 ### Added
-- **`bdnex recheck`**: the matches applied under the strong threshold (the medium ones an older `--auto=all` applied
-  unasked), weighed again with the album's page, the file's tags and the saved covers. Confirmed ones and the ones
-  nothing confirms are left alone; the contradicted ones are flagged for `bdnex review`, or unlinked with `--unlink` so
-  that `import --skipped --auto=all` (strict, then the cover vote) decides them again. For each of them the covers of the
-  5 best other candidates are compared (`--candidates`); `--rematch` links the file to one that is clearly its cover.
-- **`bdnex review --auto`** settles every flagged file by the same rule, asking nothing: confirmed, the flag goes;
-  contradicted, switched to the album whose cover is the file's, else unlinked; the others stay flagged.
+- **Aliases**: `aliases: ["settle-doubtful-matches = review --auto  # what it does"]` in the configuration makes `bdnex settle-doubtful-matches` run `bdnex review --auto`, and `bdnex --help` lists it with its explanation.
+- **`bdnex review --auto`** weighs every flagged file and every match applied under the strong threshold (the medium
+  ones an older `--auto=all` applied unasked), with the album's page, the file's tags and the saved covers, and settles
+  them by rule: confirmed, the flag goes; contradicted, switched to the album whose cover is the file's (the covers of its
+  5 best other candidates are compared), else unlinked so that `import --skipped --auto=all` (strict, then the cover
+  vote) decides it again; the others are left alone.
 - **`import --auto=all` is strict by default** (**breaking**): it applies only strong matches without a doubt. A match in
   the middle used to be applied unasked (`match.auto_all: medium` brings that back); now the file stays skipped.
 - **The cover vote** (`match.cover_vote`, `match.cover_vote_min`): at the end of the run, at low priority, the covers of

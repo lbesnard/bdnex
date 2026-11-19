@@ -1,7 +1,7 @@
 # bdnex
 
 A beets-like library manager for French comics (Bédéthèque): SQLite library, `import` (match + fetch), `ls`,
-`write`/`move`/`repair`/`convert`, `edit`, `reparse`, `reset`, `relocate`, `relink`, `review`, `undo`, `check`, `duplicates`, `trash`,
+`write`/`move`/`repair`/`convert`, `edit`, `reset`, `relocate`, `review`, `undo`, `check`, `duplicates`, `trash`,
 `series`, `komga` (pushes metadata to a Komga server through its API; Komga ignores the tags inside a PDF), `serve`,
 `completion`; `import --as-is` records files first, `--select` re-imports by query. Docs: Sphinx in `docs/`
 (Read the Docs). Python via **uv**; run things with `uv run`.
@@ -102,10 +102,12 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 
 - **`--auto=all` never asks and applies only strong matches without a doubt** (`match.auto_all`); a medium one is queued and
   decided at the end by its cover (`importer/session_vote.py`, `match.cover_vote`): never apply a medium match unasked.
-- `bdnex recheck` (`library/recheck.py`) weighs the matches applied under `match.strong_threshold` (page, tags, saved covers), and
-  for the contradicted ones the covers of the best other candidates (`recheck_cmd.look_for_better`, the cover-vote rule); it flags
-  (unconfirmed are left alone), switches (`--rematch`) or unlinks (`--unlink`), never touches a file chosen by the user (no score
-  in the import log). `bdnex review --auto` applies the same verdicts to every flagged file (`recheck_cmd.settle_verdicts`: one place).
+- **One command for doubtful matches: `bdnex review`** (`--auto` settles by rule). `library/recheck.py` weighs the flagged files and
+  the matches applied under `match.strong_threshold` (page, tags, saved covers); `ui/verdicts.py` looks for a better album by the covers of
+  the other candidates (`look_for_better`, the cover-vote rule) and applies the verdicts (`settle_verdicts`: one place): kept = flag goes,
+  wrong = switched or unlinked, unconfirmed = left alone. It never touches a file chosen by the user (no score in the import log).
+  `recheck` is only a renamed `review --auto` (`commands.RENAMED`). **Aliases** (`aliases: ["fix = review --auto"]`, `commands.expand_alias`)
+  are a shorter way to type a bdnex command, nothing else: never let one run a shell command.
 - **Precision before coverage**: a wrong match costs more than an unasked one. A strong first choice is still asked about
   when a *doubt* is set (`Match.doubt`, `matching._doubts`): another album within `match.min_margin` points, or a strong
   contradiction. Candidates whose page was read get a few points when year/author agree and **never lose any** (a penalty
@@ -115,7 +117,7 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 ## Several files at once (`Organizer.run(workers=)`, `bdnex/parallel.py`)
 - `parallel.map_ordered(function, items, workers)` is the helper for read-only work (hashing, reading first pages): forked processes,
   results in order, an exception is the item's result. It must not touch a database; the caller stores the results.
-- `write`, `move` and `repair` use `Organizer.run(workers=, repair=)`; `duplicates --covers`, `relink` and `import --as-is`
+- `write`, `move` and `repair` use `Organizer.run(workers=, repair=)`; `duplicates --covers`, `relocate --find` and `import --as-is`
   use `map_ordered`.
 - Workers are forked processes with their own `Library` connection (a connection is never shared; an in-memory library
   can not be used with workers). A worker holds a `_Deferring` prompter: any question raises `Deferred` **before anything is
