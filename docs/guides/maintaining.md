@@ -227,6 +227,12 @@ script.
 files that are gone (the next `bdnex import --fetch` downloads them), remove dead trash records, and delete the
 temporary files. Files, albums and covers that exist are never touched.
 
+One `--fix` does more than tidy: **compress the stored pages**. Album and series pages are stored compressed (about a tenth of their size), but
+pages an older bdnex stored are plain; `bdnex check` lists them (`N stored page(s) are not compressed`) and `--fix` compresses them. It first
+copies the whole database to `<library>.before-compress-<date>` (as `bdnex reset` does), needs free disk room about the size of the database
+(it gives the room back with a `VACUUM`), and prints the copy's name: delete it when you are satisfied. The pages are still read the same way
+by bdnex; only another program reading the `source_cache` table directly would see compressed bytes.
+
 ## The same book twice: `bdnex duplicates`
 
 ```bash

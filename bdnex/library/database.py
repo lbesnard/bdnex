@@ -838,6 +838,38 @@ class Library:
                 pass
         return content
 
+    def uncompressed_pages(self) -> tuple[int, int]:
+        """``(how many, their bytes)`` of the stored album and series pages that are not compressed yet."""
+        kinds = ",".join("?" * len(self.COMPRESSED_KINDS))
+        row = self.conn.execute(f"SELECT COUNT(*), COALESCE(SUM(LENGTH(content)), 0) FROM source_cache "
+                                f"WHERE kind IN ({kinds}) AND substr(content, 1, 1) != x'78'", self.COMPRESSED_KINDS).fetchone()
+        return row[0], row[1]
+
+    def compress_pages(self, progress=None, batch: int = 200) -> tuple[int, int, int]:
+        """Compress the stored pages that are not (``cache_get`` reads both), then give the room back to the disk.
+        Returns ``(pages, bytes before, bytes after)``. Back the database up first (`bdnex check --fix` does)."""
+        kinds = ",".join("?" * len(self.COMPRESSED_KINDS))
+        count = before = after = 0
+        last = 0
+        while True:
+            rows = self.conn.execute(f"SELECT rowid, content FROM source_cache WHERE kind IN ({kinds}) AND rowid > ? "
+                                     "ORDER BY rowid LIMIT ?", (*self.COMPRESSED_KINDS, last, batch)).fetchall()
+            if not rows:
+                break
+            with self.conn:
+                for rowid, content in rows:
+                    last = rowid
+                    if content[:1] == b"x":
+                        continue  # already compressed
+                    packed = zlib.compress(content, 6)
+                    self.conn.execute("UPDATE source_cache SET content = ? WHERE rowid = ?", (packed, rowid))
+                    count, before, after = count + 1, before + len(content), after + len(packed)
+            if progress:
+                progress(count)
+        if count:
+            self.conn.execute("VACUUM")  # the freed pages are returned to the file system only now
+        return count, before, after
+
     def album_states(self, source: str) -> dict[str, tuple[bool, bool, Optional[str]]]:
         """``source_id -> (page not read, has a saved cover, cover address)`` of every album of ``source`` (``bdnex mirror``)."""
         return {r["source_id"]: (bool(r["partial"]), bool(r["cover_file"]), r["cover_url"]) for r in self.conn.execute(

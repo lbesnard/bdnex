@@ -133,6 +133,15 @@ def check(library: Library, settings, matches: bool = False) -> list[Finding]:
         found.append(Finding("trash-dead", f"{len(dead)} trash record(s) point to a file that is gone", dead[:SHOWN],
                              fixable=True))
 
+    loose, loose_bytes = library.uncompressed_pages()
+    if loose:
+        from bdnex.formatting import human_size
+
+        found.append(Finding("pages-uncompressed", f"{loose} stored page(s) are not compressed ({human_size(loose_bytes)}; about "
+                             f"{human_size(int(loose_bytes * 0.9))} would be freed)", [],
+                             "`bdnex check --fix` copies the database first (`<library>.before-compress-<date>`), then compresses them; "
+                             "needs free disk room about the size of the database", fixable=True))
+
     leftovers = _leftovers(settings, library)
     if leftovers:
         found.append(Finding("leftovers", f"{len(leftovers)} temporary file(s) left by an interrupted write", leftovers[:SHOWN],
@@ -199,12 +208,30 @@ def fix(library: Library, settings, findings: list[Finding]) -> list[str]:
         for path, reason in flagged:
             library.flag_review(path, reason)
         done.append(f"flagged {len(flagged)} match(es) for `bdnex review`")
+    if "pages-uncompressed" in keys:
+        done.append(compress_pages(library))
     if "leftovers" in keys:
         files = _leftovers(settings, library)
         for path in files:
             os.remove(path)
         done.append(f"deleted {len(files)} temporary file(s)")
     return done
+
+
+def compress_pages(library: Library, say=lambda text: None) -> str:
+    """Back the database up (the way ``bdnex reset`` does), then compress the stored pages. Says what was done."""
+    import datetime
+
+    from bdnex.formatting import human_size
+
+    backup = None
+    if library.path != ":memory:":
+        stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+        backup = library.backup_to(f"{library.path}.before-compress-{stamp}")
+        say(f"backup of the database: {backup}")
+    count, before, after = library.compress_pages()
+    return (f"compressed {count} stored page(s): {human_size(before)} -> {human_size(after)}"
+            + (f"; the copy of the database before is {backup} (delete it when you are satisfied)" if backup else ""))
 
 
 # --------------------------------------------------------------------------- duplicates
