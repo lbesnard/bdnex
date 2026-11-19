@@ -107,3 +107,26 @@ def test_the_command_reference_is_the_current_help_of_every_command():
     assert squash(read("docs/reference/commands.md")) == squash(cli_reference.build()), \
         "run: uv run python -m bdnex.ui.cli_reference > docs/reference/commands.md"
     assert [c for c in COMMANDS if f"### `bdnex {c}`" not in read("docs/reference/commands.md")] == []
+
+
+def test_every_api_route_is_in_the_api_guide():
+    pytest.importorskip("fastapi")
+    from bdnex.api.app import create_app
+    from bdnex.config import build_settings
+
+    app = create_app(build_settings({"config_version": 2})[0])
+    routes = {route.path for route in app.routes if route.path.startswith("/api/")}
+    guide = read("docs/guides/api.md")
+    undocumented = sorted(path for path in routes - {"/api/login", "/api/logout"}
+                          if re.sub(r"\{[^}]*\}", "{id}", path) not in re.sub(r"\{[^}]*\}", "{id}", guide))
+    assert undocumented == [], "routes missing from docs/guides/api.md"
+
+
+def test_every_task_the_page_can_start_is_in_the_api_guide():
+    pytest.importorskip("fastapi")
+    from bdnex.api.jobs import SPECS
+
+    guide = read("docs/guides/api.md")
+    # tasks are named in prose there (the commands); each name or its command must appear
+    missing = [name for name in SPECS if name not in guide and name.split("-")[0] not in guide]
+    assert missing == []

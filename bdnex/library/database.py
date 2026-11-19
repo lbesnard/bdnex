@@ -12,7 +12,7 @@ import sys
 from typing import Any, Iterable, Optional
 
 from bdnex.library.hashing import file_md5
-from bdnex.library.query import FROM_JOINS, compile_query, fold, register_functions, run_query, split_query
+from bdnex.library.query import FROM_JOINS, build_sql, compile_query, fold, register_functions, run_query, split_query
 from bdnex.library.models import LEGACY_ROLES, AlbumInfo, SeriesInfo
 from bdnex.library.scan import inspect_file, iter_comic_files
 from bdnex.library.schema import MIGRATIONS
@@ -790,6 +790,17 @@ class Library:
             if not split_query(terms)[1]:  # stored paths do not sort like real ones (unless the query sorts)
                 rows.sort(key=lambda r: r["path"])
         return rows[:limit] if limit else rows
+
+    def page(self, terms: list[str], files: bool = False, limit: int = 100, offset: int = 0) -> tuple[int, list[dict[str, Any]]]:
+        """``(how many match, one window of them)``. Albums are windowed in SQL (only the window's rows are built); files
+        are sorted by their real paths unless the query sorts, which SQL can not do, so they are cut after sorting."""
+        if files and not split_query(terms)[1]:
+            rows = self.query(terms, files=True)
+            return len(rows), rows[offset:offset + limit]
+        sql, params = build_sql(terms, files)
+        total = self.conn.execute(f"SELECT COUNT(*) FROM ({sql})", params).fetchone()[0]
+        rows = [dict(r) for r in self.conn.execute(f"{sql} LIMIT ? OFFSET ?", [*params, limit, offset])]
+        return total, [self._file_row(r) for r in rows] if files else rows
 
     def album_matches(self, album_id: int, terms: list[str]) -> bool:
         """Does this album satisfy all the query ``terms`` (same syntax as ``bdnex ls``)?"""

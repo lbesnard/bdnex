@@ -13,13 +13,14 @@ from bdnex import ui
 from bdnex.api import jobs
 from bdnex.config import build_settings
 
-COMMAND_OF = {"check-fix": "check", "record": "import", "watch": "import", "trash-empty": "trash", "trash-restore": "trash"}
+COMMAND_OF = {"check-fix": "check", "record": "import", "watch": "import", "trash-empty": "trash", "trash-restore": "trash",
+              "rematch": "import", "apply-album": "import", "komga-show": "komga", "komga-push": "komga"}
 
 EVERYTHING = {
     "preview": True, "interactive": False, "query": ["series:nains"], "steps": ["match", "fetch"], "auto": "strong",
     "unattended": True, "sources": True, "skipped": True, "files": "database_only", "force": True,
     "formats": ["pdf", "cbr"], "copy": True, "older_than": 30, "id": 3, "place": True, "batch": "last",
-    "old": "/old", "new": "/new",
+    "old": "/old", "new": "/new", "album": "245127", "only": "books", "fields": ["title", "summary"], "with_review": True,
 }
 
 

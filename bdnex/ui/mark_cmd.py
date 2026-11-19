@@ -20,6 +20,18 @@ def parse_marks(items: list[str]) -> list[tuple[str, str]]:
     return marks
 
 
+def apply_marks(library, kind: str, target_ids: list[int], puts: list[tuple[str, str]], removes: list[str]) -> None:
+    """Put and remove marks on files (``kind="file"``) or albums (``"album"``). Raises ``ValueError`` for a bad name."""
+    for name, _ in puts:
+        if not library.ATTR_NAME.match(name):
+            raise ValueError(f"{name!r} is not a mark name: lower case letters, digits and _, starting with a letter.")
+    for target_id in target_ids:
+        for name, value in puts:
+            library.set_attr(kind, target_id, name, value)
+        for name in removes:
+            library.remove_attr(kind, target_id, name)
+
+
 def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     parser = argparse.ArgumentParser(
         prog="bdnex mark", description=__doc__,
@@ -71,11 +83,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                 print("Nothing changed.", file=out)
                 return 1
         try:
-            for target_id, _ in targets:
-                for name, value in puts:
-                    library.set_attr(kind, target_id, name, value)
-                for name in removes:
-                    library.remove_attr(kind, target_id, name)
+            apply_marks(library, kind, [target_id for target_id, _ in targets], puts, removes)
         except ValueError as err:
             print(err, file=sys.stderr)
             return 2

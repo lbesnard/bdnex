@@ -19,6 +19,7 @@ from fastapi.responses import FileResponse, HTMLResponse, Response
 from pydantic import BaseModel
 
 from bdnex.api import auth, settings_api
+from bdnex.api.history import History
 from bdnex.api.watch import Watcher
 from bdnex.api.jobs import SPECS, Busy, JobError, JobManager
 from bdnex.config import Settings, user_config_path
@@ -49,11 +50,23 @@ class JobRequest(BaseModel):
     place: bool = False         # trash-restore: then move it where its album belongs
     old: Optional[str] = None   # relocate: the folder the files used to be in
     new: Optional[str] = None   # relocate: the folder they are in now
+    album: Optional[str] = None  # apply-album: the album's number at the source, or its page address
+    only: Optional[str] = None   # komga-push / komga-show: `books` or `series`
+    fields: list[str] = []       # komga-push / komga-show: only these fields
+    with_review: bool = False    # komga-push: also the files whose match waits for a review
 
 
 class SettingsChange(BaseModel):
     changes: dict[str, Any]     # {"write.pdf": "tag", "import.workers": 2}
     preview: bool = True
+
+
+class MarksChange(BaseModel):
+    q: str
+    set: dict[str, str] = {}
+    remove: list[str] = []
+    albums: bool = False       # mark the albums the query finds, not the files
+    preview: bool = False
 
 
 class FileSpare(BaseModel):
@@ -88,7 +101,9 @@ class BulkEdit(BaseModel):
 
 
 class ReviewAnswer(BaseModel):
-    action: str                 # keep | unlink
+    action: str                 # keep | unlink | rematch | album
+    album: Optional[str] = None  # `album`: the album's number at the source, or its page address
+    interactive: bool = False    # `rematch`: let the task ask which album, on the page
 
 
 def create_app(settings: Settings, token: Optional[str] = None, allow_changes: Optional[bool] = None,
@@ -107,6 +122,7 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
     password = settings.api.password if password is None else password
     username = settings.api.username if username is None else username
     jobs = JobManager(settings)
+    history = History(Path(str(settings.library_path) + ".changes.jsonl"))
     watcher = Watcher(settings, jobs)
     app = FastAPI(
         title="bdnex", version=__version__,
@@ -163,6 +179,7 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
     def can_change(request: Request) -> None:
         """A change needs: changes enabled, the token (if any), our own header, and no foreign origin."""
         allowed(request)
+        request.state.change = True  # `protect` records it in the history once it went through
         if not allow_changes:
             raise HTTPException(403, "changes are disabled: set `api.allow_changes: true` in the configuration "
                                      "(or start the server with --allow-changes)")
@@ -246,6 +263,9 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
         if int(request.headers.get("content-length") or 0) > MAX_BODY:
             return Response("the request is too big", status_code=413)
         response = await call_next(request)
+        if getattr(request.state, "change", False) and response.status_code < 400:
+            who = (username if password else "token" if token else "local") + "@" + client(request)
+            history.record(who, request.method, request.url.path, response.status_code, getattr(request.state, "detail", None))
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
         if not request.url.path.startswith(("/docs", "/redoc", "/openapi.json")):  # the API docs page uses a CDN
@@ -255,22 +275,38 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
                 "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
         return response
 
+    @app.get("/api/history", dependencies=guarded, summary="What the page and the API changed: who, when, what (newest first)")
+    def history_view(limit: int = Query(100, ge=1, le=MAX_LIMIT), offset: int = Query(0, ge=0)):
+        total, items = history.recent(limit, offset)
+        return {"count": total, "offset": offset, "limit": limit, "items": items}
+
     @app.get("/api/health", dependencies=guarded, summary="Is the server up, and which library does it read?")
     def health(lib: Library = Depends(library)):
         return {"status": "ok", "version": __version__, "schema": lib.schema_version, "token_required": bool(token), "login_required": bool(password)}
 
-    @app.get("/api/stats", dependencies=guarded, summary="Counts of files, albums, series...")
-    def stats(lib: Library = Depends(library)):
-        return lib.stats()
+    @app.get("/api/stats", dependencies=guarded, summary="What the library holds, as `bdnex stats --json`")
+    def stats(q: str = Query("", description="only these albums and files (`bdnex ls` terms)"), lib: Library = Depends(library)):
+        from bdnex.ui import stats_cmd
+
+        try:
+            return stats_cmd.summary(lib, terms(q))
+        except QueryError as err:
+            raise HTTPException(400, f"bad query: {err}") from err
+
+    @app.get("/api/fields", dependencies=guarded, summary="The fields a query can use, with their kind and help")
+    def fields():
+        from bdnex.ui import stats_cmd
+
+        return {"items": stats_cmd.field_list()}
 
     @app.get("/api/albums", dependencies=guarded, summary="Albums matching a query")
     def albums(q: str = Query("", description="`bdnex ls` terms"), limit: int = Query(100, ge=1, le=MAX_LIMIT),
                offset: int = Query(0, ge=0), lib: Library = Depends(library)):
         try:
-            rows = lib.query(terms(q))
+            total, rows = lib.page(terms(q), limit=limit, offset=offset)
         except QueryError as err:
             raise HTTPException(400, f"bad query: {err}") from err
-        return page(rows, limit, offset)
+        return {"count": total, "offset": offset, "limit": limit, "items": rows}
 
     @app.get("/api/albums/{album_id}", dependencies=guarded, summary="One album, with its files")
     def album(album_id: int, lib: Library = Depends(library)):
@@ -278,6 +314,9 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
         if found is None:
             raise HTTPException(404, f"no album {album_id}")
         found["files"] = lib.files_for_album(album_id)
+        found["marks"] = lib.attrs_of("album", album_id)
+        for file in found["files"]:
+            file["marks"] = lib.attrs_of("file", file["id"])
         return found
 
     def apply_edits(lib_edit: Library, changes: dict[int, dict[str, Any]]) -> None:
@@ -419,10 +458,10 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
               limit: int = Query(100, ge=1, le=MAX_LIMIT), offset: int = Query(0, ge=0),
               lib: Library = Depends(library)):
         try:
-            rows = lib.query(terms(q), files=True)
+            total, rows = lib.page(terms(q), files=True, limit=limit, offset=offset)
         except QueryError as err:
             raise HTTPException(400, f"bad query: {err}") from err
-        return page(rows, limit, offset)
+        return {"count": total, "offset": offset, "limit": limit, "items": rows}
 
     @app.get("/api/series", dependencies=guarded, summary="Series, what you own and what is missing")
     def series(name: str = Query("", description="words of the series name"), missing: bool = False,
@@ -541,18 +580,31 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
                                     "has_cover": bool(kept and (settings.cover_path / kept).exists())}})
         return {"count": len(items), "items": items}
 
-    @app.post("/api/review/{file_id}", dependencies=changing, summary="Answer a review: keep the match, or unlink the file")
-    def answer_review(file_id: int, answer: ReviewAnswer):
-        if answer.action not in ("keep", "unlink"):
-            raise HTTPException(400, "`action` is `keep` or `unlink`")
+    @app.post("/api/review/{file_id}", dependencies=changing,
+              summary="Answer a review: `keep`, `unlink`, `rematch` (a task that asks which album) or `album` (use that album)")
+    def answer_review(file_id: int, answer: ReviewAnswer, request: Request):
+        if answer.action not in ("keep", "unlink", "rematch", "album"):
+            raise HTTPException(400, "`action` is `keep`, `unlink`, `rematch` or `album`")
         with Library.for_settings(settings) as lib:
             row = lib.file_by_id(file_id)
             if row is None or not row.get("review"):
                 raise HTTPException(404, f"file {file_id} is not waiting for a review")
-            from bdnex.ui.review_cmd import settle
+            if answer.action in ("keep", "unlink"):
+                from bdnex.ui.review_cmd import settle
 
-            settle(lib, row, answer.action)  # the same answers, the same effects as `bdnex review`
-        return {"ok": True}
+                settle(lib, row, answer.action)  # the same answers, the same effects as `bdnex review`
+                request.state.detail = {"file": row["path"], "answer": answer.action}
+                return {"ok": True}
+        # rematch / album: the matching is a task (it reads a page, and may ask), started like any other
+        options = {"preview": False, "paths": [row["path"]], "interactive": answer.interactive, "album": answer.album}
+        try:
+            job = jobs.start("rematch" if answer.action == "rematch" else "apply-album", options, allow_changes=allow_changes)
+        except JobError as err:
+            raise HTTPException(400, str(err)) from err
+        except Busy as err:
+            raise HTTPException(409, str(err)) from err
+        request.state.detail = {"file": row["path"], "answer": answer.action, "album": answer.album, "job": job.id}
+        return {"ok": True, "job": job.public()}
 
     @app.get("/api/duplicates", dependencies=guarded, summary="The same book in several files")
     def duplicates_view(lib: Library = Depends(library)):
@@ -565,12 +617,69 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             for g in groups]}
 
     @app.get("/api/check", dependencies=guarded, summary="Is the library consistent with itself and with the disk?")
-    def check_view(lib: Library = Depends(library)):
+    def check_view(matches: bool = Query(False, description="also weigh every match against its album page (`bdnex check --matches`)"),
+                   lib: Library = Depends(library)):
         from bdnex.library.health import check
 
-        found = check(lib, settings)
-        return {"count": len(found), "items": [{"key": f.key, "problem": f.problem, "items": f.items, "advice": f.advice,
-                                                 "fixable": f.fixable} for f in found]}
+        found = check(lib, settings, matches=matches)
+        def shown(f):
+            entry = {"key": f.key, "problem": f.problem, "items": f.items, "advice": f.advice, "fixable": f.fixable}
+            if f.key == "matches":  # its lines come in threes (path, album, why): give them as records too
+                entry["matches"] = [{"path": f.items[i], "album": f.items[i + 1].strip(), "reason": f.items[i + 2].strip()}
+                                    for i in range(0, len(f.items) - 2, 3)]
+            return entry
+        return {"count": len(found), "items": [shown(f) for f in found]}
+
+    @app.get("/api/candidates", dependencies=guarded,
+             summary="The albums each file could be, with where each score comes from (`bdnex candidates`)")
+    def candidates(q: str = Query("", description="`bdnex ls --files` terms (files without album are included)"),
+                   low: bool = Query(False, description="only the files whose match is in doubt"),
+                   per_file: int = Query(5, ge=1, le=10, description="candidates per file"),
+                   limit: int = Query(10, ge=1, le=50, description="files in this window"), offset: int = Query(0, ge=0),
+                   cover: bool = Query(False, description="also compare covers (a request for each candidate whose cover is "
+                                                          "not saved: keep `limit` small)"),
+                   lib: Library = Depends(library)):
+        from bdnex.importer import covers
+        from bdnex.ui import candidates_cmd
+
+        if cover and limit * per_file > 25:  # a GET that sends requests to the site: a few at a time
+            raise HTTPException(400, "with `cover`, `limit` x `per_file` is at most 25 (each candidate whose cover is not "
+                                     "saved is a request to the site)")
+        try:
+            items = candidates_cmd.build_report(settings, lib, terms(q), low=low, limit=per_file,
+                                                cover=cover and covers.opencv_installed(), first=offset, files=limit)
+        except candidates_cmd.NotReady as err:
+            raise HTTPException(409, str(err)) from err
+        except QueryError as err:
+            raise HTTPException(400, f"bad query: {err}") from err
+        return {"offset": offset, "limit": limit, "cover_compared": cover and covers.opencv_installed(), "items": items}
+
+    @app.post("/api/marks", dependencies=guarded,
+              summary="**Change (unless a preview):** put or remove your own marks on the files (or albums) a query finds, as `bdnex mark`")
+    def marks(body: MarksChange, request: Request):
+        from bdnex.ui import mark_cmd
+
+        if not body.q.strip():
+            raise HTTPException(400, "give a query: this changes every file it finds")
+        if not body.set and not body.remove:
+            raise HTTPException(400, "nothing to do: give `set` and/or `remove`")
+        if not body.preview:
+            can_change(request)
+            if jobs.busy():
+                raise HTTPException(409, "a task is running: wait for it to finish, or cancel it")
+        puts = [(name.strip().lower(), str(value)) for name, value in body.set.items()]
+        removes = [name.strip().lower() for name in body.remove]
+        kind = "album" if body.albums else "file"
+        with Library.for_settings(settings, readonly=body.preview) as lib:
+            try:
+                rows = lib.query(terms(body.q), files=not body.albums)
+                ids = [r["id"] if body.albums else r["file_id"] for r in rows if (r["id"] if body.albums else r["file_id"])]
+                if not body.preview:
+                    mark_cmd.apply_marks(lib, kind, ids, puts, removes)
+            except (QueryError, ValueError) as err:
+                raise HTTPException(400, str(err)) from err
+        request.state.detail = {"q": body.q, "kind": kind, "set": dict(puts), "remove": removes, "matched": len(ids)}
+        return {"matched": len(ids), "changed": 0 if body.preview else len(ids), "kind": kind}
 
     # ------------------------------------------------------------------------- jobs
     @app.get("/api/jobs/available", dependencies=guarded, summary="The jobs that can be started")
@@ -598,8 +707,10 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
             options = {"preview": body.preview, "query": body.query, "paths": body.paths, "copy": body.copy_files,
                        "batch": body.batch,
                        "interactive": body.interactive, "steps": body.steps, "auto": body.auto, "files": body.files, "force": body.force,
-                       "formats": body.formats, "older_than": body.older_than, "id": body.id, "place": body.place, "old": body.old, "new": body.new}
+                       "formats": body.formats, "older_than": body.older_than, "id": body.id, "place": body.place, "old": body.old, "new": body.new,
+                       "album": body.album, "only": body.only, "fields": body.fields, "with_review": body.with_review}
             job = jobs.start(body.command, options, allow_changes=allow_changes)
+            request.state.detail = {"command": body.command, "arguments": job.argv, "preview": body.preview}
         except JobError as err:
             raise HTTPException(400, str(err)) from err
         except PermissionError as err:
@@ -607,6 +718,35 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
         except Busy as err:
             raise HTTPException(409, str(err)) from err
         return job.public()
+
+    @app.get("/api/jobs/{job_id}/events", dependencies=guarded,
+             summary="A task's output as server-sent events (`text/event-stream`): one `line` event per output line, then `end`")
+    async def job_events(job_id: int, after: int = Query(0, ge=0)):
+        import asyncio
+        import json
+
+        from fastapi.responses import StreamingResponse
+
+        job = jobs.get(job_id)
+        if job is None:
+            raise HTTPException(404, f"no job {job_id}")
+
+        async def stream():
+            position = after
+            while True:
+                state = job.public(position)
+                for line in state["lines"]:
+                    yield f"event: line\ndata: {json.dumps(line)}\n\n"
+                position = state["next"]
+                if state["question"]:
+                    yield f"event: question\ndata: {json.dumps(state['question'])}\n\n"
+                if state["status"] != "running":
+                    yield f"event: end\ndata: {json.dumps({'status': state['status'], 'exit_code': state['exit_code'], 'next': position})}\n\n"
+                    return
+                await asyncio.sleep(0.5)
+
+        return StreamingResponse(stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})
 
     @app.get("/api/jobs/{job_id}/image", dependencies=guarded, summary="The picture shown with the question a task is waiting on")
     def job_image(job_id: int):

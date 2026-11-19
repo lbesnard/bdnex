@@ -238,3 +238,18 @@ def test_a_field_with_a_sign_sorts_and_limit_cuts_after_sorting(tmp_path):
         assert [a["title"] for a in lib.query(["year+"])] == ["Alpha", "Charlie", "Bravo"]
         assert [a["title"] for a in lib.query(["year-"], limit=2)] == ["Bravo", "Charlie"]
         assert [a["title"] for a in lib.query(["title-", "alpha", ",", "bravo"])] == ["Bravo", "Alpha"]
+
+
+def test_page_gives_the_total_and_only_one_window():
+    from bdnex.library import AlbumInfo, Library
+
+    lib = Library(":memory:")
+    for n in range(1, 8):
+        lib.add_album(AlbumInfo("s", str(n), f"Titre {n}", year=2000 + n))
+    total, rows = lib.page([], limit=3, offset=2)
+    assert total == 7 and len(rows) == 3
+    assert [r["id"] for r in rows] == [r["id"] for r in lib.query([])[2:5]]  # the same order as `query`
+    total, rows = lib.page(["year:2003..2005"], limit=10)
+    assert total == 3 and len(rows) == 3
+    assert lib.page(["year-"], limit=1)[1][0]["year"] == 2007  # a sorted query is windowed in SQL too
+    assert lib.page([], limit=5, offset=50) == (7, [])
