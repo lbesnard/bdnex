@@ -21,31 +21,43 @@ files are `unverified`.
 
 Before `import --auto=all` became strict, a match in the middle (a score between `medium_threshold` and
 `strong_threshold`) was applied unasked, so a library built that way holds some. `bdnex recheck` weighs each of them
-again with what the library already knows, and **sends no request**: the album's page, the file's own tags (year,
-author, address) and, with OpenCV, the file's cover against the album's *saved* cover (computed here when it was not,
-and kept for the next time).
+again with what the library already knows: the album's page, the file's own tags (year, author, address) and, with
+OpenCV, the file's cover against the album's *saved* cover (computed here when it was not, and kept for the next time).
 
 | Verdict | Means | What `recheck` does |
 |---|---|---|
-| `kept` | something other than the name confirms it (the year, an author, the file's tags, a cover that looks alike by `match.cover_vote_min`) | nothing |
-| `wrong` | something contradicts it (another volume, another series in its tags, a cover that looks little like the album's) | flags it for `bdnex review` (or unlinks it with `--unlink`) |
-| `unconfirmed` | nothing confirms it, nothing contradicts it | flags it for `bdnex review` (or unlinks it with `--unlink --unconfirmed`) |
+| `kept` | something other than the name confirms it (the year, an author, the file's tags, a cover that looks alike by `match.cover_vote_min`) | nothing (it takes back a flag an earlier `recheck` put) |
+| `wrong` | something contradicts it (another volume, another series in its tags, a cover that looks little like the album's) | flags it for `bdnex review`, or unlinks it with `--unlink` |
+| `unconfirmed` | nothing confirms it, nothing contradicts it | **nothing**: no evidence is no reason to ask you (`--flag-unconfirmed` flags them, `--unlink --unconfirmed` unlinks them) |
 
-**`recheck` judges the link a file has; it never picks another album.** Searching again is what `bdnex import
---skipped` does, for the files `recheck --unlink` unlinked (or that you unlinked yourself).
+**The covers of the other candidates.** For each `wrong` file, `recheck` also compares the covers of its best other
+candidates (`--candidates N`, 5 by default; `0` turns it off; `--no-cover` skips every cover). A cover already saved is
+read from disk, any other is one request (a picture only; no page is read). When one looks like the file's
+(`match.cover_vote_min`) and is clearly ahead of the album now linked and of the others (the rule of the cover vote
+at the end of an import), it is shown as `better:` and, with `--rematch`, the file is linked to it (the library only,
+as `import --album` does with `--database-only`). Without `--rematch` it is only written in the flag's reason.
 
 Files linked at a confident score, the ones you chose (`import --album`, `review`) and the ones read from their own
 tags are never looked at. The usual order:
 
 ```bash
-bdnex recheck -n                      # the numbers, and the contradicted ones; changes nothing
-bdnex recheck                         # flag what is not confirmed, for `bdnex review` (nothing is unlinked)
-bdnex recheck --unlink                # or unlink the contradicted ones (asks first; -y to not ask)
-bdnex import --skipped --auto=all     # then decide them again: strict, and the covers of the best candidates vote
+bdnex recheck -n                      # the numbers and the contradicted ones, and the better albums found; changes nothing
+bdnex recheck --rematch --unlink      # switch to the better album when a cover says so, else unlink (asks first; -y)
+bdnex import --skipped --auto=all     # then decide the unlinked ones again: strict, and the covers of the best candidates vote
 ```
 
-An unlinked file is remembered as skipped, so `import --skipped` picks it up again; it comes back only when it is
-strong, or when a cover clearly votes for one candidate. `--no-cover` skips reading the files for the covers not yet compared.
+Without `--unlink` the contradicted files are only flagged. An unlinked file is remembered as skipped, so `import
+--skipped` picks it up again; it comes back only when it is strong, or when a cover clearly votes for one candidate.
+
+### Files already flagged: `bdnex review --auto`
+
+`bdnex review` asks about each flagged file. When there are thousands (an import flags every file whose cover does not
+look like its album's, and a different edition or a PDF's first page often does not), `bdnex review --auto` gives
+the same verdicts as `recheck` to *every* flagged file and applies them by rule, asking nothing: confirmed by
+something other than the name, the flag goes; contradicted, the file is switched to the album whose cover is
+clearly the file's (`--candidates`), else unlinked; the others stay flagged for you. `-n` shows the counts, `-y`
+skips the one confirmation. A digital edition whose cover differs from the print album's is contradicted by its
+cover alone: with no better album it is unlinked, and `bdnex import --album` links it back.
 
 ## By hand
 

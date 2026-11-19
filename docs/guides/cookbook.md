@@ -118,19 +118,19 @@ Before you start pass 2:
 
 Before `--auto=all` became strict, it applied the matches in the middle (a score under `match.strong_threshold`)
 without asking. Running the import again does not look at them: a file that is already matched is only counted.
-`bdnex recheck` does, **without searching for another album** and without any request: it only asks whether something
-other than the name (the album page's year and authors, the file's own tags, its cover against the saved cover)
-confirms the link it already has.
+`bdnex recheck` does. It asks whether something other than the name (the album page's year and authors, the file's own
+tags, its cover against the saved cover) confirms the link it already has, and, for the contradicted ones, whether
+the cover of another candidate is clearly the file's.
 
 ```bash
-bdnex recheck -n                      # how many are confirmed, contradicted, unconfirmed; changes nothing
-bdnex recheck                         # flag the ones not confirmed, for `bdnex review` (nothing is unlinked)
-bdnex recheck --unlink                # or unlink the contradicted ones (asks first)
-bdnex import --skipped --auto=all     # re-match the unlinked ones: strict, then the covers of the best candidates vote
+bdnex recheck -n                      # confirmed, unconfirmed, contradicted, better albums found; changes nothing
+bdnex recheck --rematch --unlink      # switch to the better album, else unlink the contradicted ones (asks first)
+bdnex import --skipped --auto=all     # decide the unlinked ones again: strict, then the covers of the best candidates vote
 ```
 
-Two steps because they do different work: `recheck` judges the existing links (offline), and the import is what
-searches again, only for the files that were unlinked. See [Checking the matches](checking-matches.md).
+The ones nothing confirms are left alone: no evidence is no reason to ask you. A library with thousands of files
+already flagged for review is settled by rule with `bdnex review --auto -n`, then without `-n`. See
+[Checking the matches](checking-matches.md).
 
 ## …import again? Redo a file?
 
