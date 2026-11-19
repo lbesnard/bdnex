@@ -34,7 +34,24 @@ class Row:
     status: str = ""  # what was decided in this session: ``keep``, ``unlinked``, ``linked``, ``left``, ``skipped``
     message: str = ""  # what happened when it was decided (a refusal, for one)
     busy: bool = False  # a link is being made for it (the screen waits)
+    facts: str = ""  # what the album says (year, credits, pages) next to what the file is: to judge a match by eye
     previous: str = ""  # an earlier decision (the ``checked`` mark), shown when files already checked are asked for again
+
+
+def facts_of(album: Optional[dict], file: Optional[dict]) -> str:
+    """One line each for the album (year, credits) and the file (pages, format, size): the two to compare by eye."""
+    from bdnex.formatting import human_size
+    from bdnex.ui.describe import credits_line
+
+    lines = []
+    if album:
+        lines.append(" · ".join(part for part in (str(album["year"]) if album.get("year") else "", credits_line(album),
+                                                  f"{album['pages']} pages" if album.get("pages") else "") if part))
+    if file:
+        lines.append("file: " + " · ".join(part for part in (
+            (file.get("format") or "").upper(), f"{file['page_count']} pages" if file.get("page_count") else "",
+            human_size(file["size"]) if file.get("size") else "") if part))
+    return "\n".join(line for line in lines if line)
 
 
 def folder_of(path: str, depth: int = 2) -> str:
@@ -71,6 +88,7 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
             why.insert(0, f"flagged: {file['review']}")
         rows.append(Row(verdict.path, folder_of(verdict.path), label(album) if album else verdict.album, verdict.album_id,
                         album.get("url"), verdict.score, cover, verdict.kind, why, file.get("id"),
+                        facts=facts_of(album, file),
                         previous=library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""))
     if (unmatched or everything) and len(rows) < size:
         for found in sorted(library.unmatched(list(terms)), key=lambda r: r["path"]):
@@ -79,7 +97,8 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
             if previous and not again:
                 continue
             rows.append(Row(found["path"], folder_of(found["path"]), None, None, None, found.get("score"), None, "unmatched",
-                            [f"last import: {found.get('outcome')}"], file.get("id"), previous=previous))
+                            [f"last import: {found.get('outcome')}"], file.get("id"),
+                            facts=facts_of(None, file), previous=previous))
             if len(rows) >= size:
                 break
     if everything and len(rows) < size:
@@ -92,9 +111,12 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
             last = library.last_import(found["path"])
             rows.append(Row(found["path"], folder_of(found["path"]), label(album) if album else None, found["id"],
                             album.get("url"), last["score"] if last else None, file.get("cover_score"), "ok", [],
-                            file.get("id"), previous=library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""))
+                            file.get("id"), facts=facts_of(album, file),
+                            previous=library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""))
             if len(rows) >= size:
                 break
+    rank = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # in one folder, the files in most doubt first
+    rows.sort(key=lambda row: (row.folder.casefold(), rank.get(row.kind, 4), row.cover if row.cover is not None else 101.0, row.path))
     return rows
 
 
@@ -121,13 +143,13 @@ def decide(library: Library, row: Row, action: str, album_id: Optional[int] = No
         library.set_attr("file", row.file_id, CHECKED, value)
 
 
-def link_to(library: Library, row: Row, url: str) -> tuple[bool, str]:
+def link_to(library: Library, row: Row, url: str, keep_both: bool = False) -> tuple[bool, str]:
     """Link the file to the album at ``url`` (as ``bdnex import --album --database-only`` does) and record it. A refusal
     (the album already has another file) changes nothing and says so."""
     from bdnex.ui import verdicts
 
     before = (library.get_file(row.path) or {}).get("album_id")
-    verdicts.rematch(row.path, url)
+    verdicts.rematch(row.path, url, keep_both)
     return finish_link(library, row, before)
 
 
@@ -141,6 +163,47 @@ def finish_link(library: Library, row: Row, before: Optional[int]) -> tuple[bool
         return False, row.message
     album = library.get_album(now) or {}
     row.album, row.album_id, row.album_url = label(album), now, album.get("url")
+    row.facts = facts_of(album, library.get_file(row.path))
     decide(library, row, "other", now)
     row.message = f"linked to {row.album}"
     return True, row.message
+
+
+def cover_files(library: Library, settings, row: Row):
+    """``(path, format, saved cover path or None)``: what the cover popup shows (the library is read here, in the caller's thread)."""
+    from bdnex.importer import covers
+
+    file = library.get_file(row.path) or {}
+    saved = None
+    album = library.get_album(row.album_id) if row.album_id is not None else None
+    if album:
+        kept = album.get("cover_file")
+        saved = (settings.cover_path / kept) if kept else None
+        if saved is None or not saved.exists():
+            found = covers.find_cover(settings.cover_path, album["source"], album["source_id"])
+            saved = (settings.cover_path / found) if found else None
+        if saved is not None and not saved.exists():
+            saved = None
+    return row.path, file.get("format") or os.path.splitext(row.path)[1].lstrip(".").lower(), saved
+
+
+def read_covers(path: str, fmt: str, saved) -> tuple[Optional[bytes], Optional[bytes], str]:
+    """The file's first page and the album's saved cover (no request, no library), and what could not be read."""
+    from bdnex.importer import covers
+
+    notes = []
+    local = online = None
+    try:
+        local = covers.front_cover(path, fmt)
+        if local is None:
+            notes.append("the file's first page could not be read")
+    except Exception as err:  # a disk not mounted, a damaged archive
+        notes.append(f"the file's cover could not be read ({err})")
+    if saved is None:
+        notes.append("the album's cover is not saved (`bdnex import --fetch` or `candidates --cover` saves it)")
+    else:
+        try:
+            online = saved.read_bytes()
+        except OSError as err:
+            notes.append(f"the album's cover could not be read ({err})")
+    return local, online, "; ".join(notes)

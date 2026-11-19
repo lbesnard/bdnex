@@ -441,6 +441,11 @@ takes the time. Files already in the library are
 left alone (`--force` records them again). `ls --files -l` shows the file's own metadata, and `embedded:` finds files
 by it (`bdnex ls --files embedded:nains`). Recorded files are not "skipped": the next `bdnex import` matches them.
 
+### An album that already has a file: `--keep-both`
+
+`bdnex import --album ADDRESS FILE --keep-both` links the file to the album even when another file already holds it; the new one
+becomes a spare version (see `bdnex duplicates`). Only the library changes, so it also works with `--database-only`.
+
 ### Filling the library without touching a file: `--database-only`
 
 `bdnex import --database-only ~/comics` matches, reads the album pages and records everything in the library, and

@@ -78,12 +78,12 @@ def test_a_switch_to_another_album_is_recorded_and_a_refusal_changes_nothing(env
     settings = load_config().settings
     with Library(db) as lib:
         row = batch.next_batch(lib, settings, size=50)[0]
-        monkeypatch.setattr(verdicts, "rematch", lambda path, url: True)  # a refused import: exit code 0, nothing changed
+        monkeypatch.setattr(verdicts, "rematch", lambda path, url, keep_both=False: True)  # a refused import: exit code 0, nothing changed
         ok, message = batch.link_to(lib, row, "https://www.bedetheque.com/BD-Forge-2.html")
         assert not ok and "refused" in message and not row.status
         assert batch.CHECKED not in lib.attrs_of("file", lib.get_file(row.path)["id"])
 
-        def switch(path, url):
+        def switch(path, url, keep_both=False):
             lib.set_file_album(path, lib.find_album("bedetheque", "2"))
             return True
 

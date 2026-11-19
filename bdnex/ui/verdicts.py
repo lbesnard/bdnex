@@ -140,11 +140,13 @@ def look_for_better(settings, library, verdicts: list[Verdict], limit: int, say=
     return found
 
 
-def rematch(path: str, url: str) -> bool:
-    """Link the file to the album at ``url`` as ``bdnex import --album`` does (the library only; no file is touched)."""
+def rematch(path: str, url: str, keep_both: bool = False) -> bool:
+    """Link the file to the album at ``url`` as ``bdnex import --album`` does (the library only; no file is touched).
+    ``keep_both``: also when the album has another file (this one becomes a spare version)."""
     from bdnex.ui import import_cmd
 
-    code = import_cmd.run([path, "--album", url, "--database-only"], out=io.StringIO())
+    code = import_cmd.run([path, "--album", url, "--database-only", *(["--keep-both"] if keep_both else [])],
+                          out=io.StringIO())
     return code == 0
 
 

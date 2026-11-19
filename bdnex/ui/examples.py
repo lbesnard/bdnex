@@ -16,6 +16,7 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
         ("bdnex import --skipped --auto=all", "ask again about the files skipped earlier (run `bdnex init` first)"),
         ("bdnex import --fetch --select partial:true", "read the pages of the albums that are only matched so far"),
         ("bdnex import --album 123456 ~/comics/Nains-T01.cbz", "use this album (the number at the end of its page address) for one file"),
+        ("bdnex import --album 123456 --keep-both ~/comics/Nains-T01-bis.cbz", "the album already has a file: link this one too, as a spare version"),
         ("bdnex import --match --force ~/comics/Nains-T01.cbz", "choose the album of one file again"),
         ("bdnex import --reparse --select series:nains", "rebuild some albums from the pages already stored (offline)"),
     ],
