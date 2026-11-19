@@ -27,6 +27,7 @@ class Section:
     name: str
     line: str  # the section line of the packaged file (`match:`), or the whole line of a top-level option
     children: list[tuple[str, str]] = field(default_factory=list)  # (option, its line)
+    extra: list[str] = field(default_factory=list)  # the `  - item` lines of an option whose value is a block list
 
     @property
     def is_option(self) -> bool:
@@ -35,6 +36,7 @@ class Section:
 
 TOP = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
 CHILD = re.compile(r"^  ([A-Za-z_][\w-]*):(.*)$")
+LIST_ITEM = re.compile(r"^\s+- ")
 
 
 def packaged() -> list[Section]:
@@ -46,6 +48,8 @@ def packaged() -> list[Section]:
             items.append(Section(top.group(1), raw))
         elif child and items:
             items[-1].children.append((child.group(1), raw))
+        elif items and not items[-1].children and LIST_ITEM.match(raw):
+            items[-1].extra.append(raw)
     return [item for item in items if item.name not in MANAGED]
 
 
@@ -114,6 +118,7 @@ def complete(text: str) -> tuple[str, list[str]]:
                 if lines and lines[-1].strip():
                     lines.append("")
                 lines.append(comment_out(item.line))
+                lines.extend(comment_out(extra) for extra in item.extra)
                 added.append(item.name)
             continue
         header = _header(lines, item.name)

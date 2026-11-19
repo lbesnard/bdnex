@@ -52,7 +52,7 @@ def test_a_minimal_file_gets_every_option_commented_out():
 
 def test_uncommenting_everything_gives_back_the_defaults():
     text, _ = complete(MINIMAL)
-    active = "\n".join(re.sub(r"^(\s*)# ?", r"\1", line) if re.match(r"^\s*# ?[\w-]+:", line) else line
+    active = "\n".join(re.sub(r"^(\s*)# ?", r"\1", line) if re.match(r"^\s*# ?([\w-]+:|- )", line) else line
                        for line in text.splitlines())
     loaded = yaml.safe_load(active)
     defaults = load_defaults()
