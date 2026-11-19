@@ -10,6 +10,7 @@ from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.ui.describe import label
 from bdnex.ui import context
+from bdnex.ui.output import add_pretend
 
 
 def settle(library, row: dict, answer: str) -> None:
@@ -19,6 +20,49 @@ def settle(library, row: dict, answer: str) -> None:
     elif answer == "unlink":
         library.set_file_album(row["path"], None)
         library.log_import(row["path"], "skipped", row.get("cover_score"))
+
+
+def add_candidate_options(parser) -> None:
+    from bdnex.ui.recheck_cmd import add_candidate_options as add
+
+    add(parser)
+
+
+def _auto(args, settings, out, prompter) -> int:
+    """``--auto``: the verdicts of ``bdnex recheck`` for every flagged file, applied by rule."""
+    from collections import Counter
+
+    from bdnex.library.recheck import KEPT, UNCONFIRMED, WRONG, weak_matches
+    from bdnex.ui import recheck_cmd
+
+    with Library.for_settings(settings, readonly=args.pretend) as library:
+        try:
+            verdicts = weak_matches(library, settings, args.query, compare=not args.no_cover, store=not args.pretend,
+                                    flagged=True)
+        except QueryError as err:
+            return context.bad_query(err)
+        if not args.no_cover:
+            try:
+                recheck_cmd.look_for_better(settings, library, verdicts, args.candidates,
+                                            say=lambda text: print(text, file=sys.stderr, flush=True))
+            except KeyboardInterrupt:
+                print("Interrupted: the covers of the other candidates are not all compared.", file=sys.stderr)
+        count = Counter(v.kind for v in verdicts)
+        better = sum(1 for v in verdicts if v.better)
+        print(f"{len(verdicts)} flagged file(s): {count[KEPT]} confirmed (the flag goes), {count[WRONG]} contradicted "
+              f"({better} switched to a better album, {count[WRONG] - better} unlinked), {count[UNCONFIRMED]} stay flagged.",
+              file=out)
+        if args.pretend:
+            return 0
+        try:
+            done = recheck_cmd.settle_verdicts(library, verdicts, unlink=True, use_better=True, own_flags_only=False,
+                                               yes=args.yes, prompter=prompter, out=out)
+        except recheck_cmd._Declined:
+            return 1
+    print(f"Done: {done['cleared']} flag(s) taken off, {done['switched']} switched, {done['unlinked']} unlinked; "
+          f"{count[UNCONFIRMED]} still flagged (`bdnex review` asks about them)."
+          + (" `bdnex import --skipped --auto=all` decides the unlinked ones again." if done["unlinked"] else ""), file=out)
+    return 0
 
 
 def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
@@ -34,10 +78,20 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     parser.add_argument("--scan", action="store_true", help=argparse.SUPPRESS)  # now `bdnex check --matches --fix`
     parser.add_argument("--json", action="store_true",
                         help="with --list: the flagged files as JSON, with the evidence, for a script or an agent")
+    parser.add_argument("--auto", action="store_true",
+                        help="settle the flagged files by rule, asking nothing: the ones confirmed by something other than "
+                             "the name lose their flag; the ones something contradicts are switched to another album whose "
+                             "cover is clearly the file's (see --candidates), else unlinked (`bdnex import --skipped "
+                             "--auto=all` decides them again); the others stay flagged")
+    add_candidate_options(parser)
+    parser.add_argument("-y", "--yes", action="store_true", help="with --auto: do not ask for confirmation")
+    add_pretend(parser, "be settled (with --auto)")
     args = parser.parse_args(argv)
     settings = context.settings()
     if settings is None:
         return 1
+    if args.auto:
+        return _auto(args, settings, out, prompter)
     if args.scan:  # the former spelling, kept for a release
         print("`bdnex review --scan` is now `bdnex check --matches --fix`.", file=sys.stderr)
         from bdnex.ui import check_cmd

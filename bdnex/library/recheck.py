@@ -24,15 +24,16 @@ class Verdict:
     path: str
     album: str
     album_id: int
-    score: float  # the score the match was applied at
+    score: Optional[float]  # the score the match was applied at (``None``: not logged)
     kind: str = UNCONFIRMED
     cover: Optional[float] = None
+    better: Optional[dict] = None  # another album whose cover is clearly more like the file's: ``{url, album, score, cover}``
     for_: list[str] = field(default_factory=list)
     against: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         return {"path": self.path, "album": self.album, "score": self.score, "verdict": self.kind, "cover": self.cover,
-                "for": self.for_, "against": self.against}
+                "for": self.for_, "against": self.against, "better": self.better}
 
 
 def _cover_against_saved(library: Library, settings, path: str, album: dict, row: dict) -> Optional[float]:
@@ -56,25 +57,30 @@ def _cover_against_saved(library: Library, settings, path: str, album: dict, row
         return None
 
 
-def weak_matches(library: Library, settings, terms: list[str], compare: bool = True, store: bool = True) -> list[Verdict]:
+def weak_matches(library: Library, settings, terms: list[str], compare: bool = True, store: bool = True,
+                 flagged: bool = False) -> list[Verdict]:
     """Each linked file whose match was applied under ``match.strong_threshold``, with what confirms or contradicts it.
 
-    ``compare`` computes the cover score that is missing (from the saved cover, no request) and ``store`` keeps it."""
+    ``compare`` computes the cover score that is missing (from the saved cover, no request) and ``store`` keeps it.
+    ``flagged`` looks at the files flagged for review instead (whatever their score; one you chose yourself is still left alone)."""
     strong = settings.match.strong_threshold
     vote_min, cover_floor = settings.match.cover_vote_min, settings.cover.match_percentage
     albums: dict[int, dict] = {}
     found = []
-    for row in library.query(terms, files=True):
+    for row in library.query([*(["review:true"] if flagged else []), *terms], files=True):
         if row.get("id") is None:
             continue
         last = library.last_import(row["path"])
-        if not last or last["score"] is None or last["score"] >= strong:
+        if flagged:
+            if last and last["score"] is None:
+                continue  # chosen by you or read from its own tags
+        elif not last or last["score"] is None or last["score"] >= strong:
             continue  # chosen by you, read from its own tags, or confident: nothing to recheck
         file = library.get_file(row["path"]) or row
         album = albums.get(row["id"]) or albums.setdefault(row["id"], library.get_album(row["id"]))
         if album is None:
             continue
-        verdict = Verdict(row["path"], f"{album.get('series') or ''} {album['title']}".strip(), row["id"], last["score"])
+        verdict = Verdict(row["path"], f"{album.get('series') or ''} {album['title']}".strip(), row["id"], last["score"] if last else None)
         if not album["extra"].get("partial"):
             ev = confirm.assess(row["path"], album, file.get("embedded") or None)
             verdict.against += ev.strong

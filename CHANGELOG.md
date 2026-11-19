@@ -8,9 +8,12 @@ command runs, never while an import is fetching).
 
 ### Added
 - **`bdnex recheck`**: the matches applied under the strong threshold (the medium ones an older `--auto=all` applied
-  unasked), weighed again offline with the album's page, the file's tags and the saved covers. Confirmed ones are left
-  alone; the others are flagged for `bdnex review`, or unlinked with `--unlink` so that `import --skipped --auto=all`
-  (strict, then the cover vote) decides them again.
+  unasked), weighed again with the album's page, the file's tags and the saved covers. Confirmed ones and the ones
+  nothing confirms are left alone; the contradicted ones are flagged for `bdnex review`, or unlinked with `--unlink` so
+  that `import --skipped --auto=all` (strict, then the cover vote) decides them again. For each of them the covers of the
+  5 best other candidates are compared (`--candidates`); `--rematch` links the file to one that is clearly its cover.
+- **`bdnex review --auto`** settles every flagged file by the same rule, asking nothing: confirmed, the flag goes;
+  contradicted, switched to the album whose cover is the file's, else unlinked; the others stay flagged.
 - **`import --auto=all` is strict by default** (**breaking**): it applies only strong matches without a doubt. A match in
   the middle used to be applied unasked (`match.auto_all: medium` brings that back); now the file stays skipped.
 - **The cover vote** (`match.cover_vote`, `match.cover_vote_min`): at the end of the run, at low priority, the covers of
