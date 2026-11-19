@@ -6,6 +6,10 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Added
+- `review --batch`: **click a column header (or press 1–7) to sort** the table; the same column again reverses it. Every column has a fixed
+  width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
+
 ### Fixed
 - `review --batch` shows a **loading panel** (a spinner, `weighing the files` and `loading the album list`, each with its own timer and a
   tick when done) where the table will be, instead of one grey line.

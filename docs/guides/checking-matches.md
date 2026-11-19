@@ -82,6 +82,7 @@ and what speaks for and against its match.
 
 | Key | Does |
 |---|---|
+| a click on a **column header**, or `1`–`7` | sort by that column (`1` is `#`, the order of the batch; `2` File, `3` Folder, `4` Album now, `5` Match, `6` Cover, `7` State); the same column again reverses it, and the title says `by cover ▼`. Rows without a value (no album, no score) stay last. The cursor stays on the same file |
 | `k` | keep the match (the flag goes, the file is marked `checked=keep`) |
 | `u` | unlink the file (remembered as skipped, so `bdnex import --skipped --auto=all` decides it again) |
 | `o` | **another album**: a search box in the screen over the whole album list (the sitemaps), starting from the file's name. It filters as you type like `fzf`: words in any order, accents ignored, and a fuzzy match when a letter is missing. Enter picks, Ctrl-O opens the page, Ctrl-U clears, Esc goes back |
