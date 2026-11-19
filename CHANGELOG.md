@@ -7,6 +7,8 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- `review --batch` shows a **loading panel** (a spinner, `weighing the files` and `loading the album list`, each with its own timer and a
+  tick when done) where the table will be, instead of one grey line.
 - **`review --batch` opens at once**: the files are weighed and the album list is loaded in background threads (the title says
   `weighed in N s`), instead of before the screen appeared.
 - **`o` is a search box in the screen** (the album list filtered as you type: words in any order, accents ignored, a fuzzy match for a

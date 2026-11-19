@@ -235,6 +235,7 @@ class ReviewApp(App):
 
     TITLE = "bdnex review"
     CSS = """
+    #loading { height: 2fr; min-height: 8; content-align: center middle; text-align: left; }
     #table { height: 2fr; min-height: 8; }
     #detail { height: 1fr; min-height: 8; border-top: solid $accent; padding: 0 1; overflow-y: auto; }
     """
@@ -263,10 +264,14 @@ class ReviewApp(App):
         self.decided: dict[str, int] = {}
         self.loading = False
         self.timing = ""
+        self.started = 0.0  # when the files started to be weighed
+        self.weighed_in: Optional[float] = None  # how long weighing took, once it did
+        self.albums_in: Optional[float] = None  # how long the album list took to load, once it did
 
     # -- layout
     def compose(self) -> ComposeResult:
         yield Header()
+        yield Static("", id="loading")
         yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
         yield Static("", id="detail")
         yield Footer()
@@ -275,10 +280,48 @@ class ReviewApp(App):
         table = self.query_one(DataTable)
         for name, width in (("#", 3), ("File", 40), ("Folder", 22), ("Album now", 46), ("Match", 6), ("Cover", 6), ("State", 14)):
             table.add_column(name, width=width)  # long names are cut, so the scores and the state are always on screen
+        self.started = time.monotonic()
+        self.hub.ready.add_done_callback(self.list_loaded)
         self.load_batch()
 
     def on_unmount(self) -> None:
         self.hub.close()
+
+    def list_loaded(self, future) -> None:  # called in the thread of the album list
+        self.albums_in = time.monotonic() - self.started
+
+    # -- the loading panel: what is being done, and for how long
+    SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def loading_text(self) -> Text:
+        now = time.monotonic()
+        frame = self.SPINNER[int(now * 10) % len(self.SPINNER)]
+        weighing = self.weighed_in is None
+        listing = not self.hub.ready.done()
+        text = Text()
+        text.append(f"{frame}  " if (weighing or listing) else "✓  ", style="bold cyan")
+        text.append("Getting the batch ready\n\n", style="bold")
+        text.append("   ")
+        text.append(("✓ " if not weighing else f"{frame} "), style="green" if not weighing else "cyan")
+        text.append("weighing the files: what each match says for and against, offline")
+        text.append(f"   {self.weighed_in if not weighing else now - self.started:.1f} s\n", style="dim")
+        text.append("   ")
+        text.append(("✓ " if not listing else f"{frame} "), style="green" if not listing else "cyan")
+        text.append("loading the album list (for the search)")
+        text.append(f"   {self.albums_in if not listing and self.albums_in is not None else now - self.started:.1f} s\n", style="dim")
+        text.append("\nThe table opens as soon as the files are weighed; the search waits for the album list.", style="dim")
+        return text
+
+    def show_loading(self, on: bool) -> None:
+        self.query_one("#loading", Static).display = on
+        self.query_one("#table", DataTable).display = not on
+        if on:
+            self.query_one("#loading", Static).update(self.loading_text())
+            self.loading_timer = self.set_interval(0.1, lambda: self.query_one("#loading", Static).update(self.loading_text()))
+        else:
+            timer = getattr(self, "loading_timer", None)
+            if timer is not None:
+                timer.stop()
 
     # -- the batch: weighed in a thread, so the table is there at once
     def say(self, text: str, style: str = "") -> None:
@@ -291,9 +334,10 @@ class ReviewApp(App):
         self.number += 1
         self.rows = []
         self.query_one(DataTable).clear()
-        self.sub_title = f"batch {self.number} · weighing the files..."
-        self.say("Weighing the files of the library: what each match says for and against, offline. "
-                 "On a big library this takes a few seconds; the album list loads at the same time.", "dim")
+        self.sub_title = f"batch {self.number} · getting ready..."
+        self.say("")
+        self.started, self.weighed_in = time.monotonic(), None
+        self.show_loading(True)
         self.run_worker(self.weigh, thread=True, exclusive=True, group="batch")
 
     def weigh(self) -> None:
@@ -312,11 +356,15 @@ class ReviewApp(App):
 
     def show_error(self, message: str) -> None:
         self.loading = False
+        self.show_loading(False)
         self.sub_title = f"batch {self.number}"
         self.say(f"Could not weigh the files: {message}", "red")
 
     def show_batch(self, rows: list[batch.Row], seconds: float) -> None:
         self.loading = False
+        self.weighed_in = seconds
+        self.show_loading(False)
+        self.query_one(DataTable).focus()
         self.rows = rows
         self.timing = f"weighed in {seconds:.1f} s"
         self.render_table()

@@ -96,6 +96,34 @@ def test_the_table_opens_at_once_and_shows_file_folder_album_scores_state_and_ho
     assert [first[6], second[6], third[6]] == ["contradicted", "unconfirmed", "no album"]  # what is wrong, until it is decided
 
 
+def test_a_loading_panel_says_what_is_being_done_until_the_table_is_ready(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    real = batch.next_batch
+    monkeypatch.setattr(batch, "next_batch", lambda *a, **k: (release.wait(5), real(*a, **k))[1])  # a slow weighing
+    seen = {}
+
+    async def go():
+        settings = load_config().settings
+        with Library(db) as lib:
+            app = review_tui.ReviewApp(lib, settings, FakeSource(), 50, (), True)
+            async with app.run_test(size=(170, 45)) as pilot:
+                await pilot.pause()
+                await pilot.pause(0.3)
+                panel = app.query_one("#loading")
+                seen["during"] = (panel.display, app.query_one("DataTable").display, str(panel.render()))
+                release.set()
+                await settle(app, pilot)
+                seen["after"] = (panel.display, app.query_one("DataTable").display, app.query_one("DataTable").row_count)
+
+    asyncio.run(go())
+    shown, table_shown, text = seen["during"]
+    assert shown and not table_shown  # the panel is where the table will be
+    assert "weighing the files" in text and "loading the album list" in text and "Getting the batch ready" in text
+    assert "s\n" in text or " s" in text  # each job says for how long
+    assert seen["after"] == (False, True, 3)  # then the table takes its place
+
+
 def test_keys_decide_and_each_decision_is_saved_at_once(env):
     db, files = env
 

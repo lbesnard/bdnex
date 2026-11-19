@@ -93,8 +93,9 @@ and what speaks for and against its match.
 | `n` | the next batch |
 | `q` | quit |
 
-The table **opens at once**: the files are weighed in the background (the title says how long it took, `weighed in 6.2 s`) and
-the album list loads at the same time, so nothing waits before the first key. Picking an album **links the file**, which reads
+The screen **opens at once**. While the batch is made it shows a loading panel with the two jobs and how long each has taken:
+`weighing the files` (the table appears when that is done; the title then says `weighed in 6.2 s`) and `loading the album list`
+(the search waits for that one, in the background), so you always see what it is doing. Picking an album **links the file**, which reads
 that album's page: the row says `linking...` (with what it is doing under the table), keys on that row are refused until it
 is done, and when it is the row shows `linked`, the new album, the new cover score and `you` as the match. A link the import
 refuses (the album already has another file) shows `refused` in red.
