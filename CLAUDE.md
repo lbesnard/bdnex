@@ -179,6 +179,12 @@ never ran in a test crashed that way), `uv run python -m compileall -q bdnex` (P
   (skipped with *why*, duplicate, failed); `-v` = every file + reason (`session.detail()`); `-vv` = bdnex's own debug (`logger.debug`,
   thread names); `-vvv` = libraries + SQL (`bdnex.sql`); `--log-file` always gets debug. A new per-file message goes through
   `detail()`, a decision that needs the user's eye goes through `_attention`, and a skip must carry its reason in `result.note`.
+- **Colour is a role, never a colour name** (`ui/color.py`: `role(text, "bad", on)`, `verdict(text, "contradicted", on)`, `hints()`,
+  `paint_score`): title/name = bold (where the eye lands), good = green, warn = yellow (in doubt, left as it is), bad = red,
+  hint = cyan (what to type next), note/path = dim. `on = color.enabled(out)`: plain text in a pipe, and
+  `test_colour_only_adds_escape_codes_never_changes_the_text` checks the text is the same. A new command prints through roles;
+  log lines (`-v`) go through `color.LogFormatter`. Every step of a slow command is said as it happens (`candidates --cover`
+  streams file, cover, decision), never only in a report at the end.
 - Long commands show their phases with `banner()` and tint progress lines (`ui/output.py`); plain text in a pipe.
 - **Shared options and formats**: `-n` is `add_pretend(parser, "what would happen")` and `--workers` is
   `add_workers(parser, ...)` (`ui/output.py`); sizes, durations and short paths are `bdnex/formatting.py`

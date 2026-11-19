@@ -27,12 +27,44 @@ def add_candidate_options(parser) -> None:
                         help="do not compare covers at all (neither the album's, not yet compared, nor the candidates')")
 
 
+def tint(text: str, on: bool) -> str:
+    """The lines ``look_for_better`` says, coloured by what they are (plain when ``on`` is false)."""
+    import re
+
+    from bdnex.ui import color
+
+    if not on:
+        return text
+    head = re.match(r"^(\[\d+/\d+\]) (.*)\n(\s+now: )(.*)$", text, re.S)
+    if head:  # [n/N] file name \n now: album (cover x%)
+        return (f"{color.role(head.group(1), 'hint', on)} {color.role(head.group(2), 'name', on)}\n"
+                f"{head.group(3)}{color.role(head.group(4), 'name', on)}")
+    candidate = re.match(r"^(\s+[* ] cover\s+)(\d+)%(.*)$", text)
+    if candidate:  # `* cover  85%  Album  (score 80; saved cover)`: the percentage in the colour of the score
+        return candidate.group(1) + color.paint_score(f"{candidate.group(2)}%", float(candidate.group(2)), on) \
+            + color.role(candidate.group(3), "note", on)
+    stripped = text.strip()
+    if stripped.startswith("-> better"):
+        return color.role(text, "good", on)
+    if stripped.startswith(("-> no clear", "candidates not compared", "no other candidate")) or "not compared" in stripped \
+            or " cover   ?" in text:
+        return color.role(text, "warn", on)
+    if stripped.startswith("-> nothing"):
+        return color.role(text, "note", on)
+    return color.hints(text, on)
+
+
 def look_for_better(settings, library, verdicts: list[Verdict], limit: int, say=lambda text: None) -> int:
     """Set ``better`` on the contradicted verdicts: another candidate whose cover is clearly the file's (the rule of the
     cover vote of an import). Returns how many were found. Errors are swallowed: it is a help, never a reason to fail."""
     wrong = [v for v in verdicts if v.kind == WRONG]
     if limit <= 0 or not wrong:
         return 0
+    from bdnex.ui import color
+
+    if color.enabled(sys.stderr):
+        raw = say
+        say = lambda text: raw(tint(text, True))  # noqa: E731
     if not covers.opencv_installed():
         say("The covers of the other candidates are not compared: OpenCV is not installed (`uv sync --extra cover`).")
         return 0

@@ -34,13 +34,17 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     with Library.for_settings(settings) as library:
         counts = library.reset(apply=False)
         cache = library.cache_summary()
-        print("Would be forgotten (your collection's records in the library):" if args.pretend
-              else "About to forget (your collection's records in the library):", file=out)
+        from bdnex.ui import color
+
+        on = color.enabled(out)
+        print(color.role("Would be forgotten" if args.pretend else "About to forget", "bad", on)
+              + " (your collection's records in the library):", file=out)
         for key, label in LABELS:
-            print(f"  {counts[key]:>7} {label}", file=out)
+            print(f"  {color.role(f'{counts[key]:>7}', 'bad', on) if counts[key] else f'{counts[key]:>7}'} {label}", file=out)
         kept = ", ".join(f"{n} {kind}" for kind, (n, _) in sorted(cache.items())) or "nothing"
         size = human_size(sum(size for _, size in cache.values()))
-        print(f"Kept, not touched: the downloaded pages and covers ({kept}; {size}) and your comic files.", file=out)
+        print(color.role(f"Kept, not touched: the downloaded pages and covers ({kept}; {size}) and your comic files.", "good", on),
+              file=out)
         if args.pretend:
             return 0
         if not any(counts.values()):
@@ -56,8 +60,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
         if not args.no_backup:
             stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
             backup = library.backup_to(f"{settings.library_path}.before-reset-{stamp}")
-            print(f"Backup of the database: {backup}", file=out)
+            print(f"{color.role('Backup of the database', 'good', on)}: {color.role(str(backup), 'path', on)}", file=out)
         library.reset()
-        print("The library is empty. `bdnex import <folder>` starts again; pages already fetched are not "
-              "downloaded twice.", file=out)
+        print(color.hints("The library is empty. `bdnex import <folder>` starts again; pages already fetched are not "
+                          "downloaded twice.", on), file=out)
     return 0

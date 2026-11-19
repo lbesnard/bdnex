@@ -54,25 +54,38 @@ def _auto(args, settings, out, prompter) -> int:
         if args.json:
             print(json.dumps([v.as_dict() for v in found], ensure_ascii=False, indent=2), file=out)
             return 0
+        from bdnex.ui import color
+
+        on = color.enabled(out)
         better = sum(1 for v in found if v.better)
-        print(f"{len(found)} file(s) weighed (flagged, or matched under {settings.match.strong_threshold:.0f}): "
-              f"{count[KEPT]} confirmed, {count[WRONG]} contradicted ({better} switched to a better album, "
-              f"{count[WRONG] - better} unlinked), {count[UNCONFIRMED]} unconfirmed (left as they are).", file=out)
+        print(f"{color.role(str(len(found)), 'count', on)} file(s) weighed (flagged, or matched under "
+              f"{settings.match.strong_threshold:.0f}): "
+              f"{color.verdict(f'{count[KEPT]} confirmed', 'confirmed', on)}, "
+              f"{color.verdict(f'{count[WRONG]} contradicted', 'contradicted', on)} "
+              f"({color.role(f'{better} switched to a better album', 'good', on)}, "
+              f"{color.role(f'{count[WRONG] - better} unlinked', 'bad', on)}), "
+              f"{color.verdict(f'{count[UNCONFIRMED]} unconfirmed', 'unconfirmed', on)} (left as they are).", file=out)
         why = Counter(v.note or "no evidence either way" for v in found if v.kind == UNCONFIRMED)
         hints = {"page not read": "the album page was never read: `bdnex import --fetch --select partial:true`",
                  "cover not compared": "no cover to compare (the file, or the album's cover, could not be read)",
                  "no evidence either way": "the page and the cover say nothing for or against"}
         for reason, number in why.most_common():
-            print(f"    {number} unconfirmed: {hints[reason]}", file=out)
+            print(f"    {color.role(f'{number} unconfirmed', 'warn', on)}: {color.hints(hints[reason], on)}", file=out)
         if args.pretend:
             return 0
         try:
             done = rules.settle_verdicts(library, found, yes=args.yes, prompter=prompter, out=out)
         except rules.Declined:
             return 1
-    print(f"Done: {done['cleared']} flag(s) taken off, {done['switched']} switched, {done['unlinked']} unlinked"
-          + (f", {done['refused']} could not be switched (left flagged)" if done["refused"] else "") + "."
-          + (" `bdnex import --skipped --auto=all` decides the unlinked ones again." if done["unlinked"] else ""), file=out)
+    from bdnex.ui import color
+
+    on = color.enabled(out)
+    print(f"{color.role('Done', 'good', on)}: {done['cleared']} flag(s) taken off, "
+          f"{color.role(str(done['switched']) + ' switched', 'good', on)}, "
+          f"{color.role(str(done['unlinked']) + ' unlinked', 'bad', on)}"
+          + (", " + color.role(f"{done['refused']} could not be switched (left flagged)", "warn", on) if done["refused"] else "") + "."
+          + color.hints(" `bdnex import --skipped --auto=all` decides the unlinked ones again." if done["unlinked"] else "", on),
+          file=out)
     return 0
 
 
@@ -132,9 +145,13 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                               for row in rows], ensure_ascii=False, indent=2), file=out)
             return 0
         if args.list:
+            from bdnex.ui import color
+
+            on = color.enabled(out)
             for row in rows:
-                print(f"{row['path']}\n    {label(row)}\n    {row['review']}", file=out)
-            print(f"\n{len(rows)} file(s) wait for a review (`bdnex review` goes through them).", file=out)
+                print(f"{color.role(row['path'], 'path', on)}\n    {color.role(label(row), 'name', on)}\n"
+                      f"    {color.role(str(row['review']), 'warn', on)}", file=out)
+            print(color.hints(f"\n{len(rows)} file(s) wait for a review (`bdnex review` goes through them).", on), file=out)
             return 0
         if prompter is None:
             from bdnex.ui.prompts import new_prompter

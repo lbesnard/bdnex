@@ -49,21 +49,25 @@ def run(argv: list[str], out=sys.stdout) -> int:
     if args.json:
         print(json.dumps(rows, ensure_ascii=False, indent=2), file=out)
         return 0
+    from bdnex.ui import color
+
+    on = color.enabled(out)
     for row in rows:
         if row["known"] is None:
-            print(f"{row['name']}  {row['owned']} album(s)  (the series' own album list is not known yet)", file=out)
+            print(f"{color.role(row['name'], 'name', on)}  {row['owned']} album(s)  "
+                  + color.role("(the series' own album list is not known yet)", "note", on), file=out)
             if args.long:
                 for line in details(row["extra"]):
-                    print(f"    {line}", file=out)
+                    print(f"    {color.role(line, 'note', on)}", file=out)
             continue
         missing = row["missing"]
-        print(f"{row['name']}  {row['owned']} of {row['known']} albums"
-              + (f"  ·  missing {len(missing)}" if missing else "  ·  complete"), file=out)
+        state = color.role(f"missing {len(missing)}", "warn", on) if missing else color.role("complete", "good", on)
+        print(f"{color.role(row['name'], 'name', on)}  {row['owned']} of {row['known']} albums  ·  {state}", file=out)
         if args.long:
             for line in details(row["extra"]):
-                print(f"    {line}", file=out)
+                print(f"    {color.role(line, 'note', on)}", file=out)
             for album in missing:
-                print(f"    {label(album)}  {album['url']}", file=out)
+                print(f"    {color.role(label(album), 'warn', on)}  {color.role(album['url'], 'path', on)}", file=out)
     if not rows:
         print("No series." if not args.name else "No series with that name.", file=out)
     return 0

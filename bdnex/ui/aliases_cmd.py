@@ -107,13 +107,19 @@ def run(argv: list[str], out=sys.stdout) -> int:
     if args.json:
         print(json.dumps(rows, ensure_ascii=False, indent=2), file=out)
         return 0
+    from bdnex.ui import color
+
+    on = color.enabled(out)
     if changed:
         print(file=out)
     width = max((len(row["name"]) for row in rows), default=0)
-    print(f"{len(rows)} alias(es). `bdnex aliases --add \"NAME = COMMAND  # WHY\"` adds one, `--rm NAME` removes one.\n", file=out)
+    print(color.hints(f"{color.role(str(len(rows)), 'count', on)} alias(es). `bdnex aliases --add \"NAME = COMMAND  # WHY\"` "
+                      "adds one, `--rm NAME` removes one.\n", on), file=out)
     for row in rows:
-        print(f"  {row['name']:<{width}}  {row['command']}" + (f"   # {row['why']}" if row["why"] else "")
-              + ("" if row["from"] == "bdnex" else f"   [{row['from']}]"), file=out)
+        mine = row["from"] != "bdnex"  # yours stand out: they are the ones you can change
+        shown = f"{row['name']:<{width}}"
+        print(f"  {color.role(shown, 'good' if mine else 'name', on)}  {row['command']}" + (f"   {color.role('# ' + row['why'], 'note', on)}" if row["why"] else "")
+              + (f"   {color.role('[' + row['from'] + ']', 'good', on)}" if mine else ""), file=out)
     return 0
 
 

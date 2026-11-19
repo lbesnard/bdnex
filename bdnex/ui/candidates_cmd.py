@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
 from typing import Any, Optional
 
@@ -78,30 +79,42 @@ def saved_cover(source, settings, source_id: str, album) -> Optional[bytes]:
         return None
 
 
-def compare_covers(source, settings, path: str, fmt, matches, found: list[dict[str, Any]]) -> None:
-    """Add ``cover`` (0-100, or ``None`` when it could not be compared) to each candidate, and mark the best one."""
+def compare_covers(source, settings, path: str, fmt, matches, found: list[dict[str, Any]], step=None) -> None:
+    """Add ``cover`` (0-100, or ``None`` when it could not be compared) to each candidate, and mark the best one.
+
+    ``step(event, number, entry, url)`` says each step as it happens: ``download`` (before a request), then ``done``
+    (the candidate has its ``cover``, or a ``cover_note`` saying why not)."""
+    def say(event: str, number: int, entry: dict, url: str = "") -> None:
+        if step:
+            step(event, number, entry, url)
+
     local = covers.front_cover(path, fmt or "cbz")
     threshold = settings.cover.match_percentage
-    for match, entry in zip(matches, found):
+    for number, (match, entry) in enumerate(zip(matches, found), start=1):
         entry["cover"] = None
         if not local:
             entry["cover_note"] = "the file's first page could not be read"
+            say("done", number, entry)
             continue
         known = source.library.find_album(source.name, match.candidate.source_id)
         album = source.library.get_album(known) if known else None
         url = (album or {}).get("cover_url") or source.guess_cover_url(match.candidate)
+        logger.debug(f"{os.path.basename(path)}: cover of the candidate {entry.get('album', match.candidate.name)} ({url})")
         try:
             online = saved_cover(source, settings, match.candidate.source_id, album)  # the import already downloaded it
             entry["cover_from"] = "saved" if online is not None else "downloaded"
             if online is None:
+                say("download", number, entry, url)
                 online = source.cover_image(url)
             covers.check_cover_image(online)
             entry["cover"] = round(covers.sift_similarity(local, online))
         except (covers.CoverError, *source.fetch_errors) as err:
             logger.debug(f"{path}: cover of {url} not compared ({err})")
             entry["cover_note"] = f"not compared: {err}"
+            say("done", number, entry)
             continue
         (entry["for"] if entry["cover"] >= threshold else entry["against"]).append(f"its cover is {entry['cover']}% like the file's")
+        say("done", number, entry)
     scored = [e for e in found if e.get("cover") is not None]
     best = max(scored, key=lambda e: e["cover"], default=None)
     for entry in found:
@@ -112,12 +125,13 @@ class NotReady(RuntimeError):
     """The album list is not downloaded yet."""
 
 
-def build_report(settings, library, query: list[str], low: bool = False, limit: int = 5, cover: bool = False,
-                 first: int = 0, files: Optional[int] = None) -> list[dict[str, Any]]:
-    """The candidates of each file the query names (the report of ``bdnex candidates --json``, also the web page's).
+def iter_report(settings, library, query: list[str], low: bool = False, limit: int = 5, cover: bool = False,
+                first: int = 0, files: Optional[int] = None, progress=None, step=None):
+    """The candidates of each file the query names, one entry at a time (so a command can show each as it is ready).
 
-    ``first`` / ``files`` take a window of the (sorted) files: with ``--cover`` every file costs requests, so the
-    web page asks for a few at a time. Raises ``QueryError``, ``NotReady`` or the source's own errors."""
+    ``progress(number, path, now, why)`` is called before the slow part of a file (the covers) and ``step`` (see
+    ``compare_covers``) at each cover. Raises ``QueryError``,
+    ``NotReady`` or the source's own errors."""
     offline = settings if cover else settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
         update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
     source = create_source(settings.source, library, offline)
@@ -131,24 +145,73 @@ def build_report(settings, library, query: list[str], low: bool = False, limit: 
     work = {row["path"]: row["id"] for row in linked}
     for row in unlinked:
         work.setdefault(row["path"], None)  # a file without album can be in both lists
-    report = []
+    seen = given = 0
     for path, album_id in sorted(work.items()):
         file = library.get_file(path)
         album = library.get_album(album_id) if album_id is not None else None
         why = is_low(settings, path, file, album, library.last_import(path)) if low else "asked for"
         if not why:
             continue
-        if len(report) < first:  # not part of the window asked for (a file that is not low does not count)
-            report.append(None)
+        if seen < first:  # not part of the window asked for (a file that is not low does not count)
+            seen += 1
             continue
-        if files is not None and len(report) - first >= files:
-            break
+        if files is not None and given >= files:
+            return
+        seen += 1
+        given += 1
+        now = label(album) if album else None
+        if progress:
+            progress(given, path, now, why)
         matches = find_matches(source, path, limit=limit)
         found = [describe_candidate(library, source, m, file or {"path": path}, album_id) for m in matches]
         if cover:
-            compare_covers(source, settings, path, (file or {}).get("format"), matches, found)
-        report.append({"path": path, "why": why, "now": label(album) if album else None, "candidates": found})
-    return [entry for entry in report if entry is not None]
+            compare_covers(source, settings, path, (file or {}).get("format"), matches, found, step)
+        yield {"path": path, "why": why, "now": now, "candidates": found}
+
+
+def build_report(settings, library, query: list[str], low: bool = False, limit: int = 5, cover: bool = False,
+                 first: int = 0, files: Optional[int] = None) -> list[dict[str, Any]]:
+    """The candidates of each file the query names (the report of ``bdnex candidates --json``, also the web page's).
+
+    ``first`` / ``files`` take a window of the (sorted) files: with ``--cover`` every file costs requests, so the
+    web page asks for a few at a time. Raises ``QueryError``, ``NotReady`` or the source's own errors."""
+    return list(iter_report(settings, library, query, low, limit, cover, first, files))
+
+
+VERDICT_KIND = {"confirmed": "confirmed", "unverified": "unverified", "doubtful": "doubtful", "contradicted": "contradicted"}
+
+
+def head_lines(number: int, path: str, now: Optional[str], why: str, on: bool) -> list[str]:
+    """The lines that say which file is being looked at, and what it is linked to now."""
+    from bdnex.ui import color
+
+    return ["", f"{color.role(f'[{number}]', 'hint', on)} {color.role(os.path.basename(path), 'name', on)}",
+            f"      {color.role(path, 'path', on)}",
+            f"      now: {color.role(now, 'name', on) if now else color.role('(no album)', 'warn', on)}   "
+            f"{color.role(f'[{why}]', 'note', on)}"]
+
+
+def candidate_lines(number: int, c: dict[str, Any], on: bool) -> list[str]:
+    """One candidate: its number, score, album and what the evidence says; the evidence under it."""
+    from bdnex.ui import color
+
+    mark = color.role("*", "hint", on) if c["current"] else " "
+    score = color.paint_score(f"{c['score']:>3}", float(c["score"]), on)
+    verdict = color.verdict(c["verdict"] + ("" if c["complete"] else ", page not read"), VERDICT_KIND.get(c["verdict"], "unverified"), on)
+    cover = ""
+    if c.get("cover") is not None:
+        cover = "  cover " + color.paint_score(f"{c['cover']}%", float(c["cover"]), on)
+        if c.get("cover_best"):
+            cover += color.role(" <- most like the file's", "good", on)
+    elif "cover" in c:
+        cover = "  " + color.role(c.get("cover_note") or "cover not compared", "warn", on)
+    extra = f"{c['year'] or ''} {c['publisher'] or ''}".strip()
+    lines = [f" {mark}{number}. {score}  {color.role(c['album'], 'name', on)}  {color.role(extra, 'note', on)}"
+             f"  [{verdict}]{cover}"]
+    lines += [f"        {color.role('= ' + text, 'note', on)}" for text in c["why_score"]]
+    lines += [f"        {color.role('+ ' + text, 'good', on)}" for text in c["for"]]
+    lines += [f"        {color.role('- ' + text, 'bad', on)}" for text in c["against"]]
+    return lines
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -176,29 +239,51 @@ def run(argv: list[str], out=sys.stdout) -> int:
     if args.cover and not covers.opencv_installed():
         print("--cover needs OpenCV (`pip install opencv-python-headless`): the covers are not compared.", file=sys.stderr)
         args.cover = False
+    from bdnex.ui import color
+
+    on = color.enabled(out)
+    report = []
     with Library.for_settings(settings, readonly=True) as library:
         try:
-            report = build_report(settings, library, args.query, low=args.low, limit=args.limit, cover=args.cover)
+            if args.json:  # the whole report at the end, nothing else on stdout
+                report = build_report(settings, library, args.query, low=args.low, limit=args.limit, cover=args.cover)
+            else:  # each file as it is ready: the file first (the covers take a while), then what was found for it
+                def head(number, path, now, why):
+                    print("\n".join(head_lines(number, path, now, why, on)), file=out, flush=True)
+
+                def step(event, number, entry, url):
+                    """Each cover as it is downloaded and compared: the album it belongs to, then what was found."""
+                    if event == "download":
+                        text = f"{number}. downloading the cover of {entry['album']}"
+                        print(f"      {color.role(text, 'note', on)}  {color.role(url, 'path', on)}", file=out, flush=True)
+                    else:
+                        print("\n".join(candidate_lines(number, entry, on)), file=out, flush=True)
+
+                for entry in iter_report(settings, library, args.query, low=args.low, limit=args.limit, cover=args.cover,
+                                         progress=head, step=step):
+                    report.append(entry)
+                    if not args.cover:  # nothing slow happened: all the candidates at once
+                        for number, c in enumerate(entry["candidates"], start=1):
+                            print("\n".join(candidate_lines(number, c, on)), file=out, flush=True)
+                    elif entry["candidates"]:
+                        best = next((c for c in entry["candidates"] if c.get("cover_best")), None)
+                        print("      " + (color.role(f"=> the cover of {best['album']} is the one most like the file's "
+                                                      f"({best['cover']}%)", "good", on) if best else
+                                         color.role("=> no candidate's cover looks like the file's", "warn", on)),
+                              file=out, flush=True)
+                    if not entry["candidates"]:
+                        print(f"      {color.role('no candidate in the album list', 'warn', on)}", file=out)
         except (UnknownSource, TypeError, NotReady) as err:
             print(err, file=sys.stderr)
             return 1
         except QueryError as err:
             return context.bad_query(err)
+        except KeyboardInterrupt:
+            print(f"\n{color.role('Interrupted', 'warn', on)}: {len(report)} file(s) shown.", file=sys.stderr)
+            return 130
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2), file=out)
         return 0
-    for entry in report:
-        print(f"\n{entry['path']}\n  now: {entry['now'] or '(no album)'}   [{entry['why']}]", file=out)
-        for number, c in enumerate(entry["candidates"], start=1):
-            mark = "*" if c["current"] else " "
-            cover = "" if c.get("cover") is None else f"  cover {c['cover']}%" + (" <- most like the file's" if c.get("cover_best") else "")
-            print(f" {mark}{number}. {c['score']:>3}  {c['album']}  {c['year'] or ''} {c['publisher'] or ''}".rstrip()
-                  + f"  [{c['verdict']}{'' if c['complete'] else ', page not read'}]{cover}", file=out)
-            for text in c["why_score"]:
-                print(f"        = {text}", file=out)
-            for text in c["for"]:
-                print(f"        + {text}", file=out)
-            for text in c["against"]:
-                print(f"        - {text}", file=out)
-    print(f"\n{len(report)} file(s). `*` is the album now linked. Redo one with `bdnex import --match --force FILE`.", file=out)
+    print(color.hints(f"\n{len(report)} file(s). `*` is the album now linked. Redo one with `bdnex import --match --force FILE`, "
+                      "or settle them all with `bdnex review --auto`.", on), file=out)
     return 0

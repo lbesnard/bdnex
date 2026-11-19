@@ -76,8 +76,12 @@ def fields_run(argv: list[str], out=sys.stdout) -> int:
                                             "(see the page *Querying the library*). `year-` or `title+` sorts.")
     parser.parse_args(argv)
     width = max(len(name) for name in q.ALL_FIELDS)
+    from bdnex.ui import color
+
+    on = color.enabled(out)
     for name in q.ALL_FIELDS:
-        print(f"{name:<{width}}  {kind_of(name):<7} {FIELD_HELP.get(name, '')}", file=out)
+        print(f"{color.role(f'{name:<{width}}', 'name', on)}  {color.role(f'{kind_of(name):<7}', 'hint', on)} "
+              f"{color.role(FIELD_HELP.get(name, ''), 'note', on)}", file=out)
     return 0
 
 
@@ -102,16 +106,24 @@ def run(argv: list[str], out=sys.stdout) -> int:
     if args.json:
         print(json.dumps(data, indent=2), file=out)
         return 0
+    from bdnex.ui import color
+
+    on = color.enabled(out)
+    big = lambda n: color.role(str(n), "count", on)  # noqa: E731  (the numbers are what the eye looks for)
     a, f = data["albums"], data["files"]
     share = f" ({a['complete'] / a['total']:.0%})" if a["total"] else ""
-    print(f"Albums: {a['total']} ({a['series']} in a series, {a['oneshots']} one-shots)", file=out)
-    print(f"  page read (complete): {a['complete']}{share}; only matched (partial): {a['partial']}"
-          + ("  -> `bdnex import --fetch` or `bdnex import --reparse`" if a["partial"] else ""), file=out)
-    print(f"Files: {f['total']} ({human_size(f['bytes'])}); linked to an album: {f['linked']}, without: {f['unlinked']}", file=out)
+    print(f"{color.role('Albums', 'title', on)}: {big(a['total'])} ({a['series']} in a series, {a['oneshots']} one-shots)", file=out)
+    print(f"  page read (complete): {color.role(str(a['complete']), 'good', on)}{share}; only matched (partial): "
+          + (color.role(str(a["partial"]), "warn", on) if a["partial"] else str(a["partial"]))
+          + (color.hints("  -> `bdnex import --fetch` or `bdnex import --reparse`", on) if a["partial"] else ""), file=out)
+    print(f"{color.role('Files', 'title', on)}: {big(f['total'])} ({human_size(f['bytes'])}); linked to an album: "
+          f"{color.role(str(f['linked']), 'good', on)}, without: "
+          + (color.role(str(f["unlinked"]), "warn", on) if f["unlinked"] else str(f["unlinked"])), file=out)
     for fmt, numbers in f["by_format"].items():
-        print(f"  {fmt:<4} {numbers['files']:>6} file(s)  {human_size(numbers['bytes'])}", file=out)
-    extra = [text for text, n in ((f"{f['corrupted']} damaged", f["corrupted"]), (f"{f['spare']} spare versions", f["spare"]),
-                                  (f"{f['flagged_for_review']} waiting for `bdnex review`", f["flagged_for_review"])) if n]
+        print(f"  {fmt:<4} {numbers['files']:>6} file(s)  {color.role(human_size(numbers['bytes']), 'note', on)}", file=out)
+    extra = [text for text, n in ((color.role(f"{f['corrupted']} damaged", "bad", on), f["corrupted"]),
+                                  (f"{f['spare']} spare versions", f["spare"]),
+                                  (color.hints(f"{f['flagged_for_review']} waiting for `bdnex review`", on), f["flagged_for_review"])) if n]
     if extra:
         print("  " + ", ".join(extra), file=out)
     if data["stored_pages"]:

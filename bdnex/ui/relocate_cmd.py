@@ -60,9 +60,14 @@ def run(argv: list[str], out=sys.stdout) -> int:
         return 1
     present = sum(1 for _, new in result["moved"] if os.path.exists(new))
     verb = "Would rewrite" if args.pretend else "Rewrote"
-    print(f"{verb} {result['files']} file path(s) and {result['log']} import log entr{'y' if result['log'] == 1 else 'ies'}.",
+    from bdnex.ui import color
+
+    on = color.enabled(out)
+    print(f"{color.role(verb, 'good', on)} {result['files']} file path(s) and {result['log']} import log "
+          f"entr{'y' if result['log'] == 1 else 'ies'}.", file=out)
+    everything = present == result["files"]
+    print(color.role(f"{present} of {result['files']} file(s) exist at the new location.", "good" if everything else "warn", on),
           file=out)
-    print(f"{present} of {result['files']} file(s) exist at the new location.", file=out)
-    if present < result["files"]:
-        print("The others will show in `bdnex ls --missing`.", file=out)
+    if not everything:
+        print(color.hints("The others will show in `bdnex ls --missing`.", on), file=out)
     return 0

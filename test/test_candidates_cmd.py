@@ -122,3 +122,42 @@ def test_each_candidate_says_where_its_score_comes_from(env):
     best = json.loads(text)[0]["candidates"][0]
     assert code == 0 and best["why_score"] and best["why_score"][0].startswith("title: ")
     assert "words of the name found" in best["why_score"][0]
+
+
+def test_every_step_is_said_as_it_happens_file_then_each_cover_then_the_decision(env, tmp_path, monkeypatch):
+    pytest.importorskip("cv2")
+    import zipfile
+
+    from importer.test_covers import art, jpeg
+
+    db, _ = env
+    path = tmp_path / "Nains - T01 - Redwin de la forge.cbz"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("page-1.jpg", jpeg(art(1)))
+    with Library(db) as lib:
+        lib.add_file(str(path), None)
+    monkeypatch.setattr("bdnex.importer.covers.opencv_installed", lambda: True)
+    monkeypatch.setattr(Bedetheque, "cover_image",
+                        lambda self, url, recache=False: jpeg(art(1 if url.endswith("Couv_245127.jpg") else 2)))
+    code, text = run("Redwin", "--cover", "--limit", "3")
+    lines = text.splitlines()
+    head = next(i for i, line in enumerate(lines) if line.startswith("[") and "Nains - T01 - Redwin de la forge.cbz" in line)
+    downloads = [i for i, line in enumerate(lines) if i > head and "downloading the cover of" in line]
+    results = [i for i, line in enumerate(lines) if i > head and " cover " in line and "%" in line]
+    decision = next(i for i, line in enumerate(lines) if i > head and line.strip().startswith("=>"))
+    assert code == 0 and downloads and results
+    assert head < downloads[0] < results[0] < decision  # the file, then each album's cover, then what was decided
+    assert "no album" in text and "Couv_" in text  # which file, and which address is being fetched
+
+
+def test_the_report_is_coloured_by_meaning_on_a_terminal_and_plain_otherwise():
+    entry = {"score": 85, "album": "Nains Redwin", "year": 2015, "publisher": "Soleil", "complete": True, "current": True,
+             "verdict": "contradicted", "cover": 3, "cover_best": False, "why_score": ["title: 85"], "for": ["year agrees"],
+             "against": ["tome 5, the album is tome 1"], "url": "u"}
+    plain = "\n".join(candidates_cmd.candidate_lines(1, entry, False))
+    colour = "\n".join(candidates_cmd.candidate_lines(1, entry, True))
+    assert "\x1b[" not in plain and "Nains Redwin" in plain and "[contradicted]" in plain
+    assert "\x1b[31mcontradicted" in colour  # a contradiction is red
+    assert "\x1b[32m+ year agrees" in colour and "\x1b[31m- tome 5" in colour  # evidence for is green, against is red
+    assert "\x1b[1mNains Redwin" in colour  # the name of the album is what the eye lands on
+    assert "\x1b[" not in "".join(candidates_cmd.head_lines(1, "/a/b.cbz", None, "no album", False))
