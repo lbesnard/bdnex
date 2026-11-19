@@ -60,8 +60,9 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
                  cover_check: Optional[bool] = None, series: Optional[str] = None,
                  phase: Optional[Callable[[str, str], None]] = None, retry_skipped: bool = False,
                  files_untouched: bool = False, verbosity: int = 1,
-                 pinned: Optional[Candidate] = None):
+                 pinned: Optional[Candidate] = None, duplicates: Optional[str] = None):
         self.library = library
+        self.duplicates = duplicates  # `--keep-both`: this file is linked even when the album has another file (a spare version)
         self._loop_started = time.monotonic()
         self.verbosity = verbosity  # 0: a count now and then and what needs a look; 1 (-v): every file and why; 2 (-vv): + logging
         self.source = source
@@ -701,6 +702,8 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
 
     def _resolve_duplicate(self, path, others, what) -> str:
         """``skip`` (keep the existing files), ``keep_both`` or ``replace`` (the existing files go to the trash)."""
+        if self.duplicates == "keep_both":
+            return "keep_both"  # only the library changes (the file becomes a spare version): safe with `--database-only`
         if self.files_untouched:
             return "skip"  # `replace` would put a file in the trash, `keep_both` may move one: neither is allowed
         action = self.settings.duplicates.action

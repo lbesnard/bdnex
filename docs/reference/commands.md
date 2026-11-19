@@ -37,7 +37,7 @@ Match comic files to Bédéthèque albums and record them in the library.
 usage: bdnex import [-h] [-m] [-f] [--skipped] [--sources] [-s TERM] [--as-is]
                     [--unattended] [--force] [--auto [=all]] [--no-auto] [--reparse]
                     [-n] [-W] [--move | --copy | --no-move] [--album ADDRESS|NUMBER]
-                    [--database-only] [--cover-check | --no-cover-check]
+                    [--keep-both] [--database-only] [--cover-check | --no-cover-check]
                     [--series | --no-series] [--workers N] [-v] [--log-file PATH]
                     [paths ...]
 
@@ -97,6 +97,9 @@ options:
                         address, or its number), instead of searching: nothing is
                         asked, and a file already imported is redone. `bdnex
                         candidates` finds the numbers
+  --keep-both           with --album: link the file even when the album already has
+                        another file; this one becomes a spare version (`bdnex
+                        duplicates`). Only the library changes, no file is touched
   --database-only       only fill the library: no comic file is moved, copied,
                         written, converted, replaced or deleted, whatever the
                         configuration says (a duplicate is skipped, not replaced)
@@ -127,13 +130,15 @@ With neither --match nor --fetch, both steps run. A step that is already done fo
 file is skipped (the report says so); --force redoes it.
 
 Examples:
-  bdnex import --database-only --auto=all ~/comics     bring a folder in, touching no file and asking nothing
-  bdnex import -n ~/comics                             preview: what would be matched, nothing is recorded
-  bdnex import --skipped --auto=all                    ask again about the files skipped earlier (run `bdnex init` first)
-  bdnex import --fetch --select partial:true           read the pages of the albums that are only matched so far
-  bdnex import --album 123456 ~/comics/Nains-T01.cbz   use this album (the number at the end of its page address) for one file
-  bdnex import --match --force ~/comics/Nains-T01.cbz  choose the album of one file again
-  bdnex import --reparse --select series:nains         rebuild some albums from the pages already stored (offline)
+  bdnex import --database-only --auto=all ~/comics                bring a folder in, touching no file and asking nothing
+  bdnex import -n ~/comics                                        preview: what would be matched, nothing is recorded
+  bdnex import --skipped --auto=all                               ask again about the files skipped earlier (run `bdnex init` first)
+  bdnex import --fetch --select partial:true                      read the pages of the albums that are only matched so far
+  bdnex import --album 123456 ~/comics/Nains-T01.cbz              use this album (the number at the end of its page address) for one file
+  bdnex import --album 123456 --keep-both ~/comics/Nains-T01-bis.cbz
+                                                                  the album already has a file: link this one too, as a spare version
+  bdnex import --match --force ~/comics/Nains-T01.cbz             choose the album of one file again
+  bdnex import --reparse --select series:nains                    rebuild some albums from the pages already stored (offline)
 ```
 
 ### `bdnex candidates`

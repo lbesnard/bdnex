@@ -74,6 +74,9 @@ def build_parser() -> argparse.ArgumentParser:
                         help="use this Bédéthèque album for the one file given (its page address, or its number), instead of "
                              "searching: nothing is asked, and a file already imported is redone. `bdnex candidates` finds "
                              "the numbers")
+    parser.add_argument("--keep-both", action="store_true",
+                        help="with --album: link the file even when the album already has another file; this one becomes "
+                             "a spare version (`bdnex duplicates`). Only the library changes, no file is touched")
     parser.add_argument("--database-only", action="store_true",
                         help="only fill the library: no comic file is moved, copied, written, converted, replaced or "
                              "deleted, whatever the configuration says (a duplicate is skipped, not replaced)")
@@ -139,6 +142,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
         if len(args.paths) != 1 or os.path.isdir(args.paths[0]) or args.sources or args.select or args.skipped:
             parser.error("--album names the album of ONE file: give exactly that file (not a folder, --select or --sources)")
         args.force = True  # a file that already has an album is matched again
+    elif args.keep_both:
+        parser.error("--keep-both goes with --album (the album you name for one file)")
     steps, notes = resolve_steps(args)
     for note in notes:
         print(note, file=sys.stderr)
@@ -199,7 +204,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         steps_order = [step for step in ("match", "fetch") if step in steps]
         session = ImportSession(library, source, settings, prompter=None if args.unattended else new_prompter(source=source, thumbnails=settings.import_.thumbnails),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps, retry_skipped=getattr(args, "retry_skipped", False),
-                                workers=args.workers, cover_check=args.cover_check, series=args.series, files_untouched=args.database_only, verbosity=args.verbose, pinned=pinned, progress=progress, bar=lambda total, label: Bar(total, label),
+                                workers=args.workers, cover_check=args.cover_check, series=args.series, files_untouched=args.database_only, duplicates="keep_both" if args.keep_both else None, verbosity=args.verbose, pinned=pinned, progress=progress, bar=lambda total, label: Bar(total, label),
                                 phase=lambda step, title: banner(title, steps_order.index(step) + 1, len(steps_order)))
         try:
             report = session.run(args.paths)

@@ -78,12 +78,12 @@ def test_a_switch_to_another_album_is_recorded_and_a_refusal_changes_nothing(env
     settings = load_config().settings
     with Library(db) as lib:
         row = batch.next_batch(lib, settings, size=50)[0]
-        monkeypatch.setattr(verdicts, "rematch", lambda path, url: True)  # a refused import: exit code 0, nothing changed
+        monkeypatch.setattr(verdicts, "rematch", lambda path, url, keep_both=False: True)  # a refused import: exit code 0, nothing changed
         ok, message = batch.link_to(lib, row, "https://www.bedetheque.com/BD-Forge-2.html")
         assert not ok and "refused" in message and not row.status
         assert batch.CHECKED not in lib.attrs_of("file", lib.get_file(row.path)["id"])
 
-        def switch(path, url):
+        def switch(path, url, keep_both=False):
             lib.set_file_album(path, lib.find_album("bedetheque", "2"))
             return True
 
@@ -132,3 +132,14 @@ def test_the_batch_options_need_batch(env, capsys):
     for flag in ("--all", "--again", "--unmatched"):
         assert review_cmd.run([flag]) == 2
     assert "go with --batch" in capsys.readouterr().err
+
+
+def test_an_album_without_series_proposes_nothing():
+    from bdnex.importer.source import Candidate
+    from bdnex.library import AlbumInfo
+
+    class Source:
+        def partial_info(self, candidate):
+            return AlbumInfo("bedetheque", "1", "Loose")  # no series
+
+    assert batch.propose_for_series(Source(), Candidate("1", "u", "loose"), ["/a/T01.cbz"]) is None

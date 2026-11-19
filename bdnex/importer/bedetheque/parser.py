@@ -447,6 +447,15 @@ def build_album_info(fields: dict[str, Any], series_url: Optional[str] = None,
             alternate = tome
     elif isinstance(tome, int):
         volume = tome
+    if volume is None and alternate is None and fields.get("Série"):
+        # a page of a series that gives no ``Tome`` line (``Tome 16B6``): the address still says it
+        named = re.search(r"-Tome-(\w+)-", str(fields.get("album_url") or ""))
+        if named and not named.group(1).isdigit():
+            alternate = named.group(1)  # "16B6": kept as written, the way "INT" or "HS" is
+        elif named:
+            volume = int(named.group(1))
+        elif re.search(r"-INT(?:-|\.html)", str(fields.get("album_url") or "")):
+            alternate = "INT"  # an intégrale: the site's address says so (`...-INT-...`), its page has no Tome line
 
     series = None
     series_name = fields.get("Série")

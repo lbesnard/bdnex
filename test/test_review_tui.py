@@ -40,8 +40,8 @@ def env(tmp_path, monkeypatch, make_cbz):
     files = {}
     with Library(db) as lib:
         series = SeriesInfo("bedetheque", "s1", "Nains")
-        album = lib.add_album(AlbumInfo("bedetheque", "1", "Redwin", series=series, volume=1, year=2015))
-        other = lib.add_album(AlbumInfo("bedetheque", "2", "Forge", series=series, volume=2, year=2016))
+        album = lib.add_album(AlbumInfo("bedetheque", "1", "Redwin", series=series, volume=1, year=2015, url="https://www.bedetheque.com/BD-Nains-Redwin-1.html"))
+        other = lib.add_album(AlbumInfo("bedetheque", "2", "Forge", series=series, volume=2, year=2016, url="https://www.bedetheque.com/BD-Nains-Forge-2.html"))
         for name, (filename, target, score) in {"wrong": ("Nains - T05 - Autre.cbz", album, 78.0),
                                                 "unconfirmed": ("Nains - T02 - Forge.cbz", other, 82.0)}.items():
             path = make_cbz(filename)
@@ -91,9 +91,9 @@ def test_the_table_opens_at_once_and_shows_file_folder_album_scores_state_and_ho
 
     result, _ = drive(db, script)
     first, second, third = result["cells"]
-    assert first[1] == "Nains - T05 - Autre.cbz" and "Redwin" in first[3] and first[4] == "78%" and first[5] == "-"
+    assert first[1] == "Nains - T05 - Autre.cbz" and "Redwin" in first[3] and first[5] == "78%" and first[6] == "-"
     assert third[3] == "(no album)" and third[1] == "Loose file.cbz"  # the unmatched is shown, last
-    assert [first[6], second[6], third[6]] == ["contradicted", "unconfirmed", "no album"]  # what is wrong, until it is decided
+    assert [first[7], second[7], third[7]] == ["contradicted", "unconfirmed", "no album"]  # what is wrong, until it is decided
 
 
 def test_a_loading_panel_says_what_is_being_done_until_the_table_is_ready(env, monkeypatch):
@@ -134,9 +134,9 @@ def test_a_header_click_or_a_number_key_sorts_and_the_same_column_again_reverses
         table = app.query_one(DataTable)
         names = lambda: [str(table.get_row_at(i)[1]) for i in range(table.row_count)]  # noqa: E731
         seen["start"] = names()
-        await pilot.press("5")  # Match, ascending: the lowest score first
+        await pilot.press("6")  # Match, ascending: the lowest score first
         seen["match_up"] = names()
-        await pilot.press("5")  # the same column again: reversed
+        await pilot.press("6")  # the same column again: reversed
         seen["match_down"] = names()
         await pilot.press("4")  # Album now: the file without album goes last
         seen["album"] = names()
@@ -169,11 +169,11 @@ def test_sorting_keeps_the_cursor_on_the_same_file_and_decisions_still_hit_the_r
 
     async def script(app, pilot):
         table = app.query_one(DataTable)
-        await pilot.press("5")  # the loose file (55) is now first, the contradicted one second
+        await pilot.press("6")  # the loose file (55) is now first, the contradicted one second
         table.move_cursor(row=1)
         await pilot.pause()
         assert app.current().path == files["wrong"]
-        await pilot.press("5")  # reversed: the cursor follows the same file
+        await pilot.press("6")  # reversed: the cursor follows the same file
         await pilot.pause()
         assert app.current().path == files["wrong"]
         await pilot.press("u")  # unlink what is under the cursor, not what was first
@@ -193,7 +193,7 @@ def test_keys_decide_and_each_decision_is_saved_at_once(env):
         await pilot.press("l")  # the file without album: leave it
 
     result, _ = drive(db, script)
-    assert [row[6] for row in result["cells"]] == ["unlinked", "keep", "left"]
+    assert [row[7] for row in result["cells"]] == ["unlinked", "keep", "left"]
     assert result["app"].decided == {"unlinked": 1, "keep": 1, "left": 1}
     with Library(db) as lib:
         assert lib.get_file(files["wrong"])["album_id"] is None and lib.last_import(files["wrong"])["outcome"] == "skipped"
@@ -209,7 +209,7 @@ def test_skip_saves_nothing_and_the_file_comes_back(env):
         await pilot.press("s")
 
     result, _ = drive(db, script)
-    assert result["cells"][0][6] == "skipped"
+    assert result["cells"][0][7] == "skipped"
     with Library(db) as lib:
         assert [r.path for r in batch.next_batch(lib, load_config().settings, 50)][0] == files["wrong"]
 
@@ -223,7 +223,10 @@ def test_a_file_without_album_cannot_be_kept_or_unlinked(env):
         await pilot.press("u")
 
     result, _ = drive(db, script)
-    assert result["cells"][2][6] == "no album" and result["app"].decided == {}  # nothing was decided, nothing saved
+    assert result["cells"][2][7] == "no album" and result["app"].decided == {}  # nothing was decided, nothing saved
+
+
+seen_calls: list = []  # the ``keep_both`` of every link the screen asked for
 
 
 def _linking(monkeypatch, db, release, outcome="switch"):
@@ -231,9 +234,10 @@ def _linking(monkeypatch, db, release, outcome="switch"):
     ``release`` is set so that the test can look at the table while the link is being made."""
     from bdnex.ui import verdicts
 
-    def rematch(path, url):
+    def rematch(path, url, keep_both=False):
         release.wait(5)
-        if outcome == "switch":
+        seen_calls.append(keep_both)
+        if outcome == "switch" or (outcome == "refuse" and keep_both):
             with Library(db) as lib:
                 lib.set_file_album(path, lib.find_album("bedetheque", "2"))
                 lib.set_file_fields(path, cover_score=66.0)  # the import compares the cover of the album it chose
@@ -255,7 +259,7 @@ def test_o_opens_the_search_and_a_pick_shows_linking_then_updates_the_row(env, m
         await pilot.press("enter")  # the first hit
         await pilot.pause()
         row = app.rows[0]
-        seen["busy"] = (row.busy, str(app.query_one("DataTable").get_row_at(0)[6]), row.message)  # while it is being made
+        seen["busy"] = (row.busy, str(app.query_one("DataTable").get_row_at(0)[7]), row.message)  # while it is being made
         await pilot.press("k")  # a decision on a file that is being linked is refused
         assert not row.status
         release.set()
@@ -264,7 +268,7 @@ def test_o_opens_the_search_and_a_pick_shows_linking_then_updates_the_row(env, m
     result, source = drive(db, script)
     assert seen["busy"][0] is True and seen["busy"][1] == "linking..." and "reading the album page" in seen["busy"][2]
     first = result["cells"][0]
-    assert first[6] == "linked" and "Forge" in first[3] and first[4] == "you" and first[5] == "66%"  # the row says what happened
+    assert first[7] == "linked" and "Forge" in first[3] and first[5] == "you" and first[6] == "66%"  # the row says what happened
     assert "cover is 66%" in result["app"].rows[0].message
     with Library(db) as lib:
         assert lib.attrs_of("file", lib.get_file(files["wrong"])["id"])["checked"].startswith("other:")
@@ -283,9 +287,84 @@ def test_a_refused_link_says_refused_in_the_table(env, monkeypatch):
         await settle(app, pilot)
 
     result, _ = drive(db, script)
-    assert result["cells"][0][6] == "refused" and "refused" in result["app"].rows[0].message
+    assert result["cells"][0][7] == "refused" and "refused" in result["app"].rows[0].message
     with Library(db) as lib:
         assert lib.get_file(files["wrong"])["album_id"] is not None  # nothing changed
+
+
+def test_a_refused_link_offers_to_keep_both_and_yes_links_the_file_as_a_spare_version(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    release.set()
+    seen_calls.clear()
+    _linking(monkeypatch, db, release, outcome="refuse")
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("o")
+        await settle(app, pilot)
+        await pilot.press("enter")
+        await settle(app, pilot)
+        seen["screen"] = app.screen.__class__.__name__  # the question: keep both?
+        await pilot.press("y")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert seen["screen"] == "AskScreen" and seen_calls == [False, True]
+    assert result["cells"][0][7] == "linked"
+
+
+def test_no_to_keep_both_changes_nothing(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    release.set()
+    seen_calls.clear()
+    _linking(monkeypatch, db, release, outcome="refuse")
+
+    async def script(app, pilot):
+        await pilot.press("o")
+        await settle(app, pilot)
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await pilot.press("n")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert seen_calls == [False] and result["cells"][0][7] == "refused"
+
+
+def test_the_page_is_a_link_in_its_column_and_in_the_detail_and_p_copies_it_over_ssh(env, monkeypatch):
+    db, files = env
+    monkeypatch.setenv("SSH_CONNECTION", "1.2.3.4 22 5.6.7.8 22")
+    opened = []
+    monkeypatch.setattr(review_tui.webbrowser, "open", lambda url: opened.append(url) or True)
+    seen = {}
+
+    async def script(app, pilot):
+        from textual.widgets import DataTable
+
+        cell = app.query_one(DataTable).get_row_at(0)[4]
+        seen["link"] = (cell.plain, cell.style.link if hasattr(cell.style, "link") else repr(cell.style))
+        seen["facts"] = app.rows[0].facts
+        copied = []
+        app.copy_to_clipboard = copied.append
+        await pilot.press("p")
+        seen["copied"] = copied
+
+    drive(db, script)
+    assert opened == []  # over SSH no browser is started on the other machine
+    assert seen["copied"] and seen["copied"][0].startswith("https://www.bedetheque.com/")
+    assert seen["link"][0] and seen["link"][1] == seen["copied"][0]
+    assert "file: CBZ" in seen["facts"]
+
+
+def test_the_batch_is_in_folder_order_so_a_series_sits_together():
+    from bdnex.library.review_batch import Row
+    import types
+
+    rows = [Row("/a/b/x.cbz", "b", None, None, None, None, None, "ok"), Row("/a/a/y.cbz", "a", None, None, None, None, None, "wrong")]
+    rows.sort(key=lambda row: (row.folder.casefold(), row.path))
+    assert [row.folder for row in rows] == ["a", "b"]
 
 
 def test_i_takes_an_address_or_a_number(env, monkeypatch):
@@ -303,7 +382,7 @@ def test_i_takes_an_address_or_a_number(env, monkeypatch):
         await settle(app, pilot)
 
     result, _ = drive(db, script)
-    assert result["cells"][0][6] == "linked"
+    assert result["cells"][0][7] == "linked"
 
 
 def test_capital_o_hands_over_to_the_real_fzf_when_it_is_installed(env, monkeypatch):
@@ -326,7 +405,7 @@ def test_capital_o_hands_over_to_the_real_fzf_when_it_is_installed(env, monkeypa
 
     result, _ = drive(db, script, source=source)
     assert asked and asked[0][0] == files["wrong"] and "nains" in asked[0][1].lower()  # it starts from the file's name
-    assert result["cells"][0][6] == "linked"
+    assert result["cells"][0][7] == "linked"
 
 
 def test_the_next_batch_is_offered_when_the_batch_is_done(env):
@@ -386,3 +465,84 @@ def test_the_command_refuses_politely_without_a_terminal(env, capsys):
 
     assert review_cmd.run(["--batch", "10"]) == 2
     assert "run it in a terminal" in capsys.readouterr().err
+
+
+def test_an_album_whose_page_has_no_tome_line_takes_its_tome_from_the_address():
+    from bdnex.importer.bedetheque import parser
+
+    fields = {"album_url": "https://www.bedetheque.com/BD-Rantanplan-Tome-16B6-Le-Noel-de-Rantanplan-10846.html",
+              "Titre": "Rantanplan", "Série": "Rantanplan", "Identifiant": "10846"}
+    info = parser.build_album_info(fields)
+    assert info.series is not None and info.series.name == "Rantanplan" and info.alternate_number == "16B6" and info.volume is None
+    plain = parser.build_album_info({**fields, "album_url": fields["album_url"].replace("16B6", "7")})
+    assert plain.volume == 7
+
+
+def test_c_opens_a_popup_with_the_covers_and_closes_again(env):
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("c")
+        await settle(app, pilot)
+        seen["name"] = app.screen.__class__.__name__
+        for _ in range(20):  # the worker reads the file
+            await pilot.pause(0.1)
+            if "reading" not in str(app.screen.query_one("#left").render()):
+                break
+        seen["left"] = str(app.screen.query_one("#left").render())
+        seen["foot"] = str(app.screen.query_one("#foot").render())
+        await pilot.press("c")
+        await pilot.pause()
+        seen["after"] = app.screen.__class__.__name__
+
+    drive(db, script)
+    assert seen["name"] == "CoverScreen" and seen["after"] != "CoverScreen"
+    assert "the file" in seen["left"] and "reading" not in seen["left"]
+    assert "not saved" in seen["foot"]  # no cover of the album was saved in this library: it says so, no request
+
+
+def test_an_integrale_is_known_from_the_address_when_the_page_has_no_tome_line():
+    from bdnex.importer.bedetheque import parser
+
+    fields = {"album_url": "https://www.bedetheque.com/BD-Chats-du-Louvre-INT-347340.html", "Titre": "Les chats du Louvre",
+              "Série": "Chats du Louvre", "Identifiant": "347340"}
+    info = parser.build_album_info(fields)
+    assert info.alternate_number == "INT" and info.series is not None
+    assert parser.build_album_info({**fields, "Série": None}).alternate_number is None  # no series: a one-shot, as before
+
+
+def test_marked_files_get_the_album_of_a_series_by_their_volume_after_one_question(env, monkeypatch):
+    from bdnex.importer.folders import SeriesProposal
+
+    db, files = env
+    release = threading.Event()
+    release.set()
+    seen_calls.clear()
+    _linking(monkeypatch, db, release)
+    asked = {}
+
+    def propose(source, candidate, paths):
+        asked["paths"] = paths
+        return SeriesProposal("Nains", "s1", {files["wrong"]: FORGE}, with_volume=1, total=len(paths))
+
+    monkeypatch.setattr(batch, "propose_for_series", propose)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("space")  # marks the first row (the contradicted file); the cursor moves on
+        seen["marked"] = len(app.marked)
+        await pilot.press("up")
+        await pilot.press("a")
+        await settle(app, pilot)
+        assert app.screen.__class__.__name__ == "FuzzyScreen"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        seen["question"] = app.screen.__class__.__name__
+        await pilot.press("y")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert seen["marked"] == 1 and asked["paths"] == [files["wrong"]] and seen["question"] == "AskScreen"
+    assert result["cells"][0][7] == "linked" and seen_calls == [False]
+    assert not result["app"].marked  # the mark goes with the link

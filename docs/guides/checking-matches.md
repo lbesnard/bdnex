@@ -75,14 +75,19 @@ By default the table holds **the doubtful files only**: a match something contra
 `--all` every file of the query (to look through a series), `--again` the ones already checked. They all go with `--batch`.
 
 One row per file: its **name**, its **folder** (it often says the series or the language), the **album it is linked to now**,
-the **match score** of the import, the **cover score** (the file's cover against the album's saved cover) and a **state**
-(`contradicted`, `unconfirmed`, `no album`, then what you decided). The most doubtful come first: contradicted ones, lowest
-cover first, then the unconfirmed, then (with `--unmatched`) the files without album. Under the table, the file's whole path
-and what speaks for and against its match.
+the number of its **page** on the site (a link), the **match score** of the import, the **cover score** (the file's cover against the album's saved cover) and a **state**
+(`contradicted`, `unconfirmed`, `no album`, then what you decided). The batch is the most doubtful files (contradicted ones, lowest
+cover first, then the unconfirmed, then, with `--unmatched`, the files without album), **shown folder by folder** so the files of one
+series sit together (click a header to sort otherwise). Under the table: the file's whole path, the album's address, what the album
+says (year, credits, pages) next to what the file is (format, pages, size), and what speaks for and against its match.
+
+When you link a file to an album that **already has another file**, bdnex asks whether to keep both: this file is then linked as a
+spare version (`bdnex duplicates` decides later which one stays). On the command line that is `bdnex import --album ADDRESS FILE
+--keep-both`.
 
 | Key | Does |
 |---|---|
-| a click on a **column header**, or `1`–`7` | sort by that column (`1` is `#`, the order of the batch; `2` File, `3` Folder, `4` Album now, `5` Match, `6` Cover, `7` State); the same column again reverses it, and the title says `by cover ▼`. Rows without a value (no album, no score) stay last. The cursor stays on the same file |
+| a click on a **column header**, or `1`–`8` | sort by that column (`1` is `#`, the order of the batch; `2` File, `3` Folder, `4` Album now, `5` Page, `6` Match, `7` Cover, `8` State); the same column again reverses it, and the title says `by cover ▼`. Rows without a value (no album, no score) stay last. The cursor stays on the same file |
 | `k` | keep the match (the flag goes, the file is marked `checked=keep`) |
 | `u` | unlink the file (remembered as skipped, so `bdnex import --skipped --auto=all` decides it again) |
 | `o` | **another album**: a search box in the screen over the whole album list (the sitemaps), starting from the file's name. It filters as you type like `fzf`: words in any order, accents ignored, and a fuzzy match when a letter is missing. Enter picks, Ctrl-O opens the page, Ctrl-U clears, Esc goes back |
@@ -90,7 +95,9 @@ and what speaks for and against its match.
 | `i` | an album's page address or number |
 | `s` | skip for now (nothing is saved: it is in the next batch again) |
 | `l` | leave it as it is, and do not show it again |
-| `p` | open the page of the album now linked, in your browser |
+| `space`, then `a` | **several files of one series at once**: `space` marks the file under the cursor, `a` asks for any album of the series (the same search as `o`) and gives each marked file the album of that series with the volume number in its name (`T03`, `Tome 3`). Without a mark, `a` takes the files of this folder that are not decided yet. It shows what it will do and asks before linking one by one |
+| `c` | a popup with the **file's cover** next to the album's **saved cover**, drawn with coloured text (works over SSH, no picture protocol needed). Nothing is fetched: when the album's cover was never saved it says so (`bdnex import --fetch` saves it). `c` or Esc closes it |
+| `p` | open the page of the album now linked, in your browser. Over SSH (where a browser would open on the other machine) the address is copied to your clipboard (where the terminal allows it) and shown; the **Page** column and the address under the table are links too: ctrl/cmd-click them in a terminal that knows links |
 | `n` | the next batch |
 | `q` | quit |
 

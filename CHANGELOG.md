@@ -7,10 +7,25 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Added
-- `review --batch`: **click a column header (or press 1–7) to sort** the table; the same column again reverses it. Every column has a fixed
+- Path templates have **`$special`**: what the site calls the tome when it is no number (`INT` for an intégrale, `HS`...), empty otherwise:
+  `$series - %if{$special,$special,T$volume:02} - $title`.
+- `review --batch`: **`space` marks files, `a` attaches them to a series**: pick any album of the series and each marked file (or the files of the
+  folder) gets the album with the volume number of its name, after one question.
+- `review --batch`: **`c` shows the covers**: the file's first page and the album's saved cover side by side in a popup, drawn with coloured text
+  (so it works over SSH). Nothing is fetched.
+- `review --batch`: linking a file to an album that **already has a file** no longer ends in `refused`: the screen asks whether to keep
+  both (the file becomes a spare version). `import --album ADDRESS FILE --keep-both` does the same on the command line.
+- `review --batch`: a **Page** column (the album's number, a link: ctrl/cmd-click in your terminal), the address as a link under the table
+  with the album's year, credits and pages next to the file's format, pages and size; `p` over SSH copies the address instead of failing.
+  The batch is shown folder by folder. Columns are now 1–8.
+- `review --batch`: **click a column header (or press 1–8) to sort** the table; the same column again reverses it. Every column has a fixed
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- An album whose page has **no `Tome` line** was stored as a one-shot with no series (`Rantanplan`, from `...-Tome-16B6-...`; 171 intégrales
+  `...-INT-...`): the tome is now read from the album's address (`16B6`, `INT`, or a plain number), so the album keeps its series and
+  shows it in `Album now`. `bdnex import --reparse` rebuilds the albums already stored, offline.
+- `review --batch`: pressing `n` to refuse a question also loaded the next batch.
 - `review --batch` shows a **loading panel** (a spinner, `weighing the files` and `loading the album list`, each with its own timer and a
   tick when done) where the table will be, instead of one grey line.
 - **`review --batch` opens at once**: the files are weighed and the album list is loaded in background threads (the title says

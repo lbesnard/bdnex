@@ -420,3 +420,14 @@ def test_match_weights_are_checked(conf_path):
     write(conf_path, {"config_version": 2, "collection_path": str(conf_path.parent), "match": {"year_bonus": 99}})
     with pytest.raises(ConfigError, match="year_bonus"):
         load_config()
+
+
+def test_special_is_the_tome_when_it_is_no_number_and_a_template_can_use_it():
+    from bdnex.organizer import template
+
+    album = {"kind": "series", "series": "Chats du Louvre", "title": "Les chats", "volume": None, "alternate_number": "INT",
+             "credits": {}, "genres": []}
+    named = "$series - %if{$special,$special,T$volume:02} - $title"
+    assert template.render(named, template.fields_for(album), lambda field: "?").parts == ["Chats du Louvre - INT - Les chats"]
+    numbered = {**album, "volume": 3, "alternate_number": None}
+    assert template.render(named, template.fields_for(numbered), lambda field: "?").parts == ["Chats du Louvre - T03 - Les chats"]

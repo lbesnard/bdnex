@@ -15,16 +15,18 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import io
+import os
 import shutil
 import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional
 
+from rich.style import Style
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import DataTable, Footer, Header, Input, Label, OptionList, Static
 from textual.widgets.option_list import Option
@@ -37,7 +39,7 @@ KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "
 KIND_WORD = {"wrong": "contradicted", "unconfirmed": "unconfirmed", "unmatched": "no album", "ok": "nothing against"}
 EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 SEARCH_LIMIT = 60
-COLUMNS = (("#", 3), ("File", 40), ("Folder", 22), ("Album now", 46), ("Match", 8), ("Cover", 8), ("State", 14))
+COLUMNS = (("#", 3), ("File", 40), ("Folder", 22), ("Album now", 40), ("Page", 8), ("Match", 8), ("Cover", 8), ("State", 14))
 STATE_ORDER = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # the state column sorts by how doubtful, then by decision
 DECIDED_ORDER = {"keep": 10, "linked": 11, "unlinked": 12, "left": 13, "skipped": 14}
 
@@ -47,6 +49,19 @@ def score_text(value: Optional[float]) -> Text:
     if value is None:
         return Text("-", style="dim")
     return Text(f"{value:.0f}%", style=color.score_hex(float(value)))
+
+
+def page_number(url: Optional[str]) -> str:
+    import re
+
+    found = re.search(r"-(\d+)\.html", url or "")
+    return found.group(1) if found else ""
+
+
+def page_text(url: Optional[str]) -> Text:
+    """The album's number on the site, as a link: a terminal that knows links (most do) opens it on a click, even over SSH."""
+    number = page_number(url)
+    return Text(number, style=Style(color="cyan", underline=True, link=url)) if number else Text("-", style="dim")
 
 
 def album_text(row: batch.Row) -> Text:
@@ -226,9 +241,61 @@ class AskScreen(ModalScreen):
 
     def on_key(self, event) -> None:
         if self.text is None and event.key in ("y", "n"):
+            event.stop()  # `n` is also the screen's "next batch"
             self.dismiss(event.key == "y")
 
     def action_back(self) -> None:
+        self.dismiss(None)
+
+
+class CoverScreen(ModalScreen):
+    """The file's first page next to the album's saved cover, drawn with text (works over SSH). Any key closes it."""
+
+    BINDINGS = [Binding("escape", "close", "Close"), Binding("c", "close", "Close", show=False),
+                Binding("q", "close", "Close", show=False)]
+    CSS = """
+    CoverScreen { align: center middle; }
+    #covers { width: 90%; height: auto; max-height: 95%; border: round $accent; padding: 1 2; background: $surface; }
+    #pair { height: auto; }
+    #pair Static { width: 1fr; height: auto; }
+    """
+
+    def __init__(self, title: str, files) -> None:
+        super().__init__()
+        self.title_text, self.files = title, files
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="covers"):
+            yield Label(Text(self.title_text, style="bold"))
+            with Horizontal(id="pair"):
+                yield Static(Text("reading the file...", style="dim"), id="left")
+                yield Static(Text(""), id="right")
+            yield Label(Text("c / Esc: close", style="dim"), id="foot")
+
+    def on_mount(self) -> None:
+        self.run_worker(self.load, thread=True, exclusive=True)
+
+    def load(self) -> None:
+        from bdnex.ui.cover_text import half_blocks
+
+        local, online, notes = batch.read_covers(*self.files)
+        width = max(20, min(40, (self.app.size.width * 9 // 10 - 12) // 2))
+        left = half_blocks(local, width) if local else None
+        right = half_blocks(online, width) if online else None
+        self.app.call_from_thread(self.show_pair, left, right, notes)
+
+    def show_pair(self, left, right, notes: str) -> None:
+        def side(heading: str, picture) -> Text:
+            text = Text(heading + "\n", style="bold")
+            text.append_text(picture if picture is not None else Text("(none)", style="dim"))
+            return text
+
+        self.query_one("#left", Static).update(side("the file", left))
+        self.query_one("#right", Static).update(side("the album (saved cover)", right))
+        if notes:
+            self.query_one("#foot", Label).update(Text(notes + "   ·   c / Esc: close", style="yellow"))
+
+    def action_close(self) -> None:
         self.dismiss(None)
 
 
@@ -251,6 +318,9 @@ class ReviewApp(App):
         Binding("s", "skip", "Skip"),
         Binding("l", "leave", "Leave"),
         Binding("p", "page", "Open page"),
+        Binding("c", "cover", "Covers"),
+        Binding("space", "mark", "Mark"),
+        Binding("a", "attach", "Attach marked to a series"),
         Binding("n", "next_batch", "Next batch"),
         Binding("q", "quit", "Quit"),
         *[Binding(str(number), f"sort({number - 1})", f"Sort by {name}", show=False) for number, (name, _) in enumerate(COLUMNS, start=1)],
@@ -270,6 +340,7 @@ class ReviewApp(App):
         self.timing = ""
         self.sort_column: Optional[int] = None  # a column of COLUMNS, sorted by a click on its header or by a number key
         self.sort_reverse = False
+        self.marked: set[int] = set()  # ids of the rows marked with space (to attach to a series together)
         self.order: dict[int, int] = {}  # each row's place when the batch was made (``#`` sorts back to it)
         self.started = 0.0  # when the files started to be weighed
         self.weighed_in: Optional[float] = None  # how long weighing took, once it did
@@ -370,6 +441,7 @@ class ReviewApp(App):
         self.show_loading(False)
         self.query_one(DataTable).focus()
         self.rows = rows
+        self.marked.clear()
         self.order = {id(row): place for place, row in enumerate(rows)}
         self.sort_column, self.sort_reverse = None, False
         self.timing = f"weighed in {seconds:.1f} s"
@@ -416,8 +488,10 @@ class ReviewApp(App):
         if index == 3:
             return row.album.casefold() if row.album else None
         if index == 4:
-            return row.score
+            return int(page_number(row.album_url)) if page_number(row.album_url) else None
         if index == 5:
+            return row.score
+        if index == 6:
             return row.cover
         return DECIDED_ORDER.get(row.status) if row.status else STATE_ORDER.get(row.kind, 5)
 
@@ -453,8 +527,8 @@ class ReviewApp(App):
             state = Text(KIND_WORD.get(row.kind, row.kind) + (f" (was {row.previous})" if row.previous else ""),
                          style=KIND_STYLE.get(row.kind, ""))
         match = Text("you", style="cyan") if row.status == "linked" else score_text(row.score)
-        return [Text(str(number), style="cyan"), Text(os.path.basename(row.path), style="bold"),
-                Text(row.folder, style="dim"), album_text(row), match, score_text(row.cover), state]
+        return [Text(str(number), style="bold reverse magenta" if id(row) in self.marked else "cyan"), Text(os.path.basename(row.path), style="bold"),
+                Text(row.folder, style="dim"), album_text(row), page_text(row.album_url), match, score_text(row.cover), state]
 
     def show_detail(self, index: int) -> None:
         if not (0 <= index < len(self.rows)):
@@ -463,9 +537,11 @@ class ReviewApp(App):
         text = Text()
         text.append(row.path + "\n", style="dim")
         text.append(KIND_WORD.get(row.kind, row.kind), style=KIND_STYLE.get(row.kind, "")).append("   now: ").append(album_text(row))
-        if row.album_url:
-            text.append(f"   {row.album_url}", style="dim")
         text.append("\n")
+        if row.album_url:  # a link: ctrl/cmd-click in most terminals, or `p`
+            text.append(f"  {row.album_url}\n", style=Style(color="cyan", link=row.album_url))
+        if row.facts:
+            text.append("".join(f"  {line}\n" for line in row.facts.split("\n")))
         for line in row.why[:5]:
             text.append(f"  {line}\n", style=EVIDENCE_STYLE.get(line[:1], ""))
         if row.message:
@@ -547,10 +623,98 @@ class ReviewApp(App):
             self.refresh_row(row)
             self.advance()
 
+    # -- several files at once: mark them (space), then give them the series of an album
+    def action_mark(self) -> None:
+        row = self.current()
+        if row is None or row.busy:
+            return
+        self.marked.symmetric_difference_update({id(row)})
+        self.refresh_row(row)
+        self.notify(f"{len(self.marked)} file(s) marked: `a` attaches them to a series", timeout=3)
+        table = self.query_one(DataTable)
+        table.move_cursor(row=min(table.cursor_row + 1, len(self.rows) - 1))
+
+    def action_attach(self) -> None:
+        """Pick an album of a series: each marked file (without a mark: the files of this folder not decided yet) gets the
+        album of that series with the volume number in its name."""
+        row = self.current()
+        if row is None:
+            return
+        chosen = [r for r in self.rows if id(r) in self.marked and not r.busy]
+        if not chosen:
+            chosen = [r for r in self.rows if r.folder == row.folder and not r.status and not r.busy]
+        if not chosen:
+            self.notify("Nothing to attach: mark files with space.", severity="warning")
+            return
+        self.push_screen(FuzzyScreen(self.hub, self.search_start(chosen[0]),
+                                     f"An album of the series for these {len(chosen)} file(s)"),
+                         lambda candidate: self.run_worker(self.propose(chosen, candidate)) if candidate is not None else None)
+
+    async def propose(self, chosen: list, candidate) -> None:
+        paths = [r.path for r in chosen]
+        found = await asyncio.wrap_future(self.hub.run(lambda hub: batch.propose_for_series(hub.source, candidate, paths)))
+        if found is None:
+            self.notify("That album is not in a series, or no file name has a volume number (T03, Tome 3...).", severity="warning")
+            return
+        pairs = [(r, found.mapping[r.path]) for r in chosen if r.path in found.mapping]
+        lines = [f"{os.path.basename(r.path)}  ->  {c.url.rsplit('/', 1)[-1].removesuffix('.html')}" for r, c in pairs[:8]]
+        more = f"\n... and {len(pairs) - 8} more" if len(pairs) > 8 else ""
+        left = len(chosen) - len(pairs)
+        question = (f"{found.name}: {len(pairs)} of {len(chosen)} file(s) find their volume"
+                    + (f" ({left} left as they are)" if left else "") + ". Link them?\n" + "\n".join(lines) + more)
+        self.push_screen(AskScreen(question, None), lambda yes: self.link_many(pairs) if yes else None)
+
+    def link_many(self, pairs: list) -> None:
+        """Link each file to its album, one after the other (an import at a time: they write to the same library)."""
+        todo = []
+        for row, candidate in pairs:
+            before = (self.library.get_file(row.path) or {}).get("album_id")
+            row.busy, row.message = True, "waiting to be linked..."
+            self.refresh_row(row)
+            todo.append((row, candidate, before))
+
+        def work() -> None:
+            from bdnex.ui import verdicts
+
+            for row, candidate, before in todo:
+                self.call_from_thread(self.say_linking, row, candidate)
+                captured, error = io.StringIO(), ""
+                try:
+                    with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+                        verdicts.rematch(row.path, candidate.url, False)
+                except Exception as err:
+                    error = str(err) or err.__class__.__name__
+                self.call_from_thread(self.linked, row, before, error, None)
+
+        self.run_worker(work, thread=True, exclusive=False, group="link")
+
+    def say_linking(self, row: batch.Row, candidate) -> None:
+        from bdnex.ui.prompts import display_name
+
+        row.message = f"linking to {display_name(candidate)}: reading the album page, a few seconds..."
+        self.refresh_row(row)
+
+    def action_cover(self) -> None:
+        """A popup with the file's cover and the album's saved cover, side by side."""
+        row = self.current()
+        if row is None:
+            return
+        files = batch.cover_files(self.library, self.settings, row)
+        self.push_screen(CoverScreen(f"{os.path.basename(row.path)}  ·  {row.album or '(no album)'}", files))
+
     def action_page(self) -> None:
         row = self.current()
-        if row is not None and row.album_url:
-            webbrowser.open(row.album_url)
+        if row is None or not row.album_url:
+            return
+        opened = False
+        if not os.environ.get("SSH_CONNECTION"):  # over SSH a browser would open on the other machine (or a text one here)
+            try:
+                opened = webbrowser.open(row.album_url)
+            except Exception:
+                opened = False
+        if not opened:
+            self.copy_to_clipboard(row.album_url)  # the terminal's clipboard (OSC 52), where it supports it
+            self.notify(f"{row.album_url}\n(copied; or ctrl/cmd-click the link in the detail or the Page column)", timeout=10)
 
     # -- another album
     def search_start(self, row: batch.Row) -> str:
@@ -608,7 +772,7 @@ class ReviewApp(App):
                          lambda text: self.run_worker(given(text)) if text else None)
 
     # -- linking: it reads an album page, so it runs in a thread and the table says so
-    def link(self, row: batch.Row, url: str, candidate=None) -> None:
+    def link(self, row: batch.Row, url: str, candidate=None, keep_both: bool = False) -> None:
         import os
 
         from bdnex.ui.prompts import display_name
@@ -625,17 +789,18 @@ class ReviewApp(App):
             captured, error = io.StringIO(), ""
             try:  # the import prints its progress: it must not land on the screen
                 with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
-                    verdicts.rematch(row.path, url)
+                    verdicts.rematch(row.path, url, keep_both)
             except Exception as err:
                 error = str(err) or err.__class__.__name__
-            self.call_from_thread(self.linked, row, before, error)
+            self.call_from_thread(self.linked, row, before, error, (url, candidate, keep_both))
 
         self.run_worker(work, thread=True, exclusive=False, group="link")
 
-    def linked(self, row: batch.Row, before, error: str = "") -> None:
+    def linked(self, row: batch.Row, before, error: str = "", asked=None) -> None:
         import os
 
         row.busy = False
+        self.marked.discard(id(row))
         if error:
             row.message = f"failed: {error}"
             self.notify(f"{os.path.basename(row.path)}: {row.message}", severity="error")
@@ -653,6 +818,18 @@ class ReviewApp(App):
         self.refresh_row(row)
         if ok:
             self.advance()
+        elif asked is not None and not asked[2]:
+            self.offer_both(row, *asked[:2])
+
+    def offer_both(self, row: batch.Row, url: str, candidate) -> None:
+        """The album has another file already: keep both (this file becomes a spare version), or leave it."""
+        from bdnex.ui.prompts import display_name
+
+        name = display_name(candidate) if candidate is not None else url
+        question = (f"{name} already has another file. Link {row.path.rsplit('/', 1)[-1]} to it too, as a spare version "
+                    "(`bdnex duplicates` decides later which one stays)?")
+        self.push_screen(AskScreen(question, None),
+                         lambda yes: self.link(row, url, candidate, keep_both=True) if yes else None)
 
     def action_next_batch(self) -> None:
         self.load_batch()
