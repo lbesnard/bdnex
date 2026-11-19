@@ -13,6 +13,9 @@ match:
   min_margin: 10                        # a first choice with another album fewer points behind is asked about, not applied unasked (0: off)
   strong_threshold: 90                  # title score (0-100): applied without asking
   medium_threshold: 70                  # between medium and strong: ask; below: no match
+  auto_all: strong                      # what `import --auto=all` (never ask) applies: strong (only confident matches, the rest wait) | medium (also the ones in between)
+  cover_vote: true                      # a file left undecided is decided by its cover: compared with the covers of its best candidates (needs OpenCV)
+  cover_vote_min: 60                    # similarity (0-100) a candidate's cover needs to win that vote; it must also lead the others by 15
 
 import:
   mode: in_place                        # in_place | copy | move

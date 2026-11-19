@@ -80,8 +80,7 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    **A strong score is not always enough.** A first choice is not applied unasked, even above `match.strong_threshold`,
    when **another album is fewer than `match.min_margin` points behind it** (10 by default; a tie between tome 1 and
    tome 2 of a series is the usual case), or when the file's own tags name another series, or the file is a supplement
-   or an "intégrale" and the album a numbered tome. It is then asked about (or, with `--auto=all`, treated as a medium
-   match). `bdnex import -v` says which. `match.min_margin: 0` turns the margin off. A file that names its album by its
+   or an "intégrale" and the album a numbered tome. It is then asked about (or, with `--auto=all`, left undecided). `bdnex import -v` says which. `match.min_margin: 0` turns the margin off. A file that names its album by its
    address is never doubted.
 
    *How reliable is it?* Measured on a library of 16,343 linked files, using the 3,588 whose album was confirmed by something
@@ -94,8 +93,8 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    confirm, pick another candidate or skip. With `--auto` (or `import.auto: true`) a score
    at or above `match.strong_threshold` is applied without asking; between
    `medium_threshold` and `strong_threshold` you choose among the candidates; below, you
-   can still pick one or skip. `--auto=all` never asks: strong and medium matches are
-   applied, the rest skipped. Without a terminal to ask on, the import stops once and says so.
+   can still pick one or skip. `--auto=all` never asks: only strong matches without a doubt are applied (`match.auto_all: medium` applies the
+   medium ones too, as it did before), and the rest is skipped, then given to the cover vote (see below). Without a terminal to ask on, the import stops once and says so.
    Each question starts with a rule, so the files are told apart, and names the file as `folder/name` (the folder
    it sits in, in cyan, then the file in bold; not the whole path). The scores are coloured on a gradient: **80 to 100
    green**, 60 yellow, 40 orange, **20 and below red**, so a doubtful match stands out at a glance. Colour is used on a
@@ -292,6 +291,18 @@ complete but lack a cover are done at the end. Ctrl-C stops all of it; `bdnex im
 A cover that is not there yet is downloaded the next time the album goes through `bdnex import --fetch`, which
 covers albums imported before this existed (`bdnex import --fetch` on your library). A deleted cover file is
 downloaded again the same way, and a file kept after `bdnex reset` is taken up again without any request.
+
+### The cover vote: deciding what the title could not
+
+With `--auto=all` nobody can be asked, so a match in the middle (a score between `medium_threshold` and
+`strong_threshold`, or a strong one with another album close behind) is **not applied**: a wrong link costs more than
+a missing one. At the end of the run those files get a second chance, at low priority (after everything else, and
+Ctrl-C stops it): the covers of their three best candidates are compared with the file's cover (a candidate whose cover
+was already saved costs no request; any other is one plain request, three at a time). A candidate wins when its cover
+looks like the file's by at least `match.cover_vote_min` (60%) **and** leads the next one by 15 points; the file is then
+linked as `(cover vote 78%)` and its page is read like any other. Otherwise it stays skipped, and `bdnex import --skipped`
+(or `bdnex candidates FILE --cover`) comes back to it. `match.cover_vote: false` turns the vote off; it needs OpenCV.
+`match.auto_all: medium` brings back the old behaviour (medium matches applied, nothing voted).
 
 ### Checking covers
 

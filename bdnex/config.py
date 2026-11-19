@@ -69,6 +69,9 @@ class Match(_Section):
     min_margin: float = Field(ge=0, le=100)  # a first choice this close to another album is not applied unasked
     strong_threshold: float = Field(ge=0, le=100)
     medium_threshold: float = Field(ge=0, le=100)
+    auto_all: Literal["strong", "medium"]  # what `import --auto=all` (never ask) applies: strong matches only, or medium ones too
+    cover_vote: bool  # a file left undecided is decided by comparing its cover with the covers of its best candidates
+    cover_vote_min: float = Field(ge=0, le=100)  # similarity (0-100) a candidate's cover needs to win that vote
 
 
 class Source(_Section):

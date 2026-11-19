@@ -158,3 +158,51 @@ def test_stopping_gives_up_the_requests_not_yet_sent(tmp_path):
         pass
     env.source.allow_requests()
     assert env.source.fetch_cover(COVER_URL)  # a new run sends requests again
+
+
+# ---------------------------------------------------------------- the cover votes for the files nobody decided
+def _vote_env(tmp_path, file_seed, album_seed, other_seed=None, **match):
+    """A file whose best match is only medium; `--auto=all` leaves it undecided; the covers vote."""
+    web = FakeWeb()
+    web.pages[COVER_URL] = jpeg(art(album_seed))
+    env = env_for(web, check=True, download=True)
+    env.session.settings.match.strong_threshold = 100  # the match is never strong
+    for key, value in match.items():
+        setattr(env.session.settings.match, key, value)
+    env.session.auto = "all"
+    return env, web, cbz_with_cover(tmp_path, "Nains Redwin.cbz", file_seed)  # a medium match, not a strong one
+
+
+def test_a_cover_that_looks_like_the_files_decides_a_medium_match_nobody_applied(tmp_path):
+    env, web, path = _vote_env(tmp_path, file_seed=1, album_seed=1)
+    report = env.session.run([path])
+    result = report.results[0]
+    assert result.outcome == "tagged" and env.lib.get_file(path)["album_id"] is not None
+    assert env.lib.last_import(path)["outcome"] == "tagged"
+
+
+def test_a_cover_that_differs_leaves_the_file_skipped(tmp_path):
+    env, web, path = _vote_env(tmp_path, file_seed=1, album_seed=2)
+    report = env.session.run([path])
+    assert report.results[0].outcome == "skipped" and env.lib.last_import(path)["outcome"] == "skipped"
+
+
+def test_the_vote_can_be_turned_off(tmp_path):
+    env, web, path = _vote_env(tmp_path, file_seed=1, album_seed=1, cover_vote=False)
+    assert env.session.run([path]).results[0].outcome == "skipped"
+    assert COVER_URL not in web.calls  # nothing was requested for it
+
+
+def test_a_vote_needs_a_clear_winner_and_a_good_enough_cover(tmp_path):
+    from types import SimpleNamespace
+
+    env, web, path = _vote_env(tmp_path, file_seed=1, album_seed=1)
+    env.session.run([path])  # the vote decided it; now ask the vote itself about two candidates with the same cover
+    candidates = env.source.candidates("Nains Redwin", limit=2)
+    matches = [SimpleNamespace(candidate=c, score=80.0) for c, _ in candidates]
+    env.session.settings.match.cover_vote_min = 100
+    covers_by_id = {m.candidate.source_id: jpeg(art(1)) for m in matches}
+    env.session._candidate_cover = lambda candidate, fetched: covers_by_id[candidate.source_id]
+    env.session._cover_urls = lambda pool: {}  # nothing to request: the covers are given
+    if len(matches) > 1:
+        assert env.session._vote(path, matches) is None  # two identical covers: no clear winner

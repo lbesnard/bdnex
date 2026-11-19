@@ -100,6 +100,8 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 - It runs when a page arrives (`ImportSession._confirm`) and for the whole library with `bdnex check --matches` (`library/health.doubtful_matches`). `confirm.judge` is the one place that decides; never re-implement it.
   Credit labels of a page are mapped in `parser.OTHER_CREDIT_ROLES` (`Encrage` is `Inker`); `LEGACY_ROLES` reads old names back.
 
+- **`--auto=all` never asks and applies only strong matches without a doubt** (`match.auto_all`); a medium one is queued and
+  decided at the end by its cover (`importer/session_vote.py`, `match.cover_vote`): never apply a medium match unasked.
 - **Precision before coverage**: a wrong match costs more than an unasked one. A strong first choice is still asked about
   when a *doubt* is set (`Match.doubt`, `matching._doubts`): another album within `match.min_margin` points, or a strong
   contradiction. Candidates whose page was read get a few points when year/author agree and **never lose any** (a penalty

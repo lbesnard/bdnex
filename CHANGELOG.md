@@ -7,6 +7,11 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Added
+- **`import --auto=all` is strict by default** (**breaking**): it applies only strong matches without a doubt. A match in
+  the middle used to be applied unasked (`match.auto_all: medium` brings that back); now the file stays skipped.
+- **The cover vote** (`match.cover_vote`, `match.cover_vote_min`): at the end of the run, at low priority, the covers of
+  the best candidates of the files left undecided are compared with the file's cover; one that looks like it (60%) and
+  clearly more than the others decides the file (`cover vote 78%`). Needs OpenCV.
 - **API:** `GET /api/candidates` (the albums each file could be, with the evidence and, with `cover=true`, the cover
   comparison), `GET /api/check?matches=true`, `POST /api/marks` and `marks` on an album and its files, `GET /api/fields`,
   `GET /api/history` (who changed what, from the page and the API), `GET /api/jobs/{id}/events` (a task's output as
