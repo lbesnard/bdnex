@@ -104,7 +104,7 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   decided at the end by its cover (`importer/session_vote.py`, `match.cover_vote`): never apply a medium match unasked.
 - **`bdnex review --batch N`** (`ui/review_tui.py`, Textual: a core dependency) is a screen over `library/review_batch.py` (`next_batch`,
   `decide`, `link_to`): every decision is written at once (a `checked` mark; `^attr:checked` leaves the file out of the next batch),
-  `o` hands the terminal to `fzf` (`prompts.fzf_pick`, the one function the import question uses too) through `App.suspend()`; a link runs the import in a thread and the library is written back in the main thread. Keep the logic in `review_batch`, the screen
+  Nothing slow runs in the screen's thread: files are weighed in a worker with its own read-only `Library`, the album list lives in `SourceHub` (one thread that owns the source and its library, `fuzzy_search` for `o`), a link runs the import in a worker with stdout/stderr captured, and only the screen's own library writes the decisions. `O` hands the terminal to the real `fzf` (`prompts.fzf_pick`) through `App.suspend()`. Keep the logic in `review_batch`, the screen
   thin; test the screen with Textual's pilot (`test/test_review_tui.py`).
 - **One command for doubtful matches: `bdnex review`** (`--auto` settles by rule). `library/recheck.py` weighs the flagged files and
   the matches applied under `match.strong_threshold` (page, tags, saved covers); `ui/verdicts.py` looks for a better album by the covers of
