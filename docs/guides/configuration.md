@@ -201,6 +201,16 @@ when no file was linked), gets `BDNEX_EVENT`, `BDNEX_COMMAND` and `BDNEX_CHANGED
 may take ten minutes. One that fails, is missing or takes too long is reported and never makes the bdnex command fail.
 The web page (`bdnex serve`) runs the same commands, so its jobs fire your hooks too.
 
+## Aliases: your own short commands
+
+```yaml
+aliases: ["fix = review --auto", "new = import --database-only --auto=all"]
+```
+
+`bdnex fix` is then `bdnex review --auto`, and what you type after it is added: `bdnex fix -n` is `bdnex review --auto -n`.
+Each alias is `name = a bdnex command and its options`. The name is lower case, not already a command, and the
+command is a bdnex command, not another alias. Nothing else is run: an alias is only a shorter way to type bdnex.
+
 ## Metadata source
 
 ```yaml

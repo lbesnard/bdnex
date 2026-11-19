@@ -114,23 +114,26 @@ Before you start pass 2:
   page (credits, year, volume, the file's own tags) and lists the ones that look wrong (`--fix` flags them), then `bdnex review` goes
   through them with the two covers side by side (`bdnex candidates --low` lists the other albums each could be) (`bdnex import --select` redoes chosen files).
 
-## …recheck the matches an older import applied at a medium score?
+## …settle the doubtful matches (an older import's, or the flagged ones) without going through each?
 
 Before `--auto=all` became strict, it applied the matches in the middle (a score under `match.strong_threshold`)
-without asking. Running the import again does not look at them: a file that is already matched is only counted.
-`bdnex recheck` does. It asks whether something other than the name (the album page's year and authors, the file's own
-tags, its cover against the saved cover) confirms the link it already has, and, for the contradicted ones, whether
-the cover of another candidate is clearly the file's.
+without asking, and a cover check flags files whose cover is not like their album's. `bdnex review --auto` weighs all
+of them (the album page's year and authors, the file's own tags, its cover against the saved cover, and the covers
+of other candidates for the contradicted ones) and settles them by rule.
 
 ```bash
-bdnex recheck -n                      # confirmed, unconfirmed, contradicted, better albums found; changes nothing
-bdnex recheck --rematch --unlink      # switch to the better album, else unlink the contradicted ones (asks first)
+bdnex review --auto -n                # confirmed, contradicted (switched or unlinked), unconfirmed; changes nothing
+bdnex review --auto                   # settle them (asks once)
 bdnex import --skipped --auto=all     # decide the unlinked ones again: strict, then the covers of the best candidates vote
 ```
 
-The ones nothing confirms are left alone: no evidence is no reason to ask you. A library with thousands of files
-already flagged for review is settled by rule with `bdnex review --auto -n`, then without `-n`. See
+The ones nothing confirms are left alone: no evidence is no reason to ask you. See
 [Checking the matches](checking-matches.md).
+
+## …shorten a command I type often?
+
+Add an alias to your configuration (`bdnex config --edit`): `aliases: ["fix = review --auto"]`. Then `bdnex fix -n` is
+`bdnex review --auto -n`. See [Aliases](configuration.md#aliases-your-own-short-commands).
 
 ## …import again? Redo a file?
 

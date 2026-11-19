@@ -1,4 +1,4 @@
-"""`bdnex recheck`: the matches applied under the strong threshold, weighed again."""
+"""`bdnex review --auto`: flagged files and medium matches, weighed again and settled by rule."""
 
 import io
 import json
@@ -7,7 +7,7 @@ import pytest
 import yaml
 
 from bdnex.library import AlbumInfo, Library, SeriesInfo
-from bdnex.ui import recheck_cmd
+from bdnex.ui import review_cmd, verdicts as recheck_cmd
 
 
 class Yes:
@@ -46,65 +46,86 @@ def env(tmp_path, monkeypatch, make_cbz):
     return db, files
 
 
+
+class Yes:
+    def __init__(self, answer=True):
+        self.answer, self.asked = answer, []
+
+    def confirm(self, message):
+        self.asked.append(message)
+        return self.answer
+
+
 def run(*argv, prompter=None):
     out = io.StringIO()
-    return recheck_cmd.run(list(argv), out=out, prompter=prompter), out.getvalue()
+    return review_cmd.run(["--auto", "--no-cover", *argv], out=out, prompter=prompter), out.getvalue()
 
 
 def test_each_weak_match_is_confirmed_contradicted_or_left_unconfirmed(env):
     _, files = env
-    code, text = run("--json", "--no-cover")
-    verdicts = {v["path"]: v["verdict"] for v in json.loads(text)}
+    code, text = run("--json")
+    found = {v["path"]: v["verdict"] for v in json.loads(text)}
     assert code == 0
-    assert verdicts == {files["kept"]: "kept", files["wrong"]: "wrong", files["unconfirmed"]: "unconfirmed"}
+    assert found == {files["kept"]: "kept", files["wrong"]: "wrong", files["unconfirmed"]: "unconfirmed"}
 
 
 def test_a_preview_changes_nothing_and_says_what_would_happen(env):
     db, files = env
-    code, text = run("-n", "--no-cover", "--unlink")
-    assert code == 0 and "1 unlinked, 0 flagged" in text
+    code, text = run("-n")
+    assert code == 0 and "3 file(s) weighed" in text and "1 unlinked" in text
     with Library(db) as lib:
         assert lib.get_file(files["wrong"])["album_id"] is not None and not lib.get_file(files["wrong"])["review"]
 
 
-def test_by_default_only_the_contradicted_are_flagged_and_nothing_is_unlinked(env):
-    db, files = env
-    code, text = run("--no-cover")
-    assert code == 0 and "Flagged 1 file(s)" in text
-    with Library(db) as lib:
-        assert lib.get_file(files["wrong"])["review"] and not lib.get_file(files["unconfirmed"])["review"]
-        assert not lib.get_file(files["kept"])["review"] and not lib.get_file(files["confident"])["review"]
-        assert lib.get_file(files["wrong"])["album_id"] is not None
-
-
-def test_unlink_takes_only_the_contradicted_ones_and_remembers_them_as_skipped(env):
+def test_the_contradicted_is_unlinked_and_remembered_as_skipped_after_one_question(env):
     db, files = env
     prompter = Yes()
-    code, text = run("--no-cover", "--unlink", prompter=prompter)
-    assert code == 0 and prompter.asked and "Unlinked 1" in text and "Flagged" not in text
+    code, text = run(prompter=prompter)
+    assert code == 0 and prompter.asked and "1 unlinked" in text
     with Library(db) as lib:
         assert lib.get_file(files["wrong"])["album_id"] is None
         assert lib.last_import(files["wrong"])["outcome"] == "skipped"  # `import --skipped` picks it up again
-        assert lib.get_file(files["unconfirmed"])["album_id"] is not None and not lib.get_file(files["unconfirmed"])["review"]
-        assert lib.get_file(files["chosen"])["album_id"] is not None and lib.get_file(files["kept"])["album_id"] is not None
+        for name in ("unconfirmed", "kept", "chosen", "confident"):  # nothing else is touched or flagged
+            assert lib.get_file(files[name])["album_id"] is not None and not lib.get_file(files[name])["review"]
 
 
-def test_unconfirmed_goes_too_when_asked_and_a_no_stops_everything(env):
+def test_a_no_stops_everything_and_y_does_not_ask(env):
     db, files = env
-    assert run("--no-cover", "--unlink", "--unconfirmed", prompter=Yes(False))[0] == 1
+    assert run(prompter=Yes(False))[0] == 1
     with Library(db) as lib:
         assert lib.get_file(files["wrong"])["album_id"] is not None
-    code, text = run("--no-cover", "--unlink", "--unconfirmed", "-y")
+    assert run("-y")[0] == 0
     with Library(db) as lib:
-        assert code == 0 and "Unlinked 2" in text
-        assert lib.get_file(files["unconfirmed"])["album_id"] is None and lib.get_file(files["kept"])["album_id"] is not None
+        assert lib.get_file(files["wrong"])["album_id"] is None
 
 
-def test_a_query_limits_it_and_a_bad_one_is_refused(env, capsys):
+def test_a_query_limits_it_and_a_bad_one_is_refused(env):
     _, files = env
-    code, text = run("--json", "--no-cover", "filename:Autre")
+    code, text = run("--json", "filename:Autre")
     assert [v["path"] for v in json.loads(text)] == [files["wrong"]]
-    assert run("--no-cover", "year:")[0] == 2
+    assert run("year:")[0] == 2
+
+
+def test_flagged_files_are_settled_too_whatever_their_score(env):
+    db, files = env
+    with Library(db) as lib:
+        for name in ("kept", "wrong", "unconfirmed", "confident"):
+            lib.flag_review(files[name], "its cover is 5% like the album's")
+    code, text = run("-y")
+    with Library(db) as lib:
+        assert not lib.get_file(files["kept"])["review"]  # confirmed: the flag goes
+        assert lib.get_file(files["wrong"])["album_id"] is None  # contradicted, nothing better: unlinked
+        assert lib.get_file(files["unconfirmed"])["review"]  # a flag that is not a medium match's own: it stays for you
+        assert lib.get_file(files["confident"])["album_id"] is None  # flagged at a strong score, and tome 9 is not tome 1
+
+
+def test_the_flag_put_on_a_medium_match_is_taken_back_when_nothing_contradicts_it(env):
+    db, files = env
+    with Library(db) as lib:
+        lib.flag_review(files["unconfirmed"], "applied at 82%: nothing confirms it")
+    run("-y")
+    with Library(db) as lib:
+        assert not lib.get_file(files["unconfirmed"])["review"]
 
 
 def test_the_cover_of_the_file_against_the_saved_cover_confirms_or_contradicts(env, monkeypatch):
@@ -126,84 +147,37 @@ def test_the_cover_of_the_file_against_the_saved_cover_confirms_or_contradicts(e
     for name, seed in (("unconfirmed", 1), ("wrong", 2)):  # the first file's cover is the album's, the second's is another
         with zipfile.ZipFile(files[name], "w") as archive:
             archive.writestr("page-1.jpg", jpeg(art(seed)))
-    code, text = run("--json")
-    verdicts = {v["path"]: v for v in json.loads(text)}
-    assert verdicts[files["unconfirmed"]]["verdict"] == "kept" and verdicts[files["unconfirmed"]]["cover"] >= 60
-    assert verdicts[files["wrong"]]["verdict"] == "wrong" and verdicts[files["wrong"]]["cover"] < 40
+    out = io.StringIO()
+    monkeypatch.setattr(recheck_cmd, "look_for_better", lambda *a, **k: 0)
+    review_cmd.run(["--auto", "--json"], out=out)
+    found = {v["path"]: v for v in json.loads(out.getvalue())}
+    assert found[files["unconfirmed"]]["verdict"] == "kept" and found[files["unconfirmed"]]["cover"] >= 60
+    assert found[files["wrong"]]["verdict"] == "wrong" and found[files["wrong"]]["cover"] < 40
     with Library(db) as lib:
         assert lib.get_file(files["unconfirmed"])["cover_score"] >= 60  # kept for the next time
 
 
-def test_unconfirmed_is_flagged_only_when_asked_and_an_old_flag_of_recheck_is_taken_back(env):
+def test_a_better_album_is_switched_to_instead_of_unlinking(env, monkeypatch):
     db, files = env
-    with Library(db) as lib:
-        lib.flag_review(files["unconfirmed"], "applied at 82%: nothing confirms it")
-        lib.flag_review(files["kept"], "something a person wrote")
-    code, text = run("--no-cover")
-    assert "Took back 1 flag" in text
-    with Library(db) as lib:
-        assert not lib.get_file(files["unconfirmed"])["review"]
-        assert lib.get_file(files["kept"])["review"] == "something a person wrote"  # not its own: left
-    run("--no-cover", "--flag-unconfirmed")
-    with Library(db) as lib:
-        assert lib.get_file(files["unconfirmed"])["review"]
+    url = "https://www.bedetheque.com/BD-Autre-2.html"
 
-
-def _better(monkeypatch, files, url="https://www.bedetheque.com/BD-Autre-2.html"):
-    """A better album found for the contradicted file (the cover comparison is tested with a real picture elsewhere)."""
-    def fake(settings, library, verdicts, limit, say=lambda text: None):
-        for v in verdicts:
+    def fake(settings, library, found, limit, say=lambda text: None):
+        for v in found:
             if v.path == files["wrong"]:
                 v.better = {"url": url, "album": "Nains Forge", "score": 80, "cover": 88.0, "current_cover": 3.0}
         return 1
 
     monkeypatch.setattr(recheck_cmd, "look_for_better", fake)
-    return url
-
-
-def test_a_better_album_is_proposed_and_linked_only_with_rematch(env, monkeypatch):
-    db, files = env
-    url = _better(monkeypatch, files)
-    code, text = run("-n", "--rematch")
-    assert "another album's cover is clearly the file's" in text and "better: Nains Forge" in text
-    assert "1 would be switched to a better album" in text
-    code, text = run()  # flagged, with the proposal in the reason, nothing switched
-    with Library(db) as lib:
-        assert "better: Nains Forge" in lib.get_file(files["wrong"])["review"]
     called = []
     monkeypatch.setattr(recheck_cmd, "rematch", lambda path, address: called.append((path, address)) or True)
-    code, text = run("--rematch", "-y")
-    assert called == [(files["wrong"], url)] and "Switched 1 file(s)" in text
-
-
-def test_review_auto_settles_the_flagged_files_by_rule(env, monkeypatch):
-    from bdnex.ui import review_cmd
-
-    db, files = env
-    with Library(db) as lib:
-        for name in ("kept", "wrong", "unconfirmed"):
-            lib.flag_review(files[name], "its cover is 5% like the album's")
     out = io.StringIO()
-    assert review_cmd.run(["--auto", "--no-cover", "-y"], out=out) == 0
-    with Library(db) as lib:
-        assert not lib.get_file(files["kept"])["review"]  # confirmed: the flag goes
-        assert lib.get_file(files["wrong"])["album_id"] is None  # contradicted, nothing better: unlinked, skipped
-        assert lib.last_import(files["wrong"])["outcome"] == "skipped"
-        assert lib.get_file(files["unconfirmed"])["review"] and lib.get_file(files["unconfirmed"])["album_id"] is not None
-    assert "1 still flagged" in out.getvalue()
-
-
-def test_review_auto_preview_changes_nothing(env):
-    from bdnex.ui import review_cmd
-
-    db, files = env
-    with Library(db) as lib:
-        lib.flag_review(files["wrong"], "x")
+    assert review_cmd.run(["--auto", "-n"], out=out) == 0
+    assert "1 switched to a better album, 0 unlinked" in out.getvalue() and not called
     out = io.StringIO()
-    assert review_cmd.run(["--auto", "--no-cover", "-n"], out=out) == 0
+    assert review_cmd.run(["--auto", "-y"], out=out) == 0
+    assert called == [(files["wrong"], url)] and "1 switched" in out.getvalue()
     with Library(db) as lib:
-        assert lib.get_file(files["wrong"])["album_id"] is not None and lib.get_file(files["wrong"])["review"] == "x"
-    assert "1 flagged file(s)" in out.getvalue()
+        assert lib.get_file(files["wrong"])["album_id"] is not None  # the (faked) switch changed nothing here: not unlinked
 
 
 class _Cand:

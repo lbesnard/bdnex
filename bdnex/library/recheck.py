@@ -1,4 +1,4 @@
-"""``bdnex recheck``: the matches that were applied below ``match.strong_threshold``, weighed again.
+"""The judgement behind ``bdnex review --auto``: the matches that were applied below ``match.strong_threshold``, weighed again.
 
 Nothing here asks the site or reads a page: it uses what the library already knows (the album's page, the file's own
 tags and, when OpenCV is installed, the file's cover against the album's saved cover).
@@ -58,24 +58,25 @@ def _cover_against_saved(library: Library, settings, path: str, album: dict, row
 
 
 def weak_matches(library: Library, settings, terms: list[str], compare: bool = True, store: bool = True,
-                 flagged: bool = False) -> list[Verdict]:
-    """Each linked file whose match was applied under ``match.strong_threshold``, with what confirms or contradicts it.
+                 flagged: bool = False, weak: bool = True) -> list[Verdict]:
+    """Each linked file whose match was applied under ``match.strong_threshold`` (``weak``) or is flagged for review
+    (``flagged``, whatever its score), with what confirms or contradicts it. A file you chose yourself (no score in the
+    import log) is never looked at.
 
-    ``compare`` computes the cover score that is missing (from the saved cover, no request) and ``store`` keeps it.
-    ``flagged`` looks at the files flagged for review instead (whatever their score; one you chose yourself is still left alone)."""
+    ``compare`` computes the cover score that is missing (from the saved cover, no request) and ``store`` keeps it."""
     strong = settings.match.strong_threshold
     vote_min, cover_floor = settings.match.cover_vote_min, settings.cover.match_percentage
     albums: dict[int, dict] = {}
     found = []
-    for row in library.query([*(["review:true"] if flagged else []), *terms], files=True):
+    for row in library.query([*(["review:true"] if flagged and not weak else []), *terms], files=True):
         if row.get("id") is None:
             continue
         last = library.last_import(row["path"])
-        if flagged:
-            if last and last["score"] is None:
-                continue  # chosen by you or read from its own tags
-        elif not last or last["score"] is None or last["score"] >= strong:
-            continue  # chosen by you, read from its own tags, or confident: nothing to recheck
+        if last and last["score"] is None:
+            continue  # chosen by you or read from its own tags
+        under = bool(last) and last["score"] < strong
+        if not ((weak and under) or (flagged and row.get("review"))):
+            continue  # confident, or not flagged: nothing to look at
         file = library.get_file(row["path"]) or row
         album = albums.get(row["id"]) or albums.setdefault(row["id"], library.get_album(row["id"]))
         if album is None:

@@ -49,7 +49,7 @@ An import can be stopped with Ctrl-C and run again: decisions and the albums alr
 
 ## Checking the matches
 
-`bdnex recheck -n --json` weighs the matches applied under the strong threshold (kept / wrong / unconfirmed) and, for the wrong ones, the covers of the 5 best other candidates (`better`); without `-n` it flags the wrong ones, `--rematch` links the better album, `--unlink` unlinks the rest (ask first). `bdnex review --auto -n` previews settling every flagged file by the same rule. `bdnex check --matches` weighs every match against its album page (credits, year, volume, the file's own tags, its folder) and
+`bdnex review --auto -n --json` weighs every flagged file and every match applied under the strong threshold (kept / wrong / unconfirmed) and, for the wrong ones, the covers of the 5 best other candidates (`better`); without `-n --json` it settles them by rule: the flag goes for the kept, the wrong are switched to the better album or unlinked (ask first), the rest stay. The user can shorten commands with `aliases` in the configuration. `bdnex check --matches` weighs every match against its album page (credits, year, volume, the file's own tags, its folder) and
 lists the ones that look wrong; without `-n` it flags them. `bdnex review --list --json` gives the flagged files with
 the reason, for you to read. `bdnex candidates --low --json` gives, for each file in doubt, the other albums it could be
 (score, evidence for and against, `page not read` when only the sitemap is known); add `--cover --limit 3` to compare covers

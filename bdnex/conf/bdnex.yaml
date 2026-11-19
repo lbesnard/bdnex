@@ -95,6 +95,7 @@ paths:
   placeholder: Unknown
 
 source: bedetheque                      # metadata source: a built-in name, an installed plugin, or 'package.module:factory'
+aliases: []                             # your own short commands, e.g. ["fix = review --auto", "new = import --database-only --auto=all"]
 plugins: {}                             # free-form options of third-party sources, by source name
 
 bedetheque:

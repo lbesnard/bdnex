@@ -157,38 +157,47 @@ stored in the library. To redo a file: `bdnex import --match --force FILE`.
 
 ### `bdnex review`
 
-Go through the flagged matches one by one, with both covers.
+Go through the doubtful matches: one by one with both covers, or settled by rule with --auto.
 
 ```text
 usage: bdnex review [-h] [--list] [--json] [--auto] [--candidates N] [--no-cover] [-y]
-                    [-n]
+                    [-n] [-v] [--log-file PATH]
                     [query ...]
 
 ``bdnex review``: go through the flagged matches one by one, with the file's cover and
 the album's side by side.
 
 positional arguments:
-  query           only these files, same terms as `bdnex ls --files` (e.g.
-                  series:nains)
+  query            only these files, same terms as `bdnex ls --files` (e.g.
+                   series:nains)
 
 options:
-  -h, --help      show this help message and exit
-  --list          only list the flagged files and why; ask nothing
-  --json          with --list: the flagged files as JSON, with the evidence, for a
-                  script or an agent
-  --auto          settle the flagged files by rule, asking nothing: the ones confirmed
-                  by something other than the name lose their flag; the ones something
-                  contradicts are switched to another album whose cover is clearly the
-                  file's (see --candidates), else unlinked (`bdnex import --skipped
-                  --auto=all` decides them again); the others stay flagged
-  --candidates N  for each contradicted file, compare the covers of its N best other
-                  candidates (the saved cover when there is one, else one request
-                  each; needs OpenCV) and propose the album whose cover is clearly the
-                  file's; 0: do not (default 5)
-  --no-cover      do not compare covers at all (neither the album's, not yet compared,
-                  nor the candidates')
-  -y, --yes       with --auto: do not ask for confirmation
-  -n, --pretend   show what would be settled (with --auto); change nothing
+  -h, --help       show this help message and exit
+  --list           only list the flagged files and why; ask nothing
+  --json           with --list: the flagged files as JSON, with the evidence; with
+                   --auto: the verdicts as JSON (nothing is changed), for a script or
+                   an agent
+  --auto           settle by rule, asking nothing, every flagged file and every match
+                   applied under `match.strong_threshold`: the ones confirmed by
+                   something other than the name lose their flag; the ones something
+                   contradicts are switched to another album whose cover is clearly
+                   the file's (see --candidates), else unlinked (`bdnex import
+                   --skipped --auto=all` decides them again); the ones nothing
+                   confirms or contradicts are left as they are
+  --candidates N   for each contradicted file, compare the covers of its N best other
+                   candidates (the saved cover when there is one, else one request
+                   each; needs OpenCV) and propose the album whose cover is clearly
+                   the file's; 0: do not (default 5)
+  --no-cover       do not compare covers at all (neither the album's, not yet
+                   compared, nor the candidates')
+  -y, --yes        with --auto: do not ask for confirmation before unlinking or
+                   switching
+  -n, --pretend    show what would be settled (with --auto); change nothing
+  -v, --verbose    more detail: -v what is decided and why (every file), -vv how
+                   (reads, cache, requests, threads), -vvv everything, libraries and
+                   SQL included
+  --log-file PATH  also write everything, at the debug level and with the time, to
+                   this file (for a long run)
 
 A match is flagged when its cover is not like its album's cover (similarity below
 `cover.match_percentage`) or the album's page contradicts the file (year, volume, the
@@ -197,61 +206,6 @@ look at it. Each flagged file is shown with both covers side by side (the file's
 the left, the album's on the right) and you keep the match, unlink the file, ask for
 another album, or leave it for later. `bdnex candidates` lists the other albums a file
 could be.
-```
-
-### `bdnex recheck`
-
-Weigh again the matches applied under the strong threshold: flag or unlink the unconfirmed.
-
-```text
-usage: bdnex recheck [-h] [--unlink] [--unconfirmed] [--rematch] [--flag-unconfirmed]
-                     [--candidates N] [--no-cover] [--json] [-y] [-n] [-v]
-                     [--log-file PATH]
-                     [query ...]
-
-``bdnex recheck``: the matches applied below the strong threshold, weighed again with
-what the library knows.
-
-positional arguments:
-  query               only these files, same terms as `bdnex ls --files`
-
-options:
-  -h, --help          show this help message and exit
-  --unlink            unlink the ones something contradicts (and for which no better
-                      album was found), instead of flagging them
-  --unconfirmed       with --unlink: unlink the ones nothing confirms too (the most
-                      careful: a right match whose cover could not be compared comes
-                      back only if its cover votes)
-  --rematch           link a contradicted file to the better album that --candidates
-                      found (the library only)
-  --flag-unconfirmed  flag the ones nothing confirms for `bdnex review` too (by
-                      default they are left alone)
-  --candidates N      for each contradicted file, compare the covers of its N best
-                      other candidates (the saved cover when there is one, else one
-                      request each; needs OpenCV) and propose the album whose cover is
-                      clearly the file's; 0: do not (default 5)
-  --no-cover          do not compare covers at all (neither the album's, not yet
-                      compared, nor the candidates')
-  --json              the verdicts as JSON
-  -y, --yes           do not ask for confirmation before unlinking or switching
-  -n, --pretend       show what would be flagged, unlinked or switched; change nothing
-  -v, --verbose       more detail: -v what is decided and why (every file), -vv how
-                      (reads, cache, requests, threads), -vvv everything, libraries
-                      and SQL included
-  --log-file PATH     also write everything, at the debug level and with the time, to
-                      this file (for a long run)
-
-For each file linked with a score under `match.strong_threshold` (a medium match,
-applied before `import --auto=all` became strict): its album's page, the file's own
-tags and its cover against the album's saved cover. Confirmed ones are left alone, and
-so are the ones nothing confirms (they are not flagged: nothing says they are wrong).
-The contradicted ones are flagged for `bdnex review` (nothing is unlinked), or
-unlinked with --unlink so that `bdnex import --skipped --auto=all` decides them again
-(strict, and the covers of the best candidates vote). For each contradicted file the
-covers of its best other candidates are compared too (--candidates): when one clearly
-looks like the file's, it is proposed, and with --rematch the file is linked to it.
-Only those covers are requested; no page is. Files chosen by you or read from their
-own tags are never touched.
 ```
 
 ## Look at the library

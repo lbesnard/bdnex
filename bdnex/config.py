@@ -308,10 +308,39 @@ class Settings(_Section):
     write: Write
     paths: Paths
     source: str = Field(min_length=1)
+    aliases: list[str] = Field(default_factory=list)
     plugins: dict[str, dict[str, Any]] = Field(default_factory=dict)
     bedetheque: Bedetheque
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True, validate_assignment=True)
+
+    @field_validator("aliases")
+    @classmethod
+    def _aliases_are_commands(cls, value):
+        """``"fix = review --auto"``: a new name for a command and its options (never for another alias)."""
+        import re
+        import shlex
+
+        from bdnex.ui.commands import COMMANDS
+
+        seen = set()
+        for text in value:
+            name, sep, rest = text.partition("=")
+            name = name.strip()
+            if not sep or not re.fullmatch(r"[a-z][a-z0-9-]*", name):
+                raise ValueError(f"alias {text!r}: write it as 'name = command options' (the name in lower case)")
+            if name in COMMANDS or name == "recheck":
+                raise ValueError(f"alias {text!r}: {name!r} is already a command")
+            if name in seen:
+                raise ValueError(f"alias {name!r} is given twice")
+            seen.add(name)
+            try:
+                words = shlex.split(rest)
+            except ValueError as err:
+                raise ValueError(f"alias {text!r}: {err}") from err
+            if not words or words[0] not in COMMANDS:
+                raise ValueError(f"alias {text!r}: {words[0] if words else 'nothing'!r} is not a bdnex command")
+        return value
 
     @field_validator("import_")
     @classmethod

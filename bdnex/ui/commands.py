@@ -22,8 +22,7 @@ GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command("import", "import_cmd", "match comic files to Bédéthèque albums and record them in the library"),
         Command("candidates", "candidates_cmd",
                 "for files whose match is in doubt: the other albums they could be, with the evidence"),
-        Command("review", "review_cmd", "go through the flagged matches one by one, with both covers"),
-        Command("recheck", "recheck_cmd", "weigh again the matches applied under the strong threshold: flag or unlink the unconfirmed"),
+        Command("review", "review_cmd", "go through the doubtful matches: one by one with both covers, or settled by rule with --auto"),
     )),
     ("Look at the library", (
         Command("ls", "ls_cmd", "list and search the library"),
@@ -66,6 +65,21 @@ GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
 )
 
 COMMANDS: dict[str, Command] = {command.name: command for _, group in GROUPS for command in group}
+
+
+# Commands that were folded into another: the old name still works, with a note, for a release.
+RENAMED: dict[str, tuple[str, ...]] = {"recheck": ("review", "--auto")}
+
+
+def expand_alias(argv: list[str], aliases: list[str]) -> list[str]:
+    """``bdnex fix -n`` with the alias ``fix = review --auto`` is ``bdnex review --auto -n``. Not an alias: ``argv`` as it is."""
+    import shlex
+
+    for text in aliases:
+        name, _, rest = text.partition("=")
+        if argv and name.strip() == argv[0]:
+            return [*shlex.split(rest), *argv[1:]]
+    return argv
 
 
 def usage() -> str:

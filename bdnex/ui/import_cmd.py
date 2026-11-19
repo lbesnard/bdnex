@@ -238,7 +238,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
               "just those again (run `bdnex init` first if new albums were added).", file=out)
     if to_review:
         print(f"{len(to_review)} file(s) have a cover that does not look like their album's: "
-              "`bdnex review` shows them side by side.", file=out)
+              "`bdnex review --auto` settles them by rule (`bdnex review` shows them side by side).", file=out)
     if report.count(ALREADY) and not args.verbose:
         print("(`-v` lists the files that were already imported; `--force` redoes them.)", file=out)
     if report.count(PARTIAL) and "fetch" in steps:
