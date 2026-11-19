@@ -8,6 +8,7 @@ looks wrong is flagged for ``bdnex review``, never unlinked on its own.
 from __future__ import annotations
 
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
@@ -184,6 +185,7 @@ class CoverPass:
             result.note = "; ".join(n for n in (result.note, f"cover not compared: {err}") if n)
             return
         self.library.set_file_fields(path, cover_score=score)
+        self.detail(f"    cover: {score:.0f}%  {os.path.basename(path)}")  # it arrives later than the match: the name says whose
         threshold = self.settings.cover.match_percentage
         if score >= threshold:
             return

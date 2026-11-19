@@ -54,6 +54,8 @@ command runs, never while an import is fetching).
   through the file-placement step, which looked up every imported file again for nothing.
 
 ### Changed
+- `import -v`: the match score is a percentage in its own colour (red to green), and each cover comparison prints
+  `cover: 87%  file name`.
 - `bdnex komga push` leaves out the files whose match waits for a review (`--with-review` sends them): a doubtful
   match no longer puts another album's metadata, locked, in Komga.
 - The web page's review answers and `bdnex review` share one function; a test checks every flag a web task builds

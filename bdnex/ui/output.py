@@ -22,6 +22,13 @@ def _tint(message: str, on: bool) -> str:
     if counter:
         return f"{color.paint(counter.group(1), 'cyan', on)} {color.paint(counter.group(2), 'bold', on)}"
     stripped = message.lstrip()
+    for prefix, style in (("match:", "green"), ("cover:", "dim")):
+        percent = re.search(r"(\d+)%", stripped)
+        if stripped.startswith(prefix) and percent:  # the number in the colour of the score, the rest as before
+            at = len(message) - len(stripped)
+            return (message[:at] + color.paint(stripped[:percent.start()], style, on)
+                    + color.paint_score(percent.group(0), float(percent.group(1)), on)
+                    + color.paint(stripped[percent.end():], style, on))
     for prefix, style in (("match:", "green"), ("Series folder", "cyan_bold"), ("page unavailable", "red"),
                           ("page read", "dim"), ("fetching the album page", "dim"), ("album already complete", "dim"),
                           ("Interrupted", "yellow"), ("Resuming", "yellow"), ("Back to", "yellow")):

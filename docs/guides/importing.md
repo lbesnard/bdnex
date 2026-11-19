@@ -579,7 +579,7 @@ A big collection must neither scroll for hours nor hide why a file was left alon
 | Option | What you see |
 |---|---|
 | (none) | the phases, a line every percent or so (`[1200/18743] 6%  about 2 h left`), and **only the files that need a look**: `skipped: name - no match: best guess BD-Berserk-Tome-36-... scored 63, under 70, the lowest score applied`, `duplicate: ... - identical to ...`, `failed: ...` |
-| `-v` | every file, and under it what was decided and why: the album and its score, the page fetched, the reason a file was skipped |
+| `-v` | every file, and under it what was decided and why: the album and its match score as a percentage, the page fetched, the reason a file was skipped; a `cover: 87%  file name` line when a file's cover was compared with its album's (it comes a little after the match: the pages and covers are downloaded in the background). On a terminal both numbers are coloured, red (bad) to green (good) |
 | `-vv` | how: what each worker read, cache hits and misses, requests and their time, with the thread's name on each line (bdnex's own messages only) |
 | `-vvv` | everything, for debugging bdnex itself: the debug messages of every library too, and each SQL statement. Very long |
 | `--log-file PATH` | in addition, writes everything bdnex logs at the debug level, with the time, to this file, whatever the level on the screen: run a long import with `--log-file import.log`, keep the screen quiet, and send the file when something looks wrong |

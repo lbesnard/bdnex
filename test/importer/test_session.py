@@ -397,7 +397,7 @@ def test_progress_shows_the_match_and_the_page_fetch(web, make_cbz):
     env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
     env.session.import_file(make_cbz(FILE))
     text = "\n".join(messages)
-    assert "    match: BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html (score " in text
+    assert "    match: BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html (" in text and "%)" in text
     assert "fetching the album page (bedetheque;" in text and "page read in " in text
     env.lib.close()
 
