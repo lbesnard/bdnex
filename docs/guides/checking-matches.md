@@ -82,6 +82,7 @@ and what speaks for and against its match.
 
 | Key | Does |
 |---|---|
+| a click on a **column header**, or `1`–`7` | sort by that column (`1` is `#`, the order of the batch; `2` File, `3` Folder, `4` Album now, `5` Match, `6` Cover, `7` State); the same column again reverses it, and the title says `by cover ▼`. Rows without a value (no album, no score) stay last. The cursor stays on the same file |
 | `k` | keep the match (the flag goes, the file is marked `checked=keep`) |
 | `u` | unlink the file (remembered as skipped, so `bdnex import --skipped --auto=all` decides it again) |
 | `o` | **another album**: a search box in the screen over the whole album list (the sitemaps), starting from the file's name. It filters as you type like `fzf`: words in any order, accents ignored, and a fuzzy match when a letter is missing. Enter picks, Ctrl-O opens the page, Ctrl-U clears, Esc goes back |
@@ -93,8 +94,9 @@ and what speaks for and against its match.
 | `n` | the next batch |
 | `q` | quit |
 
-The table **opens at once**: the files are weighed in the background (the title says how long it took, `weighed in 6.2 s`) and
-the album list loads at the same time, so nothing waits before the first key. Picking an album **links the file**, which reads
+The screen **opens at once**. While the batch is made it shows a loading panel with the two jobs and how long each has taken:
+`weighing the files` (the table appears when that is done; the title then says `weighed in 6.2 s`) and `loading the album list`
+(the search waits for that one, in the background), so you always see what it is doing. Picking an album **links the file**, which reads
 that album's page: the row says `linking...` (with what it is doing under the table), keys on that row are refused until it
 is done, and when it is the row shows `linked`, the new album, the new cover score and `you` as the match. A link the import
 refuses (the album already has another file) shows `refused` in red.

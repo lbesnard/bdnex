@@ -37,6 +37,9 @@ KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "
 KIND_WORD = {"wrong": "contradicted", "unconfirmed": "unconfirmed", "unmatched": "no album", "ok": "nothing against"}
 EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 SEARCH_LIMIT = 60
+COLUMNS = (("#", 3), ("File", 40), ("Folder", 22), ("Album now", 46), ("Match", 8), ("Cover", 8), ("State", 14))
+STATE_ORDER = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # the state column sorts by how doubtful, then by decision
+DECIDED_ORDER = {"keep": 10, "linked": 11, "unlinked": 12, "left": 13, "skipped": 14}
 
 
 def score_text(value: Optional[float]) -> Text:
@@ -235,6 +238,7 @@ class ReviewApp(App):
 
     TITLE = "bdnex review"
     CSS = """
+    #loading { height: 2fr; min-height: 8; content-align: center middle; text-align: left; }
     #table { height: 2fr; min-height: 8; }
     #detail { height: 1fr; min-height: 8; border-top: solid $accent; padding: 0 1; overflow-y: auto; }
     """
@@ -249,6 +253,7 @@ class ReviewApp(App):
         Binding("p", "page", "Open page"),
         Binding("n", "next_batch", "Next batch"),
         Binding("q", "quit", "Quit"),
+        *[Binding(str(number), f"sort({number - 1})", f"Sort by {name}", show=False) for number, (name, _) in enumerate(COLUMNS, start=1)],
     ]
 
     def __init__(self, library, settings, source, size: int = 50, terms=(), unmatched: bool = False,
@@ -263,22 +268,64 @@ class ReviewApp(App):
         self.decided: dict[str, int] = {}
         self.loading = False
         self.timing = ""
+        self.sort_column: Optional[int] = None  # a column of COLUMNS, sorted by a click on its header or by a number key
+        self.sort_reverse = False
+        self.order: dict[int, int] = {}  # each row's place when the batch was made (``#`` sorts back to it)
+        self.started = 0.0  # when the files started to be weighed
+        self.weighed_in: Optional[float] = None  # how long weighing took, once it did
+        self.albums_in: Optional[float] = None  # how long the album list took to load, once it did
 
     # -- layout
     def compose(self) -> ComposeResult:
         yield Header()
+        yield Static("", id="loading")
         yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
         yield Static("", id="detail")
         yield Footer()
 
     def on_mount(self) -> None:
-        table = self.query_one(DataTable)
-        for name, width in (("#", 3), ("File", 40), ("Folder", 22), ("Album now", 46), ("Match", 6), ("Cover", 6), ("State", 14)):
-            table.add_column(name, width=width)  # long names are cut, so the scores and the state are always on screen
+        self.started = time.monotonic()
+        self.hub.ready.add_done_callback(self.list_loaded)
         self.load_batch()
 
     def on_unmount(self) -> None:
         self.hub.close()
+
+    def list_loaded(self, future) -> None:  # called in the thread of the album list
+        self.albums_in = time.monotonic() - self.started
+
+    # -- the loading panel: what is being done, and for how long
+    SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
+    def loading_text(self) -> Text:
+        now = time.monotonic()
+        frame = self.SPINNER[int(now * 10) % len(self.SPINNER)]
+        weighing = self.weighed_in is None
+        listing = not self.hub.ready.done()
+        text = Text()
+        text.append(f"{frame}  " if (weighing or listing) else "✓  ", style="bold cyan")
+        text.append("Getting the batch ready\n\n", style="bold")
+        text.append("   ")
+        text.append(("✓ " if not weighing else f"{frame} "), style="green" if not weighing else "cyan")
+        text.append("weighing the files: what each match says for and against, offline")
+        text.append(f"   {self.weighed_in if not weighing else now - self.started:.1f} s\n", style="dim")
+        text.append("   ")
+        text.append(("✓ " if not listing else f"{frame} "), style="green" if not listing else "cyan")
+        text.append("loading the album list (for the search)")
+        text.append(f"   {self.albums_in if not listing and self.albums_in is not None else now - self.started:.1f} s\n", style="dim")
+        text.append("\nThe table opens as soon as the files are weighed; the search waits for the album list.", style="dim")
+        return text
+
+    def show_loading(self, on: bool) -> None:
+        self.query_one("#loading", Static).display = on
+        self.query_one("#table", DataTable).display = not on
+        if on:
+            self.query_one("#loading", Static).update(self.loading_text())
+            self.loading_timer = self.set_interval(0.1, lambda: self.query_one("#loading", Static).update(self.loading_text()))
+        else:
+            timer = getattr(self, "loading_timer", None)
+            if timer is not None:
+                timer.stop()
 
     # -- the batch: weighed in a thread, so the table is there at once
     def say(self, text: str, style: str = "") -> None:
@@ -291,9 +338,10 @@ class ReviewApp(App):
         self.number += 1
         self.rows = []
         self.query_one(DataTable).clear()
-        self.sub_title = f"batch {self.number} · weighing the files..."
-        self.say("Weighing the files of the library: what each match says for and against, offline. "
-                 "On a big library this takes a few seconds; the album list loads at the same time.", "dim")
+        self.sub_title = f"batch {self.number} · getting ready..."
+        self.say("")
+        self.started, self.weighed_in = time.monotonic(), None
+        self.show_loading(True)
         self.run_worker(self.weigh, thread=True, exclusive=True, group="batch")
 
     def weigh(self) -> None:
@@ -312,12 +360,18 @@ class ReviewApp(App):
 
     def show_error(self, message: str) -> None:
         self.loading = False
+        self.show_loading(False)
         self.sub_title = f"batch {self.number}"
         self.say(f"Could not weigh the files: {message}", "red")
 
     def show_batch(self, rows: list[batch.Row], seconds: float) -> None:
         self.loading = False
+        self.weighed_in = seconds
+        self.show_loading(False)
+        self.query_one(DataTable).focus()
         self.rows = rows
+        self.order = {id(row): place for place, row in enumerate(rows)}
+        self.sort_column, self.sort_reverse = None, False
         self.timing = f"weighed in {seconds:.1f} s"
         self.render_table()
         if not self.rows:
@@ -325,9 +379,19 @@ class ReviewApp(App):
             self.say("Nothing left to check: every doubtful file has been looked at. "
                      "`bdnex import --skipped --auto=all` decides the unlinked ones again.", "green")
 
+    def add_columns(self) -> None:
+        """The columns, with an arrow on the sorted one. Every column has a width of its own: a Textual ``DataTable`` measures
+        auto-width columns late (Textualize/textual#6759), so a table that is rebuilt (here: by a sort) could paint its first rows
+        with stale widths. Long names are cut, so the scores and the state are always on screen."""
+        table = self.query_one(DataTable)
+        for index, (name, width) in enumerate(COLUMNS):
+            arrow = (" ▼" if self.sort_reverse else " ▲") if index == self.sort_column else ""
+            table.add_column(f"{name}{arrow}", width=width, key=str(index))
+
     def render_table(self) -> None:
         table = self.query_one(DataTable)
-        table.clear()
+        table.clear(columns=True)
+        self.add_columns()
         for number, row in enumerate(self.rows, start=1):
             table.add_row(*self.cells(number, row), key=str(number - 1))
         self.update_title()
@@ -335,9 +399,46 @@ class ReviewApp(App):
             table.move_cursor(row=next((i for i, row in enumerate(self.rows) if not row.status), 0))
             self.show_detail(table.cursor_row)
 
+    # -- sorting: a click on a header, or the number of the column
+    def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
+        self.action_sort(event.column_index)
+
+    def sort_key(self, index: int, row: batch.Row):
+        """What the column ``index`` sorts by; ``None`` puts the row after the others, whatever the direction."""
+        import os
+
+        if index == 0:
+            return self.order.get(id(row), 0)
+        if index == 1:
+            return os.path.basename(row.path).casefold()
+        if index == 2:
+            return row.folder.casefold()
+        if index == 3:
+            return row.album.casefold() if row.album else None
+        if index == 4:
+            return row.score
+        if index == 5:
+            return row.cover
+        return DECIDED_ORDER.get(row.status) if row.status else STATE_ORDER.get(row.kind, 5)
+
+    def action_sort(self, index: int) -> None:
+        """Sort by the column ``index``; the same column again reverses it. ``#`` is the order of the batch."""
+        if not (0 <= index < len(COLUMNS)) or not self.rows:
+            return
+        self.sort_reverse = (not self.sort_reverse) if index == self.sort_column else False
+        self.sort_column = index
+        keep = self.current()
+        keys = [(self.sort_key(index, row), row) for row in self.rows]
+        present = sorted((pair for pair in keys if pair[0] is not None), key=lambda pair: pair[0], reverse=self.sort_reverse)
+        self.rows = [row for _, row in present] + [row for key, row in keys if key is None]  # without a value: last
+        self.render_table()
+        if keep is not None:
+            self.query_one(DataTable).move_cursor(row=self.rows.index(keep))
+
     def update_title(self) -> None:
         done = sum(1 for row in self.rows if row.status)
-        self.sub_title = f"batch {self.number} · {done}/{len(self.rows)} checked · {self.timing}".rstrip(" ·")
+        by = f" · by {COLUMNS[self.sort_column][0].lower()} {'▼' if self.sort_reverse else '▲'}" if self.sort_column is not None else ""
+        self.sub_title = f"batch {self.number} · {done}/{len(self.rows)} checked{by} · {self.timing}".rstrip(" ·")
 
     def cells(self, number: int, row: batch.Row) -> list:
         import os

@@ -96,6 +96,94 @@ def test_the_table_opens_at_once_and_shows_file_folder_album_scores_state_and_ho
     assert [first[6], second[6], third[6]] == ["contradicted", "unconfirmed", "no album"]  # what is wrong, until it is decided
 
 
+def test_a_loading_panel_says_what_is_being_done_until_the_table_is_ready(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    real = batch.next_batch
+    monkeypatch.setattr(batch, "next_batch", lambda *a, **k: (release.wait(5), real(*a, **k))[1])  # a slow weighing
+    seen = {}
+
+    async def go():
+        settings = load_config().settings
+        with Library(db) as lib:
+            app = review_tui.ReviewApp(lib, settings, FakeSource(), 50, (), True)
+            async with app.run_test(size=(170, 45)) as pilot:
+                await pilot.pause()
+                await pilot.pause(0.3)
+                panel = app.query_one("#loading")
+                seen["during"] = (panel.display, app.query_one("DataTable").display, str(panel.render()))
+                release.set()
+                await settle(app, pilot)
+                seen["after"] = (panel.display, app.query_one("DataTable").display, app.query_one("DataTable").row_count)
+
+    asyncio.run(go())
+    shown, table_shown, text = seen["during"]
+    assert shown and not table_shown  # the panel is where the table will be
+    assert "weighing the files" in text and "loading the album list" in text and "Getting the batch ready" in text
+    assert "s\n" in text or " s" in text  # each job says for how long
+    assert seen["after"] == (False, True, 3)  # then the table takes its place
+
+
+def test_a_header_click_or_a_number_key_sorts_and_the_same_column_again_reverses(env):
+    from textual.widgets import DataTable
+
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        table = app.query_one(DataTable)
+        names = lambda: [str(table.get_row_at(i)[1]) for i in range(table.row_count)]  # noqa: E731
+        seen["start"] = names()
+        await pilot.press("5")  # Match, ascending: the lowest score first
+        seen["match_up"] = names()
+        await pilot.press("5")  # the same column again: reversed
+        seen["match_down"] = names()
+        await pilot.press("4")  # Album now: the file without album goes last
+        seen["album"] = names()
+        await pilot.press("2")  # File, by name
+        seen["file"] = names()
+        seen["labels"] = [str(column.label) for column in table.columns.values()]
+        seen["widths"] = [(column.width, column.auto_width) for column in table.columns.values()]
+        seen["title"] = app.sub_title
+        # a click on a header does the same as the number key: the message the table sends for it
+        key = list(table.columns)[0]
+        table.post_message(DataTable.HeaderSelected(table, key, 0, table.columns[key].label))
+        await pilot.pause()
+        seen["back"] = names()  # `#`: the order of the batch
+
+    result, _ = drive(db, script)
+    autre, forge, loose = "Nains - T05 - Autre.cbz", "Nains - T02 - Forge.cbz", "Loose file.cbz"
+    assert seen["start"] == [autre, forge, loose]
+    assert seen["match_up"] == [loose, autre, forge] and seen["match_down"] == [forge, autre, loose]  # 55, 78, 82
+    assert seen["album"][-1] == loose  # no album: last, whatever the direction
+    assert seen["file"] == [loose, forge, autre]  # by name
+    assert seen["labels"][1].startswith("File ▲") and "▲" not in seen["labels"][0] and "by file" in seen["title"]
+    assert seen["widths"] == [(width, False) for _, width in review_tui.COLUMNS]  # fixed widths: the table never has to re-measure
+    assert seen["back"] == seen["start"]
+
+
+def test_sorting_keeps_the_cursor_on_the_same_file_and_decisions_still_hit_the_right_row(env):
+    from textual.widgets import DataTable
+
+    db, files = env
+
+    async def script(app, pilot):
+        table = app.query_one(DataTable)
+        await pilot.press("5")  # the loose file (55) is now first, the contradicted one second
+        table.move_cursor(row=1)
+        await pilot.pause()
+        assert app.current().path == files["wrong"]
+        await pilot.press("5")  # reversed: the cursor follows the same file
+        await pilot.pause()
+        assert app.current().path == files["wrong"]
+        await pilot.press("u")  # unlink what is under the cursor, not what was first
+
+    drive(db, script)
+    with Library(db) as lib:
+        assert lib.get_file(files["wrong"])["album_id"] is None
+        assert lib.get_file(files["unconfirmed"])["album_id"] is not None
+
+
 def test_keys_decide_and_each_decision_is_saved_at_once(env):
     db, files = env
 
