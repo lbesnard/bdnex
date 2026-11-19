@@ -196,6 +196,31 @@ def describe_changes(albums: dict[int, dict[str, Any]], changes: dict[int, dict[
     return lines
 
 
+def tint_changes(lines: list[str], on: bool) -> list[str]:
+    """``describe_changes`` on a terminal: the album in bold, ``field: old -> new`` with the old value red and the new green."""
+    from bdnex.ui import color
+
+    if not on:
+        return lines
+    shown = []
+    for line in lines:
+        if not line.startswith(" "):
+            shown.append(color.role(line, "name", on))
+            continue
+        field, _, rest = line.strip().partition(": ")
+        old, arrow, new = rest.partition(" -> ")
+        if not arrow:
+            shown.append(line)
+            continue
+        note = ""
+        if "  (" in new:
+            new, _, note = new.partition("  (")
+            note = color.role("  (" + note, "note", on)
+        shown.append(f"    {color.role(field + ':', 'hint', on)} {color.role(old, 'bad', on)} {color.role('->', 'note', on)} "
+                     f"{color.role(new, 'good', on)}{note}")
+    return shown
+
+
 def parse_assignments(items: list[str]) -> dict[str, Any]:
     """``--set publisher=Soleil --set genres="Humour; Fantasy" --set credits.Writer="A; B"``."""
     changes: dict[str, Any] = {}
@@ -291,7 +316,9 @@ def run(argv: list[str], out=sys.stdout, editor: Callable[[str], str] = open_edi
         if not changes:
             print("Nothing changed.", file=out)
             return 0
-        print("\n".join(describe_changes(by_id, changes)), file=out)
+        from bdnex.ui import color
+
+        print("\n".join(tint_changes(describe_changes(by_id, changes), color.enabled(out))), file=out)
         if args.pretend:
             return 0
         if not args.yes:
@@ -304,5 +331,6 @@ def run(argv: list[str], out=sys.stdout, editor: Callable[[str], str] = open_edi
         for album_id, change in changes.items():
             library.edit_album(album_id, change)
         library.prune_orphan_series()
-        print(f"\n{len(changes)} album(s) updated. `bdnex write` puts the new values into the files.", file=out)
+        print(color.hints(f"\n{len(changes)} album(s) updated. `bdnex write` puts the new values into the files.",
+                          color.enabled(out)), file=out)
     return 0

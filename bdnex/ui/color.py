@@ -65,3 +65,73 @@ def rule(width: int | None = None) -> str:
 
     columns = width or shutil.get_terminal_size((80, 20)).columns
     return "─" * max(20, min(100, columns))
+
+
+# ----------------------------------------------------------------------------- roles
+# A command names what a piece of text IS; the colour is decided here, once, so the same thing looks the same in every
+# command: what to look at is bold, what is wrong is red, what asks for a decision is yellow, what is fine is green,
+# what you can type next is cyan, and what is only context (paths, explanations) is dim.
+ROLES = {
+    "title": "bold",        # a heading, the name of an album or series: where the eye lands first
+    "name": "bold",
+    "path": "dim",          # a file path: needed to find the file, but never the point
+    "note": "dim",          # an explanation, a count of what was skipped, how a score was made
+    "good": "green",        # confirmed, done, kept, complete
+    "warn": "yellow",       # in doubt, waits for you, left as it is
+    "bad": "red",           # contradicted, failed, wrong, unlinked
+    "hint": "cyan",         # a command or option you can type, a number you can use
+    "count": "cyan_bold",   # a total that sums up a run
+}
+
+VERDICTS = {  # the words commands use for a judgement, in the role they deserve
+    "confirmed": "good", "kept": "good", "tagged": "good", "complete": "good",
+    "unverified": "note", "unconfirmed": "warn", "doubtful": "warn", "skipped": "warn", "partial": "warn",
+    "contradicted": "bad", "wrong": "bad", "failed": "bad", "missing": "bad",
+}
+
+
+def role(text: str, name: str, on: bool) -> str:
+    return paint(text, ROLES[name], on)
+
+
+def verdict(text: str, kind: str, on: bool) -> str:
+    """``text`` coloured as the judgement ``kind`` (``confirmed`` green, ``doubtful`` yellow, ``contradicted`` red...)."""
+    return role(text, VERDICTS.get(kind, "note"), on)
+
+
+def hints(text: str, on: bool) -> str:
+    """The ```commands``` in a sentence in the colour of a hint: the next thing to type stands out of the prose."""
+    import re
+
+    return re.sub(r"`([^`\n]+)`", lambda found: paint(found.group(0), ROLES["hint"], on), text) if on else text
+
+
+class LogFormatter:
+    """``logging`` lines with the level coloured (and the rest of the line quiet) when stderr is a terminal."""
+
+    LEVELS = {"DEBUG": "dim", "INFO": "cyan", "WARNING": "yellow", "ERROR": "red_bold", "CRITICAL": "red_bold"}
+
+    def __init__(self, fmt: str, on: bool):
+        import logging
+
+        self.inner = logging.Formatter(fmt)
+        self.on = on
+
+    def format(self, record) -> str:
+        if not self.on:
+            return self.inner.format(record)
+        import copy
+
+        shown = copy.copy(record)
+        style = self.LEVELS.get(record.levelname, "dim")
+        shown.levelname = paint(f"{record.levelname:<7}", style, True)
+        shown.name = paint(record.name, "dim", True)
+        shown.threadName = paint(record.threadName, "dim", True)
+        if record.levelno >= 30:
+            shown.msg, shown.args = paint(record.getMessage(), "yellow" if record.levelno < 40 else "red", True), None
+        elif record.levelno <= 10:
+            shown.msg, shown.args = paint(record.getMessage(), "dim", True), None
+        return self.inner.format(shown)
+
+    def __getattr__(self, name):  # a logging.Handler asks its formatter for a few more things
+        return getattr(self.inner, name)

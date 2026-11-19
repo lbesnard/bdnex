@@ -68,11 +68,14 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                 print(f"{name!r} is not a mark name: lower case letters, digits and _, starting with a letter.", file=sys.stderr)
                 return 2
         what = ", ".join([f"{n}={v}" if v else n for n, v in puts] + [f"remove {n}" for n in removes])
-        print(f"{len(targets)} {kind}(s): {what}", file=out)
+        from bdnex.ui import color
+
+        on = color.enabled(out)
+        print(f"{color.role(f'{len(targets)} {kind}(s)', 'count', on)}: {color.role(what, 'hint', on)}", file=out)
         for _, row in targets[:5]:
-            print(f"  {row['path'] if not args.albums else describe.label(row)}", file=out)
+            print(f"  {color.role(row['path'] if not args.albums else describe.label(row), 'name', on)}", file=out)
         if len(targets) > 5:
-            print(f"  ... and {len(targets) - 5} more", file=out)
+            print(color.role(f"  ... and {len(targets) - 5} more", "note", on), file=out)
         if args.pretend:
             return 0
         if not args.yes and len(targets) > 1:
@@ -87,5 +90,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
         except ValueError as err:
             print(err, file=sys.stderr)
             return 2
-    print("Done.", file=out)
+    from bdnex.ui import color
+
+    print(color.role("Done.", "good", color.enabled(out)), file=out)
     return 0

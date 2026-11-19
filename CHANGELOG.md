@@ -7,6 +7,13 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- **`bdnex candidates --cover` said nothing until the end**: it now prints each file as it starts (name, path, album now), each
+  cover as it is downloaded (which album, which address) and compared (score, saved or downloaded, or why not), and what it
+  decided, then moves on to the next file.
+- **Colour everywhere, by meaning**: one set of roles (`ui/color.py`) is used by `candidates`, `review`, `ls`, `series`, `stats`,
+  `trash`, `aliases`, `edit`, `mark`, `reset`, `relocate`, `init` and the log lines of `-v` / `-vv` (level and quiet rest of the
+  line): names bold, good green, in doubt yellow, wrong red, the next command to type cyan, paths and explanations dim; scores
+  in the colour of their value. Plain text in a pipe or with `NO_COLOR`.
 - `review --auto` counted a switch to a better album as done when the import had refused it (the album already had another
   file): it now checks the library, says which files were not switched (they stay flagged, with the reason), and the summary
   says why the unconfirmed ones could not be judged (page not read, cover not compared).

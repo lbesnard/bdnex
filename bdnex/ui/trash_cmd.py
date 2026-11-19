@@ -42,15 +42,21 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     with Library.for_settings(settings) as library:
         entries = library.trash_entries(args.older_than if args.empty else None)
         if not args.empty:
+            from bdnex.ui import color
+
+            on = color.enabled(out)
             for entry in entries:
-                print(f"{entry['id']:>4}  {entry['trashed'][:16]}  {human_size(entry['size'] or 0):>9}  {entry['path']}", file=out)
-                print(f"      {entry['reason']}", file=out)
+                number = f"{entry['id']:>4}"
+                print(f"{color.role(number, 'hint', on)}  {color.role(entry['trashed'][:16], 'note', on)}  "
+                      f"{human_size(entry['size'] or 0):>9}  {color.role(entry['path'], 'name', on)}", file=out)
+                print(f"      {color.role(entry['reason'], 'note', on)}", file=out)
             where = settings.trash_path
             total = sum(e["size"] or 0 for e in entries)
-            print(f"\n{len(entries)} file(s), {human_size(total)} in {where}" if entries
-                  else f"The trash is empty ({where}).", file=out)
+            print(f"\n{color.role(str(len(entries)), 'count', on)} file(s), {human_size(total)} in {where}" if entries
+                  else color.role(f"The trash is empty ({where}).", "note", on), file=out)
             if entries:
-                print("`bdnex trash --restore ID` puts one back; `bdnex trash --empty` deletes them for good.", file=out)
+                print(color.hints("`bdnex trash --restore ID` puts one back; `bdnex trash --empty` deletes them for good.", on),
+                      file=out)
             return 0
 
         if not entries:

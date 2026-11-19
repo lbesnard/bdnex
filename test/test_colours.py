@@ -239,3 +239,57 @@ def test_one_table_gives_the_colour_of_every_outcome_for_every_command():
     block = results.block("failed", "a.cbz", ["why"], True)
     assert "\x1b[1;31mfailed" in block and "\x1b[1ma.cbz" in block and block.endswith("    why")
     assert results.block("", "Title", [], False, "problem") == "\n● Title"
+
+
+def test_roles_and_log_lines_are_coloured_only_when_asked():
+    import logging
+
+    from bdnex.ui import color
+
+    assert color.role("x", "bad", True) == "\x1b[31mx\x1b[0m" and color.role("x", "bad", False) == "x"
+    assert color.verdict("kept", "kept", True).startswith("\x1b[32m") and color.verdict("x", "contradicted", True).startswith("\x1b[31m")
+    assert color.hints("run `bdnex init` first", True) == "run \x1b[36m`bdnex init`\x1b[0m first"
+    assert color.hints("run `bdnex init` first", False) == "run `bdnex init` first"
+    record = logging.LogRecord("bdnex.x", logging.WARNING, "f", 1, "careful", None, None)
+    record.threadName = "MainThread"
+    fmt = "%(levelname)s [%(threadName)s] %(name)s: %(message)s"
+    assert "\x1b[" not in color.LogFormatter(fmt, False).format(record)
+    coloured = color.LogFormatter(fmt, True).format(record)
+    assert "\x1b[33mWARNING" in coloured and "\x1b[33mcareful" in coloured  # a warning is yellow, whole line of text
+
+
+def test_colour_only_adds_escape_codes_never_changes_the_text(tmp_path, monkeypatch, make_cbz):
+    """For commands that print for people: with colour forced on and stripped again, the text is what it is without."""
+    import io
+    import re
+
+    import yaml
+
+    from bdnex.library import AlbumInfo, Library, SeriesInfo
+    from bdnex.ui import aliases_cmd, ls_cmd, series_cmd, stats_cmd
+
+    db = tmp_path / "lib.sqlite"
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(db)}))
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    with Library(db) as lib:
+        series = SeriesInfo("bedetheque", "s1", "Nains")
+        album = lib.add_album(AlbumInfo("bedetheque", "1", "Redwin", series=series, volume=1, year=2015,
+                                        credits={"Writer": ["Jarry, Nicolas"]}))
+        lib.add_file(make_cbz("Nains - T01 - Redwin.cbz"), album)
+        lib.add_file(make_cbz("Loose.cbz"), None)
+
+    def output(command, argv, forced):
+        monkeypatch.delenv("NO_COLOR", raising=False)
+        monkeypatch.setenv("FORCE_COLOR", "1") if forced else monkeypatch.delenv("FORCE_COLOR", raising=False)
+        out = io.StringIO()
+        command.run(argv, out=out)
+        return out.getvalue()
+
+    strip = lambda text: re.sub(r"\x1b\[[0-9;]*m", "", text)  # noqa: E731
+    for command, argv in ((ls_cmd, []), (ls_cmd, ["--files"]), (ls_cmd, ["--unmatched"]), (series_cmd, []),
+                          (series_cmd, ["-l"]), (stats_cmd, []), (aliases_cmd, [])):
+        plain, coloured = output(command, argv, False), output(command, argv, True)
+        assert "\x1b[" not in plain, (command.__name__, argv)
+        assert "\x1b[" in coloured, f"{command.__name__} {argv} has no colour"
+        assert strip(coloured) == plain, (command.__name__, argv)

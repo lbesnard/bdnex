@@ -54,6 +54,9 @@ def run(argv: list[str], out=sys.stdout, bar_stream=None) -> int:
             print(f"Could not download the album list: {err}", file=sys.stderr)
             return 1
     news = f" ({after - before:+,} since the last time)" if before else ""
-    print(f"Done: {after:,} albums in the list{news}.", file=out)
-    print("Next: `bdnex import <folder>`.", file=out)
+    from bdnex.ui import color
+
+    on = color.enabled(out)
+    print(f"{color.role('Done', 'good', on)}: {color.role(f'{after:,}', 'count', on)} albums in the list{news}.", file=out)
+    print(color.hints("Next: `bdnex import <folder>`.", on), file=out)
     return 0

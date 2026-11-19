@@ -93,8 +93,11 @@ def setup_logging(verbosity: int) -> None:
     own = logging.DEBUG if verbosity >= 2 else logging.INFO if verbosity == 1 else logging.WARNING
     console = logging.StreamHandler(sys.stderr)
     console.setLevel(own)
-    console.setFormatter(logging.Formatter(
-        "%(levelname)-7s [%(threadName)s] %(name)s: %(message)s" if verbosity >= 2 else "%(levelname)-7s %(name)s: %(message)s"))
+    from bdnex.ui import color
+
+    console.setFormatter(color.LogFormatter(
+        "%(levelname)s [%(threadName)s] %(name)s: %(message)s" if verbosity >= 2 else "%(levelname)s %(name)s: %(message)s",
+        color.enabled(sys.stderr)))
     handlers: list[logging.Handler] = [console]
     if LOG_FILE:
         try:

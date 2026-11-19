@@ -10,7 +10,7 @@ from typing import Any
 
 from bdnex.library import Library
 from bdnex.library.query import ALL_FIELDS, QueryError
-from bdnex.ui import context, describe
+from bdnex.ui import color, context, describe
 
 DEFAULT_ALBUM_FORMAT = "$label$flag  ($authors) [$year]  $files_label"
 DEFAULT_FILE_FORMAT = "$path  $label"
@@ -74,9 +74,25 @@ def run(argv: list[str], out=sys.stdout) -> int:
         print("\n\n".join(details["text"]), file=out)
     else:
         template = string.Template(args.format or (DEFAULT_FILE_FORMAT if args.files else DEFAULT_ALBUM_FORMAT))
+        on = color.enabled(out) and not args.format  # your own --format is printed as you wrote it
         for row in rows:
-            print(template.safe_substitute(decorate(row)), file=out)
+            print(template.safe_substitute(tint_row(decorate(row), on)), file=out)
     return 0
+
+
+def tint_row(row: dict, on: bool) -> dict:
+    """The default format on a terminal: the name of the album is what the eye lands on, what is missing stands out,
+    the rest (authors, year, counts, paths) is quiet. A row of values that are not text is left as it is."""
+    if not on:
+        return row
+    row = dict(row)
+    row["label"] = color.role(str(row["label"]), "name", on)
+    row["flag"] = color.role(str(row["flag"]), "warn", on)
+    row["files_label"] = color.role(str(row["files_label"]), "note", on)
+    row["path"] = color.role(str(row.get("path", "")), "path", on)
+    row["authors"] = color.role(str(row.get("authors", "")), "note", on)
+    row["year"] = color.role(str(row.get("year", "")), "note", on)
+    return row
 
 
 def _details(library, rows, args) -> dict:
@@ -124,6 +140,15 @@ def _file_problems(settings, args, out) -> int:
         print(json.dumps(rows, ensure_ascii=False, indent=2, default=str), file=out)
     else:
         template = string.Template(args.format or default)
+        on = color.enabled(out) and not args.format
         for row in rows:
-            print(template.safe_substitute({k: ("" if v is None else v) for k, v in row.items()}), file=out)
+            shown = {k: ("" if v is None else v) for k, v in row.items()}
+            if on:  # what happened to the file, how good the best match was, and the path (quiet)
+                if "outcome" in shown:
+                    kind = {"failed": "failed", "skipped": "skipped"}.get(str(shown["outcome"]), "note")
+                    shown["outcome"] = color.verdict(f"{shown['outcome']:<8}", kind, on)
+                if row.get("score") is not None:
+                    shown["best"] = color.paint_score(shown["best"], float(row["score"]), on)
+                shown["path"] = color.role(str(shown.get("path", "")), "name", on) if args.missing else str(shown.get("path", ""))
+            print(template.safe_substitute(shown), file=out)
     return 0
