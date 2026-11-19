@@ -35,7 +35,7 @@ def _batch(args, settings, out) -> int:
     try:
         from bdnex.ui import review_tui
     except ImportError:
-        print("`bdnex review --batch` needs Textual: `pip install 'bdnex[tui]'` (or `uv sync --extra tui`). "
+        print("`bdnex review --batch` needs Textual (installed with bdnex): `pip install textual`. "
               "`bdnex review` and `bdnex review --auto` work without it.", file=sys.stderr)
         return 2
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
@@ -68,7 +68,7 @@ def _batch(args, settings, out) -> int:
             library.query(args.query, files=True, limit=1)  # a bad query is said now, not from inside the screen
         except QueryError as err:
             return context.bad_query(err)
-        decided = review_tui.run(library, settings, source, args.batch, args.query, args.unmatched)
+        decided = review_tui.run(library, settings, source, args.batch, args.query, args.unmatched, args.all, args.again)
     on = color.enabled(out)
     total = sum(decided.values())
     parts = ", ".join(f"{n} {what}" for what, n in sorted(decided.items()) if n)
@@ -162,9 +162,14 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     parser.add_argument("--batch", type=int, metavar="N",
                         help="a table of the next N files to check (for example `--batch 50`): file, folder, album now, "
                              "match score, cover score; keep, unlink or pick another album from the album list. Every decision "
-                             "is saved at once and the files checked are not shown again: run it again to continue. Needs the "
-                             "`tui` extra (`pip install 'bdnex[tui]'`)")
+                             "is saved at once and the files checked are not shown again: run it again to continue; a query "
+                             "limits the files, as in `bdnex ls --files`")
     parser.add_argument("--unmatched", action="store_true", help="with --batch: also the files that have no album")
+    parser.add_argument("--all", action="store_true",
+                        help="with --batch: every file of the query, not only the doubtful ones (those come first, then the files "
+                             "without album, then the rest): to look through a series, e.g. `--batch 50 series:batman --all`")
+    parser.add_argument("--again", action="store_true",
+                        help="with --batch: also the files already checked (the table says what you decided then)")
     add_candidate_options(parser)
     parser.add_argument("-y", "--yes", action="store_true", help="with --auto: do not ask for confirmation before unlinking or switching")
     add_pretend(parser, "be settled (with --auto)")
@@ -174,6 +179,9 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     settings = context.settings()
     if settings is None:
         return 1
+    if (args.unmatched or args.all or args.again) and not args.batch:
+        print("--unmatched, --all and --again go with --batch N (the table).", file=sys.stderr)
+        return 2
     if args.batch:
         return _batch(args, settings, out)
     if args.auto:
