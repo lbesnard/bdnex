@@ -169,7 +169,14 @@ def test_a_better_album_is_switched_to_instead_of_unlinking(env, monkeypatch):
 
     monkeypatch.setattr(recheck_cmd, "look_for_better", fake)
     called = []
-    monkeypatch.setattr(recheck_cmd, "rematch", lambda path, address: called.append((path, address)) or True)
+
+    def switch(path, address):  # what a real `import --album` does to the library
+        called.append((path, address))
+        with Library(db) as lib:
+            lib.set_file_album(path, lib.find_album("bedetheque", "2"))
+        return True
+
+    monkeypatch.setattr(recheck_cmd, "rematch", switch)
     out = io.StringIO()
     assert review_cmd.run(["--auto", "-n"], out=out) == 0
     assert "1 switched to a better album, 0 unlinked" in out.getvalue() and not called
@@ -177,7 +184,39 @@ def test_a_better_album_is_switched_to_instead_of_unlinking(env, monkeypatch):
     assert review_cmd.run(["--auto", "-y"], out=out) == 0
     assert called == [(files["wrong"], url)] and "1 switched" in out.getvalue()
     with Library(db) as lib:
-        assert lib.get_file(files["wrong"])["album_id"] is not None  # the (faked) switch changed nothing here: not unlinked
+        assert lib.get_file(files["wrong"])["album_id"] == lib.find_album("bedetheque", "2")
+
+
+def test_a_refused_switch_is_not_counted_and_the_file_stays_flagged(env, monkeypatch):
+    """The better album already had another file: the import said duplicate and changed nothing."""
+    db, files = env
+    url = "https://www.bedetheque.com/BD-Autre-2.html"
+
+    def fake(settings, library, found, limit, say=lambda text: None):
+        for v in found:
+            if v.path == files["wrong"]:
+                v.better = {"url": url, "album": "Nains Forge", "score": 80, "cover": 88.0, "current_cover": 3.0}
+        return 1
+
+    monkeypatch.setattr(recheck_cmd, "look_for_better", fake)
+    monkeypatch.setattr(recheck_cmd, "rematch", lambda path, address: True)  # exit code 0, library unchanged
+    out = io.StringIO()
+    assert review_cmd.run(["--auto", "-y"], out=out) == 0
+    text = out.getvalue()
+    assert "0 switched" in text and "1 could not be switched" in text and "was refused" in text
+    with Library(db) as lib:
+        row = lib.get_file(files["wrong"])
+        assert row["album_id"] is not None and "not switched" in row["review"]  # left for you, not unlinked
+
+
+def test_the_unconfirmed_say_why_nothing_could_be_said(env):
+    db, files = env
+    with Library(db) as lib:  # an album whose page was never read: no evidence is possible
+        lib.conn.execute("UPDATE albums SET extra = json_set(coalesce(extra, '{}'), '$.partial', json('true'))")
+        lib.conn.commit()
+    out = io.StringIO()
+    assert review_cmd.run(["--auto", "--no-cover", "-n"], out=out) == 0
+    assert "unconfirmed: the album page was never read" in out.getvalue()
 
 
 class _Cand:
