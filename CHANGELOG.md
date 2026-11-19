@@ -7,6 +7,12 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Added
+- **API:** `GET /api/candidates` (the albums each file could be, with the evidence and, with `cover=true`, the cover
+  comparison), `GET /api/check?matches=true`, `POST /api/marks` and `marks` on an album and its files, `GET /api/fields`,
+  `GET /api/history` (who changed what, from the page and the API), `GET /api/jobs/{id}/events` (a task's output as
+  server-sent events), the review answers `rematch` and `album`, and the tasks `update`, `komga-show` and `komga-push`.
+  `/api/albums` and `/api/files` are cut in the database and say how many match in all.
+  **Breaking:** `GET /api/stats` is now what `bdnex stats --json` prints (it takes `q`).
 - Match question: **I** enters an album Id (the number at the end of its page address) or an address, then shows the
   album for you to check (like beets' *enter Id*). It replaces the old **U** *Type the album's URL...* (**breaking** for
   that key only).

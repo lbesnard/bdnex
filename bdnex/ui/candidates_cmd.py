@@ -105,6 +105,49 @@ def compare_covers(source, settings, path: str, fmt, matches, found: list[dict[s
         entry["cover_best"] = entry is best and best["cover"] >= threshold
 
 
+class NotReady(RuntimeError):
+    """The album list is not downloaded yet."""
+
+
+def build_report(settings, library, query: list[str], low: bool = False, limit: int = 5, cover: bool = False,
+                 first: int = 0, files: Optional[int] = None) -> list[dict[str, Any]]:
+    """The candidates of each file the query names (the report of ``bdnex candidates --json``, also the web page's).
+
+    ``first`` / ``files`` take a window of the (sorted) files: with ``--cover`` every file costs requests, so the
+    web page asks for a few at a time. Raises ``QueryError``, ``NotReady`` or the source's own errors."""
+    offline = settings if cover else settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
+        update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
+    source = create_source(settings.source, library, offline)
+    linked = library.query(query, files=True)
+    unlinked = library.unmatched(query)
+    if not source.is_ready():
+        raise NotReady("The album list is not downloaded yet: run `bdnex init` first.")
+    warm = getattr(source, "warm", None)
+    if warm:
+        warm()
+    work = {row["path"]: row["id"] for row in linked}
+    for row in unlinked:
+        work.setdefault(row["path"], None)  # a file without album can be in both lists
+    report = []
+    for path, album_id in sorted(work.items()):
+        file = library.get_file(path)
+        album = library.get_album(album_id) if album_id is not None else None
+        why = is_low(settings, path, file, album, library.last_import(path)) if low else "asked for"
+        if not why:
+            continue
+        if len(report) < first:  # not part of the window asked for (a file that is not low does not count)
+            report.append(None)
+            continue
+        if files is not None and len(report) - first >= files:
+            break
+        matches = find_matches(source, path, limit=limit)
+        found = [describe_candidate(library, source, m, file or {"path": path}, album_id) for m in matches]
+        if cover:
+            compare_covers(source, settings, path, (file or {}).get("format"), matches, found)
+        report.append({"path": path, "why": why, "now": label(album) if album else None, "candidates": found})
+    return [entry for entry in report if entry is not None]
+
+
 def run(argv: list[str], out=sys.stdout) -> int:
     parser = argparse.ArgumentParser(
         prog="bdnex candidates", description=__doc__,
@@ -126,43 +169,17 @@ def run(argv: list[str], out=sys.stdout) -> int:
     settings = context.settings()
     if settings is None:
         return 1
-    offline = settings if args.cover else settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
-        update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
-
-    report = []
     if args.cover and not covers.opencv_installed():
         print("--cover needs OpenCV (`pip install 'bdnex[cover]'`): the covers are not compared.", file=sys.stderr)
         args.cover = False
     with Library.for_settings(settings, readonly=True) as library:
         try:
-            source = create_source(settings.source, library, offline)
-            linked = library.query(args.query, files=True)
-            unlinked = library.unmatched(args.query)
-        except (UnknownSource, TypeError) as err:
+            report = build_report(settings, library, args.query, low=args.low, limit=args.limit, cover=args.cover)
+        except (UnknownSource, TypeError, NotReady) as err:
             print(err, file=sys.stderr)
             return 1
         except QueryError as err:
             return context.bad_query(err)
-        if not source.is_ready():
-            print("The album list is not downloaded yet: run `bdnex init` first.", file=sys.stderr)
-            return 1
-        warm = getattr(source, "warm", None)
-        if warm:
-            warm()
-        work = {row["path"]: row["id"] for row in linked}
-        for row in unlinked:
-            work.setdefault(row["path"], None)  # a file without album can be in both lists
-        for path, album_id in sorted(work.items()):
-            file = library.get_file(path)
-            album = library.get_album(album_id) if album_id is not None else None
-            why = is_low(settings, path, file, album, library.last_import(path)) if args.low else "asked for"
-            if not why:
-                continue
-            matches = find_matches(source, path, limit=args.limit)
-            found = [describe_candidate(library, source, m, file or {"path": path}, album_id) for m in matches]
-            if args.cover:
-                compare_covers(source, settings, path, (file or {}).get("format"), matches, found)
-            report.append({"path": path, "why": why, "now": label(album) if album else None, "candidates": found})
     if args.json:
         print(json.dumps(report, ensure_ascii=False, indent=2), file=out)
         return 0

@@ -41,6 +41,35 @@ def kind_of(name: str) -> str:
     return "text"
 
 
+def summary(library: Library, query: list[str]) -> dict:
+    """What the library holds (``bdnex stats --json``, and ``GET /api/stats``). Raises ``QueryError``."""
+    albums = library.query(query)
+    files = library.query(query, files=True)
+    cache = library.cache_summary()
+    flagged = sum(1 for f in files if f.get("review"))
+    complete = sum(1 for a in albums if not a["partial"])
+    kinds = Counter(a["kind"] for a in albums)
+    by_format = Counter(f["format"] for f in files)
+    size_by_format = Counter()
+    for f in files:
+        size_by_format[f["format"]] += f["size"] or 0
+    linked = sum(1 for f in files if f.get("album_id") is not None or f.get("id") is not None)
+    return {
+        "albums": {"total": len(albums), "complete": complete, "partial": len(albums) - complete,
+                   "series": kinds.get("series", 0), "oneshots": kinds.get("oneshot", 0)},
+        "files": {"total": len(files), "linked": linked, "unlinked": len(files) - linked,
+                  "corrupted": sum(1 for f in files if f.get("corrupted")), "flagged_for_review": flagged,
+                  "spare": sum(1 for f in files if f.get("spare")), "bytes": sum(f["size"] or 0 for f in files),
+                  "by_format": {fmt: {"files": n, "bytes": size_by_format[fmt]} for fmt, n in sorted(by_format.items())}},
+        "stored_pages": {kind: {"entries": n, "bytes": size} for kind, (n, size) in sorted(cache.items())},
+    }
+
+
+def field_list() -> list[dict]:
+    """The fields a query can use, with their kind and help (``bdnex fields``, and ``GET /api/fields``)."""
+    return [{"name": name, "kind": kind_of(name), "help": FIELD_HELP.get(name, "")} for name in q.ALL_FIELDS]
+
+
 def fields_run(argv: list[str], out=sys.stdout) -> int:
     parser = argparse.ArgumentParser(prog="bdnex fields", description="List the fields a query can use, with their kind.",
                                      epilog="Use them as `field:value` in `bdnex ls`, `review`, `write`, `komga`... "
@@ -67,28 +96,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
         return 1
     with Library.for_settings(settings, readonly=True) as library:
         try:
-            albums = library.query(args.query)
-            files = library.query(args.query, files=True)
+            data = summary(library, args.query)
         except QueryError as err:
             return context.bad_query(err)
-        cache = library.cache_summary()
-        flagged = sum(1 for f in files if f.get("review"))
-    complete = sum(1 for a in albums if not a["partial"])
-    kinds = Counter(a["kind"] for a in albums)
-    by_format = Counter(f["format"] for f in files)
-    size_by_format = Counter()
-    for f in files:
-        size_by_format[f["format"]] += f["size"] or 0
-    linked = sum(1 for f in files if f.get("album_id") is not None or f.get("id") is not None)
-    data = {
-        "albums": {"total": len(albums), "complete": complete, "partial": len(albums) - complete,
-                   "series": kinds.get("series", 0), "oneshots": kinds.get("oneshot", 0)},
-        "files": {"total": len(files), "linked": linked, "unlinked": len(files) - linked,
-                  "corrupted": sum(1 for f in files if f.get("corrupted")), "flagged_for_review": flagged,
-                  "spare": sum(1 for f in files if f.get("spare")), "bytes": sum(f["size"] or 0 for f in files),
-                  "by_format": {fmt: {"files": n, "bytes": size_by_format[fmt]} for fmt, n in sorted(by_format.items())}},
-        "stored_pages": {kind: {"entries": n, "bytes": size} for kind, (n, size) in sorted(cache.items())},
-    }
     if args.json:
         print(json.dumps(data, indent=2), file=out)
         return 0

@@ -48,7 +48,7 @@ def test_home_is_the_web_page(library):
 
 def test_stats_and_health(library):
     c = client(library)
-    assert c.get("/api/stats").json()["albums"] == 2
+    assert c.get("/api/stats").json()["albums"]["total"] == 2
     health = c.get("/api/health").json()
     assert health["status"] == "ok" and health["token_required"] is False
 

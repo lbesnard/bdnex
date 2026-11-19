@@ -120,6 +120,13 @@ def _import_command(options: dict, settings):
     return (lambda out: import_cmd.run(argv, out=out)), argv
 
 
+def _import_args(argv: list[str], path: str):
+    from bdnex.ui import import_cmd
+
+    argv = [*argv, path]
+    return (lambda out: import_cmd.run(argv, out=out)), argv
+
+
 def _simple(module: str, extra: Callable[[dict, Any], list[str]]):
     def build(options: dict, settings):
         import importlib
@@ -168,6 +175,46 @@ def _preview(options: dict) -> list[str]:
     return ["-n"] if options.get("preview", True) else []
 
 
+def _album_ref(options: dict) -> str:
+    """The album an `apply-album` task uses: its number at the source, or its page address."""
+    album = str(options.get("album") or "").strip()
+    if not album or album.startswith("-") or "\n" in album or not (album.isdigit() or album.startswith(("http://", "https://"))):
+        raise JobError("`album` is the album's number or the address of its page")
+    return album
+
+
+def _one_path(options: dict, settings) -> str:
+    paths = _paths(options, settings)
+    if len(paths) != 1:
+        raise JobError("give exactly one path")
+    return paths[0]
+
+
+def _komga_command(action: str):
+    def build(options: dict, settings):
+        from bdnex.ui import komga_cmd
+
+        argv = [action, *_terms(options)]
+        if action == "push":
+            if options.get("preview", True):
+                argv.append("-n")
+            elif not options.get("interactive"):
+                argv.append("--yes")  # nobody to ask: the page did not offer to ask
+            if options.get("with_review"):
+                argv.append("--with-review")
+        if options.get("only") not in (None, ""):
+            if options["only"] not in ("books", "series"):
+                raise JobError("`only` is `books` or `series`")
+            argv += ["--only", options["only"]]
+        fields = options.get("fields")
+        if fields:
+            if not isinstance(fields, list) or not all(isinstance(f, str) and f.replace("_", "").isalnum() for f in fields):
+                raise JobError("`fields` is a list of field names")
+            argv += ["--fields", ",".join(fields)]
+        return (lambda out: komga_cmd.run(argv, out=out)), argv
+    return build
+
+
 SPECS: dict[str, Spec] = {
     "check": Spec("Check the library", False, _simple("check_cmd", lambda o, s: [])),
     "check-fix": Spec("Check the library and settle what is safe", True, _simple("check_cmd", lambda o, s: ["--fix"])),
@@ -196,6 +243,18 @@ SPECS: dict[str, Spec] = {
     "trash-restore": Spec("Restore a file from the trash", True,
                           _simple("trash_cmd", lambda o, s: ["--restore", _trash_id(o), *(["--place"] if o.get("place") else []),
                                                               *_preview(o)]), listed=False),
+    "update": Spec("Read again the files that changed on the disk (update)", True,
+                   _simple("update_cmd", lambda o, s: [*_preview(o), *(["--all"] if o.get("force") else []), *_terms(o)]),
+                   fields=("query",)),
+    "rematch": Spec("Match one file again (rematch)", True,
+                    lambda o, s: _import_args(["--match", "--force", "--database-only", *_preview(o),
+                                               *([] if o.get("interactive") else ["--auto=strong"])], _one_path(o, s)),
+                    listed=False),
+    "apply-album": Spec("Use this album for one file (import --album)", True,
+                        lambda o, s: _import_args(["--album", _album_ref(o), "--database-only", *_preview(o)], _one_path(o, s)),
+                        listed=False),
+    "komga-show": Spec("Compare the library with Komga (read only)", False, _komga_command("show"), fields=("query",)),
+    "komga-push": Spec("Send the library's metadata to Komga", True, _komga_command("push"), fields=("query",)),
     "reset": Spec("Forget the whole library (reset)", True,
                   _simple("reset_cmd", lambda o, s: _preview(o)), asks=True),
 }

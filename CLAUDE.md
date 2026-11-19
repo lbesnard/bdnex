@@ -64,6 +64,11 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   Anything that must ask must not run from the watcher.
 - **The metadata editor** (`POST /api/albums/{id}/edit`, `POST /api/edit`) calls `edit_cmd.doc_changes` / `describe_changes` /
   `parse_assignments`, so the web and `bdnex edit` can never disagree on what a valid value is. Do not validate fields twice.
+- **Every API route and task is in `docs/guides/api.md`** (`test_docs_in_sync` fails otherwise), and `test/api/test_jobs_match_the_cli.py`
+  checks every flag a task builds against its command's `--help`: a new task is a row in `COMMAND_OF` / `EVERYTHING` there. A
+  real change goes through `can_change` (it marks the request; `protect` then writes `<library>.changes.jsonl`, `GET /api/history`;
+  an endpoint may add `request.state.detail`). A command's logic is a function the CLI and the API both call
+  (`candidates_cmd.build_report`, `stats_cmd.summary`, `mark_cmd.apply_marks`, `review_cmd.settle`): never a second copy.
 - **Look at it for real**: Chromium is available. `tools/demo_library.py` builds a demo library; see the
   `check-web-page` skill for serving it and taking screenshots. Never claim a page works from the code alone.
 

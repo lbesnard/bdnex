@@ -30,7 +30,7 @@ Links can carry a filter: `#/albums?q=series:nains`, `#/series?name=nains`, `#/f
 
 Everything that changes your library or your files is a **task**: `check --fix`, download the album list (`init`), record
 files as they are, **import** (match and read the pages of new files), `reparse`, write tags, move into the collection,
-`convert` PDFs, repair, undo a move, relink, `relocate`, empty the trash (and restore a file from the Trash page), and `reset`. A task is
+`convert` PDFs, repair, undo a move, relink, `relocate`, `update` (read again the files that changed on the disk), empty the trash (and restore a file from the Trash page), `komga-show` / `komga-push` (compare with and send to [Komga](komga.md)), and `reset`. A task is
 one of these commands run in the background, with the same code as the terminal. Each has a **Preview** (changes
 nothing: `-n`) and **Run for real**. Only one task runs at a time; you can watch its output and cancel it.
 
@@ -99,28 +99,33 @@ JSON. The reading endpoints are `GET`; the ones that change something are marked
 
 | endpoint | returns |
 | --- | --- |
-| `/api/albums?q=&limit=&offset=` | albums matching `q`, paged (`limit` up to 1000, 100 by default) |
+| `/api/albums?q=&limit=&offset=` | albums matching `q`, paged (`limit` up to 1000, 100 by default): `count` is how many match in all, `items` one window (cut in the database, so a big library is not read to show 100 albums) |
 | `/api/people?q=&limit=&offset=` | every credited name once (a name is one row of the library's `people` table), most albums first, with the number of albums by role |
-| `/api/albums/{id}` | one album with its credits, genres and files |
+| `/api/albums/{id}` | one album with its credits, genres, files and your `marks` (the album's, and each file's) |
 | `POST /api/albums/{id}/edit` | **change (a preview is not):** edit an album's fields by hand: `{"preview": true, "fields": {"title": "…", "credits": {"Writer": ["A"]}}}`; answers `changes` (as `bdnex edit -n` prints them) and, when stored, the new album. A bad value is `400` with the reason |
 | `POST /api/edit` | **change (a preview is not):** `{"q": "series:nains", "set": ["publisher=Soleil"], "preview": true}`, as `bdnex edit QUERY --set`; at most 2000 albums, never an empty query |
 | `/api/albums/{id}/cover` | the album's saved cover image (404 when none was downloaded yet) |
 | `/api/files?q=&limit=&offset=` | files matching `q` (the `--files` terms), with their absolute paths |
 | `/api/series?name=&missing=true` | series, what you own, and the albums you lack when the series page is known |
 | `/api/trash` | files waiting in the trash |
-| `/api/stats` | counts of files, albums, series... |
+| `/api/stats?q=` | what `bdnex stats --json` prints: albums (read or only matched), files (linked, damaged, flagged, by format), stored pages; `q` limits it to a query. **Breaking:** the old flat counts are gone (`/api/overview` has the front page's) |
+| `/api/fields` | the fields a query can use, each with its kind and a line of help (`bdnex fields`) |
 | `/api/health` | version, schema, whether a token or a login is required |
 | `/api/overview` | the counts and state the front page shows, and whether changes are allowed |
 | `/api/series/{id}` | one series, volume by volume: owned or missing |
 | `/api/files/{id}/cover` | the first page of a file, as a small picture |
 | `/api/review` | the matches waiting for a look |
-| `POST /api/review/{file_id}` | **change:** `{"action": "keep"}` or `{"action": "unlink"}` |
-| `/api/duplicates`, `/api/check` | what `bdnex duplicates` and `bdnex check` report |
+| `POST /api/review/{file_id}` | **change:** `{"action": "keep"}` or `{"action": "unlink"}`; `{"action": "album", "album": "245127"}` uses that album (its number or page address; the `apply-album` task, answered with `job`); `{"action": "rematch", "interactive": true}` starts the `rematch` task, which asks which album. Neither task ever moves a file |
+| `/api/candidates?q=&low=&per_file=&limit=&offset=&cover=` | the albums each file could be, with where each score comes from, what for and against each candidate says, and (`cover=true`, needs OpenCV) how much its cover looks like the file's: what `bdnex candidates --json` prints, a window of `limit` files at a time (`cover` makes a request per candidate whose cover is not saved: keep `limit` small) |
+| `POST /api/marks` | **change (a preview is not):** `{"q": "series:nains", "set": {"checked": "keep"}, "remove": ["old"], "albums": false, "preview": true}`, as `bdnex mark`; find them with `attr:checked` in any query |
+| `/api/history?limit=&offset=` | what the page and the API changed, newest first: when, who (`login@address`), the call and what it did. A preview, a refused or a failed call is not in it. Kept in `<library>.changes.jsonl` (the last 2000) |
+| `/api/duplicates`, `/api/check?matches=true` | what `bdnex duplicates` and `bdnex check` report; `matches=true` also weighs every match against its album page (`bdnex check --matches`: slower; each doubtful one comes as a record in `matches`) |
 | `/api/config` | the settings that matter to the page (no token, no fetcher address) |
 | `/api/jobs/available`, `/api/jobs`, `/api/jobs/{id}?after=` | the tasks you can start, the runs, and one run with its output from line `after` |
 | `POST /api/jobs` | start a task: `{"command": "move", "preview": true, "query": ["series:nains"]}`; `"interactive": true` lets a real run ask its questions; `import` takes `steps`, `auto` and `files`. A preview needs no permission; `"preview": false` is a **change** |
 | `GET /api/settings`, `POST /api/settings` | every option with its kind, default and help (no token, password or fetcher address); **change (a preview is not):** `{"changes": {"write.pdf": "tag"}, "preview": true}`. The whole file is validated before it is written, the previous one is kept as `.bak`, comments stay, and the running server follows at once (except `api.*`: restart) |
-| `POST /api/files/{id}/spare`, `/unlink`, `/trash` | **change:** mark a file as a spare version (`{"spare": true}`), forget its album, or move it to the trash (restorable). Never for a file under a copy-only source |
+| `POST /api/files/{id}/spare`, `POST /api/files/{id}/unlink`, `POST /api/files/{id}/trash` | **change:** mark a file as a spare version (`{"spare": true}`), forget its album, or move it to the trash (restorable). Never for a file under a copy-only source |
+| `/api/jobs/{id}/events?after=` | the task's output as server-sent events (`text/event-stream`): a `line` event per output line, `question` when it waits for an answer, `end` with the status when it is over. The page polls instead; this is for scripts and other pages |
 | `/api/jobs/{id}/image` | the picture shown with the question the task is waiting on (404 when there is none); `GET /api/overview` has `waiting` (the task, its question) |
 | `POST /api/jobs/{id}/answer` | **change:** answer the question a task is waiting on: `{"question": 3, "choice": 0}` (`choices` for a list, `text` for a typed value). The question, with its answers, is in `GET /api/jobs/{id}` as `question` |
 | `POST /api/jobs/{id}/cancel` | **change:** ask a running task to stop |
