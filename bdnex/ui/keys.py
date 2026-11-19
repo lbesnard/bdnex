@@ -35,7 +35,7 @@ ACTIONS: dict[str, Action] = {
     "rematch": Action("r", "Rematch: choose the album again", "cyan", "choose"),
     "choose": Action("c", "Choose which ones", "cyan", "choose"),
     "search": Action("e", "Enter a search in the album list...", "cyan", "choose"),
-    "url": Action("u", "Type the album's URL...", "cyan", "choose"),
+    "id": Action("i", "Enter an album Id or address...", "cyan", "choose"),
     "database": Action("d", "Database wins (overwrite the file's values)", "green", "choose"),
     "database_all": Action("w", "Database wins for the rest of the queue (no more questions)", "green", "choose"),
     "file": Action("k", "Keep the file as it is (the library takes its values)", "red", "choose"),

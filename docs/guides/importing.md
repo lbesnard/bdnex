@@ -116,7 +116,8 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    `BDNEX_THUMBNAILS` variable, which wins over the setting. Any failure drawing it is silent.
    **The right album is not in the list?** Choose *Enter a search in the album list...* (the album you pick there is
    shown again for you to check, with **O** to open its page, before it is used; **N** returns to the list), or
-   *Type the album's URL...* and paste the address of its page (`https://www.bedetheque.com/BD-...-<number>.html`).
+   *Enter an album Id or address...* (**I**): type the album's number (the one at the end of its page address,
+   `...-245127.html` is `245127`) or paste the address of its page. The album is shown for you to check before it is used.
    The search: with [`fzf`](https://github.com/junegunn/fzf) installed, it opens over the whole album list (about 370,000),
    started from the file's name and case-insensitive; otherwise you type a few words and filter their best
    2,000 hits in a Python fuzzy prompt. Esc / Ctrl-C goes back to the list. **Ctrl-O** opens the page of the
@@ -565,7 +566,7 @@ the same answer is the same key everywhere. Press the highlighted letter, in eit
 | `L` | unlink the file from the album (review); leave it as it is (damaged archive, outside files) | yellow |
 | `D` | the database wins (conflicts) | green |
 | `W` | the database wins for the rest of the queue (conflicts) | green |
-| `E` / `U` | enter a search / type the address of the album | cyan |
+| `E` / `I` | enter a search / enter an album Id or address | cyan |
 | `R`, `C`, `M` | rematch, choose (files, fields), move | cyan |
 
 A key is the same in every question where its answer exists, and a question never uses one key twice. Green is the safe

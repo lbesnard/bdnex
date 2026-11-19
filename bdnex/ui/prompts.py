@@ -165,7 +165,7 @@ class InquirerPrompter:
     ABORT = "__abort__"
     SKIP_FOLDER = "__skip_folder__"
     SEARCH = "__search__"
-    URL = "__url__"
+    ID = "__id__"
     NO = "__no__"
 
     def __init__(self, source=None, thumbnails: str = "auto"):
@@ -248,8 +248,8 @@ class InquirerPrompter:
         offered = []
         if self.source is not None:
             offered.append({"action": "search", "value": self.SEARCH})
-        if hasattr(self.source, "candidate_from_url"):
-            offered.append({"action": "url", "value": self.URL, "label": "Type the album's URL..."})
+        if hasattr(self.source, "candidate_for") or hasattr(self.source, "candidate_from_url"):
+            offered.append({"action": "id", "value": self.ID})
         offered += [{"action": "skip", "value": self.SKIP},
                     {"action": "skip_folder", "value": self.SKIP_FOLDER},
                     {"action": "back", "value": self.PREVIOUS},
@@ -282,9 +282,9 @@ class InquirerPrompter:
                 if found is not None and self.confirm_found(found):
                     return found
                 continue  # nothing picked, or not the right one: back to the list
-            if answer == self.URL:
-                found = self.ask_url()
-                if found is not None:
+            if answer == self.ID:
+                found = self.ask_id()
+                if found is not None and self.confirm_found(found):  # a mistyped number gives no other feedback
                     return found
                 continue
             return answer
@@ -296,16 +296,18 @@ class InquirerPrompter:
             {"action": "no", "value": self.NO, "label": "No, back to the list"}])
         return answer != self.NO
 
-    def ask_url(self) -> Optional[Candidate]:
-        """Type the address of the album's page; empty goes back."""
+    def ask_id(self) -> Optional[Candidate]:
+        """Type the album's Id (the number at the end of its page address) or paste the address; empty goes back."""
+        lookup = getattr(self.source, "candidate_for", None) or self.source.candidate_from_url
         while True:
-            text = self._text("Address of the album's page (empty to go back):").strip()
+            text = self._text("Album Id or address of its page (empty to go back):").strip()
             if not text:
                 return None
-            candidate = self.source.candidate_from_url(text)
+            candidate = lookup(text)
             if candidate is not None:
                 return candidate
-            print("That is not the address of an album page (https://www.bedetheque.com/BD-...-<number>.html).")
+            print("That is not an album: type its number, or the address of its page "
+                  "(https://www.bedetheque.com/BD-...-<number>.html).")
 
     def _thumbnail(self, path: str) -> None:
         """A small picture of the file's first page on the right of the question, on a terminal that can show it."""
