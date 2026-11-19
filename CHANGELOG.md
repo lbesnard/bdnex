@@ -10,7 +10,7 @@ command runs, never while an import is fetching).
 - **Every command's `--help` ends with examples** (what to type, and what it does), from one table (`bdnex/ui/examples.py`);
   a test checks that each example uses real options.
 - **Default aliases**: bdnex ships eleven, with long names and an explanation, listed by `bdnex --help`
-  (`settle-doubtful-matches`, `first-import`, `import-skipped-files-again`...). Your own `aliases:` are added to them (the same name replaces one; `name =` removes it).
+  (`settle-doubtful-matches`, `first-import`, `import-skipped-files-again`...). Your own `aliases:` are added to them (the same name replaces one; `NAME =` removes it).
 - **`bdnex relink` is `bdnex relocate --find`** (find the files that were moved by hand, by their content; `relocate OLD NEW` is still for a moved folder). The old name still works, with a note.
 - **`bdnex reparse` is `bdnex import --reparse`** (offline, from the stored pages; `--select TERM` limits it to some albums). The old name still works, with a note.
 - **One command for the doubtful matches: `bdnex review`.** `bdnex recheck` is now `bdnex review --auto` (the old name still
@@ -23,7 +23,7 @@ command runs, never while an import is fetching).
   `bdnex[cover]` still installs (an empty extra). The Docker image grows by about 100 MB.
 
 ### Added
-- **`bdnex aliases`** lists the aliases at work (bdnex's own and yours), and `--add "name = command  # why"` / `--rm NAME` edit the
+- **`bdnex aliases`** lists the aliases at work (bdnex's own and yours), and `--add "NAME = COMMAND  # WHY"` / `--rm NAME` edit the
   `aliases:` list of your configuration file for you (checked first, a `.bak` kept, `-n` previews).
 - **Aliases**: `aliases: ["settle-doubtful-matches = review --auto  # what it does"]` in the configuration makes `bdnex settle-doubtful-matches` run `bdnex review --auto`, and `bdnex --help` lists it with its explanation.
 - **`bdnex review --auto`** weighs every flagged file and every match applied under the strong threshold (the medium

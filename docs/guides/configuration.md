@@ -210,7 +210,7 @@ aliases:
 ```
 
 `bdnex settle-doubtful-matches -n` is then `bdnex review --auto -n`: what you type after the alias is added. Each alias is
-`long-name = a bdnex command and its options`, then, after ` # `, what it is for. The name is lower case (letters, digits and
+`NAME = COMMAND OPTIONS`, then, after ` # `, `WHY` (what it is for). NAME is lower case (letters, digits and
 dashes), not already a command, and the command is a bdnex command, not another alias. **Long names are the point**: they say
 what they do, and `bdnex --help` lists your aliases with their explanation. Nothing else is run: an alias is only a shorter way
 to type bdnex, never a shell command.
@@ -219,7 +219,7 @@ to type bdnex, never a shell command.
 `import-skipped-files-again`, `fetch-albums-not-read-yet`, `rebuild-albums-from-stored-pages`, `list-doubtful-matches`,
 `settle-doubtful-matches`, `preview-settle-doubtful-matches`, `check-every-match`, `list-files-without-album`,
 `list-series-with-missing-albums` and `find-files-moved-by-hand`. They work without any change to your file, and **yours
-are added to them**: an alias of yours with the same name replaces the one of bdnex, and `name =` (nothing after the
+are added to them**: an alias of yours with the same name replaces the one of bdnex, and `NAME =` (nothing after the
 `=`) removes it. `bdnex config --update` writes them, commented out, into your file so you can see them.
 
 **`bdnex aliases` lists them and edits the file for you**:

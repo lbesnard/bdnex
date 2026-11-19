@@ -430,14 +430,14 @@ def deep_merge(base: dict, override: dict) -> dict:
 
 
 def combine_aliases(defaults: list, mine: list) -> list:
-    """bdnex's own aliases plus the user's: one with the same name replaces it, and ``name =`` (nothing after) removes it."""
+    """bdnex's own aliases plus the user's: one with the same name replaces it, and ``NAME =`` (nothing after) removes it."""
     def name(text) -> str:
         return str(text).partition("=")[0].strip()
 
     own = {name(text) for text in mine}
     ships = {name(text) for text in defaults}
     gone = {name(text) for text in mine if name(text) in ships and "=" in str(text)
-            and not str(text).partition("=")[2].strip().split(" # ")[0].strip()}  # `name =` of one of bdnex's own
+            and not str(text).partition("=")[2].strip().split(" # ")[0].strip()}  # `NAME =` of one of bdnex's own
     return [text for text in defaults if name(text) not in own] + [text for text in mine if name(text) not in gone]
 
 

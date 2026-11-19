@@ -49,7 +49,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         epilog="An alias is a name for a bdnex command and its options: `bdnex settle-doubtful-matches -n` runs "
                "`bdnex review --auto -n` (what you type after the name is added). bdnex ships some; yours are added to them "
                "(the same name replaces one). --add and --rm write the `aliases:` list of your configuration file (the "
-               "previous file is kept as `.bak`, your comments elsewhere stay). Removing one of bdnex's writes `name =`, "
+               "previous file is kept as `.bak`, your comments elsewhere stay). Removing one of bdnex's writes `NAME =`, "
                "which switches it off for you.")
     parser.add_argument("--add", metavar='"NAME = COMMAND  # WHY"', action="append", default=[],
                         help="add an alias (or replace the one with that name): a long name that says what it does, the "
@@ -110,7 +110,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
     if changed:
         print(file=out)
     width = max((len(row["name"]) for row in rows), default=0)
-    print(f"{len(rows)} alias(es). `bdnex aliases --add \"name = command  # why\"` adds one, `--rm NAME` removes one.\n", file=out)
+    print(f"{len(rows)} alias(es). `bdnex aliases --add \"NAME = COMMAND  # WHY\"` adds one, `--rm NAME` removes one.\n", file=out)
     for row in rows:
         print(f"  {row['name']:<{width}}  {row['command']}" + (f"   # {row['why']}" if row["why"] else "")
               + ("" if row["from"] == "bdnex" else f"   [{row['from']}]"), file=out)
@@ -118,7 +118,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
 
 
 def parse_alias_ok(text: str) -> bool:
-    """Is ``text`` an alias of yours (not the ``name =`` that switches one of bdnex's off)?"""
+    """Is ``text`` an alias of yours (not the ``NAME =`` that switches one of bdnex's off)?"""
     try:
         parse_alias(text)
     except ValueError:
