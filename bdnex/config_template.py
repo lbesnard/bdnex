@@ -243,3 +243,29 @@ def set_value(text: str, dotted: str, value: Any) -> str:
             lines.append("")
         lines.append(f"{name}: {rendered}")
     return "\n".join(lines) + "\n"
+
+
+def set_aliases(text: str, items: list[str]) -> str:
+    """``text`` with the active top-level ``aliases:`` written as a block list of ``items`` (``aliases: []`` when none).
+
+    The header keeps its own trailing comment and the rest of the file is left as it is; a file without an active
+    ``aliases:`` gets the block at its end (a commented ``# aliases:`` stays as the help it is)."""
+    import json
+
+    lines = text.splitlines()
+    block = [f"  - {json.dumps(item, ensure_ascii=False)}" for item in items]
+    header = next((i for i, line in enumerate(lines) if re.match(r"^aliases:", line)), None)
+    if header is None:
+        if lines and lines[-1].strip():
+            lines.append("")
+        lines += ["aliases:" if block else "aliases: []", *block]
+        return "\n".join(lines) + "\n"
+    comment = re.match(r"^aliases:[ \t]*(?:\[.*?\])?[ \t]*(#.*)?$", lines[header])
+    end = header + 1
+    while end < len(lines) and (not lines[end].strip() or re.match(r"^[ \t]+(-|#)", lines[end])):
+        end += 1
+    while end > header + 1 and not lines[end - 1].strip():
+        end -= 1  # the blank lines after the block belong to what follows
+    suffix = f"  {comment.group(1)}" if comment and comment.group(1) else ""
+    lines[header:end] = [("aliases:" if block else "aliases: []") + suffix, *block]
+    return "\n".join(lines) + "\n"

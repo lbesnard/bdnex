@@ -122,6 +122,12 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
         ("bdnex config --edit", "open it in your editor"),
         ("bdnex config --update", "add the options your file does not list yet, commented out"),
     ],
+    "aliases": [
+        ("bdnex aliases", "list the aliases at work: bdnex's own, and yours"),
+        ("bdnex aliases --add \"show-unlinked = ls --unmatched  # files that have no album\"", "add one to your configuration file"),
+        ("bdnex aliases --rm show-unlinked", "remove it (or switch off one of bdnex's)"),
+        ("bdnex aliases --add \"x = ls\" -n", "preview a change"),
+    ],
     "completion": [
         ("bdnex completion bash", "print a tab-completion script (also zsh and fish)"),
     ],
