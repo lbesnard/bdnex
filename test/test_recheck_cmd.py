@@ -255,3 +255,16 @@ def test_the_best_other_cover_wins_only_when_it_looks_like_the_file_and_is_clear
         _compare_with(monkeypatch, {"1": 0.0, "2": 40.0, "7": 10.0}, matches)
         assert recheck_cmd.look_for_better(settings, lib, verdicts, 5) == 0
         assert current is not None and recheck_cmd.look_for_better(settings, lib, verdicts, 0) == 0  # 0: off
+
+
+def test_each_file_and_each_candidate_cover_is_said(env, monkeypatch):
+    db, files = env
+    with Library(db) as lib:
+        settings, verdicts = _wrong_verdict(env, lib)
+        _compare_with(monkeypatch, {"1": 3.0, "2": 85.0, "7": 20.0}, [_Cand("1", 85), _Cand("2", 80), _Cand("7", 78)])
+        lines = []
+        recheck_cmd.look_for_better(settings, lib, verdicts, 5, say=lines.append)
+    text = "\n".join(lines)
+    assert "[1/1] Nains - T05 - Autre.cbz" in text and "now: Nains Redwin" in text
+    assert "* cover   3%" in text and "cover  85%" in text and "-> better:" in text
+    assert "Covers compared: 1 better album(s) found" in text
