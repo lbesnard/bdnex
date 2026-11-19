@@ -222,6 +222,19 @@ to type bdnex, never a shell command.
 are added to them**: an alias of yours with the same name replaces the one of bdnex, and `name =` (nothing after the
 `=`) removes it. `bdnex config --update` writes them, commented out, into your file so you can see them.
 
+**`bdnex aliases` lists them and edits the file for you**:
+
+```bash
+bdnex aliases                                                             # bdnex's own and yours, with what they run and why
+bdnex aliases --add "show-unlinked = ls --unmatched  # files that have no album"   # add one (the same name replaces)
+bdnex aliases --rm show-unlinked                                          # remove one of yours
+bdnex aliases --rm first-import                                           # switch off one of bdnex's (writes `first-import =`)
+bdnex aliases --add "x = ls" -n                                           # preview: nothing is written
+```
+
+`--add` and `--rm` write the `aliases:` list of your configuration file: the whole file is checked first, the previous
+one is kept as `bdnex.yaml.bak`, and your comments elsewhere stay. `--json` lists them as JSON.
+
 ## Metadata source
 
 ```yaml

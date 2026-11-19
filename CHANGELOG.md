@@ -23,6 +23,8 @@ command runs, never while an import is fetching).
   `bdnex[cover]` still installs (an empty extra). The Docker image grows by about 100 MB.
 
 ### Added
+- **`bdnex aliases`** lists the aliases at work (bdnex's own and yours), and `--add "name = command  # why"` / `--rm NAME` edit the
+  `aliases:` list of your configuration file for you (checked first, a `.bak` kept, `-n` previews).
 - **Aliases**: `aliases: ["settle-doubtful-matches = review --auto  # what it does"]` in the configuration makes `bdnex settle-doubtful-matches` run `bdnex review --auto`, and `bdnex --help` lists it with its explanation.
 - **`bdnex review --auto`** weighs every flagged file and every match applied under the strong threshold (the medium
   ones an older `--auto=all` applied unasked), with the album's page, the file's tags and the saved covers, and settles

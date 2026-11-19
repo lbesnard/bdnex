@@ -884,6 +884,42 @@ Examples:
   bdnex config --update  add the options your file does not list yet, commented out
 ```
 
+### `bdnex aliases`
+
+List your short commands, add one (--add) or remove one (--rm) in the configuration file.
+
+```text
+usage: bdnex aliases [-h] [--add "NAME = COMMAND  # WHY"] [--rm NAME] [--json] [-n]
+
+``bdnex aliases``: list your short commands, add one or remove one (the configuration
+file is edited for you).
+
+options:
+  -h, --help            show this help message and exit
+  --add "NAME = COMMAND  # WHY"
+                        add an alias (or replace the one with that name): a long name
+                        that says what it does, the command with its options, and
+                        after ` # ` what it is for; repeatable
+  --rm NAME             remove an alias of yours, or switch off one of bdnex's;
+                        repeatable
+  --json                list them as JSON
+  -n, --pretend         show what would change; change nothing
+
+An alias is a name for a bdnex command and its options: `bdnex settle-doubtful-matches
+-n` runs `bdnex review --auto -n` (what you type after the name is added). bdnex ships
+some; yours are added to them (the same name replaces one). --add and --rm write the
+`aliases:` list of your configuration file (the previous file is kept as `.bak`, your
+comments elsewhere stay). Removing one of bdnex's writes `name =`, which switches it
+off for you.
+
+Examples:
+  bdnex aliases                                                   list the aliases at work: bdnex's own, and yours
+  bdnex aliases --add "show-unlinked = ls --unmatched  # files that have no album"
+                                                                  add one to your configuration file
+  bdnex aliases --rm show-unlinked                                remove it (or switch off one of bdnex's)
+  bdnex aliases --add "x = ls" -n                                 preview a change
+```
+
 ### `bdnex completion`
 
 Print a tab-completion script for bash, zsh or fish.

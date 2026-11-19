@@ -58,6 +58,7 @@ GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     )),
     ("Setup", (
         Command("config", "config_cmd", "show or edit the configuration", needs_config=False),
+        Command("aliases", "aliases_cmd", "list your short commands, add one (--add) or remove one (--rm) in the configuration file"),
         Command("completion", "completion_cmd", "print a tab-completion script for bash, zsh or fish", needs_config=False),
     )),
 )
