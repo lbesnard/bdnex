@@ -102,7 +102,7 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 
 - **`--auto=all` never asks and applies only strong matches without a doubt** (`match.auto_all`); a medium one is queued and
   decided at the end by its cover (`importer/session_vote.py`, `match.cover_vote`): never apply a medium match unasked.
-- **`bdnex review --batch N`** (`ui/review_tui.py`, Textual, optional extra `tui`) is a screen over `library/review_batch.py` (`next_batch`,
+- **`bdnex review --batch N`** (`ui/review_tui.py`, Textual: a core dependency) is a screen over `library/review_batch.py` (`next_batch`,
   `decide`, `link_to`): every decision is written at once (a `checked` mark; `^attr:checked` leaves the file out of the next batch),
   `o` hands the terminal to `fzf` (`prompts.fzf_pick`, the one function the import question uses too) through `App.suspend()`; a link runs the import in a thread and the library is written back in the main thread. Keep the logic in `review_batch`, the screen
   thin; test the screen with Textual's pilot (`test/test_review_tui.py`).

@@ -66,7 +66,13 @@ For checking by eye, a batch at a time, with every decision saved as you make it
 bdnex review --batch 50               # the next 50 doubtful files, in a table
 bdnex review --batch 50 --unmatched   # the same, with the files that have no album
 bdnex review --batch 50 series:batman # only some files (same terms as `bdnex ls --files`)
+bdnex review --batch 50 series:batman --all   # every Batman file, the doubtful ones first, then the rest
+bdnex review --batch 50 --again       # the files you already checked too (the State column says what you decided)
 ```
+
+By default the table holds **the doubtful files only**: a match something contradicts or nothing confirms, the same set
+`bdnex review --auto` weighs (so there is no `--low`: it is what you get). `--unmatched` adds the files without album,
+`--all` every file of the query (to look through a series), `--again` the ones already checked. They all go with `--batch`.
 
 One row per file: its **name**, its **folder** (it often says the series or the language), the **album it is linked to now**,
 the **match score** of the import, the **cover score** (the file's cover against the album's saved cover) and a **state**
@@ -89,8 +95,8 @@ and what speaks for and against its match.
 
 Each decision is **written at once** to the library (a `checked` mark, the flag, the link), so quitting, Ctrl-C or a lost SSH
 connection loses nothing. Files already checked are not shown again: **run the same command later to continue**. At the end
-of a batch it asks whether to check the next one. It needs the optional `tui` extra (Textual): `pip install 'bdnex[tui]'`
-or `uv sync --extra tui`; without it, `bdnex review` and `bdnex review --auto` work as before. Linking to another album
+of a batch it asks whether to check the next one. Textual is installed with bdnex; if it is missing,
+`bdnex review` and `bdnex review --auto` work as before. Linking to another album
 reads that album's page (a request), so it takes a moment; a file whose chosen album already has another file is refused
 and says so.
 

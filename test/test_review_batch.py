@@ -99,3 +99,36 @@ def test_an_unknown_decision_is_refused(env):
         row = batch.next_batch(lib, load_config().settings, size=1)[0]
         with pytest.raises(ValueError):
             batch.decide(lib, row, "nonsense")
+
+
+def test_all_adds_the_files_nothing_says_are_doubtful_after_the_doubtful_ones_and_a_query_limits_them(env):
+    db, files = env
+    settings = load_config().settings
+    with Library(db) as lib:
+        rows = batch.next_batch(lib, settings, size=50, everything=True)
+        assert [r.kind for r in rows] == ["wrong", "unconfirmed", "unmatched", "ok", "ok"]  # doubtful, no album, then the rest
+        assert {r.path for r in rows[3:]} == {files["kept"], files["confident"]}
+        assert rows[3].album and rows[3].why == []
+        only = batch.next_batch(lib, settings, size=50, terms=["filename:Sure"], everything=True)
+        assert [r.path for r in only] == [files["confident"]]
+        assert len(batch.next_batch(lib, settings, size=4, everything=True)) == 4  # the size is a cap
+
+
+def test_again_shows_the_files_already_checked_with_what_was_decided(env):
+    db, files = env
+    settings = load_config().settings
+    with Library(db) as lib:
+        wrong = batch.next_batch(lib, settings, size=50)[0]
+        batch.decide(lib, wrong, "keep")
+        assert wrong.path not in [r.path for r in batch.next_batch(lib, settings, size=50)]
+        again = batch.next_batch(lib, settings, size=50, again=True)
+        assert wrong.path in [r.path for r in again]
+        assert next(r for r in again if r.path == wrong.path).previous == "keep"
+
+
+def test_the_batch_options_need_batch(env, capsys):
+    from bdnex.ui import review_cmd
+
+    for flag in ("--all", "--again", "--unmatched"):
+        assert review_cmd.run([flag]) == 2
+    assert "go with --batch" in capsys.readouterr().err

@@ -23,8 +23,8 @@ from bdnex.library import review_batch as batch
 from bdnex.ui import color
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "dim", "skipped": "yellow"}
-KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta"}
-KIND_WORD = {"wrong": "contradicted", "unconfirmed": "unconfirmed", "unmatched": "no album"}
+KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "ok": "green"}
+KIND_WORD = {"wrong": "contradicted", "unconfirmed": "unconfirmed", "unmatched": "no album", "ok": "nothing against"}
 EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 
 
@@ -153,10 +153,12 @@ class ReviewApp(App):
         Binding("q", "quit", "Quit"),
     ]
 
-    def __init__(self, library, settings, source, size: int = 50, terms=(), unmatched: bool = False):
+    def __init__(self, library, settings, source, size: int = 50, terms=(), unmatched: bool = False,
+                 everything: bool = False, again: bool = False):
         super().__init__()
         self.library, self.settings, self.source = library, settings, source
         self.batch_size, self.terms, self.unmatched = size, list(terms), unmatched
+        self.everything, self.again = everything, again
         self.rows: list[batch.Row] = []
         self.number = 0
         self.decided: dict[str, int] = {}
@@ -176,7 +178,8 @@ class ReviewApp(App):
 
     def load_batch(self) -> None:
         self.number += 1
-        self.rows = batch.next_batch(self.library, self.settings, self.batch_size, self.terms, self.unmatched)
+        self.rows = batch.next_batch(self.library, self.settings, self.batch_size, self.terms, self.unmatched,
+                                    self.everything, self.again)
         self.render_table()
         if not self.rows:
             self.sub_title = "nothing left to check"
@@ -200,7 +203,8 @@ class ReviewApp(App):
 
         # what was decided, or else what is wrong with it: the colour is for the thing to look at, not for every name
         state = Text(row.status, style=STATUS_STYLE.get(row.status, "")) if row.status else \
-            Text(KIND_WORD.get(row.kind, row.kind), style=KIND_STYLE.get(row.kind, ""))
+            Text(KIND_WORD.get(row.kind, row.kind) + (f" (was {row.previous})" if row.previous else ""),
+                 style=KIND_STYLE.get(row.kind, ""))
         return [Text(str(number), style="cyan"), Text(os.path.basename(row.path), style="bold"),
                 Text(row.folder, style="dim"), album_text(row), score_text(row.score), score_text(row.cover), state]
 
@@ -368,8 +372,9 @@ class ReviewApp(App):
         self.load_batch()
 
 
-def run(library, settings, source, size: int = 50, terms=(), unmatched: bool = False) -> dict[str, int]:
+def run(library, settings, source, size: int = 50, terms=(), unmatched: bool = False, everything: bool = False,
+        again: bool = False) -> dict[str, int]:
     """Run the table until the person quits; returns how many files were decided, by decision."""
-    app = ReviewApp(library, settings, source, size, terms, unmatched)
+    app = ReviewApp(library, settings, source, size, terms, unmatched, everything, again)
     app.run()
     return app.decided

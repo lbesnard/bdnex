@@ -28,6 +28,7 @@ dependencies = [
   "pymupdf",
   "python-dateutil",
   "pyyaml",
+  "textual>=0.86",  # `bdnex review --batch`: a table to check the matches a batch at a time
   "opencv-python-headless>=4.8",  # the cover check, `recheck`, the cover vote: part of the core
   "rapidfuzz",
   "rarfile",
@@ -36,10 +37,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "ipdb", "textual>=0.86", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+dev = ["pytest", "pytest-cov", "ipdb", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
 docs = ["sphinx>=7", "furo", "myst-parser"]
 api = ["fastapi>=0.110", "uvicorn>=0.29"]  # `bdnex serve`: read-only HTTP API and web page
-tui = ["textual>=0.86"]  # `bdnex review --batch`: a table to check the matches 50 files at a time
+tui = []  # kept so that `bdnex[tui]` still installs: Textual is now a normal dependency
 cover = []  # kept so that `bdnex[cover]` still installs: OpenCV is now a normal dependency
 
 [project.urls]

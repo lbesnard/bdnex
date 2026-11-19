@@ -28,11 +28,12 @@ class Row:
     album_url: Optional[str]
     score: Optional[float]  # the match score of the import that linked it
     cover: Optional[float]  # the cover match with the album's saved cover (0-100), when it could be told
-    kind: str  # ``wrong`` | ``unconfirmed`` | ``unmatched``
+    kind: str  # ``wrong`` | ``unconfirmed`` | ``unmatched`` | ``ok`` (nothing says it is doubtful: shown with ``everything``)
     why: list[str] = field(default_factory=list)  # what contradicts it, what confirms it, what is missing
     file_id: Optional[int] = None
     status: str = ""  # what was decided in this session: ``keep``, ``unlinked``, ``linked``, ``left``, ``skipped``
     message: str = ""  # what happened when it was decided (a refusal, for one)
+    previous: str = ""  # an earlier decision (the ``checked`` mark), shown when files already checked are asked for again
 
 
 def folder_of(path: str, depth: int = 2) -> str:
@@ -45,9 +46,14 @@ def is_checked(library: Library, file_id: Optional[int]) -> bool:
 
 
 def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...] | list[str] = (),
-               unmatched: bool = False) -> list[Row]:
-    """The next ``size`` files to check (most doubtful first: contradicted, then unconfirmed, then without album)."""
-    verdicts = [v for v in weak_matches(library, settings, [*terms, f"^attr:{CHECKED}"], compare=False, store=False,
+               unmatched: bool = False, everything: bool = False, again: bool = False) -> list[Row]:
+    """The next ``size`` files to check, in this order: the contradicted (lowest cover first), the unconfirmed, then, with
+    ``unmatched`` (or ``everything``), the files without album, then, with ``everything``, all the other files of the query.
+    Files already checked are left out unless ``again``."""
+    from bdnex.ui.describe import label
+
+    exclude = [] if again else [f"^attr:{CHECKED}"]
+    verdicts = [v for v in weak_matches(library, settings, [*terms, *exclude], compare=False, store=False,
                                         flagged=True, weak=True) if v.kind in (WRONG, UNCONFIRMED)]
     verdicts.sort(key=lambda v: (v.kind != WRONG, v.cover if v.cover is not None else 101.0, v.path))
     rows = []
@@ -62,18 +68,30 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
             why.append(f"? {verdict.note}")
         if file.get("review"):
             why.insert(0, f"flagged: {file['review']}")
-        from bdnex.ui.describe import label
-
         rows.append(Row(verdict.path, folder_of(verdict.path), label(album) if album else verdict.album, verdict.album_id,
-                        album.get("url"),
-                        verdict.score, cover, verdict.kind, why, file.get("id")))
-    if unmatched and len(rows) < size:
+                        album.get("url"), verdict.score, cover, verdict.kind, why, file.get("id"),
+                        previous=library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""))
+    if (unmatched or everything) and len(rows) < size:
         for found in sorted(library.unmatched(list(terms)), key=lambda r: r["path"]):
             file = library.get_file(found["path"]) or {}
-            if is_checked(library, file.get("id")):
+            previous = library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""
+            if previous and not again:
                 continue
             rows.append(Row(found["path"], folder_of(found["path"]), None, None, None, found.get("score"), None, "unmatched",
-                            [f"last import: {found.get('outcome')}"], file.get("id")))
+                            [f"last import: {found.get('outcome')}"], file.get("id"), previous=previous))
+            if len(rows) >= size:
+                break
+    if everything and len(rows) < size:
+        taken = {row.path for row in rows}
+        for found in sorted(library.query([*terms, *exclude], files=True), key=lambda r: r["path"]):
+            if found["path"] in taken or found.get("id") is None:
+                continue
+            file = library.get_file(found["path"]) or {}
+            album = library.get_album(found["id"]) or {}
+            last = library.last_import(found["path"])
+            rows.append(Row(found["path"], folder_of(found["path"]), label(album) if album else None, found["id"],
+                            album.get("url"), last["score"] if last else None, file.get("cover_score"), "ok", [],
+                            file.get("id"), previous=library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""))
             if len(rows) >= size:
                 break
     return rows

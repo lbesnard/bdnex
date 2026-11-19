@@ -46,7 +46,7 @@ command runs, never while an import is fetching).
   score, state), with keys to keep, unlink, search another album in the album list, or enter an address. Every decision is
   saved at once (a `checked` mark), checked files are not shown again, so the review continues with another call. `o` uses
   `fzf` over the whole album list when it is installed (the screen steps aside for it), else a search box. Optional
-  extra `tui` (`pip install 'bdnex[tui]'`); `--unmatched` adds the files without album.
+  (Textual, a normal dependency); `--unmatched` adds the files without album, `--all` every file of the query, `--again` the ones already checked.
 - **`bdnex aliases`** lists the aliases at work (bdnex's own and yours), and `--add "NAME = COMMAND  # WHY"` / `--rm NAME` edit the
   `aliases:` list of your configuration file for you (checked first, a `.bak` kept, `-n` previews).
 - **Aliases**: `aliases: ["settle-doubtful-matches = review --auto  # what it does"]` in the configuration makes `bdnex settle-doubtful-matches` run `bdnex review --auto`, and `bdnex --help` lists it with its explanation.
