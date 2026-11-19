@@ -7,6 +7,11 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Added
+- **`bdnex mirror`** keeps the whole catalogue in the library: it compares the album list with the library and fetches every album that is
+  missing (or only matched) with its series page and its cover, through the same endpoints and polite delay as an import, several at once.
+  `-n` counts what is missing and the room it takes; `--limit N`, `--covers-only`, `--no-covers`, `--workers`. Stop and run again at any time.
+- Stored album and series pages are **compressed** (about a tenth of the size); pages stored before stay readable. *Back up the database
+  first*: an older bdnex can not read the compressed pages.
 - Path templates have **`$special`**: what the site calls the tome when it is no number (`INT` for an intégrale, `HS`...), empty otherwise:
   `$series - %if{$special,$special,T$volume:02} - $title`.
 - `review --batch`: **`space` marks files, `a` attaches them to a series**: pick any album of the series and each marked file (or the files of the

@@ -29,6 +29,46 @@ Examples:
   bdnex init  download the album list that file names are matched against (once; run it again to refresh)
 ```
 
+### `bdnex mirror`
+
+Keep the whole catalogue in the library: every album page, series page and cover not there yet.
+
+```text
+usage: bdnex mirror [-h] [--limit N] [--no-covers] [--covers-only] [--workers N] [-n]
+                    [-v] [--log-file PATH]
+
+Download the whole Bédéthèque catalogue into the library: every album page, its series
+page and its cover, for the albums the album list (`bdnex init`) has and the library
+does not.
+
+options:
+  -h, --help       show this help message and exit
+  --limit N        fetch at most N albums this time (0: all that are left)
+  --no-covers      the pages only: do not download the covers
+  --covers-only    only the covers of the albums the library already holds without one
+                   (no page is fetched)
+  --workers N      album pages fetched at once (0: the cores less one; 1: one by one);
+                   default: `bedetheque.parallel`
+  -n, --pretend    show what would be fetched: how many albums and covers are missing,
+                   and about how much room they take; change nothing
+  -v, --verbose    more detail: -v what is decided and why (every file), -vv how
+                   (reads, cache, requests, threads), -vvv everything, libraries and
+                   SQL included
+  --log-file PATH  also write everything, at the debug level and with the time, to
+                   this file (for a long run)
+
+The library is the state: stop at any time (Ctrl-C) and run it again, it goes on with
+what is left. Pages go through the same endpoints and the same polite delay as an
+import (`bedetheque.fetcher_endpoint`, `parallel`).
+
+Examples:
+  bdnex mirror -n                       how many albums and covers are missing from the library, and about how much room they take; fetches nothing
+  bdnex mirror --limit 500              fetch the next 500 albums (page, series page and cover), then stop; run it again to go on
+  bdnex mirror                          fetch everything the album list has and the library lacks (Ctrl-C stops, the next run goes on)
+  bdnex mirror --covers-only            only the covers of the albums already in the library that have none saved
+  bdnex mirror --no-covers --workers 8  the pages only, 8 at once (more endpoints are faster, not more polite)
+```
+
 ### `bdnex import`
 
 Match comic files to Bédéthèque albums and record them in the library.

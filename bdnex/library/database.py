@@ -9,6 +9,7 @@ import os
 import re
 import sqlite3
 import sys
+import zlib
 from typing import Any, Iterable, Optional
 
 from bdnex.library.hashing import file_md5
@@ -809,9 +810,13 @@ class Library:
         return self.conn.execute(sql, [album_id, *compiled.params]).fetchone() is not None
 
     # ----------------------------------------------------------- source cache
+    COMPRESSED_KINDS = ("album", "series")  # pages: about a tenth of their size once compressed (a whole catalogue is tens of GB)
+
     def cache_put(self, source: str, kind: str, url: str, content: bytes | str) -> None:
         if isinstance(content, str):
             content = content.encode("utf-8")
+        if kind in self.COMPRESSED_KINDS:
+            content = zlib.compress(content, 6)  # `cache_get` reads both: pages stored before this stay readable
         with self.conn:
             self.conn.execute(
                 """INSERT INTO source_cache(source, kind, url, content) VALUES (?, ?, ?, ?)
@@ -823,7 +828,21 @@ class Library:
         row = self.conn.execute(
             "SELECT content FROM source_cache WHERE source = ? AND kind = ? AND url = ?",
             (source, kind, url)).fetchone()
-        return row["content"] if row else None
+        if row is None:
+            return None
+        content = row["content"]
+        if kind in self.COMPRESSED_KINDS and content[:1] == b"x":  # zlib's first byte; HTML starts with `<` or whitespace
+            try:
+                return zlib.decompress(content)
+            except zlib.error:
+                pass
+        return content
+
+    def album_states(self, source: str) -> dict[str, tuple[bool, bool, Optional[str]]]:
+        """``source_id -> (page not read, has a saved cover, cover address)`` of every album of ``source`` (``bdnex mirror``)."""
+        return {r["source_id"]: (bool(r["partial"]), bool(r["cover_file"]), r["cover_url"]) for r in self.conn.execute(
+            "SELECT source_id, json_extract(extra, '$.partial') AS partial, cover_file, cover_url FROM albums WHERE source = ?",
+            (source,))}
 
     def cache_delete(self, source: str, kind: str, url: str) -> None:
         with self.conn:
