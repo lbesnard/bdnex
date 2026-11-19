@@ -429,6 +429,18 @@ def deep_merge(base: dict, override: dict) -> dict:
     return merged
 
 
+def combine_aliases(defaults: list, mine: list) -> list:
+    """bdnex's own aliases plus the user's: one with the same name replaces it, and ``name =`` (nothing after) removes it."""
+    def name(text) -> str:
+        return str(text).partition("=")[0].strip()
+
+    own = {name(text) for text in mine}
+    ships = {name(text) for text in defaults}
+    gone = {name(text) for text in mine if name(text) in ships and "=" in str(text)
+            and not str(text).partition("=")[2].strip().split(" # ")[0].strip()}  # `name =` of one of bdnex's own
+    return [text for text in defaults if name(text) not in own] + [text for text in mine if name(text) not in gone]
+
+
 def find_unknown_keys(user: Any, defaults: Any, prefix: tuple = ()) -> list[str]:
     """Dotted names of user keys that do not exist in the defaults."""
     if not isinstance(user, dict) or not isinstance(defaults, dict) or prefix in FREE_FORM:
@@ -470,6 +482,11 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
     defaults = load_defaults()
     # a section whose options are all commented out is an empty YAML value, not a mistake
     user = {k: v for k, v in user.items() if not (v is None and isinstance(defaults.get(k), dict))}
+    if "aliases" in user:  # added to bdnex's own, never replacing them (a bare `aliases:` is no list at all)
+        if user["aliases"] is None:
+            del user["aliases"]
+        elif isinstance(user["aliases"], list):
+            user["aliases"] = combine_aliases(defaults.get("aliases") or [], user["aliases"])
     warnings: list[str] = []
     errors: list[str] = []
     for old, new in RENAMED_KEYS.items():  # an old name keeps working, once, with a warning

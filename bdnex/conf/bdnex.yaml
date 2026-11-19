@@ -95,7 +95,7 @@ paths:
   placeholder: Unknown
 
 source: bedetheque                      # metadata source: a built-in name, an installed plugin, or 'package.module:factory'
-aliases:                                # `bdnex settle-doubtful-matches` runs `bdnex review --auto`: "long-name = command  # what it is for". bdnex's own; your list replaces them
+aliases:                                # `bdnex settle-doubtful-matches` runs `bdnex review --auto`: "long-name = command  # what it is for". bdnex's own; yours are added (same name: replaces; `name =`: removes)
   - "first-import = import --database-only --auto=all  # bring a folder in: match and record, touch no file, ask nothing"
   - "import-skipped-files-again = import --skipped --auto=all  # ask again about the files skipped earlier (strict; covers vote)"
   - "fetch-albums-not-read-yet = import --fetch --select partial:true  # read the pages of albums that are only matched"

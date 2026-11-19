@@ -76,3 +76,22 @@ def test_relink_is_relocate_find_and_relocate_find_runs_it(monkeypatch):
     assert seen == [["/a", "/b", "-n", "--workers", "2"]]
     with pytest.raises(SystemExit):  # without --find it still takes the old and the new folder
         relocate_cmd.run(["/only-one"])
+
+
+def test_my_aliases_are_added_to_the_ones_bdnex_ships(tmp_path, monkeypatch):
+    mine = ["my-listing = ls --files", "settle-doubtful-matches = review --auto -y  # mine", "first-import ="]
+    config(tmp_path, monkeypatch, mine)
+    aliases = load_config().settings.aliases
+    names = [text.partition("=")[0].strip() for text in aliases]
+    assert "my-listing" in names and "check-every-match" in names  # added, the others stay
+    assert "first-import" not in names  # `name =` removes one of bdnex's
+    assert [text for text in aliases if text.startswith("settle-doubtful-matches")] == [mine[1]]  # the same name replaces
+    config(tmp_path, monkeypatch, [])
+    assert "check-every-match" in " ".join(load_config().settings.aliases)
+
+
+def test_a_bare_aliases_key_keeps_the_defaults(tmp_path, monkeypatch):
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(f"config_version: 2\nlibrary: {tmp_path / 'lib.sqlite'}\naliases:\n  # - 'x = ls'\n")
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    assert len(load_config().settings.aliases) >= 8

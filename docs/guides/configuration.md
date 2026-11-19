@@ -218,8 +218,9 @@ to type bdnex, never a shell command.
 **bdnex ships a list of them** (`bdnex config --defaults` prints it, and `bdnex --help` shows them): `first-import`,
 `import-skipped-files-again`, `fetch-albums-not-read-yet`, `rebuild-albums-from-stored-pages`, `list-doubtful-matches`,
 `settle-doubtful-matches`, `preview-settle-doubtful-matches`, `check-every-match`, `list-files-without-album`,
-`list-series-with-missing-albums` and `find-files-moved-by-hand`. They work without any change to your file. Writing
-`aliases:` in your own file **replaces** that list, so copy the ones you want to keep, then add yours.
+`list-series-with-missing-albums` and `find-files-moved-by-hand`. They work without any change to your file, and **yours
+are added to them**: an alias of yours with the same name replaces the one of bdnex, and `name =` (nothing after the
+`=`) removes it. `bdnex config --update` writes them, commented out, into your file so you can see them.
 
 ## Metadata source
 
