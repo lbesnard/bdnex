@@ -37,7 +37,10 @@ def look_for_better(settings, library, verdicts: list[Verdict], limit: int, say=
     """Set ``better`` on the contradicted verdicts: another candidate whose cover is clearly the file's (the rule of the
     cover vote of an import). Returns how many were found. Errors are swallowed: it is a help, never a reason to fail."""
     wrong = [v for v in verdicts if v.kind == WRONG]
-    if limit <= 0 or not wrong or not covers.opencv_installed():
+    if limit <= 0 or not wrong:
+        return 0
+    if not covers.opencv_installed():
+        say("The covers of the other candidates are not compared: OpenCV is not installed (`uv sync --extra cover`).")
         return 0
     from bdnex.importer.matching import find_matches
     from bdnex.importer.registry import create_source
@@ -47,13 +50,17 @@ def look_for_better(settings, library, verdicts: list[Verdict], limit: int, say=
     try:
         source = create_source(settings.source, library, settings)
         if not source.is_ready():
+            say("The covers of the other candidates are not compared: the album list is not downloaded (`bdnex init`).")
             return 0
         warm = getattr(source, "warm", None)
         if warm:
             warm()
     except Exception as err:
-        logger.debug(f"no candidates to compare ({err})")
+        say(f"The covers of the other candidates are not compared: {err}")
         return 0
+    say(f"Comparing the covers of the {limit} best other candidates of {len(wrong)} contradicted file(s) "
+        "(a cover not saved yet is one request; Ctrl-C stops)...")
+    unreadable = 0
     medium, vote_min = settings.match.medium_threshold, settings.match.cover_vote_min
     found = 0
     for number, verdict in enumerate(wrong, start=1):
@@ -64,6 +71,8 @@ def look_for_better(settings, library, verdicts: list[Verdict], limit: int, say=
             matches = find_matches(source, verdict.path, limit=limit)
             entries = [{"for": [], "against": []} for _ in matches]
             compare_covers(source, settings, verdict.path, row.get("format"), matches, entries)
+            if matches and all(entry.get("cover") is None for entry in entries):
+                unreadable += 1  # the file's first page could not be read (a disk not mounted?) or no cover could be fetched
         except KeyboardInterrupt:
             raise
         except Exception as err:
@@ -88,6 +97,9 @@ def look_for_better(settings, library, verdicts: list[Verdict], limit: int, say=
             verdict.better = {"url": top[1].candidate.url, "album": name, "score": round(top[1].score),
                               "cover": top[0], "current_cover": beaten}
             found += 1
+    say(f"Covers compared: {found} better album(s) found"
+        + (f"; for {unreadable} file(s) no cover could be compared (is the disk mounted? `-vv` says why)" if unreadable else "")
+        + ".")
     return found
 
 
