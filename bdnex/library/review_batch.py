@@ -33,6 +33,7 @@ class Row:
     file_id: Optional[int] = None
     status: str = ""  # what was decided in this session: ``keep``, ``unlinked``, ``linked``, ``left``, ``skipped``
     message: str = ""  # what happened when it was decided (a refusal, for one)
+    busy: bool = False  # a link is being made for it (the screen waits)
     previous: str = ""  # an earlier decision (the ``checked`` mark), shown when files already checked are asked for again
 
 

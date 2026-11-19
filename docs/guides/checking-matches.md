@@ -84,14 +84,20 @@ and what speaks for and against its match.
 |---|---|
 | `k` | keep the match (the flag goes, the file is marked `checked=keep`) |
 | `u` | unlink the file (remembered as skipped, so `bdnex import --skipped --auto=all` decides it again) |
-| `o` | **another album**: `fzf` over the whole album list (the sitemaps) when it is installed, starting from the file's name: type to filter, Enter picks, Ctrl-O opens the page, Esc goes back; without `fzf`, a search box of the screen does the same by words |
-| `O` | the search box of the screen, even when `fzf` is installed |
+| `o` | **another album**: a search box in the screen over the whole album list (the sitemaps), starting from the file's name. It filters as you type like `fzf`: words in any order, accents ignored, and a fuzzy match when a letter is missing. Enter picks, Ctrl-O opens the page, Ctrl-U clears, Esc goes back |
+| `O` | the real `fzf`, when it is installed (the screen steps aside for it and comes back) |
 | `i` | an album's page address or number |
 | `s` | skip for now (nothing is saved: it is in the next batch again) |
 | `l` | leave it as it is, and do not show it again |
 | `p` | open the page of the album now linked, in your browser |
 | `n` | the next batch |
 | `q` | quit |
+
+The table **opens at once**: the files are weighed in the background (the title says how long it took, `weighed in 6.2 s`) and
+the album list loads at the same time, so nothing waits before the first key. Picking an album **links the file**, which reads
+that album's page: the row says `linking...` (with what it is doing under the table), keys on that row are refused until it
+is done, and when it is the row shows `linked`, the new album, the new cover score and `you` as the match. A link the import
+refuses (the album already has another file) shows `refused` in red.
 
 Each decision is **written at once** to the library (a `checked` mark, the flag, the link), so quitting, Ctrl-C or a lost SSH
 connection loses nothing. Files already checked are not shown again: **run the same command later to continue**. At the end

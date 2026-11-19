@@ -7,6 +7,12 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- **`review --batch` opens at once**: the files are weighed and the album list is loaded in background threads (the title says
+  `weighed in N s`), instead of before the screen appeared.
+- **`o` is a search box in the screen** (the album list filtered as you type: words in any order, accents ignored, a fuzzy match for a
+  missing letter) instead of leaving the screen; `O` is the real `fzf` (the screen steps aside).
+- **Linking is visible**: the row shows `linking...` and keys on it are refused until it is done, then the row shows `linked` with the new
+  album, the new cover score and `you`; a refused link shows `refused`. The import's own messages no longer land on the screen.
 - `bdnex candidates` without a query and without `--low` went through **every file of the library** (17,117 files with `--cover`: tens of
   thousands of requests). It now refuses and says so; `--all` says you mean it, and with `--cover` the first line says how many cover
   requests it could make.

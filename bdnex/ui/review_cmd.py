@@ -52,23 +52,28 @@ def _batch(args, settings, out) -> int:
         return 1
     offline = settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
         update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})  # searching the list needs no request
-    with Library.for_settings(settings) as library:
-        try:
-            source = create_source(settings.source, library, offline)
-        except Exception as err:
-            print(err, file=sys.stderr)
-            return 1
-        if not source.is_ready():
-            print("The album list is not downloaded yet: run `bdnex init` first.", file=sys.stderr)
-            return 1
-        warm = getattr(source, "warm", None)
+
+    def build_source():
+        """In the thread of the album list: its own read-only library, the album list loaded (a few seconds)."""
+        own = Library.for_settings(settings, readonly=True)
+        made = create_source(settings.source, own, offline)
+        warm = getattr(made, "warm", None)
         if warm:
             warm()
+        return made, own.close
+
+    with Library.for_settings(settings) as library:
         try:
+            if not create_source(settings.source, library, offline).is_ready():
+                print("The album list is not downloaded yet: run `bdnex init` first.", file=sys.stderr)
+                return 1
             library.query(args.query, files=True, limit=1)  # a bad query is said now, not from inside the screen
         except QueryError as err:
             return context.bad_query(err)
-        decided = review_tui.run(library, settings, source, args.batch, args.query, args.unmatched, args.all, args.again)
+        except Exception as err:
+            print(err, file=sys.stderr)
+            return 1
+        decided = review_tui.run(library, settings, build_source, args.batch, args.query, args.unmatched, args.all, args.again)
     on = color.enabled(out)
     total = sum(decided.values())
     parts = ", ".join(f"{n} {what}" for what, n in sorted(decided.items()) if n)

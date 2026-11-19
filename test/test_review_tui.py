@@ -1,6 +1,7 @@
 """`bdnex review --batch`: the Textual table, driven with Textual's pilot (no terminal needed)."""
 
 import asyncio
+import threading
 
 import pytest
 import yaml
@@ -13,6 +14,8 @@ from bdnex.library import AlbumInfo, Library, SeriesInfo  # noqa: E402
 from bdnex.library import review_batch as batch  # noqa: E402
 from bdnex.ui import review_tui  # noqa: E402
 
+FORGE = Candidate("2", "https://www.bedetheque.com/BD-Forge-2.html", "forge", 2)
+
 
 class FakeSource:
     name = "bedetheque"
@@ -22,10 +25,10 @@ class FakeSource:
 
     def candidates(self, text, limit=5):
         self.asked.append(text)
-        return [(Candidate("2", "https://www.bedetheque.com/BD-Forge-2.html", "forge", 2), 91.0)]
+        return [(FORGE, 91.0)]
 
     def candidate_for(self, text):
-        return Candidate("2", "https://www.bedetheque.com/BD-Forge-2.html", "forge", 2) if "Forge" in text or text == "2" else None
+        return FORGE if "Forge" in text or text == "2" else None
 
 
 @pytest.fixture
@@ -52,18 +55,26 @@ def env(tmp_path, monkeypatch, make_cbz):
     return db, files
 
 
-def drive(db, script, unmatched=True, size=50):
-    """Run the app, call ``script(app, pilot)``, and return the app."""
+async def settle(app, pilot):
+    """Wait for the background work (the files weighed, a search, a link) and the screen to catch up."""
+    for _ in range(3):
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+
+def drive(db, script, unmatched=True, size=50, source=None):
+    """Run the app, call ``script(app, pilot)`` once the batch is shown, and return the cells of the table."""
     settings = load_config().settings
-    source = FakeSource()
+    source = source or FakeSource()
     result = {}
 
     async def go():
         with Library(db) as lib:
             app = review_tui.ReviewApp(lib, settings, source, size, (), unmatched)
             async with app.run_test(size=(170, 45)) as pilot:
-                await pilot.pause()
+                await settle(app, pilot)
                 await script(app, pilot)
+                await settle(app, pilot)
                 result["app"] = app
                 result["cells"] = [[str(cell) for cell in app.query_one("DataTable").get_row_at(i)] for i in range(len(app.rows))]
 
@@ -71,11 +82,12 @@ def drive(db, script, unmatched=True, size=50):
     return result, source
 
 
-def test_the_table_shows_file_folder_album_scores_and_status(env):
+def test_the_table_opens_at_once_and_shows_file_folder_album_scores_state_and_how_long_it_took(env):
     db, files = env
 
     async def script(app, pilot):
         assert app.query_one("DataTable").row_count == 3
+        assert "weighed in" in app.sub_title and "0/3 checked" in app.sub_title  # what was slow, and how slow
 
     result, _ = drive(db, script)
     first, second, third = result["cells"]
@@ -126,32 +138,107 @@ def test_a_file_without_album_cannot_be_kept_or_unlinked(env):
     assert result["cells"][2][6] == "no album" and result["app"].decided == {}  # nothing was decided, nothing saved
 
 
-def test_o_searches_the_album_list_and_the_pick_links_the_file(env, monkeypatch):
+def _linking(monkeypatch, db, release, outcome="switch"):
+    """What `import --album --database-only` does to the library, on its own connection (it runs in a thread), held until
+    ``release`` is set so that the test can look at the table while the link is being made."""
     from bdnex.ui import verdicts
 
-    db, files = env
-    monkeypatch.setattr(review_tui.shutil, "which", lambda name: None)  # no fzf: the search of the screen
-
-    def switch(path, url):  # what `import --album --database-only` does, on its own connection (it runs in a thread)
-        with Library(db) as lib:
-            lib.set_file_album(path, lib.find_album("bedetheque", "2"))
+    def rematch(path, url):
+        release.wait(5)
+        if outcome == "switch":
+            with Library(db) as lib:
+                lib.set_file_album(path, lib.find_album("bedetheque", "2"))
+                lib.set_file_fields(path, cover_score=66.0)  # the import compares the cover of the album it chose
         return True
 
-    monkeypatch.setattr(verdicts, "rematch", switch)
+    monkeypatch.setattr(verdicts, "rematch", rematch)
+
+
+def test_o_opens_the_search_and_a_pick_shows_linking_then_updates_the_row(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    _linking(monkeypatch, db, release)
+    seen = {}
 
     async def script(app, pilot):
         await pilot.press("o")
-        await pilot.pause()
-        assert app.screen.__class__.__name__ == "SearchScreen"
+        await settle(app, pilot)
+        assert app.screen.__class__.__name__ == "FuzzyScreen"
         await pilot.press("enter")  # the first hit
-        await app.workers.wait_for_complete()
         await pilot.pause()
+        row = app.rows[0]
+        seen["busy"] = (row.busy, str(app.query_one("DataTable").get_row_at(0)[6]), row.message)  # while it is being made
+        await pilot.press("k")  # a decision on a file that is being linked is refused
+        assert not row.status
+        release.set()
+        await settle(app, pilot)
 
     result, source = drive(db, script)
-    assert source.asked and "Nains" in source.asked[0]  # the search starts from the file's own name
-    assert result["cells"][0][6] == "linked" and "Forge" in result["cells"][0][3]
+    assert seen["busy"][0] is True and seen["busy"][1] == "linking..." and "reading the album page" in seen["busy"][2]
+    first = result["cells"][0]
+    assert first[6] == "linked" and "Forge" in first[3] and first[4] == "you" and first[5] == "66%"  # the row says what happened
+    assert "cover is 66%" in result["app"].rows[0].message
     with Library(db) as lib:
         assert lib.attrs_of("file", lib.get_file(files["wrong"])["id"])["checked"].startswith("other:")
+
+
+def test_a_refused_link_says_refused_in_the_table(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    release.set()
+    _linking(monkeypatch, db, release, outcome="refuse")  # exit code 0, library unchanged: the album already has a file
+
+    async def script(app, pilot):
+        await pilot.press("o")
+        await settle(app, pilot)
+        await pilot.press("enter")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert result["cells"][0][6] == "refused" and "refused" in result["app"].rows[0].message
+    with Library(db) as lib:
+        assert lib.get_file(files["wrong"])["album_id"] is not None  # nothing changed
+
+
+def test_i_takes_an_address_or_a_number(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    release.set()
+    _linking(monkeypatch, db, release)
+
+    async def script(app, pilot):
+        await pilot.press("i")
+        await pilot.pause()
+        assert app.screen.__class__.__name__ == "AskScreen"
+        await pilot.press(*"2")
+        await pilot.press("enter")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert result["cells"][0][6] == "linked"
+
+
+def test_capital_o_hands_over_to_the_real_fzf_when_it_is_installed(env, monkeypatch):
+    import contextlib
+
+    db, files = env
+    release = threading.Event()
+    release.set()
+    _linking(monkeypatch, db, release)
+    source = FakeSource()
+    source.catalogue = lambda: []
+    asked = []
+    monkeypatch.setattr(review_tui.shutil, "which", lambda name: "/usr/bin/fzf")
+    monkeypatch.setattr(review_tui.ReviewApp, "suspend", lambda self: contextlib.nullcontext())
+    monkeypatch.setattr("bdnex.ui.prompts.fzf_pick", lambda src, path, start: asked.append((path, start)) or FORGE)
+
+    async def script(app, pilot):
+        await pilot.press("O")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script, source=source)
+    assert asked and asked[0][0] == files["wrong"] and "nains" in asked[0][1].lower()  # it starts from the file's name
+    assert result["cells"][0][6] == "linked"
 
 
 def test_the_next_batch_is_offered_when_the_batch_is_done(env):
@@ -163,10 +250,47 @@ def test_the_next_batch_is_offered_when_the_batch_is_done(env):
         await pilot.pause()
         assert app.screen.__class__.__name__ == "AskScreen"
         await pilot.press("y")
-        await pilot.pause()
+        await settle(app, pilot)
         assert app.rows == [] and app.number == 2  # nothing left: the checked files are not shown again
 
     drive(db, script, unmatched=False)
+
+
+class Catalogue(FakeSource):
+    """A source that can list its albums, like the real one."""
+
+    def __init__(self, names):
+        super().__init__()
+        self.items = [Candidate(str(i), f"https://www.bedetheque.com/BD-{name.replace(' ', '-')}-{i}.html", name, i)
+                      for i, name in enumerate(names)]
+
+    def catalogue(self):
+        return self.items
+
+
+def hub_of(source):
+    hub = review_tui.SourceHub(source)
+    hub.ready.result(5)
+    return hub
+
+
+def test_the_search_finds_albums_by_words_in_any_order_with_or_without_accents_and_survives_a_typo():
+    source = Catalogue(["Alex Ada Tome 1", "Alex Ada Tome 2", "Batman Année Un", "Les Nains Redwin", "Excel Saga"])
+    hub = hub_of(source)
+    names = lambda text: [c.name for c, _ in review_tui.fuzzy_search(hub, text)[0]]  # noqa: E731
+    assert names("ada alex")[:2] == ["Alex Ada Tome 1", "Alex Ada Tome 2"]  # words in any order
+    assert names("annee un") == ["Batman Année Un"]  # accents do not matter
+    assert names("redwn")[0] == "Les Nains Redwin"  # a letter missing: the fuzzy match over the whole list
+    assert review_tui.fuzzy_search(hub, "")[0] == []
+    hub.close()
+
+
+def test_a_search_for_a_letter_does_not_rank_the_whole_list():
+    source = Catalogue([f"Album {i}" for i in range(6000)])
+    hub = hub_of(source)
+    hits, total = review_tui.fuzzy_search(hub, "a")
+    assert total == 6000 and len(hits) == review_tui.SEARCH_LIMIT  # the shortest names, typing more narrows it
+    hub.close()
 
 
 def test_the_command_refuses_politely_without_a_terminal(env, capsys):
@@ -174,59 +298,3 @@ def test_the_command_refuses_politely_without_a_terminal(env, capsys):
 
     assert review_cmd.run(["--batch", "10"]) == 2
     assert "run it in a terminal" in capsys.readouterr().err
-
-
-def _fzf(monkeypatch, db, picked):
-    """fzf is installed; the screen steps aside (a no-op here) and fzf 'returns' ``picked``."""
-    import contextlib
-
-    from bdnex.ui import verdicts
-
-    asked = []
-    monkeypatch.setattr(review_tui.shutil, "which", lambda name: "/usr/bin/fzf")
-    monkeypatch.setattr(review_tui.ReviewApp, "suspend", lambda self: contextlib.nullcontext())
-    monkeypatch.setattr("bdnex.ui.prompts.fzf_pick", lambda source, path, start: asked.append((path, start)) or picked)
-
-    def switch(path, url):
-        with Library(db) as lib:
-            lib.set_file_album(path, lib.find_album("bedetheque", "2"))
-        return True
-
-    monkeypatch.setattr(verdicts, "rematch", switch)
-    return asked
-
-
-def test_o_uses_fzf_when_it_is_installed_and_the_pick_links_the_file(env, monkeypatch):
-    db, files = env
-    source = FakeSource()
-    source.catalogue = lambda: []  # what makes a source searchable by fzf
-    asked = _fzf(monkeypatch, db, Candidate("2", "https://www.bedetheque.com/BD-Forge-2.html", "forge", 2))
-
-    async def script(app, pilot):
-        app.source = source
-        await pilot.press("o")
-        await app.workers.wait_for_complete()
-        await pilot.pause()
-        assert app.screen.__class__.__name__ != "SearchScreen"  # fzf was used, not the screen's own search
-
-    result, _ = drive(db, script)
-    assert asked and asked[0][0] == files["wrong"] and "nains" in asked[0][1].lower()  # it starts from the file's name
-    assert result["cells"][0][6] == "linked"
-
-
-def test_esc_in_fzf_changes_nothing_and_capital_o_is_the_search_of_the_screen(env, monkeypatch):
-    db, files = env
-    source = FakeSource()
-    source.catalogue = lambda: []
-    asked = _fzf(monkeypatch, db, None)  # Esc
-
-    async def script(app, pilot):
-        app.source = source
-        await pilot.press("o")
-        await pilot.pause()
-        assert asked and app.screen.__class__.__name__ != "SearchScreen" and not app.rows[0].status
-        await pilot.press("O")
-        await pilot.pause()
-        assert app.screen.__class__.__name__ == "SearchScreen"
-
-    drive(db, script)
