@@ -282,10 +282,23 @@ def test_skip_memory_does_not_hide_files_from_a_match_free_run(make_cbz):
     assert "not matched yet" in env.session.import_file(make_cbz(FILE)).note
 
 
-def test_auto_all_never_asks_and_applies_medium_matches(make_cbz):
-    env = prepared(FakeWeb(), make_settings(match={"strong_threshold": 100}), FakePrompter(), auto="all")
+def test_auto_all_can_apply_medium_matches_without_asking(make_cbz):
+    env = prepared(FakeWeb(), make_settings(match={"strong_threshold": 100, "auto_all": "medium"}), FakePrompter(), auto="all")
     assert env.session.import_file(make_cbz("Nains Redwin.cbz")).outcome == TAGGED
     assert env.session.prompter.asked == []
+
+
+def test_auto_all_is_strict_by_default_a_medium_match_stays_skipped_and_is_never_asked(make_cbz):
+    env = prepared(FakeWeb(), make_settings(match={"strong_threshold": 100}), FakePrompter(), auto="all")
+    path = make_cbz("Nains Redwin.cbz")
+    result = env.session.import_file(path)
+    assert result.outcome == SKIPPED and env.session.prompter.asked == []
+    assert env.lib.last_import(path)["outcome"] == "skipped"
+
+
+def test_a_preview_still_shows_the_medium_match_it_would_ask_about(make_cbz):
+    env = prepared(FakeWeb(), make_settings(match={"strong_threshold": 100}), FakePrompter(), pretend=True)
+    assert env.session.import_file(make_cbz("Nains Redwin.cbz")).outcome == "pretend"
 
 
 def test_meta_values(make_cbz):

@@ -43,7 +43,7 @@ album pages one by one (slowly on purpose) and completes the albums.
 ```bash
 bdnex import --auto ~/comics     # strong matches (score >= match.strong_threshold) are applied
                                  # unasked; you are only asked about the doubtful ones
-bdnex import --auto=all ~/comics # never ask: strong and medium matches applied, the rest skipped
+bdnex import --auto=all ~/comics # never ask: strong matches applied, the rest skipped (their covers vote at the end)
 bdnex import -n ~/comics         # preview, change nothing
 ```
 

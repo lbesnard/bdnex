@@ -70,8 +70,10 @@ options:
   --force               redo the selected steps for files that are already done
                         (rematch, read the pages again)
   --auto [=all]         do not ask about confident matches (score >=
-                        match.strong_threshold); --auto=all never asks: medium matches
-                        are applied too, the rest skipped
+                        match.strong_threshold); --auto=all never asks: only strong
+                        matches are applied (match.auto_all: medium applies the medium
+                        ones too), the rest is skipped, and the covers of its best
+                        candidates decide some of it at the end (match.cover_vote)
   --no-auto             check every file, whatever import.auto says
   -n, --pretend         show what would be done; change nothing
   -W, --write           afterwards, write ComicInfo.xml into the imported files (in

@@ -79,7 +79,9 @@ def test_plugin_options_are_free_form_in_the_config():
 
 # ---------------- the importer working with a source that is not Bédéthèque
 def fake_session(lib, **kw):
-    s = settings(**kw.pop("config", {}))
+    config = kw.pop("config", {})
+    config.setdefault("match", {"auto_all": "medium"})  # these tests are about sources, not about how strict `--auto=all` is
+    s = settings(**config)
     source = create_source("helpers:create_fake_source", lib, s)
     return ImportSession(lib, source, s, **kw), source
 

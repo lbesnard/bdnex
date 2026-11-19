@@ -51,7 +51,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="redo the selected steps for files that are already done (rematch, read the pages again)")
     parser.add_argument("--auto", choices=["strong", "all"], default=None, metavar="[=all]",
                         help="do not ask about confident matches (score >= match.strong_threshold); "
-                             "--auto=all never asks: medium matches are applied too, the rest skipped")
+                             "--auto=all never asks: only strong matches are applied (match.auto_all: medium applies the medium ones too), "
+                             "the rest is skipped, and the covers of its best candidates decide some of it at the end (match.cover_vote)")
     parser.add_argument("--no-auto", dest="auto", action="store_const", const=False,
                         help="check every file, whatever import.auto says")
     add_pretend(parser)

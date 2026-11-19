@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 # The result types and exceptions live in session_types (the cover and early-fetch parts need them too); they are
 # re-exported here because this is where the rest of bdnex, and its tests, have always imported them from.
 from bdnex.importer.session_covers import CoverPass  # noqa: E402
+from bdnex.importer.session_vote import CoverVote  # noqa: E402
 from bdnex.importer.session_early import EarlyFetch  # noqa: E402
 from bdnex.importer.session_types import (  # noqa: E402,F401
     ALREADY, DUPLICATE, FAILED, OUTCOME_LABELS, PARTIAL, PRETEND, SKIPPED, STEPS, TAGGED, GoBack, ImportAborted,
@@ -43,7 +44,7 @@ from bdnex.importer.session_types import (  # noqa: E402,F401
 
 
 
-class ImportSession(EarlyFetch, CoverPass):
+class ImportSession(EarlyFetch, CoverPass, CoverVote):
     """Import files in steps: ``match`` (file -> album, offline) and ``fetch`` (album -> metadata).
 
     ``steps`` selects them; both by default. A step that is already done for a file is skipped,
@@ -91,6 +92,7 @@ class ImportSession(EarlyFetch, CoverPass):
         self._covers: list[ImportResult] = []  # complete albums whose file's cover was never compared
         wanted_check = settings.cover.check if cover_check is None else cover_check
         self.cover_check = covers.opencv_installed() if wanted_check == "auto" else bool(wanted_check)
+        self._undecided: list = []  # (path, matches) the strict `--auto=all` left undecided: their covers vote at the end
         self._cover_pool = None  # worker threads that download covers while the matching goes on (CoverPass._queue_cover)
         self._cover_jobs: list = []  # (result, future) of the covers on their way
         self._ask_covers = True  # False while the matching still runs: a cover that differs is flagged, not asked about
@@ -222,6 +224,7 @@ class ImportSession(EarlyFetch, CoverPass):
             self._remember_abort(report, paths)
             return report
         self._fetch_pending()
+        self._cover_votes(report)
         return report
 
     def _skip_file(self, path: str, note: str) -> ImportResult:
@@ -775,7 +778,12 @@ class ImportSession(EarlyFetch, CoverPass):
         if rec is Recommendation.STRONG and (self.auto or never_ask or self.prompter is None):
             return best.candidate, best.score  # otherwise the user confirms it, pre-selected
         if never_ask:
-            return (best.candidate, best.score) if rec is Recommendation.MEDIUM else (None, None)
+            # `--auto=all` never asks: a medium match is applied only when `match.auto_all` says so (a preview shows both)
+            if rec is Recommendation.MEDIUM and (self.settings.match.auto_all == "medium" or self.auto != "all"):
+                return best.candidate, best.score
+            if rec is Recommendation.MEDIUM:
+                self._queue_vote(path, matches)  # not applied, not lost: its cover gets a vote at the end of the run
+            return None, None
         if self.prompter is None:
             return None, None
         self._asked = True
