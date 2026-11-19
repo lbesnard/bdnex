@@ -78,7 +78,8 @@ and what speaks for and against its match.
 |---|---|
 | `k` | keep the match (the flag goes, the file is marked `checked=keep`) |
 | `u` | unlink the file (remembered as skipped, so `bdnex import --skipped --auto=all` decides it again) |
-| `o` | **another album**: search the album list (the sitemaps) by words, starting from the file's name; type to filter, Enter picks, Ctrl-O opens the page |
+| `o` | **another album**: `fzf` over the whole album list (the sitemaps) when it is installed, starting from the file's name: type to filter, Enter picks, Ctrl-O opens the page, Esc goes back; without `fzf`, a search box of the screen does the same by words |
+| `O` | the search box of the screen, even when `fzf` is installed |
 | `i` | an album's page address or number |
 | `s` | skip for now (nothing is saved: it is in the next batch again) |
 | `l` | leave it as it is, and do not show it again |

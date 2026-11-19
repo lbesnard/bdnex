@@ -130,6 +130,7 @@ def test_o_searches_the_album_list_and_the_pick_links_the_file(env, monkeypatch)
     from bdnex.ui import verdicts
 
     db, files = env
+    monkeypatch.setattr(review_tui.shutil, "which", lambda name: None)  # no fzf: the search of the screen
 
     def switch(path, url):  # what `import --album --database-only` does, on its own connection (it runs in a thread)
         with Library(db) as lib:
@@ -173,3 +174,59 @@ def test_the_command_refuses_politely_without_a_terminal(env, capsys):
 
     assert review_cmd.run(["--batch", "10"]) == 2
     assert "run it in a terminal" in capsys.readouterr().err
+
+
+def _fzf(monkeypatch, db, picked):
+    """fzf is installed; the screen steps aside (a no-op here) and fzf 'returns' ``picked``."""
+    import contextlib
+
+    from bdnex.ui import verdicts
+
+    asked = []
+    monkeypatch.setattr(review_tui.shutil, "which", lambda name: "/usr/bin/fzf")
+    monkeypatch.setattr(review_tui.ReviewApp, "suspend", lambda self: contextlib.nullcontext())
+    monkeypatch.setattr("bdnex.ui.prompts.fzf_pick", lambda source, path, start: asked.append((path, start)) or picked)
+
+    def switch(path, url):
+        with Library(db) as lib:
+            lib.set_file_album(path, lib.find_album("bedetheque", "2"))
+        return True
+
+    monkeypatch.setattr(verdicts, "rematch", switch)
+    return asked
+
+
+def test_o_uses_fzf_when_it_is_installed_and_the_pick_links_the_file(env, monkeypatch):
+    db, files = env
+    source = FakeSource()
+    source.catalogue = lambda: []  # what makes a source searchable by fzf
+    asked = _fzf(monkeypatch, db, Candidate("2", "https://www.bedetheque.com/BD-Forge-2.html", "forge", 2))
+
+    async def script(app, pilot):
+        app.source = source
+        await pilot.press("o")
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+        assert app.screen.__class__.__name__ != "SearchScreen"  # fzf was used, not the screen's own search
+
+    result, _ = drive(db, script)
+    assert asked and asked[0][0] == files["wrong"] and "nains" in asked[0][1].lower()  # it starts from the file's name
+    assert result["cells"][0][6] == "linked"
+
+
+def test_esc_in_fzf_changes_nothing_and_capital_o_is_the_search_of_the_screen(env, monkeypatch):
+    db, files = env
+    source = FakeSource()
+    source.catalogue = lambda: []
+    asked = _fzf(monkeypatch, db, None)  # Esc
+
+    async def script(app, pilot):
+        app.source = source
+        await pilot.press("o")
+        await pilot.pause()
+        assert asked and app.screen.__class__.__name__ != "SearchScreen" and not app.rows[0].status
+        await pilot.press("O")
+        await pilot.pause()
+        assert app.screen.__class__.__name__ == "SearchScreen"
+
+    drive(db, script)

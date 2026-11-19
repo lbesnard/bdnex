@@ -37,7 +37,8 @@ command runs, never while an import is fetching).
 ### Added
 - **`bdnex review --batch N`**: a Textual table of the next N doubtful files (name, folder, album now, match score, cover
   score, state), with keys to keep, unlink, search another album in the album list, or enter an address. Every decision is
-  saved at once (a `checked` mark), checked files are not shown again, so the review continues with another call. Optional
+  saved at once (a `checked` mark), checked files are not shown again, so the review continues with another call. `o` uses
+  `fzf` over the whole album list when it is installed (the screen steps aside for it), else a search box. Optional
   extra `tui` (`pip install 'bdnex[tui]'`); `--unmatched` adds the files without album.
 - **`bdnex aliases`** lists the aliases at work (bdnex's own and yours), and `--add "NAME = COMMAND  # WHY"` / `--rm NAME` edit the
   `aliases:` list of your configuration file for you (checked first, a `.bak` kept, `-n` previews).

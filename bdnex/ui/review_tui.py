@@ -7,6 +7,7 @@ continued later by running the command again.
 
 from __future__ import annotations
 
+import shutil
 import webbrowser
 from typing import Optional
 
@@ -143,6 +144,7 @@ class ReviewApp(App):
         Binding("k", "keep", "Keep"),
         Binding("u", "unlink", "Unlink"),
         Binding("o", "other", "Other album (search)"),
+        Binding("O", "other_builtin", "Search without fzf", show=False),
         Binding("i", "ident", "Id / address"),
         Binding("s", "skip", "Skip"),
         Binding("l", "leave", "Leave"),
@@ -291,6 +293,29 @@ class ReviewApp(App):
             webbrowser.open(row.album_url)
 
     def action_other(self) -> None:
+        """Another album: ``fzf`` over the whole album list when it is installed, else the search of the screen."""
+        row = self.current()
+        if row is None:
+            return
+        if shutil.which("fzf") and hasattr(self.source, "catalogue"):
+            from textual.app import SuspendNotSupported
+
+            from bdnex.importer.matching import query_from_filename
+            from bdnex.library.query import fold
+            from bdnex.ui.prompts import fzf_pick
+
+            try:
+                with self.suspend():  # the screen steps aside for fzf and comes back
+                    candidate = fzf_pick(self.source, row.path, fold(query_from_filename(row.path)))
+            except SuspendNotSupported:
+                pass  # no terminal to hand over (a test, a web terminal): the search of the screen
+            else:
+                if candidate is not None:
+                    self.link(row, candidate.url)
+                return
+        self.action_other_builtin()
+
+    def action_other_builtin(self) -> None:
         row = self.current()
         if row is None:
             return

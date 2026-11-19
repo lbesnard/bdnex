@@ -159,6 +159,23 @@ def new_prompter(**kwargs) -> "InquirerPrompter":
     return factory(**kwargs) if factory is not None else InquirerPrompter(**kwargs)
 
 
+def fzf_pick(source, path: str, start: str) -> Optional[Candidate]:
+    """``fzf`` over the whole album list, starting from ``start`` (Enter picks, Ctrl-O opens the page, Esc goes back).
+    ``None`` when nothing was picked. The caller checks that ``fzf`` is installed and that the source has a ``catalogue``."""
+    catalogue = {str(c.source_id): c for c in source.catalogue()}
+    lines = "\n".join(f"{display_name(c)}\t{c.source_id}\t{c.url}" for c in catalogue.values())
+    # Ctrl-O opens the third field (the page address) with the default browser
+    opener = f"{shlex.quote(sys.executable)} -m webbrowser {{3}}"
+    header = f"{os.path.basename(path)}   (Enter picks the album, Ctrl-O opens its page, Esc goes back)"
+    result = subprocess.run(
+        ["fzf", "-i", "--query", start, "--delimiter", "\t", "--with-nth", "1", "--prompt", "album> ",
+         "--header", header, "--bind", f"ctrl-o:execute-silent({opener})", "--layout=reverse", "--height=70%"],
+        input=lines, stdout=subprocess.PIPE, text=True)
+    if result.returncode != 0 or not result.stdout.strip():
+        return None  # no match, or Esc / Ctrl-C
+    return catalogue.get(result.stdout.rstrip("\n").split("\t")[1])
+
+
 class InquirerPrompter:
     SKIP = "__skip__"
     PREVIOUS = "__previous__"
@@ -448,18 +465,7 @@ class InquirerPrompter:
         return self._search_by_prompt(start)
 
     def _search_with_fzf(self, path: str, start: str) -> Optional[Candidate]:
-        catalogue = {str(c.source_id): c for c in self.source.catalogue()}
-        lines = "\n".join(f"{display_name(c)}\t{c.source_id}\t{c.url}" for c in catalogue.values())
-        # Ctrl-O opens the third field (the page address) with the default browser
-        opener = f"{shlex.quote(sys.executable)} -m webbrowser {{3}}"
-        header = f"{os.path.basename(path)}   (Enter picks the album, Ctrl-O opens its page, Esc goes back)"
-        result = subprocess.run(
-            ["fzf", "-i", "--query", start, "--delimiter", "\t", "--with-nth", "1", "--prompt", "album> ",
-             "--header", header, "--bind", f"ctrl-o:execute-silent({opener})", "--layout=reverse", "--height=70%"],
-            input=lines, stdout=subprocess.PIPE, text=True)
-        if result.returncode != 0 or not result.stdout.strip():
-            return None  # no match, or Esc / Ctrl-C
-        return catalogue.get(result.stdout.rstrip("\n").split("\t")[1])
+        return fzf_pick(self.source, path, start)
 
     def _search_by_prompt(self, start: str) -> Optional[Candidate]:
         """Without ``fzf``: say which words to look for, then filter the best hits as you type."""
