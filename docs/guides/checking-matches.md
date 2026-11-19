@@ -40,6 +40,11 @@ of the cover vote at the end of an import), the file is linked to it (the librar
 --database-only` does). Otherwise it is unlinked and remembered as skipped, so `bdnex import --skipped` decides it again:
 it comes back when it is strong, or when a cover clearly votes for one candidate.
 
+A switch is counted only when the library shows it: if the better album already has another file (a duplicate), the import
+refuses it, the file stays on its contradicted album, flagged with the reason, and the summary says so. The summary also says
+why the unconfirmed ones could not be judged (most often: the album page was never read, so `bdnex import --fetch --select
+partial:true` is the next step).
+
 Files you chose (`import --album`, `review`) and the ones read from their own tags are never looked at. The usual order:
 
 ```bash

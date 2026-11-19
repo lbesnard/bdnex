@@ -30,10 +30,11 @@ class Verdict:
     better: Optional[dict] = None  # another album whose cover is clearly more like the file's: ``{url, album, score, cover}``
     for_: list[str] = field(default_factory=list)
     against: list[str] = field(default_factory=list)
+    note: str = ""  # for an unconfirmed one, why nothing could be said: ``page not read`` or ``cover not compared``
 
     def as_dict(self) -> dict[str, Any]:
         return {"path": self.path, "album": self.album, "score": self.score, "verdict": self.kind, "cover": self.cover,
-                "for": self.for_, "against": self.against, "better": self.better}
+                "for": self.for_, "against": self.against, "better": self.better, "note": self.note}
 
 
 def _cover_against_saved(library: Library, settings, path: str, album: dict, row: dict) -> Optional[float]:
@@ -96,6 +97,10 @@ def weak_matches(library: Library, settings, terms: list[str], compare: bool = T
         if cover is not None:
             (verdict.for_ if cover >= vote_min else verdict.against if cover < cover_floor else []).append(
                 f"its cover is {cover:.0f}% like the album's")
+        if album["extra"].get("partial"):
+            verdict.note = "page not read"
+        elif cover is None:
+            verdict.note = "cover not compared"
         if verdict.for_ and not verdict.against:
             verdict.kind = KEPT
         elif verdict.against and not verdict.for_:

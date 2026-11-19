@@ -127,7 +127,7 @@ def settle_verdicts(library, verdicts: list[Verdict], *, yes: bool = False, prom
     kept: the flag goes. wrong: switched to the better album when a cover found one, else unlinked (remembered as skipped,
     so ``import --skipped`` decides it again). unconfirmed: left as it is (a flag on a medium match that nothing
     contradicts is taken back: no evidence is no reason to ask you)."""
-    count = {"cleared": 0, "switched": 0, "unlinked": 0}
+    count = {"cleared": 0, "switched": 0, "unlinked": 0, "refused": 0}
     reviews = {v.path: (library.get_file(v.path) or {}).get("review") or "" for v in verdicts}
     switch = [v for v in verdicts if v.kind == WRONG and v.better]
     cut = [v for v in verdicts if v.kind == WRONG and not v.better]
@@ -146,10 +146,15 @@ def settle_verdicts(library, verdicts: list[Verdict], *, yes: bool = False, prom
             library.clear_review(v.path)
             count["cleared"] += 1
     for v in switch:
-        if rematch(v.path, v.better["url"]):
+        rematch(v.path, v.better["url"])
+        now = (library.get_file(v.path) or {}).get("album_id")
+        if now is not None and now != v.album_id:  # the library says so, not the import's exit code
             count["switched"] += 1
-        else:
-            print(f"  could not switch {v.path} to {v.better['url']}: it stays as it was", file=out)
+            continue
+        count["refused"] += 1  # e.g. the better album already has another file (a duplicate): nothing was changed
+        print(f"  not switched: {v.path}\n    the album {v.better['url']} was refused (it may already have another file: "
+              "`bdnex duplicates`); the file stays on its contradicted album, flagged for you", file=out)
+        library.flag_review(v.path, f"better: {better_text(v)}; not switched: the album was refused (another file may have it)")
     for v in cut:
         row = library.get_file(v.path)
         settle(library, {"path": v.path, "cover_score": row.get("cover_score") if row else None}, "unlink")

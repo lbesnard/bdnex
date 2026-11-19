@@ -6,6 +6,11 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Fixed
+- `review --auto` counted a switch to a better album as done when the import had refused it (the album already had another
+  file): it now checks the library, says which files were not switched (they stay flagged, with the reason), and the summary
+  says why the unconfirmed ones could not be judged (page not read, cover not compared).
+
 ### Changed
 - **Every command's `--help` ends with examples** (what to type, and what it does), from one table (`bdnex/ui/examples.py`);
   a test checks that each example uses real options.

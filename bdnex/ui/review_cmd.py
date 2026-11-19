@@ -58,13 +58,20 @@ def _auto(args, settings, out, prompter) -> int:
         print(f"{len(found)} file(s) weighed (flagged, or matched under {settings.match.strong_threshold:.0f}): "
               f"{count[KEPT]} confirmed, {count[WRONG]} contradicted ({better} switched to a better album, "
               f"{count[WRONG] - better} unlinked), {count[UNCONFIRMED]} unconfirmed (left as they are).", file=out)
+        why = Counter(v.note or "no evidence either way" for v in found if v.kind == UNCONFIRMED)
+        hints = {"page not read": "the album page was never read: `bdnex import --fetch --select partial:true`",
+                 "cover not compared": "no cover to compare (the file, or the album's cover, could not be read)",
+                 "no evidence either way": "the page and the cover say nothing for or against"}
+        for reason, number in why.most_common():
+            print(f"    {number} unconfirmed: {hints[reason]}", file=out)
         if args.pretend:
             return 0
         try:
             done = rules.settle_verdicts(library, found, yes=args.yes, prompter=prompter, out=out)
         except rules.Declined:
             return 1
-    print(f"Done: {done['cleared']} flag(s) taken off, {done['switched']} switched, {done['unlinked']} unlinked."
+    print(f"Done: {done['cleared']} flag(s) taken off, {done['switched']} switched, {done['unlinked']} unlinked"
+          + (f", {done['refused']} could not be switched (left flagged)" if done["refused"] else "") + "."
           + (" `bdnex import --skipped --auto=all` decides the unlinked ones again." if done["unlinked"] else ""), file=out)
     return 0
 
