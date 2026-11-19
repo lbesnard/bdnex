@@ -141,7 +141,7 @@ Examples:
 For files whose match is in doubt: the other albums they could be, with the evidence.
 
 ```text
-usage: bdnex candidates [-h] [--low] [--limit N] [--cover] [--json] [-v]
+usage: bdnex candidates [-h] [--low] [--all] [--limit N] [--cover] [--json] [-v]
                         [--log-file PATH]
                         [query ...]
 
@@ -156,6 +156,9 @@ options:
   --low            only the files whose match is in doubt: no album, flagged, looking
                    wrong (see `bdnex check --matches`), or matched with a score under
                    `match.strong_threshold`
+  --all            look at every file of the library: needed when you give neither a
+                   query nor --low (with --cover that can be tens of thousands of
+                   cover requests)
   --limit N        candidates per file (default 5)
   --cover          also compare the file's cover with the cover of each candidate (a
                    cover the import already saved is read from disk; any other is one
@@ -174,6 +177,7 @@ FILE`, or `bdnex review --auto` to settle the doubtful ones by rule.
 
 Examples:
   bdnex candidates --low                                the files whose match is in doubt, with the other albums each could be
+  bdnex candidates --all --limit 3                      every file of the library (a query or --low is needed otherwise)
   bdnex candidates series:nains --limit 3               the 3 best albums for each file of one series (any file, in doubt or not)
   bdnex candidates --low --cover --limit 3 series:saga  also compare covers (one request per cover not saved yet)
   bdnex candidates --low --json                         the same as JSON, for a script or an assistant

@@ -244,6 +244,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
     parser.add_argument("--low", action="store_true",
                         help="only the files whose match is in doubt: no album, flagged, looking wrong (see `bdnex check "
                              "--matches`), or matched with a score under `match.strong_threshold`")
+    parser.add_argument("--all", action="store_true",
+                        help="look at every file of the library: needed when you give neither a query nor --low (with --cover "
+                             "that can be tens of thousands of cover requests)")
     parser.add_argument("--limit", type=int, default=5, metavar="N", help="candidates per file (default 5)")
     parser.add_argument("--cover", action="store_true",
                         help="also compare the file's cover with the cover of each candidate (a cover the import already saved "
@@ -253,6 +256,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
     add_verbosity(parser)
     args = parser.parse_args(argv)
     setup_logging(args.verbose)
+    if not (args.query or args.low or args.all):  # every file of the library, by accident: say so instead
+        print("That is every file of the library. Give a query (`bdnex candidates series:nains`), `--low` (only the files "
+              "whose match is in doubt), or `--all` if you really mean every file.", file=sys.stderr)
+        return 2
     settings = context.settings()
     if settings is None:
         return 1
@@ -275,7 +282,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
                     if total is None:
                         print(color.role("Finding the files to look at...", "note", on), file=sys.stderr, flush=True)
                     else:
-                        print(f"{color.role(str(total), 'count', on)} file(s) to look at.", file=out, flush=True)
+                        more = (f" (at most {total * args.limit} cover requests, fewer for the covers already saved; Ctrl-C stops)"
+                                if args.cover else "")
+                        print(f"{color.role(str(total), 'count', on)} file(s) to look at{more}.", file=out, flush=True)
 
                 def step(event, number, entry, url):
                     """Each cover as it is downloaded and compared: the album it belongs to, then what was found."""

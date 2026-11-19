@@ -7,6 +7,9 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- `bdnex candidates` without a query and without `--low` went through **every file of the library** (17,117 files with `--cover`: tens of
+  thousands of requests). It now refuses and says so; `--all` says you mean it, and with `--cover` the first line says how many cover
+  requests it could make.
 - `candidates` says `[86/412]`: how many files it will look at is worked out first (and said: `412 file(s) to look at.`), so the number
   of a file always has a total.
 - `candidates --cover`: a cover read from disk is announced like a download (no silent step), and the decision says whether
