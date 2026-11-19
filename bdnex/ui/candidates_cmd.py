@@ -85,18 +85,21 @@ def compare_covers(source, settings, path: str, fmt, matches, found: list[dict[s
     for match, entry in zip(matches, found):
         entry["cover"] = None
         if not local:
+            entry["cover_note"] = "the file's first page could not be read"
             continue
         known = source.library.find_album(source.name, match.candidate.source_id)
         album = source.library.get_album(known) if known else None
         url = (album or {}).get("cover_url") or source.guess_cover_url(match.candidate)
         try:
             online = saved_cover(source, settings, match.candidate.source_id, album)  # the import already downloaded it
+            entry["cover_from"] = "saved" if online is not None else "downloaded"
             if online is None:
                 online = source.cover_image(url)
             covers.check_cover_image(online)
             entry["cover"] = round(covers.sift_similarity(local, online))
         except (covers.CoverError, *source.fetch_errors) as err:
             logger.debug(f"{path}: cover of {url} not compared ({err})")
+            entry["cover_note"] = f"not compared: {err}"
             continue
         (entry["for"] if entry["cover"] >= threshold else entry["against"]).append(f"its cover is {entry['cover']}% like the file's")
     scored = [e for e in found if e.get("cover") is not None]

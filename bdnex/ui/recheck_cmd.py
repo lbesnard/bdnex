@@ -6,6 +6,7 @@ import argparse
 import io
 import json
 import logging
+import os
 import sys
 from collections import Counter
 
@@ -59,13 +60,13 @@ def look_for_better(settings, library, verdicts: list[Verdict], limit: int, say=
         say(f"The covers of the other candidates are not compared: {err}")
         return 0
     say(f"Comparing the covers of the {limit} best other candidates of {len(wrong)} contradicted file(s) "
-        "(a cover not saved yet is one request; Ctrl-C stops)...")
+        "(a cover not saved yet is one request; Ctrl-C stops). `*` is the album now linked.")
     unreadable = 0
     medium, vote_min = settings.match.medium_threshold, settings.match.cover_vote_min
     found = 0
     for number, verdict in enumerate(wrong, start=1):
-        if number % 10 == 0:
-            say(f"  covers of the other candidates: {number}/{len(wrong)}, {found} better album(s) found")
+        say(f"[{number}/{len(wrong)}] {os.path.basename(verdict.path)}\n"
+            f"    now: {verdict.album}" + ("" if verdict.cover is None else f"  (its cover is {verdict.cover:.0f}% like the file's)"))
         try:
             row = library.get_file(verdict.path) or {}
             matches = find_matches(source, verdict.path, limit=limit)
@@ -77,26 +78,37 @@ def look_for_better(settings, library, verdicts: list[Verdict], limit: int, say=
             raise
         except Exception as err:
             logger.debug(f"{verdict.path}: candidates not compared ({err})")
+            say(f"    candidates not compared: {err}")
             continue
+        if not matches:
+            say("    no other candidate in the album list")
         scored = []
         for match, entry in zip(matches, entries):
-            if entry.get("cover") is None:
-                continue
             known = library.find_album(source.name, match.candidate.source_id)
-            scored.append((entry["cover"], match, known))
-        mine = [cover for cover, _, known in scored if known == verdict.album_id]
-        others = [(cover, match, known) for cover, match, known in scored if known != verdict.album_id and match.score >= medium]
+            album = library.get_album(known) if known is not None else None
+            name = f"{album.get('series') or ''} {album['title']}".strip() if album else match.candidate.name
+            current = known is not None and known == verdict.album_id
+            if entry.get("cover") is None:
+                say(f"    {'*' if current else ' '} cover   ?  {name}  (score {match.score:.0f}; {entry.get('cover_note', 'no cover')})")
+            else:
+                say(f"    {'*' if current else ' '} cover {entry['cover']:>3.0f}%  {name}  (score {match.score:.0f}; "
+                    f"{entry.get('cover_from', '?')} cover)")
+                scored.append((entry["cover"], match, known, name))
+        mine = [item[0] for item in scored if item[2] == verdict.album_id]
+        others = [item for item in scored if item[2] != verdict.album_id and item[1].score >= medium]
         if not others:
+            say("    -> nothing to switch to")
             continue
         top = max(others, key=lambda item: item[0])
-        rest = [cover for cover, match, _ in scored if match is not top[1]]
-        beaten = max([*rest, *mine, verdict.cover or 0.0])
+        beaten = max([*(item[0] for item in scored if item[1] is not top[1]), *mine, verdict.cover or 0.0])
         if top[0] >= vote_min and top[0] - beaten >= LEAD:
-            known = library.get_album(top[2]) if top[2] is not None else None
-            name = f"{known.get('series') or ''} {known['title']}".strip() if known else top[1].candidate.name
-            verdict.better = {"url": top[1].candidate.url, "album": name, "score": round(top[1].score),
+            verdict.better = {"url": top[1].candidate.url, "album": top[3], "score": round(top[1].score),
                               "cover": top[0], "current_cover": beaten}
             found += 1
+            say(f"    -> better: {top[3]} (cover {top[0]:.0f}%, the next best {beaten:.0f}%)")
+        else:
+            say(f"    -> no clear winner (needs a cover of {vote_min:.0f}% and {LEAD:.0f} points ahead; best {top[0]:.0f}%, "
+                f"next {beaten:.0f}%)")
     say(f"Covers compared: {found} better album(s) found"
         + (f"; for {unreadable} file(s) no cover could be compared (is the disk mounted? `-vv` says why)" if unreadable else "")
         + ".")
