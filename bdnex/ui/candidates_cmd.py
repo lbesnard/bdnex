@@ -106,6 +106,8 @@ def compare_covers(source, settings, path: str, fmt, matches, found: list[dict[s
             if online is None:
                 say("download", number, entry, url)
                 online = source.cover_image(url)
+            else:
+                say("saved", number, entry, url)
             covers.check_cover_image(online)
             entry["cover"] = round(covers.sift_similarity(local, online))
         except (covers.CoverError, *source.fetch_errors) as err:
@@ -191,6 +193,25 @@ def head_lines(number: int, path: str, now: Optional[str], why: str, on: bool) -
             f"{color.role(f'[{why}]', 'note', on)}"]
 
 
+def decision_lines(entry: dict[str, Any], on: bool) -> list[str]:
+    """What the covers say about a file: which album's cover is the file's, whether it is the one linked now, and what to type."""
+    import shlex
+
+    from bdnex.ui import color
+
+    best = next((c for c in entry["candidates"] if c.get("cover_best")), None)
+    if best is None:
+        return ["      " + color.role("=> no candidate's cover looks like the file's", "warn", on)]
+    now = next((c for c in entry["candidates"] if c["current"]), None)
+    if best["current"]:
+        return ["      " + color.role(f"=> the album now linked is the one whose cover is the file's ({best['cover']}%)", "good", on)]
+    lines = ["      " + color.role(f"=> the cover of {best['album']} is the file's ({best['cover']}%)", "good", on)
+             + (color.role(f", not the album now linked ({now['album']}, {now['cover']}%)", "warn", on)
+                if now and now.get("cover") is not None else "")]
+    lines.append("      " + color.hints(f"to use it: `bdnex import --album {best['url']} {shlex.quote(entry['path'])}`", on))
+    return lines
+
+
 def candidate_lines(number: int, c: dict[str, Any], on: bool) -> list[str]:
     """One candidate: its number, score, album and what the evidence says; the evidence under it."""
     from bdnex.ui import color
@@ -253,9 +274,11 @@ def run(argv: list[str], out=sys.stdout) -> int:
 
                 def step(event, number, entry, url):
                     """Each cover as it is downloaded and compared: the album it belongs to, then what was found."""
-                    if event == "download":
-                        text = f"{number}. downloading the cover of {entry['album']}"
-                        print(f"      {color.role(text, 'note', on)}  {color.role(url, 'path', on)}", file=out, flush=True)
+                    if event in ("download", "saved"):
+                        what = "downloading" if event == "download" else "using the saved cover of"
+                        text = f"{number}. {what}{' the cover of' if event == 'download' else ''} {entry['album']}"
+                        print(f"      {color.role(text, 'note', on)}" + (f"  {color.role(url, 'path', on)}" if event == "download" else ""),
+                              file=out, flush=True)
                     else:
                         print("\n".join(candidate_lines(number, entry, on)), file=out, flush=True)
 
@@ -266,11 +289,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
                         for number, c in enumerate(entry["candidates"], start=1):
                             print("\n".join(candidate_lines(number, c, on)), file=out, flush=True)
                     elif entry["candidates"]:
-                        best = next((c for c in entry["candidates"] if c.get("cover_best")), None)
-                        print("      " + (color.role(f"=> the cover of {best['album']} is the one most like the file's "
-                                                      f"({best['cover']}%)", "good", on) if best else
-                                         color.role("=> no candidate's cover looks like the file's", "warn", on)),
-                              file=out, flush=True)
+                        print("\n".join(decision_lines(entry, on)), file=out, flush=True)
                     if not entry["candidates"]:
                         print(f"      {color.role('no candidate in the album list', 'warn', on)}", file=out)
         except (UnknownSource, TypeError, NotReady) as err:

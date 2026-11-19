@@ -7,6 +7,8 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- `candidates --cover`: a cover read from disk is announced like a download (no silent step), and the decision says whether
+  the album whose cover is the file's is the one now linked, and, if not, the `bdnex import --album ADDRESS FILE` to type.
 - **`bdnex candidates --cover` said nothing until the end**: it now prints each file as it starts (name, path, album now), each
   cover as it is downloaded (which album, which address) and compared (score, saved or downloaded, or why not), and what it
   decided, then moves on to the next file.
