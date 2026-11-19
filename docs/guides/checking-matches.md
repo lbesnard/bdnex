@@ -14,7 +14,7 @@ changes a comic file, and nothing is unlinked or rematched without a decision.**
 
 What the checks compare (the file's own tags, the volume, the year, the authors, the other files of the folder) is
 described in [Importing](importing.md). The page of an album has to be read for the year and
-the credits to be known: run `bdnex import --fetch` (and `bdnex reparse` for pages already stored) first, otherwise most
+the credits to be known: run `bdnex import --fetch` (and `bdnex import --reparse` for pages already stored) first, otherwise most
 files are `unverified`.
 
 ## Settling the doubtful ones at once: `bdnex review --auto`

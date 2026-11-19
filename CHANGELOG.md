@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Changed
+- **`bdnex reparse` is `bdnex import --reparse`** (offline, from the stored pages; `--select TERM` limits it to some albums). The old name still works, with a note.
 - **One command for the doubtful matches: `bdnex review`.** `bdnex recheck` is now `bdnex review --auto` (the old name still
   works, with a note). **Breaking:** the flags `--unlink`, `--unconfirmed`, `--rematch`, `--flag-unconfirmed` are gone: `--auto`
   switches a contradicted file to the better album found by the covers of its other candidates, else unlinks it; the
@@ -17,7 +18,7 @@ command runs, never while an import is fetching).
   `bdnex[cover]` still installs (an empty extra). The Docker image grows by about 100 MB.
 
 ### Added
-- **Aliases**: `aliases: ["fix = review --auto"]` in the configuration makes `bdnex fix` run `bdnex review --auto`.
+- **Aliases**: `aliases: ["settle-doubtful-matches = review --auto  # what it does"]` in the configuration makes `bdnex settle-doubtful-matches` run `bdnex review --auto`, and `bdnex --help` lists it with its explanation.
 - **`bdnex review --auto`** weighs every flagged file and every match applied under the strong threshold (the medium
   ones an older `--auto=all` applied unasked), with the album's page, the file's tags and the saved covers, and settles
   them by rule: confirmed, the flag goes; contradicted, switched to the album whose cover is the file's (the covers of its

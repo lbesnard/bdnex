@@ -123,7 +123,7 @@ In the editor, each album is a block:
 (names contain commas): `--set genres='Humour; Fantasy' --set credits.Writer='Jarry, Nicolas; Co'`.
 
 **Your edits are kept.** They are stored beside what the source said, and laid over it again
-whenever the album is re-imported, re-cached or re-read with `bdnex reparse`; the edited
+whenever the album is re-imported, re-cached or re-read with `bdnex import --reparse`; the edited
 values are never reported as changes. Run `bdnex write series:nains` afterwards to put the new
 values into the files.
 

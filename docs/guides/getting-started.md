@@ -85,7 +85,7 @@ To complete them, either:
 - or supply pages with your own function (`bedetheque.fetcher`); see *Page fetching* in
   [Configuration](configuration.md).
 
-Pages are stored in the library: each is read once, and `bdnex reparse` can rebuild the albums
+Pages are stored in the library: each is read once, and `bdnex import --reparse` can rebuild the albums
 from them later, offline.
 
 ## Next steps

@@ -36,7 +36,7 @@ list), then a first import as in rule 2. `.cbr` files need `unrar`, `7z` or `bsd
 | bring a folder in without touching files | `bdnex import --database-only --auto=all <folder>` (`-v` every file, `-vv` how, `--log-file import.log`) |
 | fetch the details of link-only albums | `bdnex import --fetch --select partial:true` |
 | what is in the library | `bdnex ls series:nains`, `bdnex ls complete:true -c`, `bdnex ls --unmatched`, `bdnex stats`, `bdnex fields` |
-| missing summary or credits | `bdnex reparse -n` (offline, stored pages), `bdnex edit` for a hand fix |
+| missing summary or credits | `bdnex import --reparse -n` (offline, stored pages), `bdnex edit` for a hand fix |
 | write tags into files | `bdnex write -n`, then `bdnex write` |
 | organise into the folder tree | `bdnex move -n`, then `bdnex move` |
 | damaged archives, duplicates, health | `bdnex repair -n`, `bdnex duplicates`, `bdnex check` |

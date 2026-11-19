@@ -14,7 +14,7 @@ from bdnex.config import load_defaults
 from bdnex.library import Library
 from bdnex.library.query import ALL_FIELDS
 
-COMMANDS = "init import ls write move repair convert reparse edit relocate check duplicates undo relink review reset trash series config completion serve komga candidates stats fields mark update".split()
+COMMANDS = "init import ls write move repair convert edit relocate check duplicates undo relink review reset trash series config completion serve komga candidates stats fields mark update".split()
 ROOT = __file__.rsplit("/test/", 1)[0]
 
 

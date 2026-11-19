@@ -106,7 +106,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
     share = f" ({a['complete'] / a['total']:.0%})" if a["total"] else ""
     print(f"Albums: {a['total']} ({a['series']} in a series, {a['oneshots']} one-shots)", file=out)
     print(f"  page read (complete): {a['complete']}{share}; only matched (partial): {a['partial']}"
-          + ("  -> `bdnex import --fetch` or `bdnex reparse`" if a["partial"] else ""), file=out)
+          + ("  -> `bdnex import --fetch` or `bdnex import --reparse`" if a["partial"] else ""), file=out)
     print(f"Files: {f['total']} ({human_size(f['bytes'])}); linked to an album: {f['linked']}, without: {f['unlinked']}", file=out)
     for fmt, numbers in f["by_format"].items():
         print(f"  {fmt:<4} {numbers['files']:>6} file(s)  {human_size(numbers['bytes'])}", file=out)

@@ -34,7 +34,6 @@ GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     ("Change the library", (
         Command("edit", "edit_cmd", "change the metadata of albums or series by hand (kept across re-imports)"),
         Command("mark", "mark_cmd", "put your own marks on files or albums (checked=keep), to find them again with attr:"),
-        Command("reparse", "reparse_cmd", "re-read the pages stored in the library (offline) to fill in more details"),
         Command("reset", "reset_cmd", "empty the library (albums, files, edits), keep the downloaded sitemaps and pages"),
         Command("update", "update_cmd", "read the files again after another tool changed them (the opposite of write)"),
         Command("check", "check_cmd",
@@ -67,19 +66,68 @@ GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
 COMMANDS: dict[str, Command] = {command.name: command for _, group in GROUPS for command in group}
 
 
+def _reparse(argv: list[str]) -> list[str]:
+    """``bdnex reparse -n series:x`` is ``bdnex import --reparse -n --select series:x`` (its terms name albums)."""
+    new, takes_value = ["import", "--reparse"], False
+    for arg in argv:
+        if takes_value or arg.startswith("-"):
+            new.append(arg)
+            takes_value = arg == "--log-file"
+        else:
+            new += ["--select", arg]
+    return new
+
+
 # Commands that were folded into another: the old name still works, with a note, for a release.
-RENAMED: dict[str, tuple[str, ...]] = {"recheck": ("review", "--auto")}
+RENAMED: dict = {"recheck": lambda argv: ["review", "--auto", *argv], "reparse": _reparse}
+
+
+def parse_alias(text: str) -> tuple[str, list[str], str]:
+    """``"fix-flagged-matches = review --auto  # settle the flagged files by rule"`` -> (name, command words, explanation).
+
+    Raises ``ValueError`` with the reason when it is not an alias."""
+    import re
+    import shlex
+
+    body, _, why = text.partition(" # ")
+    name, sep, rest = body.partition("=")
+    name = name.strip()
+    if not sep or not re.fullmatch(r"[a-z][a-z0-9-]*", name):
+        raise ValueError(f"alias {text!r}: write it as 'long-name = command options  # what it does' (the name in lower case, "
+                         "letters, digits and dashes)")
+    if name in COMMANDS or name in RENAMED:
+        raise ValueError(f"alias {text!r}: {name!r} is already a command")
+    try:
+        words = shlex.split(rest)
+    except ValueError as err:
+        raise ValueError(f"alias {text!r}: {err}") from err
+    if not words or words[0] not in COMMANDS:
+        raise ValueError(f"alias {text!r}: {words[0] if words else 'nothing'!r} is not a bdnex command")
+    return name, words, why.strip()
 
 
 def expand_alias(argv: list[str], aliases: list[str]) -> list[str]:
     """``bdnex fix -n`` with the alias ``fix = review --auto`` is ``bdnex review --auto -n``. Not an alias: ``argv`` as it is."""
-    import shlex
-
     for text in aliases:
-        name, _, rest = text.partition("=")
-        if argv and name.strip() == argv[0]:
-            return [*shlex.split(rest), *argv[1:]]
+        try:
+            name, words, _ = parse_alias(text)
+        except ValueError:
+            continue
+        if argv and name == argv[0]:
+            return [*words, *argv[1:]]
     return argv
+
+
+def alias_lines(aliases: list[str]) -> list[str]:
+    """The ``Your aliases`` part of the usage text: each name, what it runs, and what it is for."""
+    lines = []
+    for text in aliases:
+        try:
+            name, words, why = parse_alias(text)
+        except ValueError:
+            continue
+        lines.append(f"  {name:<28} bdnex {' '.join(words)}" + (f"   # {why}" if why else ""))
+    return ["Your aliases (`aliases` in the configuration):", *lines, ""] if lines else []
 
 
 def usage() -> str:

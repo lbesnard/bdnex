@@ -55,6 +55,10 @@ def build_parser() -> argparse.ArgumentParser:
                              "the rest is skipped, and the covers of its best candidates decide some of it at the end (match.cover_vote)")
     parser.add_argument("--no-auto", dest="auto", action="store_const", const=False,
                         help="check every file, whatever import.auto says")
+    parser.add_argument("--reparse", action="store_true",
+                        help="rebuild albums from the pages already stored in the library, offline (no request, no file "
+                             "read): after bdnex learned to read more of a page. `--select TERM` limits it to some albums "
+                             "(same terms as `bdnex ls`); values already in the library are never erased")
     add_pretend(parser)
     parser.add_argument("-W", "--write", action="store_true",
                         help="afterwards, write ComicInfo.xml into the imported files (in place)")
@@ -125,6 +129,12 @@ def run(argv: list[str], out=sys.stdout) -> int:
             parser.error("--database-only changes no file: it can not be combined with --write, --move or --copy")
         args.no_move = True  # nothing from outside the collection is moved or copied either
     setup_logging(args.verbose)
+    if args.reparse:
+        if args.paths or args.sources or args.skipped or args.album or args.fetch:
+            parser.error("--reparse works on the library, offline: limit it with --select TERM, not with files or folders")
+        from bdnex.ui import reparse_cmd
+
+        return reparse_cmd.run([*(["-n"] if args.pretend else []), *(["-v"] * args.verbose), *args.select], out)
     if args.album:
         if len(args.paths) != 1 or os.path.isdir(args.paths[0]) or args.sources or args.select or args.skipped:
             parser.error("--album names the album of ONE file: give exactly that file (not a folder, --select or --sources)")

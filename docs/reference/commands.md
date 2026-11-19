@@ -32,8 +32,8 @@ Match comic files to Bédéthèque albums and record them in the library.
 
 ```text
 usage: bdnex import [-h] [-m] [-f] [--skipped] [--sources] [-s TERM] [--as-is]
-                    [--unattended] [--force] [--auto [=all]] [--no-auto] [-n] [-W]
-                    [--move | --copy | --no-move] [--album ADDRESS|NUMBER]
+                    [--unattended] [--force] [--auto [=all]] [--no-auto] [--reparse]
+                    [-n] [-W] [--move | --copy | --no-move] [--album ADDRESS|NUMBER]
                     [--database-only] [--cover-check | --no-cover-check]
                     [--series | --no-series] [--workers N] [-v] [--log-file PATH]
                     [paths ...]
@@ -75,6 +75,11 @@ options:
                         ones too), the rest is skipped, and the covers of its best
                         candidates decide some of it at the end (match.cover_vote)
   --no-auto             check every file, whatever import.auto says
+  --reparse             rebuild albums from the pages already stored in the library,
+                        offline (no request, no file read): after bdnex learned to
+                        read more of a page. `--select TERM` limits it to some albums
+                        (same terms as `bdnex ls`); values already in the library are
+                        never erased
   -n, --pretend         show what would be done; change nothing
   -W, --write           afterwards, write ComicInfo.xml into the imported files (in
                         place)
@@ -379,31 +384,6 @@ A mark is a name and a text value that bdnex keeps with a file (or an album, wit
 `attr:NAME=VALUE` in any query, e.g. `bdnex ls --files attr:checked=keep`, or `bdnex
 candidates --low ^attr:checked` for the files nobody looked at. They are not written
 into the files.
-```
-
-### `bdnex reparse`
-
-Re-read the pages stored in the library (offline) to fill in more details.
-
-```text
-usage: bdnex reparse [-h] [-n] [-v] [--log-file PATH] [query ...]
-
-Read the album pages stored in the library again and update the albums from them,
-without any network access. Use it after bdnex learned to read more of a page. Values
-already in the library are never erased; run `bdnex write` afterwards to put them into
-the files.
-
-positional arguments:
-  query            albums to update, same terms as `bdnex ls` (default: all)
-
-options:
-  -h, --help       show this help message and exit
-  -n, --pretend    show what would change; change nothing
-  -v, --verbose    more detail: -v what is decided and why (every file), -vv how
-                   (reads, cache, requests, threads), -vvv everything, libraries and
-                   SQL included
-  --log-file PATH  also write everything, at the debug level and with the time, to
-                   this file (for a long run)
 ```
 
 ### `bdnex reset`

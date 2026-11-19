@@ -204,12 +204,17 @@ The web page (`bdnex serve`) runs the same commands, so its jobs fire your hooks
 ## Aliases: your own short commands
 
 ```yaml
-aliases: ["fix = review --auto", "new = import --database-only --auto=all"]
+aliases:
+  - "settle-doubtful-matches = review --auto  # weigh the flagged and medium matches, settle them by rule"
+  - "first-import = import --database-only --auto=all -vv  # bring a folder in, touching no file"
+  - "match-skipped-again = import --skipped --auto=all  # ask again about the files skipped earlier"
 ```
 
-`bdnex fix` is then `bdnex review --auto`, and what you type after it is added: `bdnex fix -n` is `bdnex review --auto -n`.
-Each alias is `name = a bdnex command and its options`. The name is lower case, not already a command, and the
-command is a bdnex command, not another alias. Nothing else is run: an alias is only a shorter way to type bdnex.
+`bdnex settle-doubtful-matches -n` is then `bdnex review --auto -n`: what you type after the alias is added. Each alias is
+`long-name = a bdnex command and its options`, then, after ` # `, what it is for. The name is lower case (letters, digits and
+dashes), not already a command, and the command is a bdnex command, not another alias. **Long names are the point**: they say
+what they do, and `bdnex --help` lists your aliases with their explanation. Nothing else is run: an alias is only a shorter way
+to type bdnex, never a shell command.
 
 ## Metadata source
 

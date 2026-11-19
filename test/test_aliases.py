@@ -44,3 +44,22 @@ def test_main_runs_the_alias_and_the_old_name_says_what_it_became(tmp_path, monk
     with pytest.raises(SystemExit):
         ui._main(["recheck", "-n"])
     assert called == [("review", ["--auto", "-n"])] and "now `bdnex review --auto`" in capsys.readouterr().err
+
+
+def test_an_alias_has_an_explanation_and_is_listed_in_the_help():
+    from bdnex.ui.commands import alias_lines, parse_alias
+
+    text = "settle-doubtful-matches = review --auto  # weigh them, settle them by rule"
+    assert parse_alias(text) == ("settle-doubtful-matches", ["review", "--auto"], "weigh them, settle them by rule")
+    assert parse_alias("plain = ls")[2] == ""
+    shown = "\n".join(alias_lines([text]))
+    assert "settle-doubtful-matches" in shown and "bdnex review --auto" in shown and "settle them by rule" in shown
+    assert alias_lines([]) == []
+    assert expand_alias(["settle-doubtful-matches", "-n"], [text]) == ["review", "--auto", "-n"]
+
+
+def test_reparse_is_import_reparse_and_its_terms_become_select(monkeypatch, capsys):
+    from bdnex.ui.commands import RENAMED
+
+    assert RENAMED["reparse"](["-n", "series:nains", "-v"]) == ["import", "--reparse", "-n", "--select", "series:nains", "-v"]
+    assert RENAMED["reparse"](["--log-file", "x.log", "year:2010"]) == ["import", "--reparse", "--log-file", "x.log", "--select", "year:2010"]

@@ -162,7 +162,7 @@ def test_main_dispatches_reparse(monkeypatch, tmp_path):
     conf.write_text("config_version: 2\ncollection_path: ~/c\n")
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     seen = []
-    monkeypatch.setattr("bdnex.ui.reparse_cmd.run", lambda argv: seen.append(argv) or 0)
+    monkeypatch.setattr("bdnex.ui.reparse_cmd.run", lambda argv, out=None: seen.append(argv) or 0)
     with pytest.raises(SystemExit):
         ui.main(["reparse", "-n"])
     assert seen == [["-n"]]

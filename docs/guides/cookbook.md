@@ -132,8 +132,8 @@ The ones nothing confirms are left alone: no evidence is no reason to ask you. S
 
 ## …shorten a command I type often?
 
-Add an alias to your configuration (`bdnex config --edit`): `aliases: ["fix = review --auto"]`. Then `bdnex fix -n` is
-`bdnex review --auto -n`. See [Aliases](configuration.md#aliases-your-own-short-commands).
+Add an alias to your configuration (`bdnex config --edit`): `aliases: ["settle-doubtful-matches = review --auto  # what it does"]`.
+Then `bdnex settle-doubtful-matches -n` is `bdnex review --auto -n`, and `bdnex --help` lists it with its explanation. See [Aliases](configuration.md#aliases-your-own-short-commands).
 
 ## …import again? Redo a file?
 
@@ -267,8 +267,8 @@ options, all in [Getting started](getting-started.md#album-pages) and
 Every page ever read is stored as received. When bdnex learns to read more of a page:
 
 ```bash
-bdnex reparse -n             # preview, album by album
-bdnex reparse                # update the albums from the stored pages; no network
+bdnex import --reparse -n             # preview, album by album
+bdnex import --reparse                # update the albums from the stored pages; no network
 bdnex write                  # push the new details (format, edition note, translator…) to the files
 ```
 

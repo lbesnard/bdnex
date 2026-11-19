@@ -540,16 +540,18 @@ Note that `--force` does not mean "never ask": that is `--auto=all`.
 Defaults for thresholds and duplicate handling live in the
 [configuration](configuration.md) (`match:`, `duplicates:`, `import:`).
 
-## Re-reading what was stored: `bdnex reparse`
+## Re-reading what was stored: `bdnex import --reparse`
+
+(This was the command `bdnex reparse`, which still works, with a note.)
 
 Every album page bdnex fetches is stored in the library exactly as received, so the library is the
 permanent copy of what the source said. If bdnex later learns to read more of a page (or you want to
 re-check a record), no page needs to be fetched again:
 
 ```bash
-bdnex reparse -n            # preview: what would change, album by album
-bdnex reparse               # update every album from its stored page
-bdnex reparse series:nains  # only some albums (same terms as `bdnex ls`)
+bdnex import --reparse -n            # preview: what would change, album by album
+bdnex import --reparse               # update every album from its stored page
+bdnex import --reparse --select series:nains  # only some albums (same terms as `bdnex ls`)
 ```
 
 - It works **offline by construction**: the source is built with a fetcher that cannot reach the network
