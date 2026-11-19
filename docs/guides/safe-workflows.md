@@ -12,7 +12,7 @@ the page to read before a big run, and the page a person (or an assistant such a
 | `import --database-only` | **never**: nothing is moved, copied, written, converted, replaced or deleted, whatever the configuration says | filled |
 | `import` (no other flag) | not changed by default; `-W`, `--move` and `--copy` write, move or copy files | filled |
 | `write`, `move`, `repair`, `convert` | **yes**: tags written, files renamed or moved, CBR and PDF converted to CBZ, damaged archives rebuilt | updated |
-| `edit`, `reparse`, `relink`, `relocate`, `reset`, `trash` | no (`trash --empty` deletes files that were already replaced) | changed |
+| `edit`, `relocate`, `reset`, `trash` | no (`trash --empty` deletes files that were already replaced) | changed |
 | `komga push` | never (it talks to Komga) | read |
 
 A source whose `mode` is `copy` is read-only: nothing ever writes, moves, converts or deletes a file under it.

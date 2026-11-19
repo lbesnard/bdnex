@@ -390,16 +390,16 @@ bdnex ls --missing           # nothing listed: everything was found
 Paths under `collection_path` are stored relative to it, so nothing in the database changes. See
 [Maintaining](maintaining.md#paths-and-moving-your-collection).
 
-## …take back a move, or relink files I moved by hand?
+## …take back a move, or find files I moved by hand?
 
 ```bash
 bdnex undo                 # the runs of `bdnex move` that can be taken back
 bdnex undo last -n         # preview, then without -n
-bdnex relink -n ~/comics   # files moved or renamed outside bdnex: found again by their content
+bdnex relocate --find -n ~/comics   # files moved or renamed outside bdnex: found again by their content
 ```
 
 `undo` moves the files back to where they were; tags already written stay, a converted CBR or PDF is in
-`bdnex trash`. `relink` touches nothing on disk. If the whole folder moved, see "move my whole collection" above
+`bdnex trash`. `relocate --find` touches nothing on disk. If the whole folder moved, see "move my whole collection" above
 (`bdnex relocate OLD NEW` for folders stored with their full path).
 
 ## …look at the doubtful covers and the duplicates?

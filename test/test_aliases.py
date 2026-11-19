@@ -63,3 +63,16 @@ def test_reparse_is_import_reparse_and_its_terms_become_select(monkeypatch, caps
 
     assert RENAMED["reparse"](["-n", "series:nains", "-v"]) == ["import", "--reparse", "-n", "--select", "series:nains", "-v"]
     assert RENAMED["reparse"](["--log-file", "x.log", "year:2010"]) == ["import", "--reparse", "--log-file", "x.log", "--select", "year:2010"]
+
+
+def test_relink_is_relocate_find_and_relocate_find_runs_it(monkeypatch):
+    from bdnex.ui import relocate_cmd, relink_cmd
+    from bdnex.ui.commands import RENAMED
+
+    assert RENAMED["relink"](["-n", "~/comics"]) == ["relocate", "--find", "-n", "~/comics"]
+    seen = []
+    monkeypatch.setattr(relink_cmd, "run", lambda argv, out=None: seen.append(argv) or 0)
+    assert relocate_cmd.run(["--find", "-n", "--workers", "2", "/a", "/b"]) == 0
+    assert seen == [["/a", "/b", "-n", "--workers", "2"]]
+    with pytest.raises(SystemExit):  # without --find it still takes the old and the new folder
+        relocate_cmd.run(["/only-one"])

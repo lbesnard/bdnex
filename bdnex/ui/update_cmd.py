@@ -50,7 +50,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
                "what the files are now (size, checksum, pages, damage, their own ComicInfo.xml) after you changed them "
                "with another tool. By default only the files whose size or date differs from what was recorded are read; "
                "--all reads every file of the query. The albums are not touched, and no file is changed. A file that is "
-               "gone is listed (`bdnex relink` finds moved files).")
+               "gone is listed (`bdnex relocate --find` finds moved files).")
     parser.add_argument("query", nargs="*", help="only these files, same terms as `bdnex ls --files`")
     parser.add_argument("--all", action="store_true", help="read every file of the query, not only the ones that changed")
     add_pretend(parser, "be read again")
@@ -106,5 +106,5 @@ def run(argv: list[str], out=sys.stdout) -> int:
                           *([(f"{len(missing)} missing", "failed")] if missing else []),
                           *([(f"{failed} failed", "failed")] if failed else [])], on, f"{len(rows)} file(s): "), file=out)
     if missing:
-        print("`bdnex relink FOLDER` finds files that were only moved or renamed.", file=out)
+        print("`bdnex relocate --find FOLDER` finds files that were only moved or renamed.", file=out)
     return 1 if failed else 0

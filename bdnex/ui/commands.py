@@ -49,7 +49,6 @@ GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command("trash", "trash_cmd", "list, restore or empty the files that were replaced"),
     )),
     ("Files that moved", (
-        Command("relink", "relink_cmd", "files were moved or renamed outside bdnex: find them again by their content"),
         Command("relocate", "relocate_cmd", "your whole comics folder moved: tell the library the new place"),
     )),
     ("Other programs", (
@@ -79,7 +78,8 @@ def _reparse(argv: list[str]) -> list[str]:
 
 
 # Commands that were folded into another: the old name still works, with a note, for a release.
-RENAMED: dict = {"recheck": lambda argv: ["review", "--auto", *argv], "reparse": _reparse}
+RENAMED: dict = {"recheck": lambda argv: ["review", "--auto", *argv], "reparse": _reparse,
+                 "relink": lambda argv: ["relocate", "--find", *argv]}
 
 
 def parse_alias(text: str) -> tuple[str, list[str], str]:

@@ -431,7 +431,7 @@ files, `update` records what the files are now (size, checksum, pages, damage, t
 own ComicInfo.xml) after you changed them with another tool. By default only the files
 whose size or date differs from what was recorded are read; --all reads every file of
 the query. The albums are not touched, and no file is changed. A file that is gone is
-listed (`bdnex relink` finds moved files).
+listed (`bdnex relocate --find` finds moved files).
 ```
 
 ### `bdnex check`
@@ -630,48 +630,30 @@ deletes the files and their records for good.
 
 ## Files that moved
 
-### `bdnex relink`
-
-Files were moved or renamed outside bdnex: find them again by their content.
-
-```text
-usage: bdnex relink [-h] [-n] [--workers N] [folders ...]
-
-``bdnex relink``: files were moved or renamed outside bdnex; find them again by their
-content.
-
-positional arguments:
-  folders        where to look (default: your collection, `collection_path` in the
-                 configuration)
-
-options:
-  -h, --help     show this help message and exit
-  -n, --pretend  show what would be linked; change nothing
-  --workers N    files read at once (0: the cores less one; 1: one by one); default:
-                 `import.workers`
-
-A file the library knows but that is no longer where it was (`bdnex ls --missing`) is
-looked for in the folders you give (default: your library folder), by size and
-checksum. A single copy is linked again, with its album and history. Nothing on disk
-is touched. If your whole folder moved, `bdnex relocate OLD NEW` is the quicker fix.
-```
-
 ### `bdnex relocate`
 
 Your whole comics folder moved: tell the library the new place.
 
 ```text
-usage: bdnex relocate [-h] [-n] old new
+usage: bdnex relocate [-h] [--find] [--workers N] [-n] [OLD NEW | FOLDER ...]
 
-``bdnex relocate``: your comics moved to another folder; tell the library.
+``bdnex relocate``: your comics moved; tell the library (the whole folder: OLD NEW),
+or find the moved files (--find).
 
 positional arguments:
-  old            the folder the files used to be in
-  new            the folder they are in now
+  OLD NEW | FOLDER  the folder the files used to be in, then the folder they are in
+                    now; with --find: where to look (default: your collection,
+                    `collection_path` in the configuration)
 
 options:
-  -h, --help     show this help message and exit
-  -n, --pretend  show what would change; change nothing
+  -h, --help        show this help message and exit
+  --find            instead: look for the files the library knows but that are no
+                    longer where they were (`bdnex ls --missing`) in the folders
+                    given, by size and checksum, and link a single copy again, with
+                    its album and history. Nothing on disk is touched
+  --workers N       files read at once (0: the cores less one; with --find; 1: one by
+                    one); default: `import.workers`
+  -n, --pretend     show what would change; change nothing
 
 Files under `collection_path` are stored relative to it: after moving the whole
 collection, just change `collection_path`. A folder listed in `import.sources` is one
@@ -679,7 +661,8 @@ record in the library: `relocate OLD NEW` with its old path updates that record 
 its files follow (then change the path in `import.sources` too). For other files
 stored with their full path, `relocate` rewrites the stored paths. It touches nothing
 on disk. `bdnex ls --missing` lists what is not found. To find individual files that
-were moved or renamed, by their content, use `bdnex relink` instead.
+were moved or renamed, by their content, use `--find` (`bdnex relocate --find
+FOLDER...`).
 ```
 
 ## Other programs

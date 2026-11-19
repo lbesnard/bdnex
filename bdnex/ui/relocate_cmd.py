@@ -1,4 +1,4 @@
-"""``bdnex relocate``: your comics moved to another folder; tell the library."""
+"""``bdnex relocate``: your comics moved; tell the library (the whole folder: OLD NEW), or find the moved files (--find)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import sys
 
 from bdnex.library import Library
 from bdnex.ui import context
-from bdnex.ui.output import add_pretend
+from bdnex.ui.output import add_pretend, add_workers
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -19,11 +19,25 @@ def run(argv: list[str], out=sys.stdout) -> int:
                "`relocate OLD NEW` with its old path updates that record and its files follow (then change the path in "
                "`import.sources` too). For other files stored with their full path, `relocate` rewrites the stored "
                "paths. It touches nothing on disk. `bdnex ls --missing` lists what is not found. To find individual files that "
-               "were moved or renamed, by their content, use `bdnex relink` instead.")
-    parser.add_argument("old", help="the folder the files used to be in")
-    parser.add_argument("new", help="the folder they are in now")
+               "were moved or renamed, by their content, use `--find` (`bdnex relocate --find FOLDER...`).")
+    parser.add_argument("folders", nargs="*", metavar="OLD NEW | FOLDER",
+                        help="the folder the files used to be in, then the folder they are in now; with --find: where to "
+                             "look (default: your collection, `collection_path` in the configuration)")
+    parser.add_argument("--find", action="store_true",
+                        help="instead: look for the files the library knows but that are no longer where they were "
+                             "(`bdnex ls --missing`) in the folders given, by size and checksum, and link a single copy "
+                             "again, with its album and history. Nothing on disk is touched")
+    add_workers(parser, "files read", note="; with --find")
     add_pretend(parser, "change")
     args = parser.parse_args(argv)
+    if args.find:
+        from bdnex.ui import relink_cmd
+
+        return relink_cmd.run([*args.folders, *(["-n"] if args.pretend else []),
+                               *(["--workers", str(args.workers)] if args.workers is not None else [])], out)
+    if len(args.folders) != 2:
+        parser.error("give the folder the files used to be in and the folder they are in now (or --find to look for them)")
+    args.old, args.new = args.folders
     settings = context.settings()
     if settings is None:
         return 1
