@@ -142,6 +142,7 @@ def test_every_step_is_said_as_it_happens_file_then_each_cover_then_the_decision
     code, text = run("Redwin", "--cover", "--limit", "3")
     lines = text.splitlines()
     head = next(i for i, line in enumerate(lines) if line.startswith("[") and "Nains - T01 - Redwin de la forge.cbz" in line)
+    assert "file(s) to look at." in text and "/" in lines[head].split("]")[0]  # `[n/total]`: out of how many
     downloads = [i for i, line in enumerate(lines) if i > head and "downloading the cover of" in line]
     results = [i for i, line in enumerate(lines) if i > head and " cover " in line and "%" in line]
     decision = next(i for i, line in enumerate(lines) if i > head and line.strip().startswith("=>"))
@@ -160,4 +161,42 @@ def test_the_report_is_coloured_by_meaning_on_a_terminal_and_plain_otherwise():
     assert "\x1b[31mcontradicted" in colour  # a contradiction is red
     assert "\x1b[32m+ year agrees" in colour and "\x1b[31m- tome 5" in colour  # evidence for is green, against is red
     assert "\x1b[1mNains Redwin" in colour  # the name of the album is what the eye lands on
-    assert "\x1b[" not in "".join(candidates_cmd.head_lines(1, "/a/b.cbz", None, "no album", False))
+    assert "\x1b[" not in "".join(candidates_cmd.head_lines(1, 9, "/a/b.cbz", None, "no album", False))
+
+
+def _c(album, cover, current=False, best=False, url="https://www.bedetheque.com/BD-X-1.html"):
+    return {"album": album, "cover": cover, "current": current, "cover_best": best, "url": url}
+
+
+def test_the_decision_says_whether_the_best_cover_is_the_linked_album_and_what_to_type():
+    path = "/comics/Alex + Ada.cbz"
+    other = {"path": path, "candidates": [_c("Alex Ada T02", 14, current=True), _c("Alex Ada T01", 66, best=True, url="https://x/BD-1.html")]}
+    text = "\n".join(candidates_cmd.decision_lines(other, False))
+    assert "the cover of Alex Ada T01 is the file's (66%)" in text and "not the album now linked (Alex Ada T02, 14%)" in text
+    assert "`bdnex import --album https://x/BD-1.html '/comics/Alex + Ada.cbz'`" in text  # quoted: the name has spaces
+    same = {"path": path, "candidates": [_c("Alex Ada T02", 80, current=True, best=True)]}
+    assert "the album now linked is the one whose cover is the file's (80%)" in "\n".join(candidates_cmd.decision_lines(same, False))
+    none = {"path": path, "candidates": [_c("A", 4), _c("B", 6)]}
+    assert "no candidate's cover looks like the file's" in "\n".join(candidates_cmd.decision_lines(none, False))
+    assert "\x1b[" in "\n".join(candidates_cmd.decision_lines(other, True))
+
+
+def test_a_saved_cover_is_said_too_so_no_step_is_silent(env, tmp_path, monkeypatch):
+    pytest.importorskip("cv2")
+    import zipfile
+
+    from importer.test_covers import art, jpeg
+
+    from bdnex.config import load_config
+
+    db, _ = env
+    path = tmp_path / "Nains - T01 - Redwin de la forge.cbz"
+    with zipfile.ZipFile(path, "w") as archive:
+        archive.writestr("page-1.jpg", jpeg(art(1)))
+    with Library(db) as lib:
+        lib.add_file(str(path), None)
+    covers.save_cover(load_config().settings.cover_path, "bedetheque", "245127", jpeg(art(1)))
+    monkeypatch.setattr("bdnex.importer.covers.opencv_installed", lambda: True)
+    monkeypatch.setattr(Bedetheque, "cover_image", lambda self, url, recache=False: jpeg(art(2)))
+    code, text = run("Redwin", "--cover", "--limit", "3")
+    assert code == 0 and "using the saved cover of" in text and "downloading the cover of" in text
