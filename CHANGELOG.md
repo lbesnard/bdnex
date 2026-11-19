@@ -7,6 +7,9 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Added
+- Match question: **I** enters an album Id (the number at the end of its page address) or an address, then shows the
+  album for you to check (like beets' *enter Id*). It replaces the old **U** *Type the album's URL...* (**breaking** for
+  that key only).
 - `bdnex import --album ADDRESS|NUMBER FILE`: use that album for the file, without searching or asking.
 - `bdnex stats [QUERY]` (albums read or only matched, files, formats, sizes, stored pages) and `bdnex fields` (the
   fields a query can use).

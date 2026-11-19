@@ -115,12 +115,33 @@ def test_an_address_typed_by_hand_is_an_answer():
         def candidate_from_url(self, url):
             return SABLES if "BD-" in url else None
 
-    prompter = Scripted(WithUrl(), selects=[InquirerPrompter.URL])
+    prompter = Scripted(WithUrl(), selects=[InquirerPrompter.ID, SABLES])
     prompter._text = lambda message, default="": next(texts)
     texts = iter(["nonsense", "https://www.bedetheque.com/BD-Sables-1.html"])
     assert prompter.choose_match(FILE, matches()) is SABLES
     labels = [c["name"] for c in prompter.shown[0][1]]
-    assert "Type the album's [U]RL..." in labels
+    assert "Enter an album [I]d or address..." in labels
+
+
+def test_an_album_number_typed_by_hand_is_an_answer():
+    class WithNumbers(Source):
+        def candidate_for(self, text):
+            return SABLES if text == "245127" else None
+
+    prompter = Scripted(WithNumbers(), selects=[InquirerPrompter.ID, SABLES])
+    texts = iter(["12x", "245127"])
+    prompter._text = lambda message, default="": next(texts)
+    assert prompter.choose_match(FILE, matches()) is SABLES
+
+
+def test_a_wrong_number_can_be_refused_after_seeing_the_album():
+    class WithNumbers(Source):
+        def candidate_for(self, text):
+            return SABLES
+
+    prompter = Scripted(WithNumbers(), selects=[InquirerPrompter.ID, InquirerPrompter.NO, OMBRES])
+    prompter._text = lambda message, default="": "1"
+    assert prompter.choose_match(FILE, matches()) is OMBRES
 
 
 def test_an_empty_address_goes_back_to_the_list():
@@ -128,7 +149,7 @@ def test_an_empty_address_goes_back_to_the_list():
         def candidate_from_url(self, url):
             return None
 
-    prompter = Scripted(WithUrl(), selects=[InquirerPrompter.URL, OMBRES])
+    prompter = Scripted(WithUrl(), selects=[InquirerPrompter.ID, OMBRES])
     prompter._text = lambda message, default="": ""
     assert prompter.choose_match(FILE, matches()) is OMBRES
 
