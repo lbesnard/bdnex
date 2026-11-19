@@ -64,6 +64,30 @@ def _plain(text: str) -> str:
     return re.sub(r"[\W_]+", "", "".join(c for c in decomposed if not unicodedata.combining(c)))
 
 
+def _numbered_title(header) -> tuple[str, str]:
+    """``(number, title)`` of the album from the page's sub-title: ``16<span class="bdt-numa">B6</span>. Le Noël`` is
+    ``("16B6", "Le Noël")``, ``<span class="bdt-numa">INT</span>. Les chats`` is ``("INT", "Les chats")``, and an album
+    with no number (``<span class="bdt-numa"></span>Les 40 commandements du jardinage``) is ``("", the title)``."""
+    from bs4 import NavigableString
+
+    sub = header.select_one("h2.bdt-ah-sub")
+    if sub is None:
+        return "", ""
+    span = sub.select_one(".bdt-numa")
+    if span is None:
+        return "", re.sub(r"\s+", " ", sub.get_text(" ", strip=True))
+    before = ""
+    for node in sub.children:
+        if node is span:
+            break
+        if isinstance(node, NavigableString):
+            before += str(node)
+    after = "".join(str(node) for node in span.next_siblings if isinstance(node, NavigableString)).strip()
+    if after.startswith("."):
+        after = after[1:]
+    return (before.strip() + span.get_text(strip=True)).strip(), re.sub(r"\s+", " ", after).strip()
+
+
 def _title_from_address(soup, album_url: str) -> str:
     """``BD-Aama-Tome-2-La-multitude-invisible-172621.html`` -> ``La multitude invisible``, or ``""``.
 
@@ -100,12 +124,18 @@ def _parse_album_page_desktop(html: str, album_url: str) -> tuple[dict[str, Any]
             if album_title:  # the <h1> is the series; the album's own title is only in the address
                 fields["Titre"] = album_title
 
+    number, sub_title = _numbered_title(header)  # `<h2>16<span class="bdt-numa">B6</span>. Le Noël...</h2>`
+    if sub_title and fields.get("Série"):
+        fields["Titre"] = sub_title  # the page says it (the address may not: `...-Les-40-commandements-du-jardinage-...`)
+    if number:
+        fields["Tome"] = number
+
     ident = header.select_one(".bdt-ah-idbel")
     match = re.search(r"-(\d+)\.html$", album_url)
     fields["Identifiant"] = (ident.get_text(strip=True) if ident else None) or (match.group(1) if match else "")
 
     volume = re.search(r"-Tome-(\d+)(?:-|\.html)", album_url)
-    if volume:
+    if volume and not fields.get("Tome"):
         fields["Tome"] = volume.group(1)
 
     if (pub := _meta(header, "publisher")):
@@ -440,7 +470,9 @@ def build_album_info(fields: dict[str, Any], series_url: Optional[str] = None,
     volume, alternate = None, None
     tome = fields.get("Tome")
     if isinstance(tome, str) and tome:
-        if tome[0].isdigit():
+        if re.fullmatch(r"\d+[A-Za-z]\w*", tome):
+            alternate = tome  # "16B6": a tome with a letter, kept as the site writes it
+        elif tome[0].isdigit():
             nums = [p for p in re.split(r"(\d+|\s+)", tome) if p and not p.isspace()]
             volume = _int(nums[-1])
         else:
