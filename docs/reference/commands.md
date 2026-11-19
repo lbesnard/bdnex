@@ -183,6 +183,49 @@ another album, or leave it for later. `bdnex candidates` lists the other albums 
 could be.
 ```
 
+### `bdnex recheck`
+
+Weigh again the matches applied under the strong threshold: flag or unlink the unconfirmed.
+
+```text
+usage: bdnex recheck [-h] [--unlink] [--unconfirmed] [--no-cover] [--json] [-y] [-n]
+                     [-v] [--log-file PATH]
+                     [query ...]
+
+``bdnex recheck``: the matches applied below the strong threshold, weighed again with
+what the library knows.
+
+positional arguments:
+  query            only these files, same terms as `bdnex ls --files`
+
+options:
+  -h, --help       show this help message and exit
+  --unlink         unlink the ones something contradicts, instead of flagging them
+                   (the ones nothing confirms are still only flagged, unless
+                   --unconfirmed)
+  --unconfirmed    with --unlink: unlink the ones nothing confirms too (the most
+                   careful: a right match whose cover could not be compared comes back
+                   only if its cover votes)
+  --no-cover       do not compare the covers that were not compared yet (the file is
+                   read for each)
+  --json           the verdicts as JSON
+  -y, --yes        do not ask for confirmation before unlinking
+  -n, --pretend    show what would be flagged or unlinked; change nothing
+  -v, --verbose    more detail: -v what is decided and why (every file), -vv how
+                   (reads, cache, requests, threads), -vvv everything, libraries and
+                   SQL included
+  --log-file PATH  also write everything, at the debug level and with the time, to
+                   this file (for a long run)
+
+For each file linked with a score under `match.strong_threshold` (a medium match,
+applied before `import --auto=all` became strict): its album's page, the file's own
+tags and its cover against the album's saved cover. Confirmed ones are left alone. The
+others are flagged for `bdnex review` (nothing is unlinked), or, with --unlink,
+unlinked so that `bdnex import --skipped --auto=all` decides them again (strict, and
+the covers of the best candidates vote). No request is sent. Files chosen by you or
+read from their own tags are never touched.
+```
+
 ## Look at the library
 
 ### `bdnex ls`

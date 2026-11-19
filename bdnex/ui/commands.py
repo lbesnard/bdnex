@@ -23,6 +23,7 @@ GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command("candidates", "candidates_cmd",
                 "for files whose match is in doubt: the other albums they could be, with the evidence"),
         Command("review", "review_cmd", "go through the flagged matches one by one, with both covers"),
+        Command("recheck", "recheck_cmd", "weigh again the matches applied under the strong threshold: flag or unlink the unconfirmed"),
     )),
     ("Look at the library", (
         Command("ls", "ls_cmd", "list and search the library"),

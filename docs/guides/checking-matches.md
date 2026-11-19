@@ -17,6 +17,33 @@ described in [Importing](importing.md). The page of an album has to be read for 
 the credits to be known: run `bdnex import --fetch` (and `bdnex reparse` for pages already stored) first, otherwise most
 files are `unverified`.
 
+## The matches applied under the strong threshold: `bdnex recheck`
+
+Before `import --auto=all` became strict, a match in the middle (a score between `medium_threshold` and
+`strong_threshold`) was applied unasked, so a library built that way holds some. `bdnex recheck` weighs each of them
+again with what the library already knows, and **sends no request**: the album's page, the file's own tags (year,
+author, address) and, with OpenCV, the file's cover against the album's *saved* cover (computed here when it was not,
+and kept for the next time).
+
+| Verdict | Means | What `recheck` does |
+|---|---|---|
+| `kept` | something other than the name confirms it (the year, an author, the file's tags, a cover that looks alike by `match.cover_vote_min`) | nothing |
+| `wrong` | something contradicts it (another volume, another series in its tags, a cover that looks little like the album's) | flags it for `bdnex review` (or unlinks it with `--unlink`) |
+| `unconfirmed` | nothing confirms it, nothing contradicts it | flags it for `bdnex review` (or unlinks it with `--unlink --unconfirmed`) |
+
+Files linked at a confident score, the ones you chose (`import --album`, `review`) and the ones read from their own
+tags are never looked at. The usual order:
+
+```bash
+bdnex recheck -n                      # the numbers, and the contradicted ones; changes nothing
+bdnex recheck                         # flag what is not confirmed, for `bdnex review` (nothing is unlinked)
+bdnex recheck --unlink                # or unlink the contradicted ones (asks first; -y to not ask)
+bdnex import --skipped --auto=all     # then decide them again: strict, and the covers of the best candidates vote
+```
+
+An unlinked file is remembered as skipped, so `import --skipped` picks it up again; it comes back only when it is
+strong, or when a cover clearly votes for one candidate. `--no-cover` skips reading the files for the covers not yet compared.
+
 ## By hand
 
 ```bash
