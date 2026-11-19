@@ -22,6 +22,9 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- Albums of a series **without tome numbers** (`Les 40 commandements du jardinage`, `...du bricoleur`) were all stored under the series' title,
+  `Les 40 commandements`: the album's own title is now read from the page's sub-title (and so is the tome, `16B6` or `INT`, instead of the
+  address). `bdnex import --reparse` rebuilds the albums already stored, offline.
 - An album whose page has **no `Tome` line** was stored as a one-shot with no series (`Rantanplan`, from `...-Tome-16B6-...`; 171 intégrales
   `...-INT-...`): the tome is now read from the album's address (`16B6`, `INT`, or a plain number), so the album keeps its series and
   shows it in `Album now`. `bdnex import --reparse` rebuilds the albums already stored, offline.

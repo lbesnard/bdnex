@@ -546,3 +546,18 @@ def test_marked_files_get_the_album_of_a_series_by_their_volume_after_one_questi
     assert seen["marked"] == 1 and asked["paths"] == [files["wrong"]] and seen["question"] == "AskScreen"
     assert result["cells"][0][7] == "linked" and seen_calls == [False]
     assert not result["app"].marked  # the mark goes with the link
+
+
+def test_the_number_and_title_are_read_from_the_pages_sub_title():
+    from bs4 import BeautifulSoup
+
+    from bdnex.importer.bedetheque import parser
+
+    def read(html):
+        return parser._numbered_title(BeautifulSoup(f'<section><h2 class="bdt-ah-sub">{html}</h2></section>', "lxml"))
+
+    assert read('16<span class="bdt-numa">B6</span>. Le Noël de Rantanplan ') == ("16B6", "Le Noël de Rantanplan")
+    assert read('<span class="bdt-numa">INT</span>. DK2 - L\'Intégrale') == ("INT", "DK2 - L'Intégrale")
+    assert read('3<span class="bdt-numa"></span>. Toys') == ("3", "Toys")
+    # no number at all: the whole sub-title is the album's title (the address of such an album has no tome either)
+    assert read('<span class="bdt-numa"></span>Les 40 commandements du jardinage ') == ("", "Les 40 commandements du jardinage")
