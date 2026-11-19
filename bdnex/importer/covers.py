@@ -4,7 +4,7 @@ Two comparisons, for two jobs:
 
 * :func:`sift_similarity` answers "is this the cover of that album?". It compares a file's cover with
   the album's cover found on the web, which differ in size, crop and compression, so it matches local
-  features (SIFT). It needs OpenCV (``pip install 'bdnex[cover]'``).
+  features (SIFT). It needs OpenCV (installed with bdnex).
 * :func:`cover_hash` / :func:`hash_distance` answer "are these two files the same book?". A 64-bit
   perceptual hash of the cover is tiny, needs no extra dependency and is stored in the library, so
   thousands of files can be compared at once. The same pictures in another container (CBZ, CBR, PDF)
@@ -163,7 +163,7 @@ def _opencv():
         import cv2
         import numpy
     except ImportError as err:
-        raise CoverUnavailable("comparing covers needs OpenCV: pip install 'bdnex[cover]'") from err
+        raise CoverUnavailable("comparing covers needs OpenCV: pip install opencv-python-headless") from err
     return cv2, numpy
 
 

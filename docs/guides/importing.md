@@ -306,7 +306,7 @@ linked as `(cover vote 78%)` and its page is read like any other. Otherwise it s
 
 ### Checking covers
 
-With OpenCV installed (`pip install 'bdnex[cover]'`, or `uv tool install 'bdnex[cover]'`), the front cover of each
+With OpenCV (installed with bdnex), the front cover of each
 file is compared with the album's cover (SIFT features, which cope with different sizes, crops and compression)
 after its page is read. That is `cover.check: auto`; `true` insists on it (and says when OpenCV is missing),
 `false` turns it off, and `--cover-check` / `--no-cover-check` decide for one run. The comparison uses the saved

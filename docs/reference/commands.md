@@ -94,7 +94,7 @@ options:
                         configuration says (a duplicate is skipped, not replaced)
   --cover-check, --no-cover-check
                         compare each file's cover with its album's (one request per
-                        album; needs `pip install 'bdnex[cover]'`); default:
+                        album; needs `pip install opencv-python-headless`); default:
                         `cover.check`
   --series              assume the files of a folder are the volumes of one series,
                         without asking (default: asked when the names do not make it

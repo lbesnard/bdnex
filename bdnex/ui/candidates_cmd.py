@@ -170,7 +170,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
     if settings is None:
         return 1
     if args.cover and not covers.opencv_installed():
-        print("--cover needs OpenCV (`pip install 'bdnex[cover]'`): the covers are not compared.", file=sys.stderr)
+        print("--cover needs OpenCV (`pip install opencv-python-headless`): the covers are not compared.", file=sys.stderr)
         args.cover = False
     with Library.for_settings(settings, readonly=True) as library:
         try:

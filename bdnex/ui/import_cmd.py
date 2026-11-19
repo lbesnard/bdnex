@@ -75,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "deleted, whatever the configuration says (a duplicate is skipped, not replaced)")
     parser.add_argument("--cover-check", action=argparse.BooleanOptionalAction, default=None,
                         help="compare each file's cover with its album's (one request per album; needs "
-                             "`pip install 'bdnex[cover]'`); default: `cover.check`")
+                             "`pip install opencv-python-headless`); default: `cover.check`")
     series = parser.add_mutually_exclusive_group()
     series.add_argument("--series", dest="series", action="store_const", const="always", default=None,
                         help="assume the files of a folder are the volumes of one series, without asking "

@@ -9,7 +9,7 @@ RUN apt-get update \
 WORKDIR /src
 COPY pyproject.toml README.md LICENSE ./
 COPY bdnex ./bdnex
-# EXTRAS=api,cover adds OpenCV for the cover check (about 100 MB more)
+# OpenCV (the cover check, about 100 MB) is a normal dependency
 ARG EXTRAS=api
 RUN pip install --no-cache-dir ".[${EXTRAS}]" && rm -rf /src
 

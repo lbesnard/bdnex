@@ -27,7 +27,7 @@ Without one, every CBR fails with `Failed the read enough data` in the log and g
 `sudo apt install unrar` (non-free / multiverse), or `sudo apt install libarchive-tools` for `bsdtar` (the package is called `bsdtar` on the newest releases).
 bdnex tries `unrar`, `unar` and `bsdtar` before `7z`: many `7z` builds cannot extract RAR (`Unsupported Method`).
 
-The optional cover check needs OpenCV: `pip install 'bdnex[cover]'` (or `uv tool install 'bdnex[cover]'`).
+The cover check needs OpenCV, which is installed with bdnex (`bdnex[cover]` still works, and does the same).
 
 ## First run
 

@@ -150,8 +150,8 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   one into the second branch, or put both in one PR.
 - **A schema change appends a migration** in `schema.py` (never edit a released one), documents the column in
   `docs/dev/library.md`, and the PR says "back up the database first": an older bdnex refuses a newer schema.
-- **Dependencies:** images are read and drawn with PyMuPDF only (no PIL, no numpy). OpenCV is the optional `cover`
-  extra. Anything optional must degrade, never crash.
+- **Dependencies:** images are read and drawn with PyMuPDF only (no PIL, no numpy). OpenCV is a normal dependency (the `cover`
+  extra is empty, kept for old install commands) but still degrades: `covers.opencv_installed()`. Anything optional must degrade, never crash.
 - **`-n` (preview) is read-only and fast**: it opens the library read-only and never reads page data.
 - **Covers are fetched with a plain request**, never with the user's page fetcher, and are validated as pictures
   before they are kept.
