@@ -106,7 +106,7 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   the matches applied under `match.strong_threshold` (page, tags, saved covers); `ui/verdicts.py` looks for a better album by the covers of
   the other candidates (`look_for_better`, the cover-vote rule) and applies the verdicts (`settle_verdicts`: one place): kept = flag goes,
   wrong = switched or unlinked, unconfirmed = left alone. It never touches a file chosen by the user (no score in the import log).
-  `recheck` is only a renamed `review --auto` (`commands.RENAMED`). **Aliases** (`aliases: ["long-name = review --auto  # why"]`; a default set ships in `bdnex.yaml`; every command needs rows in `ui/examples.py`, shown after `--help`), `commands.expand_alias`)
+  `recheck` is only a renamed `review --auto` (`commands.RENAMED`). **Aliases** (`aliases: ["NAME = COMMAND  # WHY"]`; a default set ships in `bdnex.yaml`; every command needs rows in `ui/examples.py`, shown after `--help`), `commands.expand_alias`)
   are a shorter way to type a bdnex command, nothing else: never let one run a shell command.
 - **Precision before coverage**: a wrong match costs more than an unasked one. A strong first choice is still asked about
   when a *doubt* is set (`Match.doubt`, `matching._doubts`): another album within `match.min_margin` points, or a strong

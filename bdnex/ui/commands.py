@@ -94,8 +94,8 @@ def parse_alias(text: str) -> tuple[str, list[str], str]:
     name, sep, rest = body.partition("=")
     name = name.strip()
     if not sep or not re.fullmatch(r"[a-z][a-z0-9-]*", name):
-        raise ValueError(f"alias {text!r}: write it as 'long-name = command options  # what it does' (the name in lower case, "
-                         "letters, digits and dashes)")
+        raise ValueError(f"alias {text!r}: write it as 'NAME = COMMAND OPTIONS  # WHY' (NAME in lower case, "
+                         "letters, digits and dashes; WHY is what it is for)")
     if name in COMMANDS or name in RENAMED:
         raise ValueError(f"alias {text!r}: {name!r} is already a command")
     try:

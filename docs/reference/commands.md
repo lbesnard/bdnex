@@ -909,7 +909,7 @@ An alias is a name for a bdnex command and its options: `bdnex settle-doubtful-m
 -n` runs `bdnex review --auto -n` (what you type after the name is added). bdnex ships
 some; yours are added to them (the same name replaces one). --add and --rm write the
 `aliases:` list of your configuration file (the previous file is kept as `.bak`, your
-comments elsewhere stay). Removing one of bdnex's writes `name =`, which switches it
+comments elsewhere stay). Removing one of bdnex's writes `NAME =`, which switches it
 off for you.
 
 Examples:
