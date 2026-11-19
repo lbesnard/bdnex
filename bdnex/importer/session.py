@@ -614,7 +614,7 @@ class ImportSession(EarlyFetch, CoverPass):
             self._log(path, SKIPPED, matches[0].score if matches else None)  # how close the best guess was
             return ImportResult(path, SKIPPED, note=self._why_no_match(matches))
 
-        shown = via or (f"score {score:.0f}" if score is not None else "chosen by you")
+        shown = via or (f"{score:.0f}%" if score is not None else "chosen by you")
         self.detail(f"    match: {candidate.url.rsplit('/', 1)[-1]} ({shown})")
         if self.pretend:
             return ImportResult(path, PRETEND, score=score,

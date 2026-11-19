@@ -180,6 +180,13 @@ def test_progress_lines_are_tinted_only_on_a_terminal():
     plain = "    match: BD-Foo-Tome-1-9.html (series \"Foo\")"
     assert output._tint(plain, False) == plain
     assert "\x1b[32m" in output._tint(plain, True)  # a match is green
+    scored = output._tint("    match: BD-Foo-Tome-1-9.html (89%)", True)
+    assert "\x1b[32mmatch: BD-Foo-Tome-1-9.html (" in scored and "89%" in scored and "\x1b[38;" in scored  # the number has its own colour
+    low = output._tint("    match: BD-Foo-Tome-1-9.html (35%)", True)
+    assert low != scored.replace("89", "35") and "35%" in low  # another score, another colour
+    cover = output._tint("    cover: 12%  Foo T03.cbz", True)
+    assert "\x1b[2mcover: " in cover and "12%" in cover and "\x1b[38;" in cover
+    assert output._tint("    cover: 12%  Foo T03.cbz", False) == "    cover: 12%  Foo T03.cbz"
     counted = output._tint("[3/10] Foo T03.cbz", True)
     assert "\x1b[36m[3/10]" in counted and "\x1b[1mFoo T03.cbz" in counted
 
