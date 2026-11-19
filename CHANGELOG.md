@@ -7,6 +7,8 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- `candidates` says `[86/412]`: how many files it will look at is worked out first (and said: `412 file(s) to look at.`), so the number
+  of a file always has a total.
 - `candidates --cover`: a cover read from disk is announced like a download (no silent step), and the decision says whether
   the album whose cover is the file's is the one now linked, and, if not, the `bdnex import --album ADDRESS FILE` to type.
 - **`bdnex candidates --cover` said nothing until the end**: it now prints each file as it starts (name, path, album now), each

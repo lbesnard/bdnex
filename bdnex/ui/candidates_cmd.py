@@ -128,12 +128,12 @@ class NotReady(RuntimeError):
 
 
 def iter_report(settings, library, query: list[str], low: bool = False, limit: int = 5, cover: bool = False,
-                first: int = 0, files: Optional[int] = None, progress=None, step=None):
+                first: int = 0, files: Optional[int] = None, progress=None, step=None, announce=None):
     """The candidates of each file the query names, one entry at a time (so a command can show each as it is ready).
 
-    ``progress(number, path, now, why)`` is called before the slow part of a file (the covers) and ``step`` (see
-    ``compare_covers``) at each cover. Raises ``QueryError``,
-    ``NotReady`` or the source's own errors."""
+    ``announce(None)`` is called before the files are chosen and ``announce(total)`` after; ``progress(number, total,
+    path, now, why)`` before the slow part of a file (the covers) and ``step`` (see ``compare_covers``) at each cover.
+    Raises ``QueryError``, ``NotReady`` or the source's own errors."""
     offline = settings if cover else settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
         update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
     source = create_source(settings.source, library, offline)
@@ -147,23 +147,22 @@ def iter_report(settings, library, query: list[str], low: bool = False, limit: i
     work = {row["path"]: row["id"] for row in linked}
     for row in unlinked:
         work.setdefault(row["path"], None)  # a file without album can be in both lists
-    seen = given = 0
+    if announce:
+        announce(None)  # the filter below can take a while on a big library
+    todo = []  # the files to look at, known before the first one is: so that every file can say `[n/total]`
     for path, album_id in sorted(work.items()):
         file = library.get_file(path)
         album = library.get_album(album_id) if album_id is not None else None
         why = is_low(settings, path, file, album, library.last_import(path)) if low else "asked for"
-        if not why:
-            continue
-        if seen < first:  # not part of the window asked for (a file that is not low does not count)
-            seen += 1
-            continue
-        if files is not None and given >= files:
-            return
-        seen += 1
-        given += 1
+        if why:
+            todo.append((path, album_id, file, album, why))
+    todo = todo[first:] if files is None else todo[first:first + files]
+    if announce:
+        announce(len(todo))
+    for given, (path, album_id, file, album, why) in enumerate(todo, start=1):
         now = label(album) if album else None
         if progress:
-            progress(given, path, now, why)
+            progress(given, len(todo), path, now, why)
         matches = find_matches(source, path, limit=limit)
         found = [describe_candidate(library, source, m, file or {"path": path}, album_id) for m in matches]
         if cover:
@@ -183,11 +182,11 @@ def build_report(settings, library, query: list[str], low: bool = False, limit: 
 VERDICT_KIND = {"confirmed": "confirmed", "unverified": "unverified", "doubtful": "doubtful", "contradicted": "contradicted"}
 
 
-def head_lines(number: int, path: str, now: Optional[str], why: str, on: bool) -> list[str]:
+def head_lines(number: int, total: int, path: str, now: Optional[str], why: str, on: bool) -> list[str]:
     """The lines that say which file is being looked at, and what it is linked to now."""
     from bdnex.ui import color
 
-    return ["", f"{color.role(f'[{number}]', 'hint', on)} {color.role(os.path.basename(path), 'name', on)}",
+    return ["", f"{color.role(f'[{number}/{total}]', 'hint', on)} {color.role(os.path.basename(path), 'name', on)}",
             f"      {color.role(path, 'path', on)}",
             f"      now: {color.role(now, 'name', on) if now else color.role('(no album)', 'warn', on)}   "
             f"{color.role(f'[{why}]', 'note', on)}"]
@@ -269,8 +268,14 @@ def run(argv: list[str], out=sys.stdout) -> int:
             if args.json:  # the whole report at the end, nothing else on stdout
                 report = build_report(settings, library, args.query, low=args.low, limit=args.limit, cover=args.cover)
             else:  # each file as it is ready: the file first (the covers take a while), then what was found for it
-                def head(number, path, now, why):
-                    print("\n".join(head_lines(number, path, now, why, on)), file=out, flush=True)
+                def head(number, total, path, now, why):
+                    print("\n".join(head_lines(number, total, path, now, why, on)), file=out, flush=True)
+
+                def announce(total):
+                    if total is None:
+                        print(color.role("Finding the files to look at...", "note", on), file=sys.stderr, flush=True)
+                    else:
+                        print(f"{color.role(str(total), 'count', on)} file(s) to look at.", file=out, flush=True)
 
                 def step(event, number, entry, url):
                     """Each cover as it is downloaded and compared: the album it belongs to, then what was found."""
@@ -283,7 +288,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
                         print("\n".join(candidate_lines(number, entry, on)), file=out, flush=True)
 
                 for entry in iter_report(settings, library, args.query, low=args.low, limit=args.limit, cover=args.cover,
-                                         progress=head, step=step):
+                                         progress=head, step=step, announce=announce):
                     report.append(entry)
                     if not args.cover:  # nothing slow happened: all the candidates at once
                         for number, c in enumerate(entry["candidates"], start=1):

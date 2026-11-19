@@ -142,6 +142,7 @@ def test_every_step_is_said_as_it_happens_file_then_each_cover_then_the_decision
     code, text = run("Redwin", "--cover", "--limit", "3")
     lines = text.splitlines()
     head = next(i for i, line in enumerate(lines) if line.startswith("[") and "Nains - T01 - Redwin de la forge.cbz" in line)
+    assert "file(s) to look at." in text and "/" in lines[head].split("]")[0]  # `[n/total]`: out of how many
     downloads = [i for i, line in enumerate(lines) if i > head and "downloading the cover of" in line]
     results = [i for i, line in enumerate(lines) if i > head and " cover " in line and "%" in line]
     decision = next(i for i, line in enumerate(lines) if i > head and line.strip().startswith("=>"))
@@ -160,7 +161,7 @@ def test_the_report_is_coloured_by_meaning_on_a_terminal_and_plain_otherwise():
     assert "\x1b[31mcontradicted" in colour  # a contradiction is red
     assert "\x1b[32m+ year agrees" in colour and "\x1b[31m- tome 5" in colour  # evidence for is green, against is red
     assert "\x1b[1mNains Redwin" in colour  # the name of the album is what the eye lands on
-    assert "\x1b[" not in "".join(candidates_cmd.head_lines(1, "/a/b.cbz", None, "no album", False))
+    assert "\x1b[" not in "".join(candidates_cmd.head_lines(1, 9, "/a/b.cbz", None, "no album", False))
 
 
 def _c(album, cover, current=False, best=False, url="https://www.bedetheque.com/BD-X-1.html"):
