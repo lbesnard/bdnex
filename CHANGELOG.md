@@ -6,6 +6,11 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Changed
+- **OpenCV is a normal dependency** (the cover check, `recheck`, the cover vote need it): `uv sync` and `pip install bdnex`
+  install it. An optional extra was dropped by every plain `uv sync`, and the covers were then silently not compared.
+  `bdnex[cover]` still installs (an empty extra). The Docker image grows by about 100 MB.
+
 ### Added
 - **`bdnex recheck`**: the matches applied under the strong threshold (the medium ones an older `--auto=all` applied
   unasked), weighed again with the album's page, the file's tags and the saved covers. Confirmed ones and the ones

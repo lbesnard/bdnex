@@ -165,7 +165,7 @@ def test_an_unreadable_image_is_an_error_not_a_crash():
 
 def test_without_opencv_the_error_says_how_to_install_it(monkeypatch):
     monkeypatch.setitem(sys.modules, "cv2", None)
-    with pytest.raises(covers.CoverUnavailable, match="bdnex\\[cover\\]"):
+    with pytest.raises(covers.CoverUnavailable, match="opencv-python-headless"):
         covers.sift_similarity(b"x", b"y")
 
 

@@ -124,7 +124,7 @@ def test_without_opencv_the_import_goes_on_and_says_why(tmp_path, monkeypatch):
     messages = []
     env.session.progress = messages.append
     result = env.session.run([cbz_with_cover(tmp_path, FILE, 1)]).results[0]
-    assert result.outcome == TAGGED and any("bdnex[cover]" in m for m in messages)
+    assert result.outcome == TAGGED and any("opencv-python-headless" in m for m in messages)
 
 
 def test_albums_imported_before_get_their_cover_compared_once(tmp_path):

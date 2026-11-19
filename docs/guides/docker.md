@@ -37,8 +37,8 @@ docker compose exec bdnex bdnex import --as-is /comics     # or any other comman
 Edit `./config/bdnex.yaml` for the rest (`bdnex config --update` lists every option). New downloads: map their folder as
 a volume (the commented `INBOX_DIR` line) and add it to `import.sources` as `/inbox`. Your page fetcher
 (`bedetheque.fetcher_endpoint`) goes in that file too, never in the image, and it must be reachable from the container.
-CBR files are read with `bsdtar`, which the image has. For the cover check, build with `--build-arg EXTRAS=api,cover`
-(OpenCV, about 100 MB more).
+CBR files are read with `bsdtar`, which the image has. The cover check works in the image: OpenCV is a normal
+dependency (about 100 MB of the image).
 
 ## Behind Traefik, or any proxy
 

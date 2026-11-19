@@ -369,7 +369,6 @@ bdnex trash --empty             # delete for good (asks first; --older-than 30 f
 ## …check that each file got the right album, by its cover?
 
 ```bash
-pip install 'bdnex[cover]'                 # OpenCV, once
 bdnex import --fetch --cover-check ~/comics
 bdnex ls --files cover:..40                # files whose cover looks little like their album's
 ```

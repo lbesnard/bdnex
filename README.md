@@ -56,7 +56,7 @@ based on metadata and not an obscure filename.
 - files imported from outside your library folder (a download folder) are moved or copied in, or left and placed later
 - a **web page** (`bdnex serve`): browse the library as a wall of covers, see which volumes of a series are missing,
   review doubtful matches, and, if you allow it, run the same tasks as the command line without a terminal
-- optional cover check (`pip install 'bdnex[cover]'`): the file's cover against the album's, with SIFT
+- cover check: the file's cover against the album's, with SIFT (OpenCV, installed with bdnex)
 - `bdnex edit`, `reparse`, `reset`, `relocate`: fix, rebuild offline, start over, move your collection
 - `bdnex ls`: search the library (`series:nains author:uderzo year:2010..2015 ^genre:humour`)
 - `bdnex write` / `bdnex move`: write `ComicInfo.xml`, convert CBR and PDF to CBZ losslessly
@@ -109,7 +109,7 @@ Requires Python 3.10 to 3.13. [uv](https://docs.astral.sh/uv/) is the recommende
 | For | You need | Without it |
 |---|---|---|
 | reading `.cbr` files (match, covers, `write`, `move`, `repair`) | `unrar`, or `unar`, or `bsdtar` (a `7z` only if it has the RAR codec: many builds do not) | every CBR fails with `Failed the read enough data` in the log |
-| the cover check (`cover.check`, `candidates --cover`) | OpenCV: `pip install 'bdnex[cover]'` (optional) | covers are still downloaded, but not compared |
+| the cover check (`cover.check`, `candidates --cover`) | OpenCV (installed with bdnex; a build without it, e.g. an unusual platform, degrades) | covers are still downloaded, but not compared |
 | fetching pages (the default fetcher) | a [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) address in `bedetheque.fetcher_endpoint`, or your own fetcher | no page can be fetched (see [Album pages](#album-pages-read-this-first)) |
 
 On Debian or Ubuntu: `sudo apt install unrar` (it needs the `non-free` / `multiverse` repository), or `sudo apt install libarchive-tools` for `bsdtar` (the package is called `bsdtar` on the newest releases).
@@ -143,8 +143,6 @@ uv tool install --force https://github.com/lbesnard/bdnex/releases/download/vX.Y
 uv tool install git+https://github.com/lbesnard/bdnex.git
 uv tool upgrade bdnex          # later: pulls the newest commit of the branch
 ```
-
-With the optional cover check (OpenCV): `uv tool install "bdnex[cover] @ git+https://github.com/lbesnard/bdnex.git"`.
 
 ### Development
 
