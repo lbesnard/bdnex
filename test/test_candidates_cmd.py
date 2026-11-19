@@ -52,13 +52,13 @@ def test_low_leaves_out_the_files_that_are_fine(env):
         lib.add_file(path, album)
     code, text = run("--low", "--json")
     assert code == 0 and json.loads(text) == []
-    code, text = run("--json")  # asked for by name: listed whatever its state
+    code, text = run("--all", "--json")  # asked for by name: listed whatever its state
     assert [d["path"] for d in json.loads(text)] == [path]
 
 
 def test_text_output_marks_the_linked_album_and_changes_nothing(env):
     db, path = env
-    code, text = run("--limit", "2")
+    code, text = run("--all", "--limit", "2")
     assert code == 0 and "(no album)" in text and "1 file(s)" in text
     with Library(db) as lib:
         assert lib.get_file(path)["album_id"] is None
@@ -118,7 +118,7 @@ def test_cover_uses_the_saved_cover_without_a_request(env, tmp_path, monkeypatch
 
 
 def test_each_candidate_says_where_its_score_comes_from(env):
-    code, text = run("--limit", "2", "--json")
+    code, text = run("--all", "--limit", "2", "--json")
     best = json.loads(text)[0]["candidates"][0]
     assert code == 0 and best["why_score"] and best["why_score"][0].startswith("title: ")
     assert "words of the name found" in best["why_score"][0]
@@ -142,7 +142,7 @@ def test_every_step_is_said_as_it_happens_file_then_each_cover_then_the_decision
     code, text = run("Redwin", "--cover", "--limit", "3")
     lines = text.splitlines()
     head = next(i for i, line in enumerate(lines) if line.startswith("[") and "Nains - T01 - Redwin de la forge.cbz" in line)
-    assert "file(s) to look at." in text and "/" in lines[head].split("]")[0]  # `[n/total]`: out of how many
+    assert "file(s) to look at (at most" in text and "/" in lines[head].split("]")[0]  # `[n/total]`: out of how many
     downloads = [i for i, line in enumerate(lines) if i > head and "downloading the cover of" in line]
     results = [i for i, line in enumerate(lines) if i > head and " cover " in line and "%" in line]
     decision = next(i for i, line in enumerate(lines) if i > head and line.strip().startswith("=>"))
@@ -200,3 +200,10 @@ def test_a_saved_cover_is_said_too_so_no_step_is_silent(env, tmp_path, monkeypat
     monkeypatch.setattr(Bedetheque, "cover_image", lambda self, url, recache=False: jpeg(art(2)))
     code, text = run("Redwin", "--cover", "--limit", "3")
     assert code == 0 and "using the saved cover of" in text and "downloading the cover of" in text
+
+
+def test_without_a_query_or_low_it_refuses_instead_of_going_through_every_file(env, capsys):
+    code, text = run("--cover")
+    assert code == 2 and text == ""
+    assert "every file of the library" in capsys.readouterr().err
+    assert run("--low")[0] == 0 and run("--all", "--json")[0] == 0 and run("Redwin", "--json")[0] == 0

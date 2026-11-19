@@ -103,6 +103,10 @@ bdnex candidates --low --limit 5    # the other albums they could be
 bdnex review                        # one by one, with the two covers side by side
 ```
 
+`bdnex candidates` always needs to be told which files: a query (`bdnex candidates series:nains`), `--low` (the files in
+doubt), or `--all` for every file of the library. With `--cover` each file can cost up to `--limit` cover requests, so the first
+line says how many it could be. Each file is printed as `[n/total]` as soon as it is done, so Ctrl-C loses nothing.
+
 ## With an assistant (Claude Code)
 
 The repository ships a skill, `skills/using-bdnex` (see [Getting started](getting-started.md)), that teaches the

@@ -21,6 +21,7 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
     ],
     "candidates": [
         ("bdnex candidates --low", "the files whose match is in doubt, with the other albums each could be"),
+        ("bdnex candidates --all --limit 3", "every file of the library (a query or --low is needed otherwise)"),
         ("bdnex candidates series:nains --limit 3", "the 3 best albums for each file of one series (any file, in doubt or not)"),
         ("bdnex candidates --low --cover --limit 3 series:saga", "also compare covers (one request per cover not saved yet)"),
         ("bdnex candidates --low --json", "the same as JSON, for a script or an assistant"),
