@@ -184,8 +184,8 @@ Examples:
 Go through the doubtful matches: one by one with both covers, or settled by rule with --auto.
 
 ```text
-usage: bdnex review [-h] [--list] [--json] [--auto] [--candidates N] [--no-cover] [-y]
-                    [-n] [-v] [--log-file PATH]
+usage: bdnex review [-h] [--list] [--json] [--auto] [--batch N] [--unmatched]
+                    [--candidates N] [--no-cover] [-y] [-n] [-v] [--log-file PATH]
                     [query ...]
 
 ``bdnex review``: go through the flagged matches one by one, with the file's cover and
@@ -208,6 +208,12 @@ options:
                    the file's (see --candidates), else unlinked (`bdnex import
                    --skipped --auto=all` decides them again); the ones nothing
                    confirms or contradicts are left as they are
+  --batch N        a table of the next N files to check (for example `--batch 50`):
+                   file, folder, album now, match score, cover score; keep, unlink or
+                   pick another album from the album list. Every decision is saved at
+                   once and the files checked are not shown again: run it again to
+                   continue. Needs the `tui` extra (`pip install 'bdnex[tui]'`)
+  --unmatched      with --batch: also the files that have no album
   --candidates N   for each contradicted file, compare the covers of its N best other
                    candidates (the saved cover when there is one, else one request
                    each; needs OpenCV) and propose the album whose cover is clearly
@@ -232,11 +238,13 @@ another album, or leave it for later. `bdnex candidates` lists the other albums 
 could be.
 
 Examples:
-  bdnex review               go through the flagged matches one by one, both covers side by side
-  bdnex review series:nains  only the files of one series
-  bdnex review --list        only list the flagged files and why; ask nothing
-  bdnex review --auto -n     preview the rule: how many are confirmed, switched, unlinked; changes nothing
-  bdnex review --auto        settle the doubtful matches by rule (asks once before changing anything)
+  bdnex review                         go through the flagged matches one by one, both covers side by side
+  bdnex review series:nains            only the files of one series
+  bdnex review --batch 50              a table of the next 50 files to check; keep, unlink or pick another album; continue later
+  bdnex review --batch 50 --unmatched  the same, with the files that have no album too
+  bdnex review --list                  only list the flagged files and why; ask nothing
+  bdnex review --auto -n               preview the rule: how many are confirmed, switched, unlinked; changes nothing
+  bdnex review --auto                  settle the doubtful matches by rule (asks once before changing anything)
 ```
 
 ## Look at the library

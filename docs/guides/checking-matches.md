@@ -58,6 +58,41 @@ bdnex review                          # what is still flagged, one by one
 nothing. A digital edition whose cover differs from the print album's is contradicted by its cover alone: with no better
 album it is unlinked, and `bdnex import --album` links it back. A shorter way to type it: an [alias](configuration.md#aliases-commands-with-a-name-that-says-what-they-do).
 
+## A table, a batch at a time: `bdnex review --batch`
+
+For checking by eye, a batch at a time, with every decision saved as you make it:
+
+```bash
+bdnex review --batch 50               # the next 50 doubtful files, in a table
+bdnex review --batch 50 --unmatched   # the same, with the files that have no album
+bdnex review --batch 50 series:batman # only some files (same terms as `bdnex ls --files`)
+```
+
+One row per file: its **name**, its **folder** (it often says the series or the language), the **album it is linked to now**,
+the **match score** of the import, the **cover score** (the file's cover against the album's saved cover) and a **state**
+(`contradicted`, `unconfirmed`, `no album`, then what you decided). The most doubtful come first: contradicted ones, lowest
+cover first, then the unconfirmed, then (with `--unmatched`) the files without album. Under the table, the file's whole path
+and what speaks for and against its match.
+
+| Key | Does |
+|---|---|
+| `k` | keep the match (the flag goes, the file is marked `checked=keep`) |
+| `u` | unlink the file (remembered as skipped, so `bdnex import --skipped --auto=all` decides it again) |
+| `o` | **another album**: search the album list (the sitemaps) by words, starting from the file's name; type to filter, Enter picks, Ctrl-O opens the page |
+| `i` | an album's page address or number |
+| `s` | skip for now (nothing is saved: it is in the next batch again) |
+| `l` | leave it as it is, and do not show it again |
+| `p` | open the page of the album now linked, in your browser |
+| `n` | the next batch |
+| `q` | quit |
+
+Each decision is **written at once** to the library (a `checked` mark, the flag, the link), so quitting, Ctrl-C or a lost SSH
+connection loses nothing. Files already checked are not shown again: **run the same command later to continue**. At the end
+of a batch it asks whether to check the next one. It needs the optional `tui` extra (Textual): `pip install 'bdnex[tui]'`
+or `uv sync --extra tui`; without it, `bdnex review` and `bdnex review --auto` work as before. Linking to another album
+reads that album's page (a request), so it takes a moment; a file whose chosen album already has another file is refused
+and says so.
+
 ## By hand
 
 ```bash
