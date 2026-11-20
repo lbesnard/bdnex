@@ -74,6 +74,8 @@ By default the table holds **the doubtful files only**: a match something contra
 `bdnex review --auto` weighs (so there is no `--low`: it is what you get). `--unmatched` adds the files without album,
 `--all` every file of the query (to look through a series), `--again` the ones already checked. They all go with `--batch`.
 
+![The review table: one row per file with its album, scores and state, and under it the evidence for the file under the cursor](../_static/screens/review-table.svg)
+
 One row per file: its **name**, its **folder** (it often says the series or the language), the **album it is linked to now**,
 the number of its **page** on the site (a link), the **match score** of the import, the **cover score** (the file's cover against the album's saved cover) and a **state**
 (`contradicted`, `unconfirmed`, `no album`, then what you decided). The batch is the most doubtful files (contradicted ones, lowest
@@ -100,6 +102,14 @@ spare version (`bdnex duplicates` decides later which one stays). On the command
 | `p` | open the page of the album now linked, in your browser. Over SSH (where a browser would open on the other machine) the address is copied to your clipboard (where the terminal allows it) and shown; the **Page** column and the address under the table are links too: ctrl/cmd-click them in a terminal that knows links |
 | `n` | the next batch |
 | `q` | quit |
+
+**Another album (`o`)** is a search box over the whole album list, and **`c`** shows both covers:
+
+![The search box: type a few words, the albums that match are listed with a score](../_static/screens/review-search.svg)
+
+![The covers popup: the file's first page and the album's saved cover side by side](../_static/screens/review-covers.svg)
+
+(The pictures come from a demo library of made-up files: `uv run python tools/review_screens.py docs/_static/screens` draws them again.)
 
 The screen **opens at once**. While the batch is made it shows a loading panel with the two jobs and how long each has taken:
 `weighing the files` (the table appears when that is done; the title then says `weighed in 6.2 s`) and `loading the album list`

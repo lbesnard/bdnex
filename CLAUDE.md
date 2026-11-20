@@ -106,6 +106,14 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   `decide`, `link_to`): every decision is written at once (a `checked` mark; `^attr:checked` leaves the file out of the next batch),
   Nothing slow runs in the screen's thread: files are weighed in a worker with its own read-only `Library`, the album list lives in `SourceHub` (one thread that owns the source and its library, `fuzzy_search` for `o`), a link runs the import in a worker with stdout/stderr captured, and only the screen's own library writes the decisions. `O` hands the terminal to the real `fzf` (`prompts.fzf_pick`) through `App.suspend()`. Keep the logic in `review_batch`, the screen
   thin; test the screen with Textual's pilot (`test/test_review_tui.py`).
+- **Review screen extras**: `c` = `CoverScreen` (the file's first page and the album's saved cover as half-block text, `ui/cover_text.py`; nothing is fetched),
+  `space` marks rows and `a` links them to a series by volume (`review_batch.propose_for_series`, sequentially), a link refused because the album already has a
+  file asks `keep both?` (`import --album ... --keep-both`: spare version, library only). `p` copies the address over SSH (never starts a browser there).
+- **`bdnex mirror`** (`importer/mirror.py`, `ui/mirror_cmd.py`) fetches every album of the album list the library lacks (page, series page, cover) through `PageQueue`;
+  the library is the state (no resume file); it stops after 10 failures in a row. Never run it against the real site from a session.
+- **Stored pages are compressed** (schema v11, `Library.COMPRESSED_KINDS`, `cache_put`/`cache_get`; the upgrade compresses the old ones, `_compress_stored_pages`, after the
+  automatic `.bak-v10` copy). Never read `source_cache.content` of an album/series page directly. **A bdnex of this code opens the user's real library read-write and upgrades it: do not run
+  write commands on it from a session.** A cover address of an album whose page was not read is a guess (`guess_cover_url`, wrong for ~1 in 5): `download_cover` reads the page when it 404s.
 - **One command for doubtful matches: `bdnex review`** (`--auto` settles by rule). `library/recheck.py` weighs the flagged files and
   the matches applied under `match.strong_threshold` (page, tags, saved covers); `ui/verdicts.py` looks for a better album by the covers of
   the other candidates (`look_for_better`, the cover-vote rule) and applies the verdicts (`settle_verdicts`: one place): kept = flag goes,

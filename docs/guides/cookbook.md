@@ -130,6 +130,27 @@ bdnex import --skipped --auto=all     # decide the unlinked ones again: strict, 
 The ones nothing confirms are left alone: no evidence is no reason to ask you. See
 [Checking the matches](checking-matches.md).
 
+## …go through thousands of doubtful matches without doing it one by one?
+
+```bash
+bdnex review --batch 50               # a table of the next 50, folder by folder; each decision is saved at once
+bdnex review --batch 50 --unmatched   # with the files that have no album
+```
+
+`k` keeps, `u` unlinks, `o` searches another album (`O` for fzf), `c` shows the file's cover next to the album's, `p` copies or opens the album's
+page, `space` marks files and `a` gives them all the album of one series by volume number, a click on a header sorts. Stop with `q`
+and come back later: you continue with the files not checked yet. See [the table](checking-matches.md#a-table-a-batch-at-a-time-bdnex-review-batch).
+
+## …keep the whole Bédéthèque catalogue in my library?
+
+```bash
+bdnex mirror -n               # how many albums and covers are missing, and about how much room they take
+bdnex mirror --limit 500      # fetch the next 500 (page, series page, cover), then stop
+bdnex mirror                  # everything that is left; Ctrl-C stops, run it again to go on
+```
+
+See [Keeping the whole catalogue](importing.md#keeping-the-whole-catalogue-bdnex-mirror).
+
 ## …shorten a command I type often?
 
 Add an alias to your configuration (`bdnex config --edit`): `aliases: ["settle-doubtful-matches = review --auto  # what it does"]`.
