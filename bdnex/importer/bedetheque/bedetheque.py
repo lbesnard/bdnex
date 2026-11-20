@@ -574,7 +574,10 @@ class Bedetheque:
                 abstract = details.pop("summary", None)
                 series_extra = details  # the albums the series page lists
             except Exception as err:  # a missing series page must not lose the album
-                logger.warning(f"Series page {series_href} unavailable: {err}")
+                from bdnex.importer.registry import OfflineError
+
+                # working offline (`import --reparse`) the series pages never fetched are expected to be missing: not a warning
+                (logger.debug if isinstance(err, OfflineError) else logger.warning)(f"Series page {series_href} unavailable: {err}")
         return parser.build_album_info(fields, series_href, abstract, series_extra)
 
     def album_info_from_html(self, html: str, url: str) -> AlbumInfo:

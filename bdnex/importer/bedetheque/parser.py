@@ -64,6 +64,10 @@ def _plain(text: str) -> str:
     return re.sub(r"[\W_]+", "", "".join(c for c in decomposed if not unicodedata.combining(c)))
 
 
+# what the site writes as the title of an album that has none: "Tome 9", "Volume 2", "Intégrale", "Tome 1/2", "N°3" (a bare number can be a real title: "1984")
+GENERIC_TITLE = re.compile(r"(?:Tome|Volume|Vol\.?|Int[ée]grale|N°)\s*\d*(?:/\d+)?", re.I)
+
+
 def _numbered_title(header) -> tuple[str, str]:
     """``(number, title)`` of the album from the page's sub-title: ``16<span class="bdt-numa">B6</span>. Le Noël`` is
     ``("16B6", "Le Noël")``, ``<span class="bdt-numa">INT</span>. Les chats`` is ``("INT", "Les chats")``, and an album
@@ -125,10 +129,10 @@ def _parse_album_page_desktop(html: str, album_url: str) -> tuple[dict[str, Any]
                 fields["Titre"] = album_title
 
     number, sub_title = _numbered_title(header)  # `<h2>16<span class="bdt-numa">B6</span>. Le Noël...</h2>`
-    if sub_title and fields.get("Série"):
+    if sub_title and fields.get("Série") and not GENERIC_TITLE.fullmatch(sub_title):
         fields["Titre"] = sub_title  # the page says it (the address may not: `...-Les-40-commandements-du-jardinage-...`)
-    if number:
-        fields["Tome"] = number
+    if number and not fields.get("Série", "").startswith(("(AUT)", "(DOC)")):
+        fields["Tome"] = number  # not for an author's or a documentation miscellany: its numbers are a year or a position, no tome
 
     ident = header.select_one(".bdt-ah-idbel")
     match = re.search(r"-(\d+)\.html$", album_url)
