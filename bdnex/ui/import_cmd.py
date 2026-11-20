@@ -89,7 +89,8 @@ def build_parser() -> argparse.ArgumentParser:
                              "(default: asked when the names do not make it obvious; `import.series`)")
     series.add_argument("--no-series", dest="series", action="store_const", const="never",
                         help="match every file by itself, never as a folder")
-    add_workers(parser, "processes matching file names in the background, and reading the files for --as-is")
+    add_workers(parser, "processes matching file names in the background, and reading the files for --as-is",
+                note="; with --reparse: album pages read, by default the cores less one whatever `import.workers` says")
     add_verbosity(parser)
     return parser
 

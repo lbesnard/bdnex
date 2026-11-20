@@ -87,7 +87,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
                     "them into the files.")
     parser.add_argument("query", nargs="*", help="albums to update, same terms as `bdnex ls` (default: all)")
     add_pretend(parser, "change")
-    add_workers(parser, "album pages read", "import.workers")
+    add_workers(parser, "album pages read", "the CPU cores less one")
     add_verbosity(parser)
     args = parser.parse_args(argv)
     setup_logging(args.verbose)
@@ -113,7 +113,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
             return context.bad_query(err)
         rows, groups = group_rows(rows, library)
         todo = [row for row in rows if row.get("url") and library.cache_has(source.name, "album", row["url"])]
-        workers = pipeline.resolve_workers(args.workers if args.workers is not None else settings.import_.workers)
+        # not `import.workers`: that one is for reading big comic files (people keep it low for the memory); parsing small pages wants every core
+        workers = pipeline.resolve_workers(args.workers or 0)
         progress(f"Reading {len(todo)} stored page(s), {workers} at a time...")
         parsed = read_groups(settings, offline, [[u for u in group if library.cache_has(source.name, "album", u)] for group in groups],
                              workers, lambda done: progress(f"  read {done}/{len(todo)}") if done % 500 < 25 else None)

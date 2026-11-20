@@ -152,8 +152,10 @@ options:
                         obvious; `import.series`)
   --no-series           match every file by itself, never as a folder
   --workers N           processes matching file names in the background, and reading
-                        the files for --as-is at once (0: the cores less one; 1: one
-                        by one); default: `import.workers`
+                        the files for --as-is at once (0: the cores less one; with
+                        --reparse: album pages read, by default the cores less one
+                        whatever `import.workers` says; 1: one by one); default:
+                        `import.workers`
   -v, --verbose         more detail: -v what is decided and why (every file), -vv how
                         (reads, cache, requests, threads), -vvv everything, libraries
                         and SQL included
