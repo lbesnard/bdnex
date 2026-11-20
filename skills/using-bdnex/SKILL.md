@@ -61,17 +61,18 @@ confirm the obvious ones, so that their table, which skips every file marked `ch
 1. **Read**: `bdnex review --auto -n --json` (read-only). Each file has a `kind`: `kept` (something other than the name confirms the match), `wrong`
    (something contradicts it), `unconfirmed` (nothing confirms it), with the evidence, the cover score and, for the wrong ones, a `better` album.
 2. **Propose, never apply on your own**: show the person the numbers and ten examples of what you would confirm, and wait for a yes. Confirm only
-   `kept` files, and `unconfirmed` ones whose cover score is at least `cover.match_percentage` and that have nothing against them (see the note below on that setting). Leave
+   `kept` files, and `unconfirmed` ones whose cover score is at least `cover.match_percentage` and that have nothing against them. Leave
    every `wrong`, every file with a `better` album and every low cover to the person.
 3. **Apply with a mark**: `bdnex mark -n --set checked=keep <query>` first, then without `-n`, one `fileid:N` (or a narrow query) at a time. A mark changes
    nothing else: the match, the files and the flags stay as they are.
 4. **Never** run `bdnex review --auto` without `-n` (it applies a rule: switches and unlinks), never mark `checked=unlink`, never run `bdnex import`
    or `bdnex mirror` unasked.
 
-**What a cover score means.** It is not a "percent alike": it is the share of distinctive features of one cover found in the other. Measured on a real library, files whose
-match is confirmed by other evidence score about 50 (median 51; 20% below 40, 8% below 20), and the matches that look wrong score about 0 (median 0 to 1;
-about 72% below 20). So a good match is *not* near 100, and the default `cover.match_percentage: 40` flags one correct match in five. About 15 to 20 separates the two
-better (7 to 8% of correct matches flagged, the same share of wrong ones caught); say so to the person rather than trusting 40.
+**What a cover score means.** It is not a "percent alike": it is the share of distinctive features of one cover found in the other. Measured on a real library
+(`tools/eval_covers.py`: each file against its own album's cover, against an album of another series and against the next volume of its own series): a right match
+scores about 50 (median), not near 100; the AUC is 0.98 against another series and 0.95 against the neighbouring volume, so the cover is a reliable check. The default
+`cover.match_percentage` is 3: it flags about 5 % of the right matches (an edition with another cover, a first page that is no cover), catches all the wrong-series
+matches and about 43 % of the wrong-volume ones. A cover that scores high does not prove the volume: volumes of one series can share a layout.
 
 ## Checking the matches
 

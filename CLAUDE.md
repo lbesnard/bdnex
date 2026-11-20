@@ -126,7 +126,7 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   biases against known albums; measured). Change the matcher only with `tools/eval_matching.py run/report` on a real
   library (answer key = matches `confirm.assess` calls confirmed); look at wrong-at-strong, not just totals.
   The cover comparison is measured the same way with `tools/eval_covers.py run/report` (AUC and the catch rate of wrong matches at a given false-alarm rate, per
-  score variant): change `covers.sift_similarity` or `cover.match_percentage` only with its numbers (a correct match scores about 50, not 100: a threshold of 40 flags 1 in 5).
+  score variant): change `covers.sift_similarity` or `cover.match_percentage` only with its numbers (a correct match scores about 50, not 100; the default is 3: 5 % of right matches flagged, every wrong-series one caught, about 43 % of the wrong-volume ones; AUC 0.98 / 0.95).
 
 ## Several files at once (`Organizer.run(workers=)`, `bdnex/parallel.py`)
 - `parallel.map_ordered(function, items, workers)` is the helper for read-only work (hashing, reading first pages): forked processes,

@@ -313,7 +313,9 @@ after its page is read. That is `cover.check: auto`; `true` insists on it (and s
 `false` turns it off, and `--cover-check` / `--no-cover-check` decide for one run. The comparison uses the saved
 cover file, so it costs no request of its own. The similarity (0-100) is kept with the file.
 
-Below `cover.match_percentage` (40 by default) the match is doubtful:
+Below `cover.match_percentage` (3 by default) the match is doubtful. (The similarity is the share of distinctive features of one cover found in the other: measured on a real
+library a right match scores about 50, not 100, an album of another series about 0, and 3 flags 5 % of the right matches while catching all the wrong-series ones and
+about 43 % of the wrong-volume ones. See `tools/eval_covers.py`.)
 
 - on a terminal, with questions allowed, you are asked at once whether to keep the match or unlink it;
 - in a run that does not ask (`--auto=all`, no terminal), the match is kept and the file is **flagged for review**.
