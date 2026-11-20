@@ -581,6 +581,7 @@ class Library:
                       key=lambda r: r["path"])
 
     # ------------------------------------------------------- merging a fresh parse
+    STRUCTURE = ("volume", "alternate_number")  # what goes with the series of a miscellany that is no series (see `_merged_info`)
     SCALARS = ("title", "volume", "alternate_number", "publisher", "isbn", "year", "month", "day", "pages",
                "language", "format", "summary", "rating", "cover_url", "url")
 
@@ -588,7 +589,10 @@ class Library:
         """``info`` completed with what the library already holds: a fresh parse overrides the values it
         has, and never erases the ones it lacks (e.g. a credit typed at a prompt)."""
         series = info.series
-        if series is None and old["kind"] == "series":
+        # An older parser numbered the albums of the `(AUT)`/`(DOC)` miscellanies (`Mœbius` was volume 1984 of `(AUT) Giraud`): a page that was
+        # read says they are no series. Anything else keeps what the library has when the parse has none (never erase on a parser's say-so).
+        undo = not info.extra.get("partial") and (old.get("series") or "").startswith(("(AUT)", "(DOC)")) and info.series is None
+        if series is None and old["kind"] == "series" and not undo:
             row = self.conn.execute(
                 "SELECT s.* FROM series s JOIN albums a ON a.series_id = s.id WHERE a.id = ?", (old["id"],)).fetchone()
             series = SeriesInfo(row["source"], row["source_id"], row["name"], row["summary"], row["url"]) if row else None
@@ -597,7 +601,9 @@ class Library:
         extra = {**old["extra"], **info.extra}
         if not info.extra.get("partial"):
             extra.pop("partial", None)  # a full parse replaces a sitemap-only record
-        values = {key: getattr(info, key) if getattr(info, key) not in (None, "") else old.get(key)
+        # a number and a special (`INT`, `HS`) never go together in a read page: an older parser's `-82` (a tome written with a minus) must go
+        numbered = not info.extra.get("partial") and info.volume is not None and info.alternate_number is None
+        values = {key: getattr(info, key) if getattr(info, key) not in (None, "") or ((undo or numbered) and key in self.STRUCTURE) else old.get(key)
                   for key in self.SCALARS}
         merged = AlbumInfo(source=info.source, source_id=info.source_id, series=series, credits=credits,
                            genres=info.genres or old["genres"], extra=extra,

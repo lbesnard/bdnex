@@ -28,6 +28,11 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- **Parser, found by auditing the 16,449 stored pages of a real library** (`tools/audit_pages.py LIBRARY.sqlite`, read-only):
+  - a tome the site writes with a minus (`Donjon Potron-Minet` -82, `Donjon Antipodes` -10000) was read as a special (`-82`) and lost its volume: it is the number again;
+  - the address no longer numbers the albums of the `(AUT)`/`(DOC)` miscellanies (`Manara` #1992 is a year) and no longer gives the site's filler as a title (`Integrale 1`: the series name stays the title).
+  - `import --reparse` now takes back what an older parser stored for those: the series and the number of a `(AUT)`/`(DOC)` album, and a special stored next to a number
+    (the library otherwise keeps what the parse lacks). On a copy of a real library: 137 albums updated, and the audit then finds no album that differs from its page.
 - `import --reparse` shows **a progress bar with the time left** (`Pages [████░░░░]  17%  101/584  about 18 s left`) for the reading, then a second step for the
   update, instead of a line every few hundred pages.
 - **`import --reparse` is about 15 times faster** (a real 16,400-album library: 4 minutes instead of about an hour). A series page was parsed again for each of its

@@ -594,3 +594,60 @@ def test_the_sites_filler_titles_are_told_from_real_ones(sub_title, generic):
     from bdnex.importer.bedetheque import parser
 
     assert bool(parser.GENERIC_TITLE.fullmatch(sub_title)) is generic
+
+
+def test_a_tome_the_site_writes_with_a_minus_is_the_number_the_address_has():
+    from bdnex.importer.bedetheque import parser
+
+    html = ('<html><body><section class="bdt-ah"><h1><a href="https://www.bedetheque.com/serie-1-BD-x.html">Donjon Potron-Minet</a></h1>'
+            '<h2 class="bdt-ah-sub">-82<span class="bdt-numa"></span>. Survivre aujourd\'hui</h2></section></body></html>')
+    fields, _ = parser.parse_album_page(html, "https://www.bedetheque.com/BD-Donjon-Potron-Minet-Tome-82-Survivre-aujourd-hui-437533.html")
+    info = parser.build_album_info(fields)
+    assert info.volume == 82 and info.alternate_number is None and info.title == "Survivre aujourd'hui"
+
+
+def test_the_address_does_not_number_an_author_miscellany_nor_give_a_filler_title():
+    from bdnex.importer.bedetheque import parser
+
+    def page(series, sub):
+        return (f'<html><body><section class="bdt-ah"><h1><a href="https://www.bedetheque.com/serie-1-BD-x.html">{series}</a></h1>'
+                f'<h2 class="bdt-ah-sub">{sub}</h2></section></body></html>')
+
+    fields, _ = parser.parse_album_page(page("(AUT) Manara", '<span class="bdt-numa"></span>Le feu aux entrailles'),
+                                        "https://www.bedetheque.com/BD-AUT-Manara-Tome-1992-Le-feu-aux-entrailles-35079.html")
+    info = parser.build_album_info(fields)
+    assert info.volume is None and info.series is None and info.title == "Le feu aux entrailles"
+    fields, _ = parser.parse_album_page(page("Bob Morane (10 Intégrale)", '1<span class="bdt-numa"></span>. Integrale 1'),
+                                        "https://www.bedetheque.com/BD-Bob-Morane-10-Integrale-Tome-1-Integrale-1-258688.html")
+    info = parser.build_album_info(fields)
+    assert info.volume == 1 and info.title == "Bob Morane (10 Intégrale)"  # "Integrale 1" is the site's filler: the series name stays the title
+
+
+def test_a_reparse_removes_a_series_and_a_number_an_older_parser_gave_when_the_page_has_none(tmp_path):
+    from bdnex.library import AlbumInfo, Library, SeriesInfo
+
+    with Library(tmp_path / "l.sqlite") as lib:
+        wrong = AlbumInfo("bedetheque", "1", "Mœbius", series=SeriesInfo("bedetheque", "s", "(AUT) Giraud"), volume=1984)
+        album = lib.add_album(wrong)
+        fresh = AlbumInfo("bedetheque", "1", "Mœbius")  # what the page says now: no series, no number
+        assert any("volume" in change for change in lib.preview_merge(fresh))
+        lib.merge_album(fresh)
+        lib.prune_orphan_series()
+        now = lib.get_album(album)
+        assert now["volume"] is None and now["series"] is None and now["kind"] == "oneshot"
+        # a sitemap-only parse (partial) knows less: it must not erase
+        lib.add_album(AlbumInfo("bedetheque", "2", "Forge", series=SeriesInfo("bedetheque", "n", "Nains"), volume=2))
+        lib.merge_album(AlbumInfo("bedetheque", "2", "Forge", extra={"partial": True}))
+        kept = lib.get_album(lib.find_album("bedetheque", "2"))
+        assert kept["volume"] == 2 and kept["series"] == "Nains"
+
+
+def test_a_reparse_drops_the_special_an_older_parser_stored_next_to_a_number(tmp_path):
+    from bdnex.library import AlbumInfo, Library, SeriesInfo
+
+    with Library(tmp_path / "l.sqlite") as lib:
+        series = SeriesInfo("bedetheque", "d", "Donjon Potron-Minet")
+        album = lib.add_album(AlbumInfo("bedetheque", "1", "Survivre aujourd'hui", series=series, volume=82, alternate_number="-82"))
+        lib.merge_album(AlbumInfo("bedetheque", "1", "Survivre aujourd'hui", series=series, volume=82))
+        now = lib.get_album(album)
+        assert now["volume"] == 82 and now["alternate_number"] is None
