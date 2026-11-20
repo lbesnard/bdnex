@@ -31,8 +31,6 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
-- The files flagged only because their cover scored below 40 (the old default of `cover.match_percentage`) and whose cover scores 3 or more are no longer flagged: the first bdnex
-  command after the upgrade takes those flags back, once (no option, no command; a flag with another threshold or reason is not touched), and says how many.
 - **`cover.match_percentage` is 3, not 40.** A right match scores about 50 on the cover comparison (the share of distinctive features found in both covers), so 40 flagged
   one right match in five. Measured with `tools/eval_covers.py` on a real library (each file against its own album's cover, another series' and the next volume's): AUC 0.98 and 0.95;
   at 3 the cover flags 5 % of the right matches, catches every wrong-series match and about 43 % of the wrong-volume ones. If you set the option yourself, your value stays.
@@ -50,7 +48,7 @@ command runs, never while an import is fetching).
   An album whose address says `INT` gets +8 and, when one is among the candidates, a single tome gets -8 (only when the file gives no volume). On a real
   library, of the 309 files that say intégrale 4 change their first choice, all to the collected edition (`Double masque INT3`, `Madila INT`,
   `Un petit livre oublié sur un banc INT`, `Universal War One INT`); nothing else moves. Run `bdnex review` / `import --match --force` on the files you suspect.
-- **Parser, found by auditing the 16,449 stored pages of a real library** (`tools/audit_pages.py LIBRARY.sqlite`, read-only):
+- **Parser, found by auditing the 16,449 stored pages of a real library**:
   - a tome the site writes with a minus (`Donjon Potron-Minet` -82, `Donjon Antipodes` -10000) was read as a special (`-82`) and lost its volume: it is the number again;
   - the address no longer numbers the albums of the `(AUT)`/`(DOC)` miscellanies (`Manara` #1992 is a year) and no longer gives the site's filler as a title (`Integrale 1`: the series name stays the title).
   - `import --reparse` now takes back what an older parser stored for those: the series and the number of a `(AUT)`/`(DOC)` album, and a special stored next to a number
