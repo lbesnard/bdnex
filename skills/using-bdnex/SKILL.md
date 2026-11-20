@@ -87,12 +87,14 @@ confirm the obvious ones, so that their table, which skips every file marked `ch
    `unlink` only when the person told you to (their words, after you showed the count); a file left alone is `leave`.
 7. Show the counts and ten examples of each group with their evidence, wait for a yes (unless the person asked for an autonomous run on a copy), back up the library file,
    apply and report kept / switched / unlinked / left.
-8. **Several agents at once (a big library).** Reading names against albums is an easy, parallel job: start subagents with a cheaper model (`haiku` or `sonnet`), one series (or one folder)
-   each, never two on the same file. Rules: only **you** (the main agent) write to the library, one `bdnex review --apply decisions-<series>.tsv` after the other, never in parallel
-   (SQLite has one writer); a subagent only reads (`bdnex candidates SERIES --json`, `bdnex ls --files -l`) and writes its own decisions file; one that is unsure writes `leave`, never a guess.
-   For a second opinion, a **judge** subagent reads the same evidence *without* the proposer's file, writes its own, and only then compares; give it the same model as the proposer or a stronger
-   one, never a weaker one (it would just agree). Apply the lines where both agree; the person decides what to do with a disagreement (`unlink` only on their word). Start with three series,
-   compare the result with `bdnex check --matches`, then run the rest.
+8. **Many agents at once, one review batch each (a big library).** What a person does in `bdnex review --batch 50`, an agent can do for one batch, so split the library into
+   batches of about 50 files (sorted by folder, as the review table is, so a series stays together) and start one subagent per batch with a cheaper model (`haiku` or `sonnet`:
+   reading names against albums is an easy job), several at a time. You (the main agent) do the splitting: write each batch's paths in a file (`batch-NNN.txt`) and give a subagent
+   only its file, so no two agents ever look at the same file. A subagent only reads (`bdnex candidates --json` for its files, `bdnex ls --files -l`) and writes one decisions file for its
+   batch (`decisions-NNN.tsv`), `leave` when it is unsure, never a guess. Only **you** write to the library: apply the decisions files one after the other with `bdnex review --apply`
+   (SQLite has one writer, never in parallel). Start with a few batches, compare their decisions with `bdnex check --matches` and read a sample of the lines, then run the rest.
+   A second opinion is optional and costs the reading twice; if the person wants it, a second agent decides the same batch without seeing the first one's file and only the lines where
+   both agree are applied.
 
 **What a cover score means.** It is not a "percent alike": it is the share of distinctive features of one cover found in the other. Measured on a real library
 (`tools/eval_covers.py`: each file against its own album's cover, against an album of another series and against the next volume of its own series): a right match
