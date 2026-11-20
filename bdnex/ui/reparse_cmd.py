@@ -10,7 +10,7 @@ from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.ui import color, context, describe, results
-from bdnex.ui.output import add_pretend, add_verbosity, add_workers, progress, setup_logging
+from bdnex.ui.output import Bar, add_pretend, add_verbosity, add_workers, banner, setup_logging
 
 OFFLINE = "bdnex.importer.registry:offline_fetch"
 DETAIL_STYLE = {"new details": "green", "updated details": "yellow", "dropped details": "red"}
@@ -36,7 +36,7 @@ def format_album(label: str, changes: list[str], pretend: bool, number: int, tot
 ONESHOT_CHUNK = 25  # albums without a series are read this many to a task
 
 
-def read_groups(settings, offline, groups: list[list[str]], workers: int, tick=lambda done: None) -> dict:
+def read_groups(settings, offline, groups: list[list[str]], workers: int, tick=lambda done, urls: None) -> dict:
     """The fresh parse of each album page, ``{address: (AlbumInfo or None, error or "")}``, read in ``workers`` processes.
 
     A task is the albums of one series, so that its series page is read once. Each process has a library connection of its
@@ -65,7 +65,7 @@ def read_groups(settings, offline, groups: list[list[str]], workers: int, tick=l
         for url, info, error in result:
             parsed[url] = (info, error)
         done += len(urls)
-        tick(done)
+        tick(done, urls)
     return parsed
 
 
@@ -114,9 +114,20 @@ def run(argv: list[str], out=sys.stdout) -> int:
         rows, groups = group_rows(rows, library)
         todo = [row for row in rows if row.get("url") and library.cache_has(source.name, "album", row["url"])]
         workers = pipeline.resolve_workers(args.workers if args.workers is not None else settings.import_.workers)
-        progress(f"Reading {len(todo)} stored page(s), {workers} at a time...")
-        parsed = read_groups(settings, offline, [[u for u in group if library.cache_has(source.name, "album", u)] for group in groups],
-                             workers, lambda done: progress(f"  read {done}/{len(todo)}") if done % 500 < 25 else None)
+        banner(f"Reading {len(todo):,} stored pages ({workers} at a time; nothing is written yet)", 1, 2)
+        bar = Bar(len(todo), "Pages")
+        shown = [0]
+
+        def tick(done: int, urls: list) -> None:
+            bar.update(urls[-1].rsplit("/", 1)[-1].removesuffix(".html")[:40] if urls else "", step=done - shown[0])
+            shown[0] = done
+
+        try:
+            parsed = read_groups(settings, offline,
+                                 [[u for u in group if library.cache_has(source.name, "album", u)] for group in groups], workers, tick)
+        finally:
+            bar.finish()
+        banner("Comparing with the library" if args.pretend else "Updating the albums", 2, 2)
         for number, row in enumerate(rows, start=1):
             album = library.get_album(row["id"])
             if album["source"] != source.name or not album.get("url") or album["url"] not in parsed:
