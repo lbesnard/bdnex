@@ -31,6 +31,7 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- The question "the cover looks little like the album's" (asked during `import`) was one plain line that was hard to read. The file, the album and the score are now on their own lines, in colour (the file and album in bold, the score in red), and the question is just "Keep this match?".
 - The files flagged only because their cover scored below 40 (the old default of `cover.match_percentage`) and whose cover scores 3 or more are no longer flagged: the first bdnex
   command after the upgrade takes those flags back, once (no option, no command; a flag with another threshold or reason is not touched), and says how many.
 - **`cover.match_percentage` is 3, not 40.** A right match scores about 50 on the cover comparison (the share of distinctive features found in both covers), so 40 flagged

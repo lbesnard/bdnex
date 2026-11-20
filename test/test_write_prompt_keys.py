@@ -91,3 +91,17 @@ def test_each_real_question_builds_without_a_key_clash(monkeypatch):
     assert len(asked) >= 8
     for _, mapping in asked:
         assert mapping and len(mapping) == len(set(mapping))
+
+
+@pytest.mark.parametrize("on", [True, False])
+def test_the_cover_question_draws_its_facts_in_roles_and_the_text_stays_the_same(monkeypatch, capsys, on):
+    prompter = InquirerPrompter.__new__(InquirerPrompter)
+    monkeypatch.setattr(InquirerPrompter, "_need_terminal", lambda self: None)
+    monkeypatch.setattr(InquirerPrompter, "_tinted", staticmethod(lambda: on))
+    monkeypatch.setattr(InquirerPrompter, "_pick", lambda self, message, entries: "keep")
+    assert prompter.cover_mismatch("/x/La modèle.cbz", "Le modèle", 0.4, 3) == "keep"
+    shown = capsys.readouterr().out
+    assert ("\x1b[" in shown) is on
+    import re
+    plain = re.sub(r"\x1b\[[0-9;]*m", "", shown)
+    assert "La modèle.cbz" in plain and "Le modèle" in plain and "0%" in plain and "below 3%" in plain

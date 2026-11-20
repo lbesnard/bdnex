@@ -522,10 +522,17 @@ class InquirerPrompter:
 
     def cover_mismatch(self, path: str, album: str, score: float, threshold: float) -> str:
         """The file's cover does not look like the album's: ``keep`` the match or ``unlink`` it."""
+        from bdnex.ui.color import role
+
         self._need_terminal()
+        on = self._tinted()
+        # The facts are drawn in roles (file and album bold, the score red) before the question: the question line itself is plain.
+        print("\n" + role("The cover does not look like the album's", "warn", on) + "\n"
+              f"  file   {role(os.path.basename(path), 'name', on)}\n"
+              f"  album  {role(album, 'name', on)}\n"
+              f"  score  {role(f'{score:.0f}%', 'bad', on)} {role(f'(below {threshold:.0f}%)', 'note', on)}")
         return self._pick(
-            f"The cover of {os.path.basename(path)} looks little like the cover of {album} "
-            f"({score:.0f}% < {threshold:.0f}%).",
+            "Keep this match?",
             [{"action": "keep", "value": "keep", "label": "Keep this match"},
              {"action": "unlink", "value": "unlink",
               "label": "Unlink it (it will be looked at again at the next import --force)"}])
