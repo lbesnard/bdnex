@@ -58,6 +58,7 @@ based on metadata and not an obscure filename.
   review doubtful matches, and, if you allow it, run the same tasks as the command line without a terminal
 - `bdnex review --batch 50`: a table (a terminal screen) of the doubtful matches, 50 at a time, folder by folder: file, album now, page link, match and cover
   scores; keep, unlink, search another album, see both covers, give a whole series its albums at once; every decision is saved
+  ![The review table](docs/_static/screens/review-table.svg)
 - `bdnex mirror`: keep the whole Bédéthèque catalogue (album pages, series pages, covers) in your library, through several endpoints at once
 - cover check: the file's cover against the album's, with SIFT (OpenCV, installed with bdnex)
 - `bdnex edit`, `import --reparse`, `reset`, `relocate`: fix, rebuild offline, start over, move your collection
