@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Added
+- **`bdnex ls --sitemap WORDS`** searches the whole album list (every album of the site, not only yours) the way `fzf` does in the review screen: all the words in the name, a typo forgiven, 20 results, nothing requested. **`--for PATH`** gives the albums a file could be, by its name, its two last folder names and its volume (the right volume and the file's words first, with the reason). Both take `--json` and `-c`; the review screen and the command share one search (`importer/album_search.py`).
 - **`bdnex review --apply FILE`** applies the decisions of an assistant or a script (`path`, `keep|unlink|switch|leave`, `album`, `reason`, tab separated or JSON lines) the way the review screen does: a `checked` mark, the flag, the link. `-n` counts, `-v` lists; a bad line applies nothing; no comic file is touched. The `using-bdnex` skill uses it instead of calling the library's functions.
 - The `using-bdnex` skill has a procedure for auditing the whole library: check the disk and OpenCV first, read the cover threshold instead of assuming it, use both `review --auto -n --json` and `check --matches` (which has no `-n`/`--json`), and never unlink on a low cover alone.
 - `tools/eval_covers.py` no longer judges a cover comparison by a guess: besides the matches that something confirms, it compares each file with a cover of ANOTHER SERIES and of the nearest OTHER VOLUME of its own series (wrong for sure), and reports the AUC and the catch rate against each.

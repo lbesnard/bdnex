@@ -82,12 +82,17 @@ confirm the obvious ones, so that their table, which skips every file marked `ch
    - *unsure* = nothing confirms it and nothing contradicts it: **leave it**, for the person's `bdnex review --batch`.
 5. **A low cover score alone never unlinks.** About 5 % of right matches score below 3 (an edition with another cover, a first page that is no cover), so a cover of 0 on a clean match
    is a question for a person looking at both covers, not a verdict. Unlinking needs a real contradiction, or the person's own word ("unlink what is unsure") after you showed the count.
-6. Write the decisions in a file and apply it with **`bdnex review --apply decisions.tsv`** (one line per file: `path<TAB>keep|unlink|switch|leave<TAB>album<TAB>reason`;
+6. **When no candidate fits, search the whole album list, and adapt: one query is never enough.** `bdnex candidates` shows only the matcher's best few. `bdnex ls --sitemap --for FILE --limit 20 --json`
+   tries the file name, its folders, the name without the words an edition adds (`intégrale`, `tome`, `deluxe`) and the volume. Then search by hand, as a person types in `fzf`, and keep changing the words:
+   `bdnex ls --sitemap batmandarkvic2` (letters in order, spaces ignored, a number at the end is the volume), the series alone from the folder (`yoko tsuno`, without `integrale` at first), then with the
+   edition word, an abbreviation, the title words only, an author. A file is a bad match for an album only after several different searches found nothing that agrees, not after one. The folder is often the series.
+   `switch` only when an album's series, title and volume all agree with the file; no album in the list at all after those searches is a reason to `unlink`.
+7. Write the decisions in a file and apply it with **`bdnex review --apply decisions.tsv`** (one line per file: `path<TAB>keep|unlink|switch|leave<TAB>album<TAB>reason`;
    `-n` first, `-v` lists the lines). It writes them as the review screen does (a `checked` mark, the flag, the link), so you never call `settle()` or touch the database yourself.
    `unlink` only when the person told you to (their words, after you showed the count); a file left alone is `leave`.
-7. Show the counts and ten examples of each group with their evidence, wait for a yes (unless the person asked for an autonomous run on a copy), back up the library file,
+8. Show the counts and ten examples of each group with their evidence, wait for a yes (unless the person asked for an autonomous run on a copy), back up the library file,
    apply and report kept / switched / unlinked / left.
-8. **Many agents at once, one review batch each (a big library).** What a person does in `bdnex review --batch 50`, an agent can do for one batch, so split the library into
+9. **Many agents at once, one review batch each (a big library).** What a person does in `bdnex review --batch 50`, an agent can do for one batch, so split the library into
    batches of about 50 files (sorted by folder, as the review table is, so a series stays together) and start one subagent per batch with a cheaper model (`haiku` or `sonnet`:
    reading names against albums is an easy job), several at a time. You (the main agent) do the splitting: write each batch's paths in a file (`batch-NNN.txt`) and give a subagent
    only its file, so no two agents ever look at the same file. A subagent only reads (`bdnex candidates --json` for its files, `bdnex ls --files -l`) and writes one decisions file for its

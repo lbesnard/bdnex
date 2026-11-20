@@ -321,7 +321,7 @@ List and search the library.
 
 ```text
 usage: bdnex ls [-h] [--files] [--format FORMAT] [--limit N] [-c] [-l] [--json]
-                [--unmatched] [--missing]
+                [--sitemap] [--for PATH] [--unmatched] [--missing]
                 [query ...]
 
 List albums (or files) of the library. Terms are ANDed; a lone `,` means or; `year-`
@@ -340,6 +340,13 @@ options:
   -l, --long       show everything known about each result (with --json: the complete
                    records)
   --json           print results as JSON
+  --sitemap        search the whole album list (the sitemap: every album of the site,
+                   not only yours) instead of the library; the words are the album's
+                   name (case and accents do not matter, a typo is forgiven); --limit
+                   defaults to 20
+  --for PATH       with --sitemap: the albums this file could be, searched by its
+                   name, its folder names and its volume, the right volume first
+                   (repeat for several files)
   --unmatched      list files that have no album (skipped, failed or not linked);
                    terms filter the path
   --missing        list registered files that are no longer on disk (moved or deleted
@@ -352,12 +359,15 @@ review, series, size, source, spare, staged, summary, tagged, title, url, volume
 writer, year
 
 Examples:
-  bdnex ls series:nains                                  the albums of a series
-  bdnex ls author:uderzo year:2010..2015 ^genre:humour   terms are ANDed; `^` negates; `a..b` is a range
-  bdnex ls complete:true -c                              only count them
-  bdnex ls --unmatched                                   files that have no album
-  bdnex ls --missing                                     files the library knows that are no longer on disk
-  bdnex ls series:nains --format '$series T$vol $title'  choose what is printed
+  bdnex ls series:nains                                           the albums of a series
+  bdnex ls --sitemap batman dark victory                          search the whole album list, not only your library (typos forgiven; 20 results)
+  bdnex ls --sitemap --for '/comics/Yoko Tsuno/Yoko Tsuno - Integrale T02.cbr' --json
+                                                                  the albums a file could be: its name, its folders and its volume, the right volume first
+  bdnex ls author:uderzo year:2010..2015 ^genre:humour            terms are ANDed; `^` negates; `a..b` is a range
+  bdnex ls complete:true -c                                       only count them
+  bdnex ls --unmatched                                            files that have no album
+  bdnex ls --missing                                              files the library knows that are no longer on disk
+  bdnex ls series:nains --format '$series T$vol $title'           choose what is printed
 ```
 
 ### `bdnex series`

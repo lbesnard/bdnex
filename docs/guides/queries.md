@@ -21,6 +21,23 @@ bdnex ls --files corrupted:true       # damaged files
 bdnex ls --files tagged:false         # registered files not yet matched to an album (`bdnex ls --unmatched` also lists skipped and failed ones)
 ```
 
+## Searching the whole album list: `--sitemap`
+
+`bdnex ls` looks in your library. With **`--sitemap`** the words are searched in the whole album list instead (the sitemap: every album of the
+site, whether you own it or not), the way `fzf` searches it in the review screen: every word has to be in the album's name (case and accents do not
+matter); when few names have every word, the letters you typed are looked for in order, spaces ignored, and a number at the end is the volume
+(`batmandarkvic2` finds `Batman Dark Victory Tome 2`); a typo is forgiven; and nothing is requested (the list is stored in the library). `--limit` defaults to 20; `--json` and `-c` work as usual.
+
+```
+bdnex ls --sitemap batman dark victory           # the albums of the whole list that look like these words
+bdnex ls --sitemap --for 'Yoko Tsuno - Integrale T02.cbr' --json
+```
+
+**`--for PATH`** (repeatable, and it implies `--sitemap`) searches for the albums a file could be: by its name, by the names of its last two
+folders (often the series) and by the volume in its name, and again without the words an edition adds (`intégrale`, `tome`, `deluxe`), the albums whose name has the file's words and the right volume first, each with a line
+saying what moved its score and which searches found it. To link a file to an album you found, give the address to
+`bdnex import --album ADDRESS FILE` (or write it in a decisions file for `bdnex review --apply`).
+
 ## Term syntax
 
 | Form | Meaning |

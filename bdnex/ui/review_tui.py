@@ -104,31 +104,14 @@ def fuzzy_search(hub: SourceHub, text: str, limit: int = SEARCH_LIMIT) -> tuple[
 
     Every word has to be in the name (case and accents do not matter); when that finds few, a fuzzy match over the whole
     list (letters missing, a typo) takes over: what ``fzf`` does, in the screen. Runs in the thread of the album list."""
-    from rapidfuzz import fuzz, process
-
-    from bdnex.library.query import fold
-    from bdnex.ui.prompts import display_name
+    from bdnex.importer import album_search
 
     if not hasattr(hub.source, "catalogue"):  # a source that cannot list its albums: its own search
         return [pair for pair in hub.source.candidates(text.strip(), limit=limit)], 0
     if hub.catalogue is None:
         hub.catalogue = list(hub.source.catalogue())
-        hub.folded = [fold(display_name(candidate)) for candidate in hub.catalogue]
-    query = fold(text).strip()
-    if not query:
-        return [], len(hub.catalogue)
-    words = query.split()
-    pool = [i for i, name in enumerate(hub.folded) if all(word in name for word in words)]
-    if len(pool) > 4000:  # a letter or two: too many to rank, and typing more narrows it (the shorter names first)
-        pool.sort(key=lambda i: len(hub.folded[i]))
-        return [(hub.catalogue[i], 0.0) for i in pool[:limit]], len(pool)
-    if pool:
-        found = process.extract(query, {i: hub.folded[i] for i in pool}, scorer=fuzz.WRatio, limit=limit)
-        return [(hub.catalogue[key], score) for _, score, key in found], len(pool)
-    # no album has all the words: letters missing, a typo. A fuzzy match over the whole list, with a floor so that
-    # unrelated names are not listed
-    found = process.extract(query, hub.folded, scorer=fuzz.WRatio, limit=limit, score_cutoff=60)
-    return [(hub.catalogue[index], score) for _, score, index in found], len(found)
+        hub.folded = album_search.folded_names(hub.catalogue)
+    return album_search.search_folded(hub.catalogue, hub.folded, text, limit)
 
 
 class FuzzyScreen(ModalScreen):
