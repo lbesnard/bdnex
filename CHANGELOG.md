@@ -34,6 +34,11 @@ command runs, never while an import is fetching).
   (`Covers: 5,830 done, 135 not downloaded`). Ctrl-C stops; `bdnex import --fetch` goes on.
 - `Corrupt JPEG data: 1 extraneous bytes before marker 0xdb` no longer lands on the screen once per picture: it comes from the JPEG library inside OpenCV, writing to the
   process's stderr; it is now caught while a picture is decoded and kept for `-vv`.
+||||||| 1301896
+- **Matching: a file that says "intégrale" is matched to the collected edition**, not to a single tome that has the same words (`Universal War One (Intégrale)` was linked to tome 5).
+  An album whose address says `INT` gets +8 and, when one is among the candidates, a single tome gets -8 (only when the file gives no volume). On a real
+  library, of the 309 files that say intégrale 4 change their first choice, all to the collected edition (`Double masque INT3`, `Madila INT`,
+  `Un petit livre oublié sur un banc INT`, `Universal War One INT`); nothing else moves. Run `bdnex review` / `import --match --force` on the files you suspect.
 - **Parser, found by auditing the 16,449 stored pages of a real library** (`tools/audit_pages.py LIBRARY.sqlite`, read-only):
   - a tome the site writes with a minus (`Donjon Potron-Minet` -82, `Donjon Antipodes` -10000) was read as a special (`-82`) and lost its volume: it is the number again;
   - the address no longer numbers the albums of the `(AUT)`/`(DOC)` miscellanies (`Manara` #1992 is a year) and no longer gives the site's filler as a title (`Integrale 1`: the series name stays the title).

@@ -73,7 +73,8 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    The albums read *during* a run are not in it until the next run.
    **Where a score comes from.** The score (0-100) is the *title score* (how many words of the name the album has, and how
    alike the texts are, with a floor when every word of the album's name is in the file name), then adjusted: the volume
-   (+5 when the file's volume is the album's, -15 and at most 85 when it is another), the year (+2), an author (+3).
+   (+5 when the file's volume is the album's, -15 and at most 85 when it is another), the year (+2), an author (+3), and, for a file that
+   says *intégrale* and gives no volume, +8 for an album that is a collected edition (its address says `INT`) and -8 for a single tome of the series.
    `bdnex candidates` prints each candidate's breakdown on `=` lines. The four adjustments are `match.volume_bonus`, `volume_penalty`, `year_bonus` and
    `author_bonus` in the configuration, so you can make the volume count more or less; `tools/eval_matching.py` tells you what a change does to
    the wrong matches before you keep it.

@@ -23,6 +23,8 @@ MIN_MARGIN = 10.0  # a first choice with another album this close behind is not 
 SERIES_QUERY_CAP = 89.0  # matched on series + volume only: always ask, never apply silently
 NO_VOLUME_CAP = 85.0  # the file has a volume but the album has none (e.g. an album named like the series)
 VOLUME_MISMATCH_CAP = 85.0  # a wrong volume is never a strong match, whatever the title says
+INTEGRAL_BONUS = 8.0  # the file says "intégrale" (and gives no volume) and the album is one
+INTEGRAL_NUMBERED_PENALTY = 8.0  # ... and the album is a single tome of the series: not the collected edition
 
 
 class Recommendation(Enum):
@@ -151,16 +153,33 @@ def volumes_in(query: str) -> list[int]:
     return found
 
 
+INTEGRAL_WORD = re.compile(r"\bint[eé]grales?\b", re.I)
+INTEGRAL_ADDRESS = re.compile(r"-INT\d*(?:-|\.html)")  # Bédéthèque's address of a collected edition: ...-INT-...
+
+
+def asks_for_integral(query: str) -> bool:
+    """The file name says it is an intégrale (a collected edition)."""
+    return bool(INTEGRAL_WORD.search(query))
+
+
+def is_integral(cand: Candidate) -> bool:
+    """The album is a collected edition: its address says ``INT``, or its name says intégrale."""
+    return bool(INTEGRAL_ADDRESS.search(cand.url or "")) or bool(INTEGRAL_WORD.search(cand.name or ""))
+
+
 def weight(source, name: str) -> float:
     """What an adjustment is worth: the ``match.*_bonus`` and ``*_penalty`` options of the configuration, else :data:`DEFAULT_WEIGHTS`."""
     return float((getattr(source, "weights", None) or {}).get(name, DEFAULT_WEIGHTS[name]))
 
 
 def rerank(query: str, hits: list[tuple[Candidate, float]], wanted: Optional[list[int]] = None,
-           source=None) -> list[Match]:
+           source=None, integral: Optional[bool] = None) -> list[Match]:
     """Adjust title scores with the volume number found in the file name (``wanted``: the volumes already worked out)."""
     wanted = volumes_in(query) if wanted is None else wanted
     bonus, penalty = weight(source, "volume_match"), weight(source, "volume_mismatch")
+    if integral is None:
+        integral = asks_for_integral(query)  # (a word in parentheses is gone from the query: `find_matches` reads it in the whole name)
+    integral_exists = bool(integral) and any(is_integral(cand) for cand, _ in hits)
     matches = []
     for cand, base in hits:
         score, parts = base, []
@@ -176,6 +195,13 @@ def rerank(query: str, hits: list[tuple[Candidate, float]], wanted: Optional[lis
             if score > NO_VOLUME_CAP:
                 parts.append(f"the file has a volume, the album has none: at most {NO_VOLUME_CAP:g}")
             score = min(score, NO_VOLUME_CAP)
+        if integral and not wanted:  # "Universal War One (Intégrale).cbz": the collected edition, not tome 5 that has the same title words
+            if is_integral(cand):
+                score += INTEGRAL_BONUS
+                parts.append(f"the file is an intégrale and so is the album: +{INTEGRAL_BONUS:g}")
+            elif cand.volume is not None and integral_exists:  # (without one among the candidates, a penalty would only lift unrelated albums)
+                score -= INTEGRAL_NUMBERED_PENALTY
+                parts.append(f"the file is an intégrale, the album is tome {cand.volume}: -{INTEGRAL_NUMBERED_PENALTY:g}")
         matches.append(Match(cand, max(0.0, min(100.0, score)), base, parts=tuple(parts)))
     return sorted(matches, key=lambda m: m.score, reverse=True)
 
@@ -230,7 +256,8 @@ def find_matches(source, path: str, limit: int = 5) -> list[Match]:
                 best[cand.source_id] = (cand, score, by_series)
     series_only = {sid for sid, (_, _, by_series) in best.items() if by_series}
     hits = sorted(((c, sc) for c, sc, _ in best.values()), key=lambda hit: hit[1], reverse=True)[:limit + 3]
-    matches = rerank(query_from_filename(path), hits, volumes_for(path), source)  # volumes are read from the file name only
+    matches = rerank(query_from_filename(path), hits, volumes_for(path), source,  # volumes are read from the file name only
+                     integral=asks_for_integral(os.path.splitext(os.path.basename(path))[0]))
     matches = [replace(m, score=min(m.score, SERIES_QUERY_CAP),
                        parts=(*m.parts, f"found by series and volume only: at most {SERIES_QUERY_CAP:g}") if m.score > SERIES_QUERY_CAP else m.parts)
                if m.candidate.source_id in series_only else m for m in matches]
