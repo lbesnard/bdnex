@@ -28,6 +28,10 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- **Matching: which collected edition.** `Intégrale 2` / `Intégrale T02` now goes to `...-INT2-...` (+5, like a volume), a plain `(Intégrale)` prefers the one collected
+  edition of the series (`INT`, +8) to one of several (`INT1`, `INT2`: +3). On a real library, of the 309 files that say intégrale 20 change their first choice
+  (`Face de lune - Intégrale T01` -> `INT1`, `Rork - intégrale 02` -> `INT2`...), 15 of them are asked about rather than applied. A file that says only
+  `Intégrale` while the series has several (`Double masque INT1/INT2/INT3`) is a coin toss between them: it is asked about.
 - **Matching: a file that says "intégrale" is matched to the collected edition**, not to a single tome that has the same words (`Universal War One (Intégrale)` was linked to tome 5).
   An album whose address says `INT` gets +8 and, when one is among the candidates, a single tome gets -8 (only when the file gives no volume). On a real
   library, of the 309 files that say intégrale 4 change their first choice, all to the collected edition (`Double masque INT3`, `Madila INT`,

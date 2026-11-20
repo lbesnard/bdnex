@@ -47,3 +47,21 @@ def test_without_a_collected_edition_among_the_candidates_nothing_is_taken_away(
     plain = matching.rerank("universal war one", only_tomes, [], None, integral=False)
     asked = matching.rerank("universal war one", only_tomes, [], None, integral=True)
     assert [(m.candidate, m.score) for m in plain] == [(m.candidate, m.score) for m in asked]  # a penalty would only lift unrelated albums
+
+
+INT1 = Candidate("11", BASE + "BD-Universal-War-One-INT1-TT-11.html", "universal war one int1", None)
+INT2 = Candidate("12", BASE + "BD-Universal-War-One-INT2-TT-12.html", "universal war one int2", None)
+
+
+class SeveralEditions(Source):
+    def candidates(self, text, limit=5):
+        return [(TOME5, 90.0), (INT1, 90.0), (INT2, 90.0), (INTEGRALE, 90.0)][:limit]
+
+
+def test_intégrale_2_is_the_second_collected_edition_and_a_plain_intégrale_the_whole_one():
+    numbered = matching.find_matches(SeveralEditions(), "/x/Universal War One - Intégrale 2.cbz")
+    assert numbered[0].candidate is INT2 and any("intégrale 2 asked for and found" in part for part in numbered[0].parts)
+    plain = matching.find_matches(SeveralEditions(), "/x/Universal War One (Intégrale).cbz")
+    by_id = {m.candidate.source_id: m.score for m in plain}
+    assert plain[0].candidate is INTEGRALE and by_id["9"] > by_id["11"] == by_id["12"]  # the whole one first; "one of several" gets less
+    assert matching.integral_number(INT2) == 2 and matching.integral_number(INTEGRALE) is None
