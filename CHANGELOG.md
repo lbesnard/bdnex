@@ -31,6 +31,7 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- The question "the cover looks little like the album's" (asked during `import`) was one plain line that was hard to read. The file, the album and the score are now on their own lines, in colour (the file and album in bold, the score in red), and the question is just "Keep this match?".
 - **`cover.match_percentage` is 3, not 40.** A right match scores about 50 on the cover comparison (the share of distinctive features found in both covers), so 40 flagged
   one right match in five. Measured with `tools/eval_covers.py` on a real library (each file against its own album's cover, another series' and the next volume's): AUC 0.98 and 0.95;
   at 3 the cover flags 5 % of the right matches, catches every wrong-series match and about 43 % of the wrong-volume ones. If you set the option yourself, your value stays.
