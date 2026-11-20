@@ -31,6 +31,8 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- The files flagged only because their cover scored below 40 (the old default of `cover.match_percentage`) and whose cover scores 3 or more are no longer flagged: the first bdnex
+  command after the upgrade takes those flags back, once (no option, no command; a flag with another threshold or reason is not touched), and says how many.
 - **`cover.match_percentage` is 3, not 40.** A right match scores about 50 on the cover comparison (the share of distinctive features found in both covers), so 40 flagged
   one right match in five. Measured with `tools/eval_covers.py` on a real library (each file against its own album's cover, another series' and the next volume's): AUC 0.98 and 0.95;
   at 3 the cover flags 5 % of the right matches, catches every wrong-series match and about 43 % of the wrong-volume ones. If you set the option yourself, your value stays.

@@ -102,6 +102,7 @@ class Library:
         self._migrate()
         self._load_roots()
         self._adopt_root()
+        self._one_time_cleanups()
 
     # ------------------------------------------------------------------ setup
     def _migrate(self):
@@ -148,6 +149,23 @@ class Library:
                 print(f"bdnex:   {count:,}/{total:,} pages", file=sys.stderr)
         self.conn.execute("VACUUM")  # the freed pages go back to the file system only now
         print(f"bdnex: pages compressed: {size / 2**30:.1f} GiB -> {after / 2**30:.1f} GiB", file=sys.stderr)
+
+    def _one_time_cleanups(self) -> None:
+        """Data fixes that follow a change of the code, each run once per library (a key in ``meta``) and said when they did something.
+        No schema change, no option, no command: the library just stops carrying what an old rule left in it."""
+        key = "cleanup-cover-flags-40"
+        if self.get_meta(key) is not None:
+            return
+        # The default `cover.match_percentage` was 40 (a right match scores about 50, so it flagged one in five: it is 3 now). A file flagged
+        # "the cover differs from the album's (12% < 40%)" whose cover scores 3 or more is no longer doubtful: the flag is taken back.
+        # A flag written with another threshold (`< 50%`) or for another reason is not touched.
+        with self.conn:
+            count = self.conn.execute(
+                "UPDATE files SET review = NULL WHERE cover_score >= 3 AND review GLOB 'the cover differs from the album''s (*% < 40%)'").rowcount
+        self.set_meta(key, "done")
+        if count:
+            print(f"bdnex: {count:,} file(s) were flagged because their cover scored below 40, the old default of `cover.match_percentage` (3 now: a right "
+                  "match scores about 50); their cover scores 3 or more, so the flag is taken back. Done once.", file=sys.stderr)
 
     def _back_up(self, version: int) -> None:
         """Before an upgrade changes the file for good (an older bdnex can not open it any more), keep a copy:
