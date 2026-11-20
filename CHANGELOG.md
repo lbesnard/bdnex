@@ -28,6 +28,12 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- **The cover phase of an import says what it is doing.** `Getting 5965 cover(s)...` was followed by an hour of silence: the covers were requested one after the
+  other, with no output. They now come 2 to 4 at a time (one per endpoint, each request still politely spaced), with a progress bar with the time left
+  (`Covers [██░░] 34%  2,031/5,965  about 41 min left`), the file being weighed with `-v`, the covers that did not come named with `-v`, and a line at the end
+  (`Covers: 5,830 done, 135 not downloaded`). Ctrl-C stops; `bdnex import --fetch` goes on.
+- `Corrupt JPEG data: 1 extraneous bytes before marker 0xdb` no longer lands on the screen once per picture: it comes from the JPEG library inside OpenCV, writing to the
+  process's stderr; it is now caught while a picture is decoded and kept for `-vv`.
 - **Parser, found by auditing the 16,449 stored pages of a real library** (`tools/audit_pages.py LIBRARY.sqlite`, read-only):
   - a tome the site writes with a minus (`Donjon Potron-Minet` -82, `Donjon Antipodes` -10000) was read as a special (`-82`) and lost its volume: it is the number again;
   - the address no longer numbers the albums of the `(AUT)`/`(DOC)` miscellanies (`Manara` #1992 is a year) and no longer gives the site's filler as a title (`Integrale 1`: the series name stays the title).
