@@ -28,6 +28,10 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- **Matching: which collected edition.** `Intégrale 2` / `Intégrale T02` now goes to `...-INT2-...` (+5, like a volume), a plain `(Intégrale)` prefers the one collected
+  edition of the series (`INT`, +8) to one of several (`INT1`, `INT2`: +3). On a real library, of the 309 files that say intégrale 20 change their first choice
+  (`Face de lune - Intégrale T01` -> `INT1`, `Rork - intégrale 02` -> `INT2`...), 15 of them are asked about rather than applied. A file that says only
+  `Intégrale` while the series has several (`Double masque INT1/INT2/INT3`) is a coin toss between them: it is asked about.
 - **The cover phase of an import says what it is doing.** `Getting 5965 cover(s)...` was followed by an hour of silence: the covers were requested one after the
   other, with no output. They now come 2 to 4 at a time (one per endpoint, each request still politely spaced), with a progress bar with the time left
   (`Covers [██░░] 34%  2,031/5,965  about 41 min left`), the file being weighed with `-v`, the covers that did not come named with `-v`, and a line at the end
