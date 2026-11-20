@@ -1,10 +1,15 @@
 """Measure how well a cover comparison tells a right match from a wrong one, on a library whose files are already linked.
 
-The answer key is the one of `tools/eval_matching.py`: a link that something other than the name confirms (the year, an author, the
-file's own tags: `confirm.assess` says ``confirmed``) is a RIGHT match, one that it calls ``contradicted`` or ``doubtful`` is probably a
-WRONG one. For each, the file's first page is compared with the album's saved cover by several scores; the report says, per score, how
-well it separates the two (AUC: 1.0 is perfect, 0.5 is a coin toss) and, for a threshold that flags at most 1, 2 or 5 % of the RIGHT
-matches, how many of the WRONG ones it catches. Nothing is written to the library; the files are only read.
+Three kinds of pair, so that the answer does not rest on a guess:
+  right      a file against the saved cover of its own album, for the matches that something other than the name confirms (the year, an author,
+             the file's own tags: `confirm.assess` says ``confirmed``), the answer key of `tools/eval_matching.py`
+  other      the same file against the cover of an album of ANOTHER SERIES: a wrong match for sure
+  neighbour  the same file against the nearest OTHER VOLUME of its own series: the mistake the matcher can really make (and the hard case for a
+             comparison, since the covers of a series often share a layout)
+  flagged    the files `confirm.assess` calls contradicted or doubtful, against their own album: only a guess (a reissue, a date in the name...),
+             some are right, so it is read last
+For each score the report gives the AUC against each kind of wrong pair (1.0 is perfect, 0.5 a coin toss) and, for a threshold that flags at most 1, 2 or
+5 % of the RIGHT pairs, how many of the wrong ones it catches. Nothing is written to the library; the files are only read.
 
     BDNEX_CONFIG=my.yaml uv run python tools/eval_covers.py run covers.json [--right 400] [--workers 6]
     uv run python tools/eval_covers.py report covers.json
@@ -97,17 +102,22 @@ def scores(local: bytes, online: bytes) -> dict:
 
 # ------------------------------------------------------------------------------ run / report
 def one(item):
+    """All the pairs of one file: its first page against the cover of its own album (``right``), of an album of another series
+    (``other``), of the nearest other volume of its own series (``neighbour``) and, for the files the answer key doubts, of its own album (``flagged``)."""
     from bdnex.importer import covers
 
-    path, fmt, saved, group = item
+    path, fmt, pairs = item
     local = covers.front_cover(path, fmt)
-    if not local:
-        return {"path": path, "group": group, "error": "the file's first page could not be read"}
-    try:
-        online = open(saved, "rb").read()
-        return {"path": path, "group": group, "scores": scores(local, online)}
-    except Exception as err:
-        return {"path": path, "group": group, "error": f"{type(err).__name__}: {err}"}
+    out = []
+    for group, saved, label in pairs:
+        if not local:
+            out.append({"path": path, "group": group, "label": label, "error": "the file's first page could not be read"})
+            continue
+        try:
+            out.append({"path": path, "group": group, "label": label, "scores": scores(local, open(saved, "rb").read())})
+        except Exception as err:
+            out.append({"path": path, "group": group, "label": label, "error": f"{type(err).__name__}: {err}"})
+    return out
 
 
 def run(out_path: str, right: int, workers: int) -> None:
@@ -117,28 +127,54 @@ def run(out_path: str, right: int, workers: int) -> None:
     from bdnex.ui import context
 
     settings = context.settings()
-    items = {"right": [], "wrong": []}
+    rng = random.Random(7)
     with Library.for_settings(settings, readonly=True) as library:
+        saved, by_series, albums = {}, {}, {}
+        for album in library.query([]):
+            full = library.get_album(album["id"])
+            kept = full.get("cover_file") or covers.find_cover(settings.cover_path, full["source"], full["source_id"])
+            if kept and (settings.cover_path / kept).exists():
+                saved[full["id"]] = str(settings.cover_path / kept)
+                label = f"{full.get('series') or ''} {full['title']} (vol {full.get('volume')})".strip()
+                albums[full["id"]] = (full.get("series"), full.get("volume"), label)
+                by_series.setdefault(full.get("series"), []).append(full["id"])
+        candidates = {"right": [], "flagged": []}
         for row in library.query([], files=True):
-            if row["id"] is None:
+            if row["id"] is None or row["id"] not in saved:
                 continue
             file, album = library.get_file(row["path"]), library.get_album(row["id"])
-            kept = album.get("cover_file") or covers.find_cover(settings.cover_path, album["source"], album["source_id"])
-            if not kept or not (settings.cover_path / kept).exists():
-                continue
             verdict = confirm.assess(row["path"], album, file["embedded"] or None).verdict
-            group = {"confirmed": "right", "contradicted": "wrong", "doubtful": "wrong"}.get(verdict)
+            group = {"confirmed": "right", "contradicted": "flagged", "doubtful": "flagged"}.get(verdict)
             if group:
-                items[group].append((row["path"], file["format"], str(settings.cover_path / kept), group))
-    random.Random(7).shuffle(items["right"])
-    chosen = items["right"][:right] + items["wrong"]
-    print(f"{len(items['right'])} right matches (sampling {min(right, len(items['right']))}), {len(items['wrong'])} wrong ones: "
-          f"{len(chosen)} pairs to compare, {workers} at a time", file=sys.stderr)
+                candidates[group].append((row["path"], file["format"], row["id"]))
+    rng.shuffle(candidates["right"])
+    ids = list(saved)
+    chosen = []
+    for path, fmt, album_id in candidates["right"][:right]:
+        series, volume, label = albums[album_id]
+        pairs = [("right", saved[album_id], label)]
+        other = rng.choice(ids)  # another series: a wrong match for sure
+        for _ in range(20):
+            if albums[other][0] != series:
+                break
+            other = rng.choice(ids)
+        else:
+            other = None
+        if other is not None:
+            pairs.append(("other", saved[other], albums[other][2]))
+        near = sorted((i for i in by_series.get(series, []) if i != album_id and series), key=lambda i: abs((albums[i][1] or 0) - (volume or 0)))
+        if near:  # the next volume of the same series: the mistake the matcher can really make
+            pairs.append(("neighbour", saved[near[0]], albums[near[0]][2]))
+        chosen.append((path, fmt, pairs))
+    for path, fmt, album_id in candidates["flagged"]:
+        chosen.append((path, fmt, [("flagged", saved[album_id], albums[album_id][2])]))
+    print(f"{len(candidates['right'])} right matches (sampling {min(right, len(candidates['right']))}), {len(candidates['flagged'])} flagged by the answer key: "
+          f"{len(chosen)} files to compare, {workers} at a time", file=sys.stderr)
     results = []
     for number, (_, result) in enumerate(parallel.map_ordered(one, chosen, workers), start=1):
-        results.append(result if isinstance(result, dict) else {"error": str(result), "group": "?"})
+        results.extend(result if isinstance(result, list) else [{"error": str(result), "group": "?"}])
         if number % 50 == 0:
-            print(f"  {number}/{len(chosen)}", file=sys.stderr, flush=True)
+            print(f"  {number}/{len(chosen)} files", file=sys.stderr, flush=True)
     json.dump(results, open(out_path, "w"))
 
 
@@ -161,42 +197,51 @@ def add_combined(ok: list) -> None:
         e["scores"]["combined"] = sum(ranks) / len(ranks) if ranks else None
 
 
-def examples(ok: list, name: str = "combined", count: int = 12) -> None:
-    """The pairs that go against their label, to look at: a WRONG match that scores high may be a right one (the label is a guess), a RIGHT
-    one that scores 0 may be another edition's cover."""
-    wrong = sorted((e for e in ok if e["group"] == "wrong" and e["scores"][name] is not None), key=lambda e: -e["scores"][name])
+NEGATIVES = ("other", "neighbour", "flagged")
+
+
+def examples(ok: list, name: str = "combined", count: int = 10) -> None:
+    """The pairs that go against their group, to look at."""
     right = sorted((e for e in ok if e["group"] == "right" and e["scores"][name] is not None), key=lambda e: e["scores"][name])
-    print(f"\nthe WRONG matches that score highest on `{name}` (are they really wrong?):")
-    for e in wrong[:count]:
-        print(f"  {e['scores'][name]:>5.1f}  {os.path.basename(e['path'])[:90]}")
-    print(f"\nthe RIGHT matches that score lowest on `{name}` (another edition's cover? a flat cover?):")
+    print(f"\nthe RIGHT matches that score lowest on `{name}` (another edition's cover? a first page that is no cover?):")
     for e in right[:count]:
-        print(f"  {e['scores'][name]:>5.1f}  {os.path.basename(e['path'])[:90]}")
+        print(f"  {e['scores'][name]:>5.1f}  {os.path.basename(e['path'])[:70]}")
+    for group, what in (("neighbour", "the file against ANOTHER VOLUME of its own series: a wrong match for sure"),
+                        ("other", "the file against an album of ANOTHER SERIES: a wrong match for sure"),
+                        ("flagged", "the files the answer key doubts, against their own album (may in fact be right)")):
+        rows = sorted((e for e in ok if e["group"] == group and e["scores"][name] is not None), key=lambda e: -e["scores"][name])
+        if rows:
+            print(f"\n{what}, highest `{name}`:")
+            for e in rows[:count]:
+                print(f"  {e['scores'][name]:>5.1f}  {os.path.basename(e['path'])[:55]}   vs   {e.get('label', '')[:50]}")
 
 
 def report(path: str) -> None:
     data = json.load(open(path))
     ok = [e for e in data if "scores" in e]
     add_combined(ok)
-    print(f"{len(ok)} pairs compared ({sum(e['group'] == 'right' for e in ok)} right, {sum(e['group'] == 'wrong' for e in ok)} wrong); "
-          f"{len(data) - len(ok)} could not be read\n")
+    counts = {g: sum(e["group"] == g for e in ok) for g in ("right",) + NEGATIVES}
+    print(f"{len(ok)} pairs compared: " + ", ".join(f"{n} {g}" for g, n in counts.items()) + f"; {len(data) - len(ok)} could not be read")
+    print("  right = the file against its own album's cover (the answer key says the match is right)")
+    print("  other = against an album of another series; neighbour = against another volume of its own series (both wrong for sure)")
+    print("  flagged = files the answer key doubts, against their own album (a guess: some are right)\n")
     names = list(ok[0]["scores"]) if ok else []
-    print(f"{'score':<11} {'AUC':>5} | of the RIGHT matches flagged: 1 %  2 %  5 % -> WRONG ones caught (threshold)")
+    print(f"{'score':<11} AUC vs: other neighbour flagged | wrong ones caught when 1 % / 2 % / 5 % of the RIGHT ones are flagged (threshold), for other and neighbour")
     for name in names:
         right = [e["scores"][name] for e in ok if e["group"] == "right" and e["scores"][name] is not None]
-        wrong = [e["scores"][name] for e in ok if e["group"] == "wrong" and e["scores"][name] is not None]
-        if not right or not wrong:
+        if not right:
             continue
-        line = f"{name:<11} {auc(right, wrong):>5.3f} |"
+        values = {g: [e["scores"][name] for e in ok if e["group"] == g and e["scores"][name] is not None] for g in NEGATIVES}
+        line = f"{name:<11}         " + " ".join(f"{auc(right, values[g]):>7.3f}" if values[g] else "      -" for g in NEGATIVES) + " |"
         ordered = sorted(right)
         for allowed in (0.01, 0.02, 0.05):
-            threshold = ordered[min(len(ordered) - 1, int(allowed * len(ordered)))]  # at most `allowed` of the right ones score below it
-            caught = sum(x < threshold for x in wrong) / len(wrong)
-            line += f"  {caught:>4.0%} ({threshold:>4.1f})"
+            threshold = ordered[min(len(ordered) - 1, int(allowed * len(ordered)))]
+            caught = " ".join(f"{sum(x < threshold for x in values[g]) / len(values[g]):>4.0%}" if values[g] else "   -" for g in ("other", "neighbour"))
+            line += f"  {caught} ({threshold:>4.1f})"
         print(line)
     examples(ok)
-    print("\nread: a score that catches many WRONG matches while flagging only 1-2 % of the RIGHT ones is the one to use; "
-          "AUC near 1.0 means it separates them well whatever the threshold.")
+    print("\nread: `neighbour` is the hard test (the mistake the matcher really makes); a score with an AUC near 1.0 there separates a right match from the next volume. "
+          "`flagged` is a guess: if its AUC is lower than the two others, many of those files are probably right.")
 
 
 if __name__ == "__main__":
