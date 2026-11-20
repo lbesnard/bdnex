@@ -49,6 +49,8 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
     ],
     "ls": [
         ("bdnex ls series:nains", "the albums of a series"),
+        ("bdnex ls --sitemap batman dark victory", "search the whole album list, not only your library (typos forgiven; 20 results)"),
+        ("bdnex ls --sitemap --for '/comics/Yoko Tsuno/Yoko Tsuno - Integrale T02.cbr' --json", "the albums a file could be: its name, its folders and its volume, the right volume first"),
         ("bdnex ls author:uderzo year:2010..2015 ^genre:humour", "terms are ANDed; `^` negates; `a..b` is a range"),
         ("bdnex ls complete:true -c", "only count them"),
         ("bdnex ls --unmatched", "files that have no album"),

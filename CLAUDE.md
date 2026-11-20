@@ -110,6 +110,7 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
   `space` marks rows and `a` links them to a series by volume (`review_batch.propose_for_series`, sequentially), a link refused because the album already has a
   file asks `keep both?` (`import --album ... --keep-both`: spare version, library only). `p` copies the address over SSH (never starts a browser there).
 - **`bdnex review --apply FILE`** (`library/decisions.py`) writes the decisions of an assistant (`path`, keep|unlink|switch|leave, album, reason) through `review_batch.decide` / `link_to`, the review screen's own steps: an assistant never calls `settle()` or touches the database itself.
+- **`bdnex ls --sitemap` / `--for FILE`** (`importer/album_search.py`, `ui/sitemap_search.py`) searches the whole album list by text, offline; the review screen's `o` search is the same function (`search_folded`). It is how an assistant finds an album `candidates` did not list.
 - **`bdnex mirror`** (`importer/mirror.py`, `ui/mirror_cmd.py`) fetches every album of the album list the library lacks (page, series page, cover) through `PageQueue`;
   the library is the state (no resume file); it stops after 10 failures in a row. Never run it against the real site from a session.
 - **Stored pages are compressed** (schema v11, `Library.COMPRESSED_KINDS`, `cache_put`/`cache_get`; the upgrade compresses the old ones, `_compress_stored_pages`, after the

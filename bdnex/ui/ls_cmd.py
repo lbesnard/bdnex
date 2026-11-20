@@ -46,6 +46,12 @@ def run(argv: list[str], out=sys.stdout) -> int:
     parser.add_argument("-l", "--long", action="store_true",
                         help="show everything known about each result (with --json: the complete records)")
     parser.add_argument("--json", action="store_true", help="print results as JSON")
+    parser.add_argument("--sitemap", action="store_true",
+                        help="search the whole album list (the sitemap: every album of the site, not only yours) instead of the library; "
+                             "the words are the album's name (case and accents do not matter, a typo is forgiven); --limit defaults to 20")
+    parser.add_argument("--for", dest="for_files", action="append", default=[], metavar="PATH",
+                        help="with --sitemap: the albums this file could be, searched by its name, its folder names and its volume, "
+                             "the right volume first (repeat for several files)")
     parser.add_argument("--unmatched", action="store_true",
                         help="list files that have no album (skipped, failed or not linked); terms filter the path")
     parser.add_argument("--missing", action="store_true",
@@ -55,6 +61,16 @@ def run(argv: list[str], out=sys.stdout) -> int:
     settings = context.settings()
     if settings is None:
         return 1
+
+    if args.for_files and not args.sitemap:
+        args.sitemap = True
+    if args.sitemap:
+        if not (args.query or args.for_files):
+            print("Give words to search for (`bdnex ls --sitemap batman dark victory`) or a file (`--for PATH`).", file=sys.stderr)
+            return 2
+        from bdnex.ui import sitemap_search
+
+        return sitemap_search.run(settings, args.query, args.for_files, args.limit or 20, as_json=args.json, count=args.count, out=out)
 
     if args.unmatched or args.missing:
         return _file_problems(settings, args, out)
