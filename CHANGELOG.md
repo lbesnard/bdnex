@@ -28,6 +28,8 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- `import --reparse` shows **a progress bar with the time left** (`Pages [████░░░░]  17%  101/584  about 18 s left`) for the reading, then a second step for the
+  update, instead of a line every few hundred pages.
 - **`import --reparse` is about 15 times faster** (a real 16,400-album library: 4 minutes instead of about an hour). A series page was parsed again for each of its
   albums (60% of the time), and the album pages were read one at a time: now a series page is parsed once, the albums are read in several processes (`--workers N`, default one
   process fewer than the cores), one series to a task, and the library is written afterwards, in one process. Changing only the order of the names of a credit
