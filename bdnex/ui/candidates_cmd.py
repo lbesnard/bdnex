@@ -79,6 +79,25 @@ def saved_cover(source, settings, source_id: str, album) -> Optional[bytes]:
         return None
 
 
+def download_cover(source, candidate, url: str, guessed: bool, say=lambda real: None) -> bytes:
+    """The picture at ``url``. When that address was only a guess (the album's page was never read) and the site has no such
+    picture, the page says where the cover really is: read it (one request, the page is kept) and try that address."""
+    try:
+        return source.cover_image(url)
+    except source.fetch_errors as err:
+        real = None
+        if guessed and hasattr(source, "cover_url_of"):
+            try:
+                real = source.cover_url_of(candidate)
+            except Exception as inner:  # a page that does not come: the first error is the one to report
+                logger.debug(f"{candidate.url}: the page that names its cover did not come ({inner})")
+        if not real or real == url:
+            raise err
+        logger.debug(f"{url} is only a guess and is not there; the page of {candidate.url} says {real}")
+        say(real)
+        return source.cover_image(real)
+
+
 def compare_covers(source, settings, path: str, fmt, matches, found: list[dict[str, Any]], step=None) -> None:
     """Add ``cover`` (0-100, or ``None`` when it could not be compared) to each candidate, and mark the best one.
 
@@ -105,7 +124,8 @@ def compare_covers(source, settings, path: str, fmt, matches, found: list[dict[s
             entry["cover_from"] = "saved" if online is not None else "downloaded"
             if online is None:
                 say("download", number, entry, url)
-                online = source.cover_image(url)
+                online = download_cover(source, match.candidate, url, guessed=not (album or {}).get("cover_url"),
+                                        say=lambda real: say("download", number, entry, real))
             else:
                 say("saved", number, entry, url)
             covers.check_cover_image(online)

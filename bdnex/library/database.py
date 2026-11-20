@@ -9,6 +9,7 @@ import os
 import re
 import sqlite3
 import sys
+import zlib
 from typing import Any, Iterable, Optional
 
 from bdnex.library.hashing import file_md5
@@ -18,6 +19,7 @@ from bdnex.library.scan import inspect_file, iter_comic_files
 from bdnex.library.schema import MIGRATIONS
 
 SCHEMA_VERSION = len(MIGRATIONS)
+PAGES_COMPRESSED_IN = 11  # the schema version whose upgrade compresses the stored pages (see `_compress_stored_pages`)
 
 logger = logging.getLogger(__name__)
 
@@ -114,6 +116,38 @@ class Library:
             with self.conn:
                 self.conn.executescript("BEGIN;" + MIGRATIONS[version])
                 self.conn.execute(f"PRAGMA user_version = {version + 1}")
+        if current and current < PAGES_COMPRESSED_IN <= SCHEMA_VERSION:
+            self._compress_stored_pages()
+
+    def _compress_stored_pages(self, batch: int = 200) -> None:
+        """Part of the upgrade to the schema that stores pages compressed (once): compress the pages stored plain, a few hundred at
+        a time (an interruption loses nothing: both kinds are read), then give the room back to the disk."""
+        kinds = ",".join("?" * len(self.COMPRESSED_KINDS))
+        row = self.conn.execute(f"SELECT COUNT(*), COALESCE(SUM(LENGTH(content)), 0) FROM source_cache WHERE kind IN ({kinds}) "
+                                "AND substr(content, 1, 1) != x'78'", self.COMPRESSED_KINDS).fetchone()
+        total, size = row[0], row[1]
+        if not total:
+            return
+        print(f"bdnex: compressing the {total:,} stored pages ({size / 2**30:.1f} GiB) once, to a tenth of their size: this takes "
+              "a few minutes; the copy of your library is kept as noted above", file=sys.stderr)
+        count = after = last = 0
+        while True:
+            rows = self.conn.execute(f"SELECT rowid, content FROM source_cache WHERE kind IN ({kinds}) AND rowid > ? "
+                                     "ORDER BY rowid LIMIT ?", (*self.COMPRESSED_KINDS, last, batch)).fetchall()
+            if not rows:
+                break
+            with self.conn:
+                for rowid, content in rows:
+                    last = rowid
+                    if content[:1] == b"x":
+                        continue  # already compressed
+                    packed = zlib.compress(content, 6)
+                    self.conn.execute("UPDATE source_cache SET content = ? WHERE rowid = ?", (packed, rowid))
+                    count, after = count + 1, after + len(packed)
+            if count and count % 2000 < batch:
+                print(f"bdnex:   {count:,}/{total:,} pages", file=sys.stderr)
+        self.conn.execute("VACUUM")  # the freed pages go back to the file system only now
+        print(f"bdnex: pages compressed: {size / 2**30:.1f} GiB -> {after / 2**30:.1f} GiB", file=sys.stderr)
 
     def _back_up(self, version: int) -> None:
         """Before an upgrade changes the file for good (an older bdnex can not open it any more), keep a copy:
@@ -809,9 +843,13 @@ class Library:
         return self.conn.execute(sql, [album_id, *compiled.params]).fetchone() is not None
 
     # ----------------------------------------------------------- source cache
+    COMPRESSED_KINDS = ("album", "series")  # pages: about a tenth of their size once compressed (a whole catalogue is tens of GB)
+
     def cache_put(self, source: str, kind: str, url: str, content: bytes | str) -> None:
         if isinstance(content, str):
             content = content.encode("utf-8")
+        if kind in self.COMPRESSED_KINDS:
+            content = zlib.compress(content, 6)  # `cache_get` reads both: pages stored before this stay readable
         with self.conn:
             self.conn.execute(
                 """INSERT INTO source_cache(source, kind, url, content) VALUES (?, ?, ?, ?)
@@ -823,7 +861,21 @@ class Library:
         row = self.conn.execute(
             "SELECT content FROM source_cache WHERE source = ? AND kind = ? AND url = ?",
             (source, kind, url)).fetchone()
-        return row["content"] if row else None
+        if row is None:
+            return None
+        content = row["content"]
+        if kind in self.COMPRESSED_KINDS and content[:1] == b"x":  # zlib's first byte; HTML starts with `<` or whitespace
+            try:
+                return zlib.decompress(content)
+            except zlib.error:
+                pass
+        return content
+
+    def album_states(self, source: str) -> dict[str, tuple[bool, bool, Optional[str]]]:
+        """``source_id -> (page not read, has a saved cover, cover address)`` of every album of ``source`` (``bdnex mirror``)."""
+        return {r["source_id"]: (bool(r["partial"]), bool(r["cover_file"]), r["cover_url"]) for r in self.conn.execute(
+            "SELECT source_id, json_extract(extra, '$.partial') AS partial, cover_file, cover_url FROM albums WHERE source = ?",
+            (source,))}
 
     def cache_delete(self, source: str, kind: str, url: str) -> None:
         with self.conn:

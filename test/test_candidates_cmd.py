@@ -207,3 +207,29 @@ def test_without_a_query_or_low_it_refuses_instead_of_going_through_every_file(e
     assert code == 2 and text == ""
     assert "every file of the library" in capsys.readouterr().err
     assert run("--low")[0] == 0 and run("--all", "--json")[0] == 0 and run("Redwin", "--json")[0] == 0
+
+
+def test_a_guessed_cover_address_that_is_not_there_is_replaced_by_the_one_the_page_gives():
+    from bdnex.importer.source import Candidate
+
+    class Source:
+        fetch_errors = (OSError,)
+
+        def __init__(self):
+            self.asked = []
+
+        def cover_image(self, url):
+            self.asked.append(url)
+            if url.endswith("Couv_11521.jpg"):
+                raise OSError("404 Client Error")
+            return b"picture"
+
+        def cover_url_of(self, candidate):
+            return "https://www.bedetheque.com/media/Couvertures/NikopolInt_24012005.jpg"
+
+    source, candidate, seen = Source(), Candidate("11521", "https://www.bedetheque.com/BD-Nikopol-INT-11521.html", "nikopol"), []
+    guess = "https://www.bedetheque.com/media/Couvertures/Couv_11521.jpg"
+    assert candidates_cmd.download_cover(source, candidate, guess, guessed=True, say=seen.append) == b"picture"
+    assert source.asked == [guess, "https://www.bedetheque.com/media/Couvertures/NikopolInt_24012005.jpg"] and seen == [source.asked[1]]
+    with pytest.raises(OSError):  # an address the library knows is not guessed: its 404 stands (no page is read)
+        candidates_cmd.download_cover(Source(), candidate, guess, guessed=False)

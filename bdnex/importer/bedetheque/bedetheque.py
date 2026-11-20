@@ -438,6 +438,13 @@ class Bedetheque:
         (``Couv_<id>.jpg``). A guess, not a read address: a missing picture is simply not compared."""
         return f"https://www.bedetheque.com/media/Couvertures/Couv_{candidate.source_id}.jpg"
 
+    def cover_url_of(self, candidate: Candidate) -> Optional[str]:
+        """The real address of the cover of an album, read from its page (one request when the page is not stored; the page is
+        kept). The guess (:meth:`guess_cover_url`) is wrong for about one album in five (``BatmanDarkKnightLaReleveint_24012005.jpg``)."""
+        html = self._get("album", candidate.url).decode("utf-8", errors="replace")
+        fields, _ = parser.parse_album_page(html, candidate.url)
+        return fields.get("cover_url") or None
+
     def facts_of(self, candidate: Candidate) -> Optional[dict]:
         """What the library knows of a candidate beyond its address (``None``: its page was never read)."""
         return self.facts().get(candidate.source_id)

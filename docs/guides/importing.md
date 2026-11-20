@@ -399,6 +399,26 @@ the terminal can show pictures; see the thumbnails above), and you choose:
 A flag also goes when the file is linked to another album. `bdnex import` ends with a line telling how many files wait
 for a review.
 
+### Keeping the whole catalogue: `bdnex mirror`
+
+An import only reads the pages of the albums your files match, so the library holds a part of the site. `bdnex mirror` fills the rest: it
+compares the album list (`bdnex init`) with the library and fetches every album that is missing (or only matched), with its series
+page and its cover (saved in `cover.dir`). It uses the same endpoints and the same polite delay as an import, several pages at once
+(`bedetheque.fetcher_endpoint`, `bedetheque.parallel`, `--workers`).
+
+```bash
+bdnex mirror -n                  # how many are missing, and about how much room they take; fetches nothing
+bdnex mirror --limit 500         # the next 500 albums, then stop
+bdnex mirror                     # everything that is left (Ctrl-C stops; run it again to go on)
+bdnex mirror --covers-only       # only the covers of the albums already here that have none
+bdnex mirror --no-covers         # the pages only
+```
+
+The library is the state, so there is nothing to resume: a run that stops (Ctrl-C, or 10 failures in a row, which means the site is
+probably blocking) leaves what arrived, and the next run goes on with what is missing. Pages are stored compressed (about a tenth of their
+size: a whole catalogue is some GB, not tens). Covers are saved as files next to your own. Albums fetched this way are in the library
+like any other: `bdnex ls`, `series` and `candidates` see them, and a file you import later finds its page already stored.
+
 ### The album list: `bdnex init`
 
 Matching works from the Bédéthèque sitemaps: about 55 files, 70 MB, downloaded once and kept in

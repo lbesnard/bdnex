@@ -19,6 +19,7 @@ class Command:
 GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     ("Import and match", (
         Command("init", "init_cmd", "download or refresh the album list that file names are matched against"),
+        Command("mirror", "mirror_cmd", "keep the whole catalogue in the library: every album page, series page and cover not there yet"),
         Command("import", "import_cmd", "match comic files to Bédéthèque albums and record them in the library"),
         Command("candidates", "candidates_cmd",
                 "for files whose match is in doubt: the other albums they could be, with the evidence"),

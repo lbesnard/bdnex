@@ -10,6 +10,13 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
     "init": [
         ("bdnex init", "download the album list that file names are matched against (once; run it again to refresh)"),
     ],
+    "mirror": [
+        ("bdnex mirror -n", "how many albums and covers are missing from the library, and about how much room they take; fetches nothing"),
+        ("bdnex mirror --limit 500", "fetch the next 500 albums (page, series page and cover), then stop; run it again to go on"),
+        ("bdnex mirror", "fetch everything the album list has and the library lacks (Ctrl-C stops, the next run goes on)"),
+        ("bdnex mirror --covers-only", "only the covers of the albums already in the library that have none saved"),
+        ("bdnex mirror --no-covers --workers 8", "the pages only, 8 at once (more endpoints are faster, not more polite)"),
+    ],
     "import": [
         ("bdnex import --database-only --auto=all ~/comics", "bring a folder in, touching no file and asking nothing"),
         ("bdnex import -n ~/comics", "preview: what would be matched, nothing is recorded"),

@@ -26,7 +26,9 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 | `meta` | small values: that paths are stored relative, when the album list last grew |
 
 The schema version is stored in `PRAGMA user_version`; migrations live in
-`bdnex/library/schema.py` and are append-only.
+`bdnex/library/schema.py` and are append-only. Schema v11 changes data, not tables: the `album` and `series` pages of `source_cache` are
+stored zlib-compressed (about a tenth of their size; `Library.cache_get` reads compressed and plain pages alike), and the upgrade from v10 compresses
+the pages stored before, once, after keeping a copy as `<library>.bak-v10`.
 
 ## What is kept
 
