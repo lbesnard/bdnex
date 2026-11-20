@@ -28,6 +28,12 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- **The cover phase of an import says what it is doing.** `Getting 5965 cover(s)...` was followed by an hour of silence: the covers were requested one after the
+  other, with no output. They now come 2 to 4 at a time (one per endpoint, each request still politely spaced), with a progress bar with the time left
+  (`Covers [██░░] 34%  2,031/5,965  about 41 min left`), the file being weighed with `-v`, the covers that did not come named with `-v`, and a line at the end
+  (`Covers: 5,830 done, 135 not downloaded`). Ctrl-C stops; `bdnex import --fetch` goes on.
+- `Corrupt JPEG data: 1 extraneous bytes before marker 0xdb` no longer lands on the screen once per picture: it comes from the JPEG library inside OpenCV, writing to the
+  process's stderr; it is now caught while a picture is decoded and kept for `-vv`.
 - **Matching: a file that says "intégrale" is matched to the collected edition**, not to a single tome that has the same words (`Universal War One (Intégrale)` was linked to tome 5).
   An album whose address says `INT` gets +8 and, when one is among the candidates, a single tome gets -8 (only when the file gives no volume). On a real
   library, of the 309 files that say intégrale 4 change their first choice, all to the collected edition (`Double masque INT3`, `Madila INT`,

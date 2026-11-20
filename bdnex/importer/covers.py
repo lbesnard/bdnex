@@ -13,9 +13,14 @@ Two comparisons, for two jobs:
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import os
 import posixpath
 import re
+import sys
+import tempfile
+import threading
 import zipfile
 from typing import Optional
 
@@ -167,9 +172,42 @@ def _opencv():
     return cv2, numpy
 
 
+_NATIVE_STDERR = threading.Lock()
+
+
+@contextlib.contextmanager
+def quiet_native_stderr():
+    """The JPEG library inside OpenCV writes ``Corrupt JPEG data: 1 extraneous bytes before marker 0xdb`` straight to the process's
+    stderr, in the middle of a progress bar, once per picture that has a harmless flaw. Catch what is written while a picture is
+    decoded and keep it for ``-vv`` (the picture is decoded anyway)."""
+    with _NATIVE_STDERR:
+        fd = 2  # the C library's stderr, whatever sys.stderr is
+        try:
+            saved = os.dup(fd)
+        except OSError:  # no stderr at all (a daemon): nothing to catch
+            yield
+            return
+        with tempfile.TemporaryFile() as sink:
+            try:
+                sys.stderr.flush()
+            except (AttributeError, ValueError, OSError):
+                pass
+            os.dup2(sink.fileno(), fd)
+            try:
+                yield
+            finally:
+                os.dup2(saved, fd)
+                os.close(saved)
+                sink.seek(0)
+                text = sink.read().decode("utf-8", errors="replace").strip()
+                if text:
+                    logger.debug("the image library said: " + " | ".join(sorted(set(text.splitlines()))))
+
+
 def _grey(cv2, numpy, image: bytes, height: int):
     try:
-        picture = cv2.imdecode(numpy.frombuffer(image, numpy.uint8), cv2.IMREAD_GRAYSCALE) if image else None
+        with quiet_native_stderr():
+            picture = cv2.imdecode(numpy.frombuffer(image, numpy.uint8), cv2.IMREAD_GRAYSCALE) if image else None
     except cv2.error as err:  # OpenCV raises, rather than returns None, for some broken input
         raise CoverError(f"not a readable image: {err}") from err
     if picture is None:

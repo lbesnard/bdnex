@@ -34,9 +34,14 @@ class CoverPass:
             self._covers.append(result)  # nothing to download (already saved, or not wanted): the end of the run compares
             return
         if self._cover_pool is None:
-            self._cover_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="bdnex-cover")
+            self._cover_pool = ThreadPoolExecutor(max_workers=self._cover_workers(), thread_name_prefix="bdnex-cover")
         future = self._cover_pool.submit(self._save_cover_file, fetch, album["cover_url"], album["source"], album["source_id"])
         self._cover_jobs.append((result, future))
+
+    def _cover_workers(self) -> int:
+        """Covers downloaded at once: as many as pages (one per endpoint), at least 2, at most 4 (a cover is a plain request from this
+        machine; every request still waits its own polite delay, so more of them is faster, not more insistent)."""
+        return max(2, min(4, int(getattr(self.source, "parallel", 2) or 2)))
 
     def _save_cover_file(self, fetch, url: str, source: str, source_id: str) -> None:
         """Worker thread: request the cover and keep it as a file (the library learns of it from the main thread)."""
@@ -44,9 +49,9 @@ class CoverPass:
         covers.check_cover_image(data)  # never keep what is not a picture
         covers.save_cover(self.settings.cover_path, source, source_id, data)
 
-    def _take_covers(self, final: bool = False) -> None:
+    def _take_covers(self, final: bool = False, tick=lambda result: None) -> None:
         """Weigh the covers that arrived. Before the end nothing is asked (a cover that differs is flagged for
-        ``bdnex review``): a question must not cut into the matching."""
+        ``bdnex review``): a question must not cut into the matching. ``tick(result)`` is told of each one dealt with."""
         ready = [job for job in self._cover_jobs if final or job[1].done()]
         if not ready:
             return
@@ -58,11 +63,17 @@ class CoverPass:
                     future.result()
                 except (covers.CoverError, *self.source.fetch_errors) as err:
                     result.note = "; ".join(n for n in (result.note, f"cover not downloaded: {err}") if n)
+                    self.detail(f"    cover not downloaded: {os.path.basename(result.path)}: {err}")
+                    self._cover_failed += 1
+                    tick(result)
                     continue
                 except Exception as err:  # a cover is a help, never a reason to stop the import
                     logger.debug(f"{result.path}: cover not downloaded ({err})")
+                    self._cover_failed += 1
+                    tick(result)
                     continue
                 self._check_cover(result)
+                tick(result)
         finally:
             self._ask_covers = True
 
@@ -78,23 +89,44 @@ class CoverPass:
             self._cover_pool = None
 
     def _check_covers(self) -> None:
-        """Save and compare the covers of complete albums that were not part of this run's fetching."""
+        """Save and compare the covers of complete albums that were not part of this run's fetching: downloaded in a few threads at
+        once (a plain request each, politely spaced), a progress bar with the time left, and a line to say how it went."""
         waiting, self._covers = self._covers, []
-        if self._cover_jobs:
-            self.progress(f"Waiting for {len(self._cover_jobs)} cover(s) still on their way...")
-        if waiting:
-            self.progress(f"Getting {len(waiting)} cover(s) (one request each, politely)...")
+        for result in waiting:
+            self._queue_cover(result)  # what has to be downloaded goes to the threads; what needs no download is back in self._covers
+        direct, self._covers = self._covers, []
+        total = len(self._cover_jobs) + len(direct)
+        if not total:
+            return
+        self._cover_failed = 0
+        workers = self._cover_workers() if self._cover_jobs else 1
+        self.progress(f"Covers: {total:,} to get and compare ({workers} at a time, each request politely spaced; "
+                      "Ctrl-C stops, `bdnex import --fetch` goes on)")
+        bar = self.bar(total, "Covers") if self.bar else None
+
+        def tick(result) -> None:
+            if bar:
+                bar.update(os.path.basename(result.path)[:50] if self.verbosity >= 1 else "")  # (by default no line of its own for a file that is fine)
+
         try:
-            self._take_covers(final=True)
-            for result in waiting:
+            self._take_covers(final=True, tick=tick)
+            for result in direct:
                 self._check_cover(result)
+                tick(result)
         except KeyboardInterrupt:
             self._drop_covers()
             self.progress("Interrupted: the other covers are downloaded by the next `bdnex import --fetch`.")
         finally:
+            if bar:
+                bar.finish()
             if self._cover_pool is not None:
                 self._cover_pool.shutdown(wait=False)
                 self._cover_pool = None
+        if self._cover_failed:
+            self.progress(f"Covers: {total - self._cover_failed:,} done, {self._cover_failed:,} not downloaded "
+                          "(`-v` says why; the next `bdnex import --fetch` tries again)")
+        else:
+            self.progress(f"Covers: all {total:,} done.")
 
     def _cover_missing(self, album: dict) -> bool:
         """Should this album's cover be downloaded (``cover.download``) and is it not there?"""
