@@ -47,9 +47,15 @@ An import can be stopped with Ctrl-C and run again: decisions and the albums alr
 `bdnex import --fetch` continues the page downloads. Pages are requested politely (`bedetheque.delay`,
 `bedetheque.parallel`); a large collection takes hours.
 
+## Keeping the whole catalogue
+
+`bdnex mirror -n` says how many albums of the album list the library lacks and how much room they take; `bdnex mirror --limit N` fetches some (page, series
+page, cover), `bdnex mirror` all that is left (it uses the user's own fetcher and endpoints: preview first, start with a limit, never run it for the user without
+asking). It stops by itself after 10 failures in a row (the site is probably blocking); running it again continues.
+
 ## Checking the matches
 
-`bdnex review --auto -n --json` weighs every flagged file and every match applied under the strong threshold (kept / wrong / unconfirmed) and, for the wrong ones, the covers of the 5 best other candidates (`better`); without `-n --json` it settles them by rule: the flag goes for the kept, the wrong are switched to the better album or unlinked (ask first), the rest stay. The user can shorten commands with `aliases` in the configuration. `bdnex check --matches` weighs every match against its album page (credits, year, volume, the file's own tags, its folder) and
+`bdnex review --auto -n --json` weighs every flagged file and every match applied under the strong threshold (kept / wrong / unconfirmed) and, for the wrong ones, the covers of the 5 best other candidates (`better`); without `-n --json` it settles them by rule: the flag goes for the kept, the wrong are switched to the better album or unlinked (ask first), the rest stay. `bdnex review --batch 50` is the screen a person uses for thousands of doubtful matches (never run it for them: it needs a terminal). The user can shorten commands with `aliases` in the configuration. `bdnex check --matches` weighs every match against its album page (credits, year, volume, the file's own tags, its folder) and
 lists the ones that look wrong; without `-n` it flags them. `bdnex review --list --json` gives the flagged files with
 the reason, for you to read. `bdnex candidates --low --json` gives, for each file in doubt, the other albums it could be
 (score, evidence for and against, `page not read` when only the sitemap is known); add `--cover --limit 3` to compare covers
