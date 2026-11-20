@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Added
+- `tools/eval_covers.py` no longer judges a cover comparison by a guess: besides the matches that something confirms, it compares each file with a cover of ANOTHER SERIES and of the nearest OTHER VOLUME of its own series (wrong for sure), and reports the AUC and the catch rate against each.
 - `tools/eval_covers.py`: measures how well a cover comparison tells a right match from a wrong one on a real library (the answer key of `eval_matching.py`): the current score and
   five others (looser ratio, RANSAC geometry, edges trimmed, dHash, colour), with their AUC and the share of wrong matches caught when only 1, 2 or 5 % of the right ones are flagged.
 - **`bdnex mirror`** keeps the whole catalogue in the library: it compares the album list with the library and fetches every album that is

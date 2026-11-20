@@ -44,23 +44,27 @@ def test_auc_is_one_for_a_perfect_split_and_a_half_for_a_coin_toss():
     assert eval_covers.auc([5, 5], [5, 5]) == 0.5
 
 
-def test_a_pair_is_read_from_a_file_and_a_saved_cover_and_the_report_says_which_score_separates(tmp_path, capsys):
+def test_the_pairs_of_a_file_are_scored_and_the_report_separates_right_from_wrong(tmp_path, capsys):
     import json
     import zipfile
 
-    items, results = [], []
-    for number, (page, saved, group) in enumerate([(1, 1, "right"), (2, 2, "right"), (3, 3, "right"), (4, 5, "wrong"), (6, 7, "wrong")]):
-        archive, picture = tmp_path / f"{number}.cbz", tmp_path / f"{number}.png"
+    results = []
+    for number in range(5):
+        archive = tmp_path / f"{number}.cbz"
         with zipfile.ZipFile(archive, "w") as z:
-            z.writestr("001.png", cover(page))
-        picture.write_bytes(cover(saved, width=300, height=450, border=5))
-        results.append(eval_covers.one((str(archive), "cbz", str(picture), group)))
+            z.writestr("001.png", cover(number))
+        own, other, near = (tmp_path / f"{number}-{kind}.png" for kind in ("own", "other", "near"))
+        own.write_bytes(cover(number, width=300, height=450, border=5))  # its own album's cover, scanned differently
+        other.write_bytes(cover(100 + number))
+        near.write_bytes(cover(200 + number))
+        results += eval_covers.one((str(archive), "cbz", [("right", str(own), "Own"), ("other", str(other), "Other series"),
+                                                          ("neighbour", str(near), "Next volume")]))
     assert all("scores" in r for r in results), results
     path = tmp_path / "covers.json"
     path.write_text(json.dumps(results))
     eval_covers.report(str(path))
     shown = capsys.readouterr().out
-    assert "5 pairs compared (3 right, 2 wrong)" in shown and "geometry" in shown and "AUC" in shown
-    assert "combined" in shown and "the WRONG matches that score highest" in shown and "the RIGHT matches that score lowest" in shown
+    assert "15 pairs compared: 5 right, 5 other, 5 neighbour, 0 flagged" in shown and "combined" in shown
     line = next(line for line in shown.splitlines() if line.startswith("geometry "))
-    assert "1.000" in line  # the same covers score above the different ones
+    assert line.split("|")[0].split()[-3:-1] == ["1.000", "1.000"]  # the same cover scores above the other series' and the neighbour's
+    assert "the RIGHT matches that score lowest" in shown and "ANOTHER VOLUME of its own series" in shown
