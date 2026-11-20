@@ -61,5 +61,6 @@ def test_a_pair_is_read_from_a_file_and_a_saved_cover_and_the_report_says_which_
     eval_covers.report(str(path))
     shown = capsys.readouterr().out
     assert "5 pairs compared (3 right, 2 wrong)" in shown and "geometry" in shown and "AUC" in shown
+    assert "combined" in shown and "the WRONG matches that score highest" in shown and "the RIGHT matches that score lowest" in shown
     line = next(line for line in shown.splitlines() if line.startswith("geometry "))
     assert "1.000" in line  # the same covers score above the different ones

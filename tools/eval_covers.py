@@ -20,6 +20,7 @@ The scores (all 0-100 except ``inliers``, a count):
 """
 import argparse
 import json
+import os
 import random
 import sys
 
@@ -149,9 +150,34 @@ def auc(positive: list, negative: list) -> float:
     return wins / (len(positive) * len(negative))
 
 
+def add_combined(ok: list) -> None:
+    """``combined``: the average, over the scores that see the picture differently, of where a pair stands among the RIGHT matches (0: lower than
+    every right match, 100: higher than all). A pair that looks alike to SIFT or to the hash or by its matches that agree is alike."""
+    parts = ("current", "geometry_n", "dhash")
+    right = {name: sorted(e["scores"][name] for e in ok if e["group"] == "right" and e["scores"][name] is not None) for name in parts}
+    for e in ok:
+        ranks = [100.0 * sum(x <= e["scores"][name] for x in right[name]) / len(right[name]) for name in parts
+                 if e["scores"][name] is not None and right[name]]
+        e["scores"]["combined"] = sum(ranks) / len(ranks) if ranks else None
+
+
+def examples(ok: list, name: str = "combined", count: int = 12) -> None:
+    """The pairs that go against their label, to look at: a WRONG match that scores high may be a right one (the label is a guess), a RIGHT
+    one that scores 0 may be another edition's cover."""
+    wrong = sorted((e for e in ok if e["group"] == "wrong" and e["scores"][name] is not None), key=lambda e: -e["scores"][name])
+    right = sorted((e for e in ok if e["group"] == "right" and e["scores"][name] is not None), key=lambda e: e["scores"][name])
+    print(f"\nthe WRONG matches that score highest on `{name}` (are they really wrong?):")
+    for e in wrong[:count]:
+        print(f"  {e['scores'][name]:>5.1f}  {os.path.basename(e['path'])[:90]}")
+    print(f"\nthe RIGHT matches that score lowest on `{name}` (another edition's cover? a flat cover?):")
+    for e in right[:count]:
+        print(f"  {e['scores'][name]:>5.1f}  {os.path.basename(e['path'])[:90]}")
+
+
 def report(path: str) -> None:
     data = json.load(open(path))
     ok = [e for e in data if "scores" in e]
+    add_combined(ok)
     print(f"{len(ok)} pairs compared ({sum(e['group'] == 'right' for e in ok)} right, {sum(e['group'] == 'wrong' for e in ok)} wrong); "
           f"{len(data) - len(ok)} could not be read\n")
     names = list(ok[0]["scores"]) if ok else []
@@ -168,6 +194,7 @@ def report(path: str) -> None:
             caught = sum(x < threshold for x in wrong) / len(wrong)
             line += f"  {caught:>4.0%} ({threshold:>4.1f})"
         print(line)
+    examples(ok)
     print("\nread: a score that catches many WRONG matches while flagging only 1-2 % of the RIGHT ones is the one to use; "
           "AUC near 1.0 means it separates them well whatever the threshold.")
 
