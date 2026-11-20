@@ -68,6 +68,22 @@ confirm the obvious ones, so that their table, which skips every file marked `ch
 4. **Never** run `bdnex review --auto` without `-n` (it applies a rule: switches and unlinks), never mark `checked=unlink`, never run `bdnex import`
    or `bdnex mirror` unasked.
 
+## Auditing the whole library (when the person asks for every linked file, not only the flagged ones)
+
+1. **Check the place first, and stop if it is wrong**: the collection disk is mounted (`collection_path` exists), OpenCV loads (`bdnex candidates --help` runs and a cover
+   comparison works on one file) and the library is the person's real one. Without covers you can not find a better album, so you can not switch a match: say so.
+2. **Read the threshold, do not assume it**: `cover.match_percentage` in the person's configuration (the default is 3; an old file may still say 40, which flags one right match
+   in five: tell the person to change it before you count anything).
+3. **Two sources, because they cover different files**: `bdnex review --auto -n --json` weighs only the flagged files and the matches applied under `match.strong_threshold`
+   (a strong match is never second-guessed there); `bdnex check --matches` (read-only, plain text) weighs every match against its page. Use both.
+4. **Sort by evidence, never by a number alone**:
+   - *obvious* = something other than the file name confirms it (credits, year, the file's tags, a cover at or above the threshold) and nothing is against it: mark `checked=keep`;
+   - *wrong* = something contradicts it (another volume, a year, the tags or the folder naming another series): switch to the `better` album when covers found one, else propose the unlink;
+   - *unsure* = nothing confirms it and nothing contradicts it: **leave it**, for the person's `bdnex review --batch`.
+5. **A low cover score alone never unlinks.** About 5 % of right matches score below 3 (an edition with another cover, a first page that is no cover), so a cover of 0 on a clean match
+   is a question for a person looking at both covers, not a verdict. Unlinking needs a real contradiction, or the person's own word ("unlink what is unsure") after you showed the count.
+6. Show the counts and ten examples of each group with their evidence, wait for a yes, back up the library file, apply in batches and report marked / switched / unlinked.
+
 **What a cover score means.** It is not a "percent alike": it is the share of distinctive features of one cover found in the other. Measured on a real library
 (`tools/eval_covers.py`: each file against its own album's cover, against an album of another series and against the next volume of its own series): a right match
 scores about 50 (median), not near 100; the AUC is 0.98 against another series and 0.95 against the neighbouring volume, so the cover is a reliable check. The default
@@ -77,7 +93,7 @@ matches and about 43 % of the wrong-volume ones. A cover that scores high does n
 ## Checking the matches
 
 `bdnex review --auto -n --json` weighs every flagged file and every match applied under the strong threshold (kept / wrong / unconfirmed) and, for the wrong ones, the covers of the 5 best other candidates (`better`); without `-n --json` it settles them by rule: the flag goes for the kept, the wrong are switched to the better album or unlinked (ask first), the rest stay. `bdnex review --batch 50` is the screen a person uses for thousands of doubtful matches (never run it for them: it needs a terminal). The user can shorten commands with `aliases` in the configuration. `bdnex check --matches` weighs every match against its album page (credits, year, volume, the file's own tags, its folder) and
-lists the ones that look wrong; without `-n` it flags them. `bdnex review --list --json` gives the flagged files with
+lists the ones that look wrong (it has no `-n` and no `--json`: it only reads, unless you add `--fix`, which flags them for `bdnex review`). `bdnex review --list --json` gives the flagged files with
 the reason, for you to read. `bdnex candidates --low --json` gives, for each file in doubt, the other albums it could be
 (score, evidence for and against, `page not read` when only the sitemap is known); add `--cover --limit 3` to compare covers
 (one request per candidate; ask first). The procedure is the docs page *Checking the matches*: find, list the alternatives, then
