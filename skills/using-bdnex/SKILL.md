@@ -86,8 +86,13 @@ confirm the obvious ones, so that their table, which skips every file marked `ch
    `-n` first, `-v` lists the lines). It writes them as the review screen does (a `checked` mark, the flag, the link), so you never call `settle()` or touch the database yourself.
    `unlink` only when the person told you to (their words, after you showed the count); a file left alone is `leave`.
 7. Show the counts and ten examples of each group with their evidence, wait for a yes (unless the person asked for an autonomous run on a copy), back up the library file,
-   apply and report kept / switched / unlinked / left. With two agents (one proposes, one judges without reading the proposal first), apply only the lines where they agree and
-   `unlink` the disagreements.
+   apply and report kept / switched / unlinked / left.
+8. **Several agents at once (a big library).** Reading names against albums is an easy, parallel job: start subagents with a cheaper model (`haiku` or `sonnet`), one series (or one folder)
+   each, never two on the same file. Rules: only **you** (the main agent) write to the library, one `bdnex review --apply decisions-<series>.tsv` after the other, never in parallel
+   (SQLite has one writer); a subagent only reads (`bdnex candidates SERIES --json`, `bdnex ls --files -l`) and writes its own decisions file; one that is unsure writes `leave`, never a guess.
+   For a second opinion, a **judge** subagent reads the same evidence *without* the proposer's file, writes its own, and only then compares; give it the same model as the proposer or a stronger
+   one, never a weaker one (it would just agree). Apply the lines where both agree; the person decides what to do with a disagreement (`unlink` only on their word). Start with three series,
+   compare the result with `bdnex check --matches`, then run the rest.
 
 **What a cover score means.** It is not a "percent alike": it is the share of distinctive features of one cover found in the other. Measured on a real library
 (`tools/eval_covers.py`: each file against its own album's cover, against an album of another series and against the next volume of its own series): a right match
