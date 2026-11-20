@@ -137,7 +137,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
             parser.error("--reparse works on the library, offline: limit it with --select TERM, not with files or folders")
         from bdnex.ui import reparse_cmd
 
-        return reparse_cmd.run([*(["-n"] if args.pretend else []), *(["-v"] * args.verbose), *args.select], out)
+        return reparse_cmd.run([*(["-n"] if args.pretend else []), *(["--workers", str(args.workers)] if args.workers is not None else []),
+                                *(["-v"] * args.verbose), *args.select], out)
     if args.album:
         if len(args.paths) != 1 or os.path.isdir(args.paths[0]) or args.sources or args.select or args.skipped:
             parser.error("--album names the album of ONE file: give exactly that file (not a folder, --select or --sources)")

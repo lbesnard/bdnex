@@ -586,6 +586,8 @@ bdnex import --reparse --select series:nains  # only some albums (same terms as 
 - Albums that are only matched (their page was never fetched) have no stored page: they are reported, and
   `bdnex import --fetch` is how to complete them.
 - It changes the library, not your files: run `bdnex write` afterwards to put new details into them.
+- Parsing the pages is the slow part, so it is done in several processes (`--workers N`, default one fewer than the cores), one series to a task,
+  and the library is written afterwards. A whole library of 16,000 albums takes a few minutes.
 
 
 ## The keys of every question

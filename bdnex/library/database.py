@@ -619,7 +619,7 @@ class Library:
         if (new.series.name if new.series else None) != old["series"]:
             changes.append(f"series: {old['series']!r} -> {new.series.name if new.series else None!r}")
         for role in sorted(set(new.credits) | set(old["credits"])):
-            if new.credits.get(role, []) != old["credits"].get(role, []):
+            if sorted(new.credits.get(role, [])) != sorted(old["credits"].get(role, [])):  # the order of a page is not a change
                 changes.append(f"{role}: {', '.join(old['credits'].get(role, [])) or '-'} -> "
                                f"{', '.join(new.credits.get(role, [])) or '-'}")
         if sorted(new.genres) != sorted(old["genres"]):
@@ -876,6 +876,11 @@ class Library:
         return {r["source_id"]: (bool(r["partial"]), bool(r["cover_file"]), r["cover_url"]) for r in self.conn.execute(
             "SELECT source_id, json_extract(extra, '$.partial') AS partial, cover_file, cover_url FROM albums WHERE source = ?",
             (source,))}
+
+    def cache_has(self, source: str, kind: str, url: str) -> bool:
+        """Is the page stored (without reading it)?"""
+        return self.conn.execute("SELECT 1 FROM source_cache WHERE source = ? AND kind = ? AND url = ?",
+                                 (source, kind, url)).fetchone() is not None
 
     def cache_delete(self, source: str, kind: str, url: str) -> None:
         with self.conn:

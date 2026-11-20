@@ -28,6 +28,10 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- **`import --reparse` is about 15 times faster** (a real 16,400-album library: 4 minutes instead of about an hour). A series page was parsed again for each of its
+  albums (60% of the time), and the album pages were read one at a time: now a series page is parsed once, the albums are read in several processes (`--workers N`, default one
+  process fewer than the cores), one series to a task, and the library is written afterwards, in one process. Changing only the order of the names of a credit
+  is no longer listed as an update.
 - `import --reparse`: the numbers of the `(AUT)` (author) and `(DOC)` pseudo-series are no tome (a year, a position: `Mœbius` became volume 1984), so those
   albums keep their title from the page but no series and no volume, as before. An album with no title of its own (the page says `Tome 9`,
   `Volume 2`, `Intégrale`) keeps the series name as its title, not the site's filler. And a series page that was never fetched, missing while working offline, is

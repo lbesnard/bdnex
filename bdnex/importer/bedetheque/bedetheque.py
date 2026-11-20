@@ -194,6 +194,7 @@ class Bedetheque:
         self._words: Optional[dict[str, list[int]]] = None
         self._by_id: Optional[dict[str, Candidate]] = None
         self._facts: Optional[dict[str, dict]] = None
+        self._series_details: dict[str, dict] = {}  # series page address -> what its page says (parsed once)
 
     # --------------------------------------------------------------- fetching
     def _get(self, kind: str, url: str, recache: bool = False, store: bool = True) -> bytes:
@@ -569,8 +570,11 @@ class Bedetheque:
         abstract, series_extra = None, {}
         if series_href and fields.get("Tome") is not None:
             try:
-                series_html = self._get("series", series_href, recache).decode("utf-8", errors="replace")
-                details = parser.parse_series_details(series_html)
+                details = None if recache else self._series_details.get(series_href)
+                if details is None:  # a series page is read once per run, not once per album of the series (the slow part of a reparse)
+                    series_html = self._get("series", series_href, recache).decode("utf-8", errors="replace")
+                    details = self._series_details[series_href] = parser.parse_series_details(series_html)
+                details = dict(details)
                 abstract = details.pop("summary", None)
                 series_extra = details  # the albums the series page lists
             except Exception as err:  # a missing series page must not lose the album
