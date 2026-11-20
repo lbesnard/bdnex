@@ -37,7 +37,8 @@ def cbz_with_cover(tmp_path, name, seed):
 
 
 def env_for(web, prompter=None, check=True, download=False, **kw):
-    env = Env(web, make_settings(cover={"check": check, "download": download}), prompter, **kw)
+    # the threshold is pinned: these tests are about the mechanism, with covers that score 5-30
+    env = Env(web, make_settings(cover={"check": check, "download": download, "match_percentage": 40}), prompter, **kw)
     env.source.update_sitemaps()
     env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
     return env
@@ -146,3 +147,9 @@ def test_a_preview_checks_nothing(tmp_path):
     env = env_for(web, Prompter(), pretend=True)
     env.session.run([cbz_with_cover(tmp_path, FILE, 2)])
     assert COVER_URL not in web.calls
+
+
+def test_the_shipped_threshold_is_3_because_a_right_match_scores_about_50():
+    from bdnex.config import load_config
+
+    assert load_config().settings.cover.match_percentage == 3

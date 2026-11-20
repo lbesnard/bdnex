@@ -397,7 +397,7 @@ bdnex import --fetch --cover-check ~/comics
 bdnex ls --files cover:..40                # files whose cover looks little like their album's
 ```
 
-Below `cover.match_percentage` (40) you are asked to keep or unlink the match. It costs one request per
+Below `cover.match_percentage` (3) you are asked to keep or unlink the match. It costs one request per
 album, so it is off unless you ask. See [Importing](importing.md#checking-covers).
 
 ## …move my whole collection to another disk?

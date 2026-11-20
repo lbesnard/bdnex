@@ -116,7 +116,7 @@ cover:
   download: true                         # keep each album's cover as a file in `dir` (linked from the library)
   dir: ~/.local/share/bdnex/covers       # where the cover files are kept
   check: auto                            # compare each file's cover with its album's: auto (when OpenCV is installed) | true | false
-  match_percentage: 40                   # similarity (0-100) from which a cover is trusted
+  match_percentage: 3                    # similarity (0-100) below which a cover is not the album's: a right match scores about 50, another series about 0 (measured)
 
 api:
   host: 127.0.0.1                        # `bdnex serve` listens here; anything but this machine needs a password or a token

@@ -31,6 +31,9 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- **`cover.match_percentage` is 3, not 40.** A right match scores about 50 on the cover comparison (the share of distinctive features found in both covers), so 40 flagged
+  one right match in five. Measured with `tools/eval_covers.py` on a real library (each file against its own album's cover, another series' and the next volume's): AUC 0.98 and 0.95;
+  at 3 the cover flags 5 % of the right matches, catches every wrong-series match and about 43 % of the wrong-volume ones. If you set the option yourself, your value stays.
 - **Matching: which collected edition.** `Intégrale 2` / `Intégrale T02` now goes to `...-INT2-...` (+5, like a volume), a plain `(Intégrale)` prefers the one collected
   edition of the series (`INT`, +8) to one of several (`INT1`, `INT2`: +3). On a real library, of the 309 files that say intégrale 20 change their first choice
   (`Face de lune - Intégrale T01` -> `INT1`, `Rork - intégrale 02` -> `INT2`...), 15 of them are asked about rather than applied. A file that says only
