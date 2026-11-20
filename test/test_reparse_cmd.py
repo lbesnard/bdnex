@@ -179,3 +179,49 @@ def test_a_change_is_drawn_old_red_new_green_and_plain_without_a_terminal():
     assert "\x1b[33mTitre" in format_change("updated details: Titre", True)
     block = format_album("A - T01", [line], True, 152, 313, False)
     assert block.startswith("\n[152/313] ● would update  A - T01") and "\n    title " in block
+
+
+def test_a_series_page_is_read_once_for_all_the_albums_of_the_series(tmp_path, monkeypatch):
+    from bdnex.importer.bedetheque import parser
+
+    web = helpers.FakeWeb()
+    with Library(tmp_path / "l.sqlite") as lib:
+        source = Bedetheque(lib, fetch=web, sleep=lambda s: None)
+        first = helpers.ALBUM_URL
+        lib.cache_put("bedetheque", "album", first, web(first))
+        lib.cache_put("bedetheque", "album", first + "?copy", web(first))  # a second album of the same series
+        calls = []
+        real = parser.parse_series_details
+        monkeypatch.setattr(parser, "parse_series_details", lambda html: calls.append(1) or real(html))
+        one, two = source.album_info(first), source.album_info(first + "?copy")
+        assert len(calls) == 1 and one.series.extra == two.series.extra and one.series.extra  # parsed once, both albums have it
+        one.series.extra["x"] = 1  # what a caller does to its copy must not reach the next album
+        assert "x" not in source.album_info(first).series.extra
+
+
+def test_pages_read_in_several_processes_give_what_one_process_gives(env):
+    from bdnex.config import load_config
+
+    db, _ = env
+    with Library(db) as lib:
+        urls = []
+        for number in range(6):  # six albums (the same page under six addresses), so that there are enough tasks to share
+            url = f"{ONE_URL}?n={number}"
+            lib.cache_put("bedetheque", "album", url, open(ONE_HTML, "rb").read())
+            urls.append(url)
+    settings = load_config().settings
+    offline = settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
+        update={"fetcher": reparse_cmd.OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
+    groups = [[url] for url in urls]
+    alone = reparse_cmd.read_groups(settings, offline, groups, 1)
+    several = reparse_cmd.read_groups(settings, offline, groups, 3)
+    assert sorted(alone) == sorted(several) == sorted(urls)
+    assert all(info is not None and not error for info, error in several.values())
+    assert [alone[u][0] for u in urls] == [several[u][0] for u in urls]
+
+
+def test_the_order_of_the_names_of_a_credit_is_not_a_change(tmp_path):
+    with Library(tmp_path / "l.sqlite") as lib:
+        lib.add_album(AlbumInfo("bedetheque", "1", "A", credits={"Colorist": ["Beuzelin, Boris", "Marty, Lionel"]}))
+        again = AlbumInfo("bedetheque", "1", "A", credits={"Colorist": ["Marty, Lionel", "Beuzelin, Boris"]})
+        assert lib.preview_merge(again) == []

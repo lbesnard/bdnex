@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import sys
 
+from bdnex.importer import pipeline
 from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.library import Library
 from bdnex.library.query import QueryError
 from bdnex.ui import color, context, describe, results
-from bdnex.ui.output import add_pretend, add_verbosity, progress, setup_logging
+from bdnex.ui.output import add_pretend, add_verbosity, add_workers, progress, setup_logging
 
 OFFLINE = "bdnex.importer.registry:offline_fetch"
 DETAIL_STYLE = {"new details": "green", "updated details": "yellow", "dropped details": "red"}
@@ -32,6 +33,51 @@ def format_album(label: str, changes: list[str], pretend: bool, number: int, tot
                          "would update" if pretend else "updated", f"[{number}/{total}]")
 
 
+ONESHOT_CHUNK = 25  # albums without a series are read this many to a task
+
+
+def read_groups(settings, offline, groups: list[list[str]], workers: int, tick=lambda done: None) -> dict:
+    """The fresh parse of each album page, ``{address: (AlbumInfo or None, error or "")}``, read in ``workers`` processes.
+
+    A task is the albums of one series, so that its series page is read once. Each process has a library connection of its
+    own (read-only) and nothing is written here: the caller writes, in its own process, once everything is read."""
+    from bdnex import parallel
+
+    state: dict = {}
+
+    def read(urls: list[str]) -> list:
+        if "source" not in state:  # in the worker: its own connection, opened after the fork
+            library = Library.for_settings(settings, readonly=True)
+            state["source"] = create_source(settings.source, library, offline)
+        found = []
+        for url in urls:
+            try:
+                found.append((url, state["source"].album_info(url), ""))
+            except Exception as err:  # a page that no longer parses must not stop the others
+                found.append((url, None, str(err) or err.__class__.__name__))
+        return found
+
+    parsed: dict = {}
+    done = 0
+    for urls, result in parallel.map_ordered(read, groups, workers):
+        if isinstance(result, Exception):  # the whole task failed (a worker died): say so for each of its albums
+            result = [(url, None, str(result) or result.__class__.__name__) for url in urls]
+        for url, info, error in result:
+            parsed[url] = (info, error)
+        done += len(urls)
+        tick(done)
+    return parsed
+
+
+def group_rows(rows: list, library) -> tuple[list, list]:
+    """The albums to read, in the order of ``rows``, and their addresses grouped by series (one task each)."""
+    by_series: dict = {}
+    for number, row in enumerate(rows):
+        by_series.setdefault(row.get("series") or f"\0{number // ONESHOT_CHUNK}", []).append(row)
+    ordered = [row for group in by_series.values() for row in group]
+    return ordered, [[row["url"] for row in group if row.get("url")] for group in by_series.values()]
+
+
 def run(argv: list[str], out=sys.stdout) -> int:
     parser = argparse.ArgumentParser(
         prog="bdnex reparse",
@@ -41,6 +87,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
                     "them into the files.")
     parser.add_argument("query", nargs="*", help="albums to update, same terms as `bdnex ls` (default: all)")
     add_pretend(parser, "change")
+    add_workers(parser, "album pages read", "import.workers")
     add_verbosity(parser)
     args = parser.parse_args(argv)
     setup_logging(args.verbose)
@@ -64,18 +111,24 @@ def run(argv: list[str], out=sys.stdout) -> int:
             return 1
         except QueryError as err:
             return context.bad_query(err)
+        rows, groups = group_rows(rows, library)
+        todo = [row for row in rows if row.get("url") and library.cache_has(source.name, "album", row["url"])]
+        workers = pipeline.resolve_workers(args.workers if args.workers is not None else settings.import_.workers)
+        progress(f"Reading {len(todo)} stored page(s), {workers} at a time...")
+        parsed = read_groups(settings, offline, [[u for u in group if library.cache_has(source.name, "album", u)] for group in groups],
+                             workers, lambda done: progress(f"  read {done}/{len(todo)}") if done % 500 < 25 else None)
         for number, row in enumerate(rows, start=1):
             album = library.get_album(row["id"])
-            progress(f"[{number}/{len(rows)}] {describe.label(album)}")
-            if album["source"] != source.name or not album.get("url") \
-                    or library.cache_get(source.name, "album", album["url"]) is None:
+            if album["source"] != source.name or not album.get("url") or album["url"] not in parsed:
                 missing += 1
                 print(results.head("no stored page", describe.label(album), on), file=out)
                 continue
+            info, error = parsed[album["url"]]
             try:
-                info = source.album_info(album["url"])
+                if info is None:
+                    raise RuntimeError(error)
                 changes = library.preview_merge(info)
-            except Exception as err:  # a page that no longer parses must not stop the others
+            except Exception as err:
                 failed += 1
                 print(results.block("failed", describe.label(album), [str(err)], on), file=out)
                 continue
@@ -86,7 +139,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
             print(format_album(describe.label(album), changes, args.pretend, number, len(rows), on), file=out)
             if not args.pretend:
                 library.merge_album(info)
-                library.prune_orphan_series()
+        if updated and not args.pretend:
+            library.prune_orphan_series()
     verb = "would be updated" if args.pretend else "updated"
     print(results.footer([(f"{updated} {verb}", "updated" if not args.pretend else "pretend"),
                           (f"{unchanged} unchanged", "unchanged"),
