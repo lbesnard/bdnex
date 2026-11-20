@@ -144,6 +144,35 @@ def _auto(args, settings, out, prompter) -> int:
     return 0
 
 
+def _apply(args, settings, out) -> int:
+    """``--apply FILE``: the decisions of an assistant or a script, written as the review screen writes them."""
+    from bdnex.library import decisions
+    from bdnex.ui import color
+
+    try:
+        wanted = decisions.read(args.apply)
+    except OSError as err:
+        print(f"Can not read {args.apply}: {err.strerror or err}", file=sys.stderr)
+        return 2
+    except decisions.DecisionError as err:
+        print(f"{args.apply}: {err}. Nothing was applied.", file=sys.stderr)
+        return 2
+    if not context.has_library(settings, "nothing to apply the decisions to."):
+        return 1
+    on = color.enabled(out)
+    with Library.for_settings(settings, readonly=args.pretend) as library:
+        count = decisions.apply(library, wanted, pretend=args.pretend,
+                                say=(lambda text: print(color.role(text, "note", on), file=out)) if args.verbose else (lambda text: None))
+    head = "Would be" if args.pretend else "Done"
+    print(f"{color.role(head, 'good', on)}: {count['keep']} kept, {color.role(str(count['switch']) + ' switched', 'good', on)}, "
+          f"{color.role(str(count['unlink']) + ' unlinked', 'bad', on)}, {count['leave']} left"
+          + (f", {color.role(str(count['refused']) + ' switches refused', 'warn', on)} (the album has another file: `bdnex duplicates`)" if count["refused"] else "")
+          + (f", {color.role(str(count['unknown']) + ' not in the library', 'warn', on)}" if count["unknown"] else "") + "."
+          + color.hints(" `bdnex import --skipped --auto=all` decides the unlinked ones again." if count["unlink"] and not args.pretend else "", on),
+          file=out)
+    return 0
+
+
 def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     parser = argparse.ArgumentParser(
         prog="bdnex review", description=__doc__,
@@ -169,6 +198,11 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                              "match score, cover score; keep, unlink or pick another album from the album list. Every decision "
                              "is saved at once and the files checked are not shown again: run it again to continue; a query "
                              "limits the files, as in `bdnex ls --files`")
+    parser.add_argument("--apply", metavar="FILE",
+                        help="apply the decisions in FILE, one per line: `path<TAB>decision<TAB>album<TAB>reason` (or a JSON object with those "
+                             "keys), decision = keep | unlink | switch | leave; for an assistant or a script that read the evidence "
+                             "(`--auto -n --json`). Each one is written as the review screen writes it (a `checked` mark, the flag, "
+                             "the link); `-n` only counts. Nothing is applied from a file with a bad line; no comic file is touched")
     parser.add_argument("--unmatched", action="store_true", help="with --batch: also the files that have no album")
     parser.add_argument("--all", action="store_true",
                         help="with --batch: every file of the query, not only the doubtful ones (those come first, then the files "
@@ -187,6 +221,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     if (args.unmatched or args.all or args.again) and not args.batch:
         print("--unmatched, --all and --again go with --batch N (the table).", file=sys.stderr)
         return 2
+    if args.apply:
+        return _apply(args, settings, out)
     if args.batch:
         return _batch(args, settings, out)
     if args.auto:

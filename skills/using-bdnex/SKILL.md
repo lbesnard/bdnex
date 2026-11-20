@@ -82,7 +82,12 @@ confirm the obvious ones, so that their table, which skips every file marked `ch
    - *unsure* = nothing confirms it and nothing contradicts it: **leave it**, for the person's `bdnex review --batch`.
 5. **A low cover score alone never unlinks.** About 5 % of right matches score below 3 (an edition with another cover, a first page that is no cover), so a cover of 0 on a clean match
    is a question for a person looking at both covers, not a verdict. Unlinking needs a real contradiction, or the person's own word ("unlink what is unsure") after you showed the count.
-6. Show the counts and ten examples of each group with their evidence, wait for a yes, back up the library file, apply in batches and report marked / switched / unlinked.
+6. Write the decisions in a file and apply it with **`bdnex review --apply decisions.tsv`** (one line per file: `path<TAB>keep|unlink|switch|leave<TAB>album<TAB>reason`;
+   `-n` first, `-v` lists the lines). It writes them as the review screen does (a `checked` mark, the flag, the link), so you never call `settle()` or touch the database yourself.
+   `unlink` only when the person told you to (their words, after you showed the count); a file left alone is `leave`.
+7. Show the counts and ten examples of each group with their evidence, wait for a yes (unless the person asked for an autonomous run on a copy), back up the library file,
+   apply and report kept / switched / unlinked / left. With two agents (one proposes, one judges without reading the proposal first), apply only the lines where they agree and
+   `unlink` the disagreements.
 
 **What a cover score means.** It is not a "percent alike": it is the share of distinctive features of one cover found in the other. Measured on a real library
 (`tools/eval_covers.py`: each file against its own album's cover, against an album of another series and against the next volume of its own series): a right match

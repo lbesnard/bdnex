@@ -156,6 +156,25 @@ What the assistant does with it:
 3. after you approve, runs the command that does it: `bdnex import --album ADDRESS FILE` (the album it found, nothing asked),
    `bdnex review` (keep or unlink) or `bdnex edit` (a wrong field). It never edits the database file.
 
+### Decisions in a file: `bdnex review --apply`
+
+For many files, the assistant writes its decisions in a file and one command applies them, in the same steps as the review
+screen (a `checked` mark, the flag, the link); nothing is done by hand on the database. One line per file, tab separated
+(or one JSON object with the same keys):
+
+```
+path<TAB>decision<TAB>album<TAB>reason
+/comics/Nains/Nains - T02.cbz	keep		credits and year agree
+/comics/Nains/Nains - T09.cbz	unlink		two albums are as good as each other
+/comics/Nains/Nains - T03.cbz	switch	https://www.bedetheque.com/BD-Nains-Forge-2.html	the file says T3
+```
+
+`decision` is `keep` (the match is right, the flag goes), `unlink` (the file waits for `bdnex import --skipped --auto=all`), `switch` (link
+to `album`, an address or a number; refused, and counted, when the album already has another file) or `leave` (marked as looked at,
+nothing else changes). `bdnex review --apply FILE -n` only counts; `-v` lists every line. A file with a bad line applies nothing, and a path that is not in
+the library is counted and skipped. No comic file is touched. A second assistant can judge the first one's proposals the
+same way: both write a file, and only the lines where they agree are applied.
+
 `--cover` compares the file's cover with each candidate's: it reads the cover the import already saved (`cover.download`) and makes one request for any other candidate (so keep `--limit` small),
 needs OpenCV, and, for an album whose page was not read, looks at the address the site uses for covers, which can be
 wrong (that candidate is then not compared). A cover that is *very* like the file's settles most questions of a reissue

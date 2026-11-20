@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Added
+- **`bdnex review --apply FILE`** applies the decisions of an assistant or a script (`path`, `keep|unlink|switch|leave`, `album`, `reason`, tab separated or JSON lines) the way the review screen does: a `checked` mark, the flag, the link. `-n` counts, `-v` lists; a bad line applies nothing; no comic file is touched. The `using-bdnex` skill uses it instead of calling the library's functions.
 - The `using-bdnex` skill has a procedure for auditing the whole library: check the disk and OpenCV first, read the cover threshold instead of assuming it, use both `review --auto -n --json` and `check --matches` (which has no `-n`/`--json`), and never unlink on a low cover alone.
 - `tools/eval_covers.py` no longer judges a cover comparison by a guess: besides the matches that something confirms, it compares each file with a cover of ANOTHER SERIES and of the nearest OTHER VOLUME of its own series (wrong for sure), and reports the AUC and the catch rate against each.
 - `tools/eval_covers.py`: measures how well a cover comparison tells a right match from a wrong one on a real library (the answer key of `eval_matching.py`): the current score and
