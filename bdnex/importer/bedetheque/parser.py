@@ -125,21 +125,23 @@ def _parse_album_page_desktop(html: str, album_url: str) -> tuple[dict[str, Any]
         if fields["Titre"]:
             fields["Série"] = fields["Titre"]
             album_title = _title_from_address(soup, album_url)
-            if album_title:  # the <h1> is the series; the album's own title is only in the address
+            if album_title and not GENERIC_TITLE.fullmatch(album_title):  # the <h1> is the series; the album's own title is in the address
                 fields["Titre"] = album_title
 
     number, sub_title = _numbered_title(header)  # `<h2>16<span class="bdt-numa">B6</span>. Le Noël...</h2>`
     if sub_title and fields.get("Série") and not GENERIC_TITLE.fullmatch(sub_title):
         fields["Titre"] = sub_title  # the page says it (the address may not: `...-Les-40-commandements-du-jardinage-...`)
-    if number and not fields.get("Série", "").startswith(("(AUT)", "(DOC)")):
-        fields["Tome"] = number  # not for an author's or a documentation miscellany: its numbers are a year or a position, no tome
+    miscellany = fields.get("Série", "").startswith(("(AUT)", "(DOC)"))  # an author's or a documentation miscellany: its numbers are a year or a position, no tome
+    if number and not miscellany:
+        # the site writes some tomes with a minus (`Donjon Potron-Minet` -82, `Donjon Antipodes` -10000); the address and bdnex's library have the number
+        fields["Tome"] = number[1:] if re.fullmatch(r"-\d+", number) else number
 
     ident = header.select_one(".bdt-ah-idbel")
     match = re.search(r"-(\d+)\.html$", album_url)
     fields["Identifiant"] = (ident.get_text(strip=True) if ident else None) or (match.group(1) if match else "")
 
     volume = re.search(r"-Tome-(\d+)(?:-|\.html)", album_url)
-    if volume and not fields.get("Tome"):
+    if volume and not fields.get("Tome") and not miscellany:
         fields["Tome"] = volume.group(1)
 
     if (pub := _meta(header, "publisher")):
@@ -483,7 +485,7 @@ def build_album_info(fields: dict[str, Any], series_url: Optional[str] = None,
             alternate = tome
     elif isinstance(tome, int):
         volume = tome
-    if volume is None and alternate is None and fields.get("Série"):
+    if volume is None and alternate is None and fields.get("Série") and not str(fields["Série"]).startswith(("(AUT)", "(DOC)")):
         # a page of a series that gives no ``Tome`` line (``Tome 16B6``): the address still says it
         named = re.search(r"-Tome-(\w+)-", str(fields.get("album_url") or ""))
         if named and not named.group(1).isdigit():
