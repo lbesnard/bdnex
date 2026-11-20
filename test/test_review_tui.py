@@ -561,3 +561,36 @@ def test_the_number_and_title_are_read_from_the_pages_sub_title():
     assert read('3<span class="bdt-numa"></span>. Toys') == ("3", "Toys")
     # no number at all: the whole sub-title is the album's title (the address of such an album has no tome either)
     assert read('<span class="bdt-numa"></span>Les 40 commandements du jardinage ') == ("", "Les 40 commandements du jardinage")
+
+
+def test_the_number_of_an_author_miscellany_is_not_a_tome_and_the_title_is_still_read():
+    from bdnex.importer.bedetheque import parser
+
+    def page(series, number):
+        return (f'<html><body><section class="bdt-ah"><h1><a href="https://www.bedetheque.com/serie-1-BD-x.html">{series}</a></h1>'
+                f'<h2 class="bdt-ah-sub">{number}<span class="bdt-numa"></span>. Mœbius</h2></section></body></html>')
+
+    url = "https://www.bedetheque.com/BD-AUT-Giraud-Moebius-Moebius-12345.html"
+    fields, _ = parser.parse_album_page(page("(AUT) Giraud / Moebius", "1984"), url)
+    info = parser.build_album_info(fields)
+    assert info.title == "Mœbius" and info.volume is None and info.series is None  # a one-shot, as before; the title is the album's
+    fields, _ = parser.parse_album_page(page("Astérix", "7"), url)
+    assert parser.build_album_info(fields).volume == 7  # a normal series still takes its number from the page
+
+
+def test_an_album_with_no_title_keeps_the_series_name_not_the_sites_tome_n():
+    from bdnex.importer.bedetheque import parser
+
+    html = ('<html><body><section class="bdt-ah"><h1><a href="https://www.bedetheque.com/serie-1-BD-x.html">Alice in Borderland</a></h1>'
+            '<h2 class="bdt-ah-sub"><span class="bdt-numa"></span>Tome 9</h2></section></body></html>')
+    fields, _ = parser.parse_album_page(html, "https://www.bedetheque.com/BD-Alice-in-Borderland-Tome-9-120000.html")
+    info = parser.build_album_info(fields)
+    assert info.title == "Alice in Borderland" and info.volume == 9 and info.series.name == "Alice in Borderland"
+
+
+@pytest.mark.parametrize("sub_title,generic", [("Tome 9", True), ("Volume 2", True), ("Intégrale", True), ("Tome 1/2", True), ("Vol. 3", True),
+                                                 ("N°3", True), ("1984", False), ("Tome 3 - Les Nains", False), ("Intégrale des nains", False)])
+def test_the_sites_filler_titles_are_told_from_real_ones(sub_title, generic):
+    from bdnex.importer.bedetheque import parser
+
+    assert bool(parser.GENERIC_TITLE.fullmatch(sub_title)) is generic

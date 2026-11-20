@@ -28,6 +28,10 @@ command runs, never while an import is fetching).
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
 
 ### Fixed
+- `import --reparse`: the numbers of the `(AUT)` (author) and `(DOC)` pseudo-series are no tome (a year, a position: `Mœbius` became volume 1984), so those
+  albums keep their title from the page but no series and no volume, as before. An album with no title of its own (the page says `Tome 9`,
+  `Volume 2`, `Intégrale`) keeps the series name as its title, not the site's filler. And a series page that was never fetched, missing while working offline, is
+  no longer a warning for each album (`bdnex mirror` or `import --fetch` fetches those pages).
 - **Candidates' covers that gave a 404** (`Nikopol INT La trilogie Nikopol`): for an album whose page was never read, bdnex guessed the cover
   address (`Couv_<id>.jpg`), which is wrong for about one album in five (3,197 of the 16,402 albums read so far have another name). When the guess
   is not there, the album's page now says where the cover is (one request, the page is kept) and that address is tried. Same for the cover vote of an import.
