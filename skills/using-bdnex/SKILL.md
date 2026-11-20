@@ -53,6 +53,26 @@ An import can be stopped with Ctrl-C and run again: decisions and the albums alr
 page, cover), `bdnex mirror` all that is left (it uses the user's own fetcher and endpoints: preview first, start with a limit, never run it for the user without
 asking). It stops by itself after 10 failures in a row (the site is probably blocking); running it again continues.
 
+## A first pass over the doubtful matches (so the person's review table shows only the rest)
+
+The person checks the matches in `bdnex review --batch 50` (a terminal screen: never run it for them). You can read the same evidence without the screen and
+confirm the obvious ones, so that their table, which skips every file marked `checked`, only shows what you were not sure about. No new tool is needed:
+
+1. **Read**: `bdnex review --auto -n --json` (read-only). Each file has a `kind`: `kept` (something other than the name confirms the match), `wrong`
+   (something contradicts it), `unconfirmed` (nothing confirms it), with the evidence, the cover score and, for the wrong ones, a `better` album.
+2. **Propose, never apply on your own**: show the person the numbers and ten examples of what you would confirm, and wait for a yes. Confirm only
+   `kept` files, and `unconfirmed` ones whose cover score is at least `cover.match_percentage` and that have nothing against them (see the note below on that setting). Leave
+   every `wrong`, every file with a `better` album and every low cover to the person.
+3. **Apply with a mark**: `bdnex mark -n --set checked=keep <query>` first, then without `-n`, one `fileid:N` (or a narrow query) at a time. A mark changes
+   nothing else: the match, the files and the flags stay as they are.
+4. **Never** run `bdnex review --auto` without `-n` (it applies a rule: switches and unlinks), never mark `checked=unlink`, never run `bdnex import`
+   or `bdnex mirror` unasked.
+
+**What a cover score means.** It is not a "percent alike": it is the share of distinctive features of one cover found in the other. Measured on a real library, files whose
+match is confirmed by other evidence score about 50 (median 51; 20% below 40, 8% below 20), and the matches that look wrong score about 0 (median 0 to 1;
+about 72% below 20). So a good match is *not* near 100, and the default `cover.match_percentage: 40` flags one correct match in five. About 15 to 20 separates the two
+better (7 to 8% of correct matches flagged, the same share of wrong ones caught); say so to the person rather than trusting 40.
+
 ## Checking the matches
 
 `bdnex review --auto -n --json` weighs every flagged file and every match applied under the strong threshold (kept / wrong / unconfirmed) and, for the wrong ones, the covers of the 5 best other candidates (`better`); without `-n --json` it settles them by rule: the flag goes for the kept, the wrong are switched to the better album or unlinked (ask first), the rest stay. `bdnex review --batch 50` is the screen a person uses for thousands of doubtful matches (never run it for them: it needs a terminal). The user can shorten commands with `aliases` in the configuration. `bdnex check --matches` weighs every match against its album page (credits, year, volume, the file's own tags, its folder) and
