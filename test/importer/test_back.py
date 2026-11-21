@@ -181,3 +181,34 @@ def test_going_back_after_a_folder_skip_asks_again(make_cbz):
     # a picked; b: skip folder... then nothing to go back from; scripted GoBack comes at the next question
     env.session.run([os.path.dirname(a)])
     assert volume_of(env, a) is not None
+
+
+def test_a_failure_after_the_link_takes_the_link_and_the_album_back(make_cbz):
+    """The file used to stay linked (to an album this run created) while the report said FAILED."""
+    (a,) = files(make_cbz, A)
+    env = env_for(Script(0))
+    real = env.session._log
+
+    def broken(path, outcome, *rest, **kw):
+        if outcome in ("tagged", "partial"):
+            raise RuntimeError("the disk said no")
+        return real(path, outcome, *rest, **kw)
+
+    env.session._log = broken
+    report = env.session.run([os.path.dirname(a)])
+    assert [r.outcome for r in report.results] == ["failed"]
+    assert env.lib.get_file(a) is None or env.lib.get_file(a)["album_id"] is None
+    assert env.lib.stats()["albums"] == 0  # the album created for it is gone, like for a file taken back
+
+
+def test_a_result_taken_back_cannot_hand_its_id_to_the_next_one():
+    from bdnex.importer.session import ImportSession
+    from bdnex.importer.session_types import ImportResult
+
+    session = ImportSession.__new__(ImportSession)
+    session._pending, session._done, session._undone, session.pretend = [], set(), [], False
+    gone = ImportResult("/x/a.cbz", "tagged")
+    session._undo(gone)
+    del gone  # what `del report.results[...]` does to it
+    fresh = [ImportResult("/x/b.cbz", "tagged") for _ in range(50)]
+    assert not any(id(result) in session._done for result in fresh)  # none of them is taken for "already completed"

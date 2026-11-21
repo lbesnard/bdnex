@@ -68,16 +68,18 @@ command runs, never while an import is fetching).
 - `bdnex --help` groups the commands by task.
 
 ### Fixed
-- `bdnex duplicates --covers`: a spare version is no longer listed as a "similar cover" of its own album (it has that cover by design), and blank or uniform first pages are no longer grouped together as one big "same book" group.
+- Import: a failure after a file was linked (an unexpected error, Ctrl-C) now takes the link and the album created for it back, as Back does; before the report said FAILED while the library kept the link. Going Back could also make the next file be taken for one already completed (its album page was then never filled); fixed.
+- Review screen: a fetch no longer reconfigures the logging from its thread (log lines could appear twice in the panel, and later warnings went to a closed one), and the "Fetching ... (Ctrl-C leaves them)" line after quitting is written to the terminal, not to a redirected stream, so it is no longer lost.
 - Review screen: a series with one album and no volume (a one-shot such as Scalp), given by its address or picked as a SERIES, links that album to the one file you chose when the file's name has no number; before it said "none with a volume number" and changed nothing.
 - Review screen: in the `a` search each hit says in its own column whether it is a **SERIES** (each file gets its volume) or one **album**, with a header line above the list.
 - Review screen: a link that fails (a file that moved, a locked library) is shown on its row and in the log; it no longer closes the screen. A series link no longer overwrites a file you decided while the question was open. The volumes box refuses digits like `²` instead of crashing.
 - `bdnex review --batch`: the "about how many files" total no longer counts files already checked or passed over, so the "Check the next batch?" question is not asked when nothing is left.
 - Review screen: `a` on one file whose album has no volume (a one-shot such as `OS`) links that file to the album you picked instead of refusing; a refusal is now in the log, and says to use `o` for one file.
+- `bdnex duplicates --covers`: a spare version is no longer listed as a "similar cover" of its own album (it has that cover by design), and blank or uniform first pages are no longer grouped together as one big "same book" group.
 
 ### Added
-- Review screen: `b` goes back to the previous batch (with its decisions), and `n` comes forward again.
 - API: `GET /api/review/batch` returns the next files to check as `bdnex review --batch` shows them (doubtful, `unmatched`, `all`, `again`, a query, a size), and `POST /api/review/{file_id}/decide` keeps, unlinks or leaves any file of a batch, flagged or not, and marks it checked.
+- Review screen: `b` goes back to the previous batch (with its decisions), and `n` comes forward again.
 - **bdtheque.com as a second place to take an album from** (schema v13, **back up the database first**): give the address of a series page (`https://www.bdtheque.com/series/14922/...`) in the review screen (`i`) or with `bdnex import --album ADDRESS FILE`; the page is fetched with the same fetcher as Bédéthèque's (all its endpoints), kept compressed in its own `bdtheque_pages` table and read into an album with `source: bdtheque`. Only for addresses you give: nothing searches the site.
 - Review screen: `e` writes the metadata of a file by hand, as an album of your own (`source: manual`) linked to it, for comics the site does not know: a form for one file, or one form for the series of several marked files (a volume per file, read from its name and editable).
 - Review screen: a log at the bottom (`v` hides it) shows what bdnex is doing while it looks idle: pages read or fetched, links, and the output of the import; `-vv` adds the debug lines. `x` unmarks everything.

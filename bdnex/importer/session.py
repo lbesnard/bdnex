@@ -88,6 +88,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         self._by_page: dict[str, list] = {}  # album page address -> the pending items waiting for it
         self._by_series: dict[str, list] = {}  # series page address -> the items whose album page is here, waiting for it
         self._done: set[int] = set()  # results (by id) completed early, or undone: the fetch phase skips them
+        self._undone: list = []  # the undone results themselves: while they are alive no new result can have their id
         self._completed_early = 0
         self._journal: Optional[Journal] = None  # what the file being matched has recorded so far
         self._asked = False  # the user was asked about the file being matched
@@ -589,8 +590,13 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         self._journal = Journal()
         try:
             result = self._import_matched(path, matches, defer_fetch, chosen)
-        except (GoBack, ImportAborted, SkipFolder):
-            self._undo_journal(self._journal, path)  # the question was not answered: leave nothing behind
+        except BaseException as err:  # a question left unanswered, a failure, Ctrl-C: leave nothing half done behind
+            try:
+                self._undo_journal(self._journal, path)
+            except Exception:
+                logger.exception(f"{path}: what was recorded for it could not be taken back")
+            if not isinstance(err, (GoBack, ImportAborted, SkipFolder)):
+                logger.info(f"{path}: {err!r}: its link and album were taken back")
             raise
         finally:
             journal, self._journal = self._journal, None
@@ -688,6 +694,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
     def _undo(self, result: ImportResult) -> None:
         """Take back what matching this file recorded (nothing for files that were only fetched or skipped over)."""
         self._pending = [item for item in self._pending if item[0] is not result]
+        self._undone.append(result)  # kept: a freed result's id could be reused by the next one, which `_done` would then skip
         self._done.add(id(result))  # a page still on its way must not complete the album for a file taken back
         self._undo_journal(result.journal, result.path)
 
