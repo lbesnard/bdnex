@@ -549,6 +549,8 @@ class ReviewApp(App):
 
     def refresh_row(self, row: batch.Row) -> None:
         table = self.query_one(DataTable)
+        if row not in self.rows:  # a link that ended after the next batch was loaded: the row is not on the screen any more
+            return
         index = self.rows.index(row)
         for column, cell in enumerate(self.cells(index + 1, row)):
             table.update_cell_at((index, column), cell)
@@ -822,6 +824,8 @@ class ReviewApp(App):
             self.decided["linked"] = self.decided.get("linked", 0) + 1
         self.notify(row.message, severity="information" if ok else "error", timeout=6)
         self.refresh_row(row)
+        if row not in self.rows:
+            return
         if ok:
             self.advance()
         elif asked is not None and not asked[2]:
