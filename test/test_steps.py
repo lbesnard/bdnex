@@ -405,3 +405,17 @@ def test_album_refuses_what_is_not_an_album_and_more_than_one_file(cli, capsys, 
     assert run_import("--album", "not-an-album", path)[0] == 2 and "is not an album" in capsys.readouterr().err
     with pytest.raises(SystemExit):
         run_import("--album", "245127", path, str(tmp_path))
+
+
+def test_a_path_as_ls_prints_it_is_found_from_the_collection(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    from bdnex.ui import import_cmd
+
+    root = tmp_path / "collection"
+    (root / "Series").mkdir(parents=True)
+    (root / "Series" / "A.cbz").write_bytes(b"x")
+    settings = SimpleNamespace(require_collection=lambda: root)
+    monkeypatch.chdir(tmp_path)
+    assert import_cmd._under_collection("Series/A.cbz", settings) == str(root / "Series" / "A.cbz")
+    assert import_cmd._under_collection("Series/none.cbz", settings) == "Series/none.cbz"
