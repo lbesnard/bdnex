@@ -274,6 +274,33 @@ def test_o_opens_the_search_and_a_pick_shows_linking_then_updates_the_row(env, m
         assert lib.attrs_of("file", lib.get_file(files["wrong"])["id"])["checked"].startswith("other:")
 
 
+def test_a_link_that_never_answers_is_given_up_and_the_row_can_be_decided_again(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    _linking(monkeypatch, db, release)  # held until released: the site does not answer
+    monkeypatch.setattr(review_tui.ReviewApp, "LINK_WAIT", 0.3)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("o")
+        await settle(app, pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        row = app.rows[0]
+        assert row.busy
+        await pilot.pause(0.6)
+        seen["after"] = (row.busy, row.message)
+        await pilot.press("u")  # no more "Still linking this file"
+        await pilot.pause()
+        seen["status"] = row.status
+        release.set()  # the late answer is ignored
+        await settle(app, pilot)
+
+    drive(db, script)
+    assert seen["after"][0] is False and "no answer" in seen["after"][1]
+    assert seen["status"]
+
+
 def test_a_refused_link_says_refused_in_the_table(env, monkeypatch):
     db, files = env
     release = threading.Event()
@@ -651,3 +678,13 @@ def test_a_reparse_drops_the_special_an_older_parser_stored_next_to_a_number(tmp
         lib.merge_album(AlbumInfo("bedetheque", "1", "Survivre aujourd'hui", series=series, volume=82))
         now = lib.get_album(album)
         assert now["volume"] == 82 and now["alternate_number"] is None
+
+
+def test_a_link_from_the_review_screen_asks_no_question(monkeypatch):
+    """The screen owns the terminal: a cover question inside the import would wait for ever."""
+    from bdnex.ui import import_cmd, verdicts
+
+    seen = []
+    monkeypatch.setattr(import_cmd, "run", lambda argv, out=None: seen.append(argv) or 0)
+    assert verdicts.rematch("/x/a.cbz", "https://x/BD-1.html")
+    assert "--unattended" in seen[0] and "--database-only" in seen[0]

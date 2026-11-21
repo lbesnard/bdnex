@@ -208,8 +208,7 @@ export BDNEX_THUMBNAILS=kitty
 - The terminal must be at least 100 columns wide; a narrower one shows no picture.
 - The picture is made on the server from the file's first page, so bdnex needs PyMuPDF there (installed with it) and
   the archive tools for CBR (`unrar`).
-- To check that it works, run the diagnostic of the repository
-  (`python tools/thumbcheck.py some/file.cbz`) or import a small folder and look at the first question (a preview,
+- To check that it works, import a small folder and look at the first question (a preview,
   `-n`, never asks, so it shows nothing). When nothing appears, no
   character is printed either: a failing picture never stops an import.
 

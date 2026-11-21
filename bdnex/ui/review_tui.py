@@ -653,21 +653,24 @@ class ReviewApp(App):
         for row, candidate in pairs:
             before = (self.library.get_file(row.path) or {}).get("album_id")
             row.busy, row.message = True, "waiting to be linked..."
+            row.link_id += 1
             self.refresh_row(row)
-            todo.append((row, candidate, before))
+            todo.append((row, candidate, before, row.link_id))
 
         def work() -> None:
             from bdnex.ui import verdicts
 
-            for row, candidate, before in todo:
+            for row, candidate, before, mine in todo:
+                if row.link_id != mine:
+                    continue  # decided again in the meantime
                 self.call_from_thread(self.say_linking, row, candidate)
                 captured, error = io.StringIO(), ""
                 try:
                     with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
                         verdicts.rematch(row.path, candidate.url, False)
-                except Exception as err:
+                except BaseException as err:
                     error = str(err) or err.__class__.__name__
-                self.call_from_thread(self.linked, row, before, error, None)
+                self.call_from_thread(self.linked, row, before, error, None, mine)
 
         self.run_worker(work, thread=True, exclusive=False, group="link")
 
@@ -676,6 +679,7 @@ class ReviewApp(App):
 
         row.message = f"linking to {display_name(candidate)}: reading the album page, a few seconds..."
         self.refresh_row(row)
+        self.watch_link(row)
 
     def action_cover(self) -> None:
         """A popup with the file's cover and the album's saved cover, side by side."""
@@ -763,8 +767,12 @@ class ReviewApp(App):
         name = display_name(candidate) if candidate is not None else url
         before = (self.library.get_file(row.path) or {}).get("album_id")
         row.busy, row.message = True, f"linking to {name}: reading the album page, a few seconds..."
+        row.link_id += 1
         self.refresh_row(row)
+        self.watch_link(row)
         self.notify(f"Linking {os.path.basename(row.path)} to {name}...", timeout=4)
+
+        mine = row.link_id
 
         def work() -> None:
             from bdnex.ui import verdicts
@@ -773,15 +781,30 @@ class ReviewApp(App):
             try:  # the import prints its progress: it must not land on the screen
                 with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
                     verdicts.rematch(row.path, url, keep_both)
-            except Exception as err:
+            except BaseException as err:  # a SystemExit of the import must not leave the row waiting for ever
                 error = str(err) or err.__class__.__name__
-            self.call_from_thread(self.linked, row, before, error, (url, candidate, keep_both))
+            self.call_from_thread(self.linked, row, before, error, (url, candidate, keep_both), mine)
 
         self.run_worker(work, thread=True, exclusive=False, group="link")
 
-    def linked(self, row: batch.Row, before, error: str = "", asked=None) -> None:
+    LINK_WAIT = 120  # seconds: a link that takes longer is not waited for any more (the screen must never be stuck)
+
+    def watch_link(self, row: batch.Row) -> None:
+        mine = row.link_id
+        self.set_timer(self.LINK_WAIT, lambda: self.gave_up(row, mine))
+
+    def gave_up(self, row: batch.Row, link_id: int) -> None:
+        if row.busy and row.link_id == link_id:
+            row.busy, row.link_id = False, row.link_id + 1  # its late answer is ignored
+            row.message = f"no answer after {self.LINK_WAIT} s (the site or the fetcher is slow?): not linked, decide again"
+            self.notify(f"{os.path.basename(row.path)}: {row.message}", severity="warning", timeout=10)
+            self.refresh_row(row)
+
+    def linked(self, row: batch.Row, before, error: str = "", asked=None, link_id=None) -> None:
         import os
 
+        if link_id is not None and link_id != row.link_id:
+            return  # the screen gave up on this link; the row was decided again since
         row.busy = False
         self.marked.discard(id(row))
         if error:

@@ -43,8 +43,6 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
         ("bdnex review --batch 50 --again", "also the files you already checked, with what you decided then"),
         ("bdnex review --list", "only list the flagged files and why; ask nothing"),
         ("bdnex review --auto -n", "preview the rule: how many are confirmed, switched, unlinked; changes nothing"),
-        ("bdnex review --apply decisions.tsv -n", "count the decisions of an assistant or a script (path, keep|unlink|switch|leave, album, reason); changes nothing"),
-        ("bdnex review --apply decisions.tsv", "write those decisions as the review screen writes them (a `checked` mark, the flag, the link)"),
         ("bdnex review --auto", "settle the doubtful matches by rule (asks once before changing anything)"),
     ],
     "ls": [

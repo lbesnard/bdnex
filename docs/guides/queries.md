@@ -36,7 +36,7 @@ bdnex ls --sitemap --for 'Yoko Tsuno - Integrale T02.cbr' --json
 **`--for PATH`** (repeatable, and it implies `--sitemap`) searches for the albums a file could be: by its name, by the names of its last two
 folders (often the series) and by the volume in its name, and again without the words an edition adds (`intégrale`, `tome`, `deluxe`), the albums whose name has the file's words and the right volume first, each with a line
 saying what moved its score and which searches found it. To link a file to an album you found, give the address to
-`bdnex import --album ADDRESS FILE` (or write it in a decisions file for `bdnex review --apply`).
+`bdnex import --album ADDRESS FILE`.
 
 ## Term syntax
 

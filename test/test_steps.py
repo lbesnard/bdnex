@@ -379,6 +379,16 @@ def test_album_uses_the_album_you_name_without_searching_or_asking(cli, capsys):
     assert album["source_id"] == "245127" and "Using the album" in capsys.readouterr().err
 
 
+def test_album_still_links_when_nothing_may_be_asked(cli):
+    web, db, make_cbz = cli
+    init()
+    path = make_cbz("Quelque chose de tout a fait different.cbz")
+    code, text = run_import("--album", ALBUM_URL, "--database-only", "--unattended", path)
+    assert code == 0
+    with Library(db) as lib:
+        assert lib.get_album(lib.get_file(path)["album_id"])["source_id"] == "245127"
+
+
 def test_album_takes_a_number_of_the_list_and_redoes_a_file_that_has_an_album(cli):
     web, db, make_cbz = cli
     init()
