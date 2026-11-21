@@ -299,6 +299,12 @@ def propose_for_series_address(source, address: str, paths: list[str], found=Non
     for path, volume in volumes.items():
         if volume in by_volume:
             proposal.mapping[path] = by_volume[volume]
+    numbered = [v for v in volumes.values() if v is not None]
+    beyond = sum(v > max(by_volume) for v in numbered) if by_volume else 0
+    if proposal.mapping and beyond * 2 > len(numbered):  # most numbers are past the last volume: chapters, not volumes
+        raise NoVolumeFound(
+            f"{name}: the files are numbered up to {max(numbered)} but the series has {len(by_volume)} volume(s) (up to {max(by_volume)}): "
+            "these look like chapters, not volumes. Nothing was linked.")
     if not proposal.mapping:
         listed = sorted(by_volume)
         raise NoVolumeFound(

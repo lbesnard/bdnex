@@ -1006,3 +1006,24 @@ def test_edit_form_cancel_button_and_x_outside_a_text_field(env):
     with Library(db) as lib:
         assert not any((lib.get_album(lib.get_file(p)["album_id"]) or {}).get("series") == "Fell" for p in files.values()
                        if lib.get_file(p)["album_id"])
+
+
+def test_a_quality_tag_glued_to_the_number_is_not_part_of_it():
+    from bdnex.importer.folders import title_and_volume
+    from bdnex.importer.matching import volumes_for
+
+    for name, volume in (("Death_Note_-_003lq.cbz", 3), ("Death_Note-035lq.cbz", 35), ("Death_Note_-_010HQ.cbz", 10)):
+        path = "/x/Death Note/" + name
+        assert title_and_volume(path) == (["death", "note"], volume) and volumes_for(path) == [volume]
+
+
+def test_files_numbered_past_the_last_volume_are_chapters_and_are_not_linked_by_number():
+    import pytest
+
+    albums = [Candidate(str(n), f"https://www.bedetheque.com/BD-Death-Note-Tome-{n}-{n}.html", "dn", n) for n in range(1, 13)]
+    paths = [f"/x/Death Note/Death_Note_-_{n:03d}lq.cbz" for n in range(3, 43)]
+    with pytest.raises(batch.NoVolumeFound, match="chapters"):
+        batch.propose_for_series_address(None, "https://www.bedetheque.com/serie-1-BD-Death-Note.html", paths, found=("1", "Death Note", albums))
+    ok = batch.propose_for_series_address(None, "x", [f"/x/Death Note/Death Note T{n:02d}.cbz" for n in range(1, 13)],
+                                          found=("1", "Death Note", albums))
+    assert len(ok.mapping) == 12
