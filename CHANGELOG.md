@@ -6,6 +6,8 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Changed
+- Faster on a big library (measured on a copy of a 16,000-album library): text searches (`bdnex ls WORDS`, the web page's search) take a third of the time (`fold` is cached and skips its accent loop for plain text); `bdnex series` and the next review batch are about a third faster; the web page's list of files only builds the credits of the rows it shows. The batch no longer asks the library for each file's `checked` mark and last import one by one.
 ### Fixed
 - Review screen: in the `a` search each hit says in its own column whether it is a **SERIES** (each file gets its volume) or one **album**, with a header line above the list.
 - Review screen: a link that fails (a file that moved, a locked library) is shown on its row and in the log; it no longer closes the screen. A series link no longer overwrites a file you decided while the question was open. The volumes box refuses digits like `²` instead of crashing.

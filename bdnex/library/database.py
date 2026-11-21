@@ -358,11 +358,12 @@ class Library:
                    WHERE a.series_id = ?""", (series["id"],))}
             if not owned and not self.conn.execute("SELECT 1 FROM albums WHERE series_id = ?", (series["id"],)).fetchone():
                 continue  # a series nothing is linked to
-            known = json.loads(series["extra"]).get("albums")
+            extra = json.loads(series["extra"])  # once: a series page can list hundreds of albums
+            known = extra.get("albums")
             missing = None if known is None else [a for a in known if str(a["source_id"]) not in owned]
             rows.append({"id": series["id"], "name": series["name"], "url": series["url"], "owned": len(owned),
                          "known": None if known is None else len(known), "missing": missing,
-                         "extra": {k: v for k, v in json.loads(series["extra"]).items() if k != "albums"}})
+                         "extra": {k: v for k, v in extra.items() if k != "albums"}})
         return rows
 
     # ---------------------------------------------------------------- albums
@@ -703,6 +704,11 @@ class Library:
         return {r["key"]: r["value"] for r in self.conn.execute(
             f"SELECT key, value FROM {table} WHERE {column} = ? ORDER BY key", (target_id,))}
 
+    def file_marks(self, key: str) -> dict[str, str]:
+        """``{path: value}`` of every file with the attribute ``key`` (one query: what a screen would otherwise ask file by file)."""
+        return {self._resolve(r["path"]): r["value"] for r in self.conn.execute(
+            "SELECT f.path, t.value FROM file_attrs t JOIN files f ON f.id = t.file_id WHERE t.key = ?", (key,))}
+
     def known_facts(self, source: str) -> dict[str, dict[str, Any]]:
         """What the albums whose page was read say, by their id at the source: ``{source_id: {year, publisher,
         series, credits: {role: [names]}}}``. Three queries for the whole library (matching reads it once, before
@@ -834,9 +840,10 @@ class Library:
         return groups
 
     # ---------------------------------------------------------------- query
-    def query(self, terms: list[str], files: bool = False, limit: int | None = None) -> list[dict[str, Any]]:
-        """Albums (or files with ``files=True``) matching the query terms, at most ``limit``. See ``library.query``."""
-        rows = run_query(self.conn, terms, files_mode=files)
+    def query(self, terms: list[str], files: bool = False, limit: int | None = None, light: bool = False) -> list[dict[str, Any]]:
+        """Albums (or files with ``files=True``) matching the query terms, at most ``limit``. See ``library.query``.
+        ``light`` (files only): ``authors`` and ``genres`` are left ``None``, which makes a listing of every file about three times faster."""
+        rows = run_query(self.conn, terms, files_mode=files, light=light and files)
         if files:
             rows = [self._file_row(r) for r in rows]
             if not split_query(terms)[1]:  # stored paths do not sort like real ones (unless the query sorts)
@@ -847,8 +854,14 @@ class Library:
         """``(how many match, one window of them)``. Albums are windowed in SQL (only the window's rows are built); files
         are sorted by their real paths unless the query sorts, which SQL can not do, so they are cut after sorting."""
         if files and not split_query(terms)[1]:
-            rows = self.query(terms, files=True)
-            return len(rows), rows[offset:offset + limit]
+            rows = self.query(terms, files=True, light=True)  # every match is sorted by its real path: cheap rows for that...
+            window = rows[offset:offset + limit]
+            if not window:
+                return len(rows), []
+            ids = [r["file_id"] for r in window]
+            sql, params = build_sql([], True, file_ids=ids)
+            full = {r["file_id"]: r for r in (self._file_row(dict(x)) for x in self.conn.execute(sql, params))}
+            return len(rows), [full[i] for i in ids if i in full]
         sql, params = build_sql(terms, files)
         total = self.conn.execute(f"SELECT COUNT(*) FROM ({sql})", params).fetchone()[0]
         rows = [dict(r) for r in self.conn.execute(f"{sql} LIMIT ? OFFSET ?", [*params, limit, offset])]
@@ -968,6 +981,11 @@ class Library:
             "SELECT * FROM import_log WHERE path = ? ORDER BY id DESC LIMIT 1",
             (self._store(path),)).fetchone()
         return self._file_row(row) if row else None
+
+    def last_imports(self) -> dict[str, dict[str, Any]]:
+        """The last import log row of every path, in one query (``{path: row}``): what asking `last_import` file by file costs on a whole library."""
+        return {row["path"]: row for row in (self._file_row(r) for r in self.conn.execute(
+            """SELECT l.* FROM import_log l JOIN (SELECT path, MAX(id) AS last FROM import_log GROUP BY path) m ON m.last = l.id"""))}
 
     # ------------------------------------------- files without an album, moved files
     def unmatched(self, terms: Iterable[str] = ()) -> list[dict[str, Any]]:
