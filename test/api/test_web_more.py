@@ -214,3 +214,26 @@ def test_a_task_streams_its_output_as_events(env):
     assert stream.headers["content-type"].startswith("text/event-stream")
     assert "event: end" in stream.text and '"status": "done"' in stream.text or '"status": "failed"' in stream.text
     assert web.get("/api/jobs/999/events").status_code == 404
+
+
+# ---------------------------------------------------------------- the review batch
+def test_the_batch_lists_unmatched_files_and_a_decision_marks_them_checked(env):
+    settings, path, _ = env
+    other = path.replace("Redwin", "Zorn")
+    import shutil
+    shutil.copy(path, other)
+    with Library.for_settings(settings) as lib:
+        lib.add_file(other, None)
+    web = client(settings, allow_changes=True)
+    assert all(i["kind"] != "unmatched" for i in web.get("/api/review/batch").json()["items"])
+    body = web.get("/api/review/batch", params={"unmatched": True}).json()
+    row = next(i for i in body["items"] if i["path"] == other)
+    assert row["kind"] == "unmatched" and body["total"] >= 2
+    assert web.get("/api/review/batch", params={"unmatched": True, "q": "Zorn"}).json()["count"] == 1
+    assert web.post(f"/api/review/{row['file_id']}/decide", json={"action": "leave"}).status_code == 403  # no header
+    done = web.post(f"/api/review/{row['file_id']}/decide", json={"action": "leave"}, headers=HEADERS)
+    assert done.json() == {"ok": True, "status": "left"}
+    assert other not in [i["path"] for i in web.get("/api/review/batch", params={"unmatched": True}).json()["items"]]
+    assert other in [i["path"] for i in web.get("/api/review/batch", params={"unmatched": True, "again": True}).json()["items"]]
+    assert web.post(f"/api/review/{row['file_id']}/decide", json={"action": "delete"}, headers=HEADERS).status_code == 400
+    assert web.post("/api/review/99999/decide", json={"action": "keep"}, headers=HEADERS).status_code == 404
