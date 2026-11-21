@@ -212,6 +212,10 @@ def read_covers(path: str, fmt: str, saved) -> tuple[Optional[bytes], Optional[b
     return local, online, "; ".join(notes)
 
 
+class NoVolumeFound(Exception):
+    """A series page was read, but none of the files finds its volume in it: the message says what each side has."""
+
+
 def read_series_address(settings, address: str):
     """``(series id, name, albums)`` of a series page address, or ``None``: the page from the library, or fetched once with the
     configured fetcher and stored. Its own writable library and source: the screen's album list is offline and read-only.
@@ -243,7 +247,13 @@ def propose_for_series_address(source, address: str, paths: list[str], found=Non
     for path, volume in volumes.items():
         if volume in by_volume:
             proposal.mapping[path] = by_volume[volume]
-    return proposal if proposal.mapping else None
+    if not proposal.mapping:
+        listed = sorted(by_volume)
+        raise NoVolumeFound(
+            f"{name}: its page lists {len(albums)} album(s), " + (f"with the volumes {', '.join(map(str, listed[:12]))}" if listed else
+            "none with a volume number (collected editions, `INT`, or one-shots?)")
+            + "; the files ask for " + (", ".join(str(v) for v in sorted({v for v in volumes.values() if v is not None})[:12]) or "no volume") + ".")
+    return proposal
 
 
 def propose_for_series(source, candidate, paths: list[str]):
