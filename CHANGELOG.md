@@ -7,6 +7,8 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Changed
+- Album search (the review screen's `o` and `a`, `bdnex ls --sitemap`) is faster on a big album list: on a 372,000-album list a word search takes about a third of the time (the rarest word is found by `str.find` over the whole list), and typing letters of an `fzf`-style search narrows what the shorter text found instead of scanning the list again. The answers are the same.
+### Changed
 - Faster on a big library (measured on a copy of a 16,000-album library): text searches (`bdnex ls WORDS`, the web page's search) take a third of the time (`fold` is cached and skips its accent loop for plain text); `bdnex series` and the next review batch are about a third faster; the web page's list of files only builds the credits of the rows it shows. The batch no longer asks the library for each file's `checked` mark and last import one by one.
 ### Fixed
 - Review screen: a series with one album and no volume (a one-shot such as Scalp), given by its address or picked as a SERIES, links that album to the one file you chose when the file's name has no number; before it said "none with a volume number" and changed nothing.
