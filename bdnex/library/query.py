@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from functools import lru_cache
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -34,12 +35,19 @@ class QueryError(ValueError):
     """The query text is invalid."""
 
 
+@lru_cache(maxsize=1 << 17)  # a search folds every title, name and path of the library: the same ones again for the next term
+def _fold(text: str) -> str:
+    if text.isascii():  # nothing to strip: the common case, and the loop below is the cost of a search
+        return text.casefold()
+    text = unicodedata.normalize("NFKD", text)
+    return "".join(c for c in text if not unicodedata.combining(c)).casefold()
+
+
 def fold(value: Any) -> str:
     """Lowercase and strip accents, so ``astérix`` matches ``Asterix``."""
     if value is None:
         return ""
-    text = unicodedata.normalize("NFKD", str(value))
-    return "".join(c for c in text if not unicodedata.combining(c)).casefold()
+    return _fold(value if isinstance(value, str) else str(value))
 
 
 def strip_accents(text: str) -> str:
@@ -296,14 +304,25 @@ ALBUM_ORDER = "ORDER BY fold(COALESCE(s.name, a.title)), a.volume, fold(a.title)
 FILE_ORDER = "ORDER BY f.path"
 
 
-def build_sql(terms: list[str], files_mode: bool) -> tuple[str, list[Any]]:
+# the same columns without the two correlated subqueries that build `authors` and `genres` (most of the cost of a listing
+# of files): for callers that read the file, its album id, series, volume, title or url, never the credits or `partial`
+LIGHT_ALBUM_COLUMNS = (ALBUM_COLUMNS.split("COALESCE(json_extract(a.extra, '$.partial'), 0) AS partial,")[0]
+                       + "NULL AS partial, NULL AS authors, NULL AS genres")  # `partial` parses the album's whole JSON, per row
+
+
+def build_sql(terms: list[str], files_mode: bool, light: bool = False, file_ids: list[int] | None = None) -> tuple[str, list[Any]]:
+    """``file_ids`` (files only): only these files, whatever else the terms say (the window of a page, built in full)."""
     compiled = compile_query(terms, files_mode)
     _, sort = split_query(terms)
     if files_mode:
         order = f"ORDER BY {order_by(sort)}" if sort else FILE_ORDER
-        sql = (f"SELECT {FILE_COLUMNS}, {ALBUM_COLUMNS}, 1 AS files "
-               f"FROM files f LEFT JOIN albums a ON a.id = f.album_id {FROM_JOINS} "
-               f"WHERE {compiled.where} {order}")
+        where, params = compiled.where, list(compiled.params)
+        if file_ids:
+            where = f"({where}) AND f.id IN ({','.join('?' * len(file_ids))})"
+            params += file_ids
+        sql = (f"SELECT {FILE_COLUMNS}, {LIGHT_ALBUM_COLUMNS if light else ALBUM_COLUMNS}, 1 AS files "
+               f"FROM files f LEFT JOIN albums a ON a.id = f.album_id {FROM_JOINS} WHERE {where} {order}")
+        return sql, params
     else:
         order = f"ORDER BY {order_by(sort)}" if sort else ALBUM_ORDER
         sql = (f"SELECT {ALBUM_COLUMNS}, (SELECT COUNT(*) FROM files f WHERE f.album_id = a.id) AS files "
@@ -311,8 +330,8 @@ def build_sql(terms: list[str], files_mode: bool) -> tuple[str, list[Any]]:
     return sql, compiled.params
 
 
-def run_query(conn, terms: list[str], files_mode: bool = False) -> list[dict[str, Any]]:
-    sql, params = build_sql(terms, files_mode)
+def run_query(conn, terms: list[str], files_mode: bool = False, light: bool = False) -> list[dict[str, Any]]:
+    sql, params = build_sql(terms, files_mode, light)
     return [dict(row) for row in conn.execute(sql, params)]
 
 

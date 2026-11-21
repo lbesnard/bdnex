@@ -167,3 +167,40 @@ def test_any_and_slash_regex_search_everywhere(lib):
         assert any("bibliomule" in (r["title"] or "").lower() for r in lib.query(terms)), terms
     assert lib.query(["any:zzzzzzzz"]) == []
     assert lib.query(["^any:bibliomule"]) != lib.query([])
+
+
+def test_fold_is_the_same_for_plain_and_accented_text_and_for_non_strings():
+    assert fold("Plain TEXT 12") == "plain text 12" and fold("ÉCOLE de Naïveté") == "ecole de naivete"
+    assert fold(12) == "12" and fold("ß") == "ss" and fold("日本") == "日本"
+    assert fold("Astérix") == fold("Astérix") == "asterix"  # the cached answer is the same
+
+
+def test_a_light_listing_of_files_has_the_same_files_and_no_credits(lib):
+    full = lib.query([], files=True)
+    light = lib.query([], files=True, light=True)
+    assert [r["path"] for r in light] == [r["path"] for r in full]
+    assert [r["id"] for r in light] == [r["id"] for r in full] and [r["series"] for r in light] == [r["series"] for r in full]
+    assert any(r["authors"] for r in full) and all(r["authors"] is None and r["genres"] is None for r in light)
+
+
+def test_a_page_of_files_is_built_in_full_but_cut_from_the_cheap_listing(lib):
+    library = lib
+    full = library.query([], files=True)
+    total, rows = library.page([], files=True, limit=2, offset=1)
+    assert total == len(full) and rows == full[1:3]  # same rows, credits included, in the same order
+    assert library.page([], files=True, limit=5, offset=500) == (len(full), [])
+
+
+def test_the_marks_of_every_file_come_in_one_query(lib):
+    library = lib
+    path = library.query([], files=True)[0]["path"]
+    library.set_attr("file", library.get_file(path)["id"], "checked", "keep")
+    assert library.file_marks("checked") == {path: "keep"} and library.file_marks("nothing") == {}
+
+
+def test_the_last_import_of_every_path_in_one_query_is_the_one_asked_file_by_file(lib):
+    path = lib.query([], files=True)[0]["path"]
+    lib.log_import(path, "skipped", 50.0)
+    lib.log_import(path, "tagged", 90.0)
+    last = lib.last_imports()
+    assert last[path]["outcome"] == "tagged" and last[path] == lib.last_import(path)
