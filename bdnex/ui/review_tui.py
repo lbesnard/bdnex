@@ -83,6 +83,7 @@ class SourceHub:
         self.close_it = None
         self.catalogue: Optional[list] = None
         self.folded: list[str] = []
+        self.cache: dict = {}  # the albums of the words typed so far (see `album_search`): one more letter is a quick search
         build = source if callable(source) and not hasattr(source, "candidates") else (lambda: source)
         self.ready = self.pool.submit(self._build, build)
 
@@ -155,7 +156,7 @@ def fuzzy_search(hub: SourceHub, text: str, limit: int = SEARCH_LIMIT) -> tuple[
     if hub.catalogue is None:
         hub.catalogue = list(hub.source.catalogue())
         hub.folded = album_search.folded_names(hub.catalogue)
-    return album_search.search_folded(hub.catalogue, hub.folded, text, limit)
+    return album_search.search_folded(hub.catalogue, hub.folded, text, limit, hub.cache)
 
 
 class FuzzyScreen(ModalScreen):
@@ -186,20 +187,37 @@ class FuzzyScreen(ModalScreen):
 
     def on_mount(self) -> None:
         self.query_one(Input).focus()
-        self.search(self.start)
+        self.search(self.start, at_once=True)
 
-    def search(self, text: str) -> None:
+    DELAY = 0.15  # seconds of quiet after a key before the search runs: not one search per letter
+
+    def search(self, text: str, at_once: bool = False) -> None:
         self.query_one("#count", Label).update(Text("looking...", style="dim"))
-        self.run_worker(self.find(text), exclusive=True)  # a newer search replaces the one still running
+        self.latest = getattr(self, "latest", 0) + 1
+        mine = self.latest
+        timer = getattr(self, "pending", None)
+        if timer is not None:
+            timer.stop()
+        if at_once:
+            self.run_worker(self.find(text, mine), exclusive=True)
+        else:
+            self.pending = self.set_timer(self.DELAY, lambda: self.run_worker(self.find(text, mine), exclusive=True))
 
-    async def find(self, text: str) -> None:
+    async def find(self, text: str, mine: int = 0) -> None:
+        def look(hub):
+            if mine and mine != self.latest:
+                return [], 0  # typed over meanwhile: the list's thread does not spend its time on it
+            return fuzzy_search(hub, text)
+
         try:
-            hits, total = await asyncio.wrap_future(self.hub.run(lambda hub: fuzzy_search(hub, text)))
+            hits, total = await asyncio.wrap_future(self.hub.run(look))
         except Exception as err:  # the album list could not be loaded
             self.query_one("#count", Label).update(Text(f"the album list is not available: {err}", style="red"))
             return
         from bdnex.ui.prompts import display_name
 
+        if mine and mine != self.latest:
+            return  # a newer search is on its way
         self.hits = hits
         options = self.query_one(OptionList)
         options.clear_options()
@@ -424,6 +442,9 @@ class ReviewApp(App):
         super().__init__()
         self.verbose = verbose
         self.ui_thread = None
+        self.fetcher: Optional[ThreadPoolExecutor] = None  # the background import of pages and covers (one thread)
+        self.first_total: Optional[int] = None
+        self.unfetched = 0  # linked files whose page and cover have not come yet
         self.library, self.settings = library, settings
         self.hub = SourceHub(source)
         self.batch_size, self.terms, self.unmatched = size, list(terms), unmatched
@@ -462,6 +483,8 @@ class ReviewApp(App):
 
     def on_unmount(self) -> None:
         self.give_back_the_log()
+        if self.fetcher is not None:
+            self.fetcher.shutdown(wait=False, cancel_futures=True)  # what is not fetched yet: `bdnex import --fetch`
         self.hub.close()
 
     # -- the log panel: what bdnex is doing (reads, fetches, links), so that a wait is never silent
@@ -554,7 +577,7 @@ class ReviewApp(App):
         self.number += 1
         self.rows = []
         self.query_one(DataTable).clear()
-        self.sub_title = f"batch {self.number} · getting ready..."
+        self.sub_title = f"batch {self.batch_of()} · getting ready..."
         self.say("")
         self.started, self.weighed_in = time.monotonic(), None
         self.show_loading(True)
@@ -577,7 +600,7 @@ class ReviewApp(App):
     def show_error(self, message: str) -> None:
         self.loading = False
         self.show_loading(False)
-        self.sub_title = f"batch {self.number}"
+        self.sub_title = f"batch {self.batch_of()}"
         self.say(f"Could not weigh the files: {message}", "red")
 
     def show_batch(self, rows: list[batch.Row], seconds: float) -> None:
@@ -585,6 +608,8 @@ class ReviewApp(App):
         self.weighed_in = seconds
         self.show_loading(False)
         self.query_one(DataTable).focus()
+        if self.first_total is None:
+            self.first_total = getattr(rows, "total", 0)  # the files to check when the run began: the batches there will be about
         self.rows = rows
         self.shown.update(row.path for row in rows)
         self.marked.clear()
@@ -658,13 +683,21 @@ class ReviewApp(App):
     def update_title(self) -> None:
         done = sum(1 for row in self.rows if row.status)
         by = f" · by {COLUMNS[self.sort_column][0].lower()} {'▼' if self.sort_reverse else '▲'}" if self.sort_column is not None else ""
-        self.sub_title = f"batch {self.number} · {done}/{len(self.rows)} checked{by} · {self.timing}".rstrip(" ·")
+        self.sub_title = f"batch {self.batch_of()} · {done}/{len(self.rows)} checked{by} · {self.timing}".rstrip(" ·")
+
+    def batch_of(self) -> str:
+        """``3/53``: this batch and about how many there are (files to check when the run began, by the batch size)."""
+        if not self.first_total:
+            return str(self.number)
+        return f"{self.number}/{max(self.number, -(-self.first_total // self.batch_size))}"
 
     def cells(self, number: int, row: batch.Row) -> list:
         import os
 
         if row.busy:
             state = Text("linking...", style="bold yellow")
+        elif row.pending:
+            state = Text("linked · fetching", style="yellow")
         elif row.status:
             state = Text(row.status, style=STATUS_STYLE.get(row.status, ""))
         elif row.message.startswith(("refused", "failed")):
@@ -742,6 +775,8 @@ class ReviewApp(App):
         row = self.idle()
         if row is None:
             return
+        row.link_id += 1  # a decision cancels the page and cover still queued for it
+        row.pending = False
         batch.decide(self.library, row, action)
         self.decided[row.status] = self.decided.get(row.status, 0) + 1
         self.refresh_row(row)
@@ -914,39 +949,11 @@ class ReviewApp(App):
         self.push_screen(AskScreen(question, None), lambda yes: self.link_many(pairs) if yes else None)
 
     def link_many(self, pairs: list) -> None:
-        """Link each file to its album, one after the other (an import at a time: they write to the same library)."""
-        todo = []
+        """Link each file to its album at once (a write in the library); the pages and covers come in the background, one by one."""
         for row, candidate in pairs:
-            before = (self.library.get_file(row.path) or {}).get("album_id")
-            row.busy, row.message = True, "waiting to be linked..."
-            row.link_id += 1
-            self.marked.discard(id(row))  # linking now: the marks are free for the next series
-            self.refresh_row(row)
-            todo.append((row, candidate, before, row.link_id))
-
-        def work() -> None:
-            from bdnex.ui import verdicts
-
-            for row, candidate, before, mine in todo:
-                if row.link_id != mine:
-                    continue  # decided again in the meantime
-                self.call_from_thread(self.say_linking, row, candidate)
-                captured, error = LineSink(self), ""
-                try:
-                    with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
-                        verdicts.rematch(row.path, candidate.url, True, max(1, self.verbose))
-                except BaseException as err:
-                    error = str(err) or err.__class__.__name__
-                self.call_from_thread(self.linked, row, before, error, None, mine)
-
-        self.run_worker(work, thread=True, exclusive=False, group="link")
-
-    def say_linking(self, row: batch.Row, candidate) -> None:
-        from bdnex.ui.prompts import display_name
-
-        row.message = f"linking to {display_name(candidate)}: reading the album page, a few seconds..."
-        self.refresh_row(row)
-        self.watch_link(row)
+            self.link(row, candidate.url, candidate, notify=False, advance=False)
+        self.notify(f"{len(pairs)} file(s) linked; their pages and covers are fetched in the background", timeout=6)
+        self.advance()
 
     def action_cover(self) -> None:
         """A popup with the file's cover and the album's saved cover, side by side."""
@@ -1030,89 +1037,64 @@ class ReviewApp(App):
         self.push_screen(AskScreen("The album's page address, or its number:", ""),
                          lambda text: self.run_worker(given(text)) if text else None)
 
-    # -- linking: it reads an album page, so it runs in a thread and the table says so
-    def link(self, row: batch.Row, url: str, candidate=None, keep_both: bool = True) -> None:
-        """``keep_both``: also when the album has another file (this one becomes a spare version; `bdnex duplicates` decides later)."""
-        import os
-
-        from bdnex.ui.prompts import display_name
-
-        name = display_name(candidate) if candidate is not None else url
-        before = (self.library.get_file(row.path) or {}).get("album_id")
-        row.busy, row.message = True, f"linking to {name}: reading the album page, a few seconds..."
+    # -- linking: the match is written at once; the album page and the cover are fetched in the background, one at a time
+    def link(self, row: batch.Row, url: str, candidate=None, keep_both: bool = True, notify: bool = True, advance: bool = True) -> None:
+        """The file is linked to the album in the library now. What the site has to say about it (page, series, cover) is queued;
+        unlinking the file meanwhile cancels it, and quitting leaves it to `bdnex import --fetch`."""
         row.link_id += 1
-        self.refresh_row(row)
-        self.watch_link(row)
-        self.notify(f"Linking {os.path.basename(row.path)} to {name}...", timeout=4)
-        logger.info("linking %s to %s (the album and series pages come from the library, or the fetcher)", os.path.basename(row.path), name)
-
-        mine = row.link_id
-
-        def work() -> None:
-            from bdnex.ui import verdicts
-
-            captured, error = LineSink(self), ""
-            try:  # the import prints its progress: it must not land on the screen
-                with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
-                    verdicts.rematch(row.path, url, keep_both, max(1, self.verbose))
-            except BaseException as err:  # a SystemExit of the import must not leave the row waiting for ever
-                error = str(err) or err.__class__.__name__
-            self.call_from_thread(self.linked, row, before, error, (url, candidate, keep_both), mine)
-
-        self.run_worker(work, thread=True, exclusive=False, group="link")
-
-    LINK_WAIT = 120  # seconds: a link that takes longer is not waited for any more (the screen must never be stuck)
-
-    def watch_link(self, row: batch.Row) -> None:
-        mine = row.link_id
-        self.set_timer(self.LINK_WAIT, lambda: self.gave_up(row, mine))
-
-    def gave_up(self, row: batch.Row, link_id: int) -> None:
-        if row.busy and row.link_id == link_id:
-            row.busy, row.link_id = False, row.link_id + 1  # its late answer is ignored
-            row.message = f"no answer after {self.LINK_WAIT} s (the site or the fetcher is slow?): not linked, decide again"
-            self.notify(f"{os.path.basename(row.path)}: {row.message}", severity="warning", timeout=10)
-            self.refresh_row(row)
-
-    def linked(self, row: batch.Row, before, error: str = "", asked=None, link_id=None) -> None:
-        import os
-
-        if link_id is not None and link_id != row.link_id:
-            return  # the screen gave up on this link; the row was decided again since
-        row.busy = False
+        batch.link_now(self.library, row, candidate)
+        row.pending = True
         self.marked.discard(id(row))
-        if error:
-            row.message = f"failed: {error}"
-            self.notify(f"{os.path.basename(row.path)}: {row.message}", severity="error")
-            self.refresh_row(row)
-            return
-        ok, message = batch.finish_link(self.library, row, before, asked[0] if asked else None)
-        logger.info("%s: %s", os.path.basename(row.path), message)
-        if ok:
-            file = self.library.get_file(row.path) or {}
-            row.cover, row.score, row.kind = file.get("cover_score"), None, "ok"
-            row.why = ["+ chosen by you"]
-            row.message = message + (f" · its cover is {row.cover:.0f}% like the file's" if row.cover is not None
-                                     else " · cover not compared")
-            self.decided["linked"] = self.decided.get("linked", 0) + 1
-        self.notify(row.message, severity="information" if ok else "error", timeout=6)
+        self.decided["linked"] = self.decided.get("linked", 0) + 1
+        logger.info("%s: %s; page and cover queued", os.path.basename(row.path), row.message)
+        self.queue_details(row, url, row.link_id)
+        row.message += " · page and cover are being fetched"
         self.refresh_row(row)
-        if row not in self.rows:
-            return
-        if ok:
+        if notify:
+            self.notify(row.message, timeout=5)
+        if advance:
             self.advance()
-        elif asked is not None and not asked[2]:
-            self.offer_both(row, *asked[:2])
 
-    def offer_both(self, row: batch.Row, url: str, candidate) -> None:
-        """The album has another file already: keep both (this file becomes a spare version), or leave it."""
-        from bdnex.ui.prompts import display_name
+    def queue_details(self, row: batch.Row, url: str, mine: int) -> None:
+        if self.fetcher is None:
+            self.fetcher = ThreadPoolExecutor(max_workers=1, thread_name_prefix="bdnex-details")  # one import at a time: one writer
+        self.unfetched += 1
+        self.fetcher.submit(self.fetch_details, row, url, mine)
 
-        name = display_name(candidate) if candidate is not None else url
-        question = (f"{name} already has another file. Link {row.path.rsplit('/', 1)[-1]} to it too, as a spare version "
-                    "(`bdnex duplicates` decides later which one stays)?")
-        self.push_screen(AskScreen(question, None),
-                         lambda yes: self.link(row, url, candidate, keep_both=True) if yes else None)
+    def fetch_details(self, row: batch.Row, url: str, mine: int) -> None:
+        """In the background thread: the import of the album's page and cover for a file already linked."""
+        from bdnex.ui import verdicts
+
+        error = ""
+        if row.link_id == mine:  # not unlinked or decided again while it waited
+            captured = LineSink(self)
+            try:
+                with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+                    verdicts.rematch(row.path, url, True, max(1, self.verbose))
+            except BaseException as err:
+                error = str(err) or err.__class__.__name__
+        with contextlib.suppress(Exception):
+            self.call_from_thread(self.details_done, row, mine, error)
+
+    def details_done(self, row: batch.Row, mine: int, error: str) -> None:
+        self.unfetched = max(0, self.unfetched - 1)
+        if row.link_id != mine:
+            # decided again meanwhile: if the import linked it back after an unlink, the unlink wins
+            if row.status == "unlinked" and (self.library.get_file(row.path) or {}).get("album_id") is not None:
+                batch.decide(self.library, row, "unlink")
+            return
+        row.pending = False
+        if error:
+            row.message = f"linked; page and cover not fetched ({error}): `bdnex import --fetch` tries again"
+            self.notify(f"{os.path.basename(row.path)}: {row.message}", severity="warning", timeout=8)
+        else:
+            file = self.library.get_file(row.path) or {}
+            row.cover = file.get("cover_score")
+            row.message = f"linked to {row.album} · page and cover fetched" + (
+                f" · its cover is {row.cover:.0f}% like the file's" if row.cover is not None else "")
+            logger.info("%s: %s", os.path.basename(row.path), row.message)
+        if row in self.rows:
+            self.refresh_row(row)
 
     def action_next_batch(self) -> None:
         self.load_batch()
@@ -1123,4 +1105,5 @@ def run(library, settings, source, size: int = 50, terms=(), unmatched: bool = F
     """Run the table until the person quits; returns how many files were decided, by decision."""
     app = ReviewApp(library, settings, source, size, terms, unmatched, everything, again, verbose)
     app.run()
+    run.unfetched = app.unfetched  # the caller says what is left for `bdnex import --fetch`
     return app.decided

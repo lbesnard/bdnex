@@ -78,6 +78,9 @@ def _batch(args, settings, out) -> int:
     total = sum(decided.values())
     parts = ", ".join(f"{n} {what}" for what, n in sorted(decided.items()) if n)
     print(f"{color.role(str(total), 'count', on)} file(s) checked" + (f" ({parts})" if parts else "") + ".", file=out)
+    left = getattr(review_tui.run, "unfetched", 0)
+    if left:
+        print(color.role(f"{left} linked file(s) have no page or cover yet", "warn", on) + color.hints(": `bdnex import --fetch` gets them.", on), file=out)
     print(color.hints("Run `bdnex review --batch " + str(args.batch) + "` again to continue; "
                       "`bdnex import --skipped --auto=all` decides the unlinked ones again.", on), file=out)
     return 0

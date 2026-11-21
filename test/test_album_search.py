@@ -112,3 +112,11 @@ def test_a_word_of_the_file_is_a_whole_word_of_the_name_not_a_piece_of_another_w
     monkeypatch.setattr(Source, "catalogue", lambda self: catalogue)
     hits = album_search.search_file(album_search.AlbumList(Source()), "/x/Comics/fell/Fell 02 (2005).cbz", limit=5)
     assert hits[0].candidate.source_id == "2"
+
+
+def test_typing_letter_by_letter_gives_the_same_answers_as_asking_at_once(albums):
+    """The albums of `batman dark` are looked for among those of `batman`: quicker, and never different."""
+    cold = album_search.AlbumList(Source())
+    for typed in ["b", "ba", "bat", "batman", "batman d", "batman dark", "batman dark vic", "dark batman", "batmandarkvic2", "yoko ts", "yoko"]:
+        assert albums.search(typed) == album_search.search_folded(cold.catalogue, cold.folded, typed, 20)
+    assert albums.search("batman dark")[1] == 1 and "pools" in albums.cache and "results" in albums.cache
