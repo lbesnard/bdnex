@@ -1142,3 +1142,24 @@ def test_a_failing_fetch_does_not_stop_the_next_ones_and_quitting_waits_for_them
     out = io.StringIO()
     left = result["app"].finish_pending_fetches(out)
     assert left == 0 and len(ran) >= 2, ran
+
+
+def test_a_one_shot_picked_with_a_is_linked_to_the_one_file_instead_of_a_refusal(env, monkeypatch):
+    """`a` on one file whose album has no volume (a one-shot, `OS`): the album picked is linked, as `o` would."""
+    db, files = env
+    release = threading.Event()
+    release.set()
+    seen_calls.clear()
+    _linking(monkeypatch, db, release)
+    monkeypatch.setattr(batch, "propose_for_series", lambda source, candidate, paths: None)
+
+    async def script(app, pilot):
+        await pilot.press("space")
+        await pilot.press("up")
+        await pilot.press("a")
+        await settle(app, pilot)
+        await pilot.press("enter")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert result["cells"][0][7] == "linked" and seen_calls == [True]
