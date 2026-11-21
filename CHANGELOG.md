@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Review screen: the next batch (`n`) never shows again a file of the batches before in the same run (a file passed over with `s`, or without album, used to come back).
 - The review screen no longer crashes when a link ends after the next batch was loaded.
 - `import --album` (and so a link in the review screen) read the album and series pages from the site again every time, through the fetcher: minutes per file. It now uses the stored pages; only `--force` asks the site again. And `import --force` no longer downloads an album page twice (the page fetched ahead was fetched again when its turn came).
 - `bdnex import FILE` finds a file by the path `bdnex ls` prints (relative to `collection_path`) when it is not found from where you are.
@@ -14,6 +15,7 @@ command runs, never while an import is fetching).
 - The review screen no longer waits for ever on a link: after 120 seconds without an answer (a slow site or fetcher) the file can be decided again, and a late answer is ignored.
 
 ### Added
+- Review screen: `a` (attach files to a series) and `i` accept the address of a series page (`bedetheque.com/serie-N-BD-Name.html`); the files get the album of that series with their volume number.
 - **`bdnex ls --sitemap WORDS`** searches the whole album list (every album of the site, not only yours) the way `fzf` does in the review screen: all the words in the name, a typo forgiven, 20 results, nothing requested. **`--for PATH`** gives the albums a file could be, by its name, its two last folder names and its volume (the right volume and the file's words first, with the reason). Both take `--json` and `-c`; the review screen and the command share one search (`importer/album_search.py`).
 - `tools/eval_covers.py` no longer judges a cover comparison by a guess: besides the matches that something confirms, it compares each file with a cover of ANOTHER SERIES and of the nearest OTHER VOLUME of its own series (wrong for sure), and reports the AUC and the catch rate against each.
 - `tools/eval_covers.py`: measures how well a cover comparison tells a right match from a wrong one on a real library (the answer key of `eval_matching.py`): the current score and

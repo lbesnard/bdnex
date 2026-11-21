@@ -65,15 +65,17 @@ def is_checked(library: Library, file_id: Optional[int]) -> bool:
 
 
 def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...] | list[str] = (),
-               unmatched: bool = False, everything: bool = False, again: bool = False) -> list[Row]:
+               unmatched: bool = False, everything: bool = False, again: bool = False,
+               skip: frozenset[str] | set[str] = frozenset()) -> list[Row]:
     """The next ``size`` files to check, in this order: the contradicted (lowest cover first), the unconfirmed, then, with
     ``unmatched`` (or ``everything``), the files without album, then, with ``everything``, all the other files of the query.
-    Files already checked are left out unless ``again``."""
+    Files already checked are left out unless ``again``, and so are the ``skip`` paths (the ones a screen already showed:
+    a file passed over, or left without album, is not shown again by the next batch of the same run)."""
     from bdnex.ui.describe import label
 
     exclude = [] if again else [f"^attr:{CHECKED}"]
     verdicts = [v for v in weak_matches(library, settings, [*terms, *exclude], compare=False, store=False,
-                                        flagged=True, weak=True) if v.kind in (WRONG, UNCONFIRMED)]
+                                        flagged=True, weak=True) if v.kind in (WRONG, UNCONFIRMED) and v.path not in skip]
     verdicts.sort(key=lambda v: (v.kind != WRONG, v.cover if v.cover is not None else 101.0, v.path))
     rows = []
     for verdict in verdicts[:size]:
@@ -95,7 +97,7 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
         for found in sorted(library.unmatched(list(terms)), key=lambda r: r["path"]):
             file = library.get_file(found["path"]) or {}
             previous = library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""
-            if previous and not again:
+            if (previous and not again) or found["path"] in skip:
                 continue
             rows.append(Row(found["path"], folder_of(found["path"]), None, None, None, found.get("score"), None, "unmatched",
                             [f"last import: {found.get('outcome')}"], file.get("id"),
@@ -105,7 +107,7 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
     if everything and len(rows) < size:
         taken = {row.path for row in rows}
         for found in sorted(library.query([*terms, *exclude], files=True), key=lambda r: r["path"]):
-            if found["path"] in taken or found.get("id") is None:
+            if found["path"] in taken or found["path"] in skip or found.get("id") is None:
                 continue
             file = library.get_file(found["path"]) or {}
             album = library.get_album(found["id"]) or {}
@@ -208,6 +210,28 @@ def read_covers(path: str, fmt: str, saved) -> tuple[Optional[bytes], Optional[b
         except OSError as err:
             notes.append(f"the album's cover could not be read ({err})")
     return local, online, "; ".join(notes)
+
+
+def propose_for_series_address(source, address: str, paths: list[str]):
+    """The album of the series page at ``address`` (``bedetheque.com/serie-N-BD-Name.html``) for each of ``paths``, by the volume
+    number in the file name; ``None`` when it is not a series page or no file finds its volume. May read the page from the site
+    once (run it in the thread that owns the source)."""
+    from bdnex.importer import folders
+
+    found = source.series_by_address(address) if hasattr(source, "series_by_address") else None
+    if found is None:
+        return None
+    key, name, albums = found
+    volumes = {path: folders.title_and_volume(path)[1] for path in paths}
+    by_volume = {}
+    for album in albums:
+        if album.volume is not None:
+            by_volume.setdefault(album.volume, album)
+    proposal = folders.SeriesProposal(name, key, with_volume=sum(v is not None for v in volumes.values()), total=len(paths))
+    for path, volume in volumes.items():
+        if volume in by_volume:
+            proposal.mapping[path] = by_volume[volume]
+    return proposal if proposal.mapping else None
 
 
 def propose_for_series(source, candidate, paths: list[str]):
