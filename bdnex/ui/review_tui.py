@@ -514,6 +514,7 @@ class ReviewApp(App):
         self.rows: list[batch.Row] = []
         self.shown: set[str] = set()  # every file of every batch of this run: the next batch never repeats one
         self.number = 0
+        self.terminal_stderr = sys.stderr  # the real one, before any fetch redirects it
         self.batches: list[list] = []  # every batch shown in this run, so `b` can go back to one (its rows keep their decisions)
         self.batch_totals: list[int] = []  # for each: the files left to check when it was weighed
         self.at = -1  # the batch on the screen (an index of ``batches``)
@@ -560,7 +561,7 @@ class ReviewApp(App):
     def finish_pending_fetches(self, out=None) -> int:
         """After the screen is closed: wait for the pages and covers still queued (one failing, a corrupt file say, does not stop the
         others). Ctrl-C gives up on the rest. Returns how many are left for `bdnex import --fetch`."""
-        out = out or sys.stderr
+        out = out or self.terminal_stderr  # not `sys.stderr`: a fetch still running has it redirected into the (closed) log panel
         try:
             while True:
                 with self.remaining_lock:
