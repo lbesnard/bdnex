@@ -72,7 +72,7 @@ def cli(tmp_path, monkeypatch, make_cbz):
     monkeypatch.setattr(plugin, "http_fetch", web)
     monkeypatch.setattr(plugin, "build_fetcher", lambda settings: web)
     original = Bedetheque.album_info
-    monkeypatch.setattr(Bedetheque, "album_info", lambda self, url, recache=False: original(self, ALBUM_URL, recache))
+    monkeypatch.setattr(Bedetheque, "album_info", lambda self, url, recache=False, **more: original(self, ALBUM_URL, recache, **more))
     monkeypatch.setattr("bdnex.importer.bedetheque.bedetheque.uniform", lambda a, b: 0)
     monkeypatch.setattr("time.sleep", lambda s: None)
     return web, tmp_path / "lib.sqlite", make_cbz
@@ -430,3 +430,18 @@ def test_a_path_as_ls_prints_it_is_found_from_the_collection(tmp_path, monkeypat
     monkeypatch.chdir(tmp_path)
     assert import_cmd._under_collection("Series/A.cbz", settings) == str(root / "Series" / "A.cbz")
     assert import_cmd._under_collection("Series/none.cbz", settings) == "Series/none.cbz"
+
+
+def test_force_downloads_an_album_page_once(cli, monkeypatch, tmp_path):
+    web, db, make_cbz = cli
+    (tmp_path / "bdnex.yaml").write_text(yaml.safe_dump({"config_version": 2, "library": str(db), "import": {"auto": True},
+                                                          "bedetheque": {"delay": [0, 0], "parallel": 3}}))
+    import bdnex.importer.bedetheque as plugin
+
+    monkeypatch.setattr(plugin, "uses_saved_pages", lambda settings: False)  # a fetcher is set: pages are fetched ahead, several at once
+    init()
+    path = make_cbz(FILE)
+    run_import(path)
+    web.calls.clear()
+    run_import("--force", path)
+    assert len([c for c in web.calls if "Redwin" in c]) == 1  # the page, not twice

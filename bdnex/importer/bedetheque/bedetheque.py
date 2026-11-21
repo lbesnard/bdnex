@@ -562,9 +562,10 @@ class Bedetheque:
         return [(cand, NUMERIC_TITLE_SCORE) for cand in found[:limit]]
 
     # ------------------------------------------------------------------ pages
-    def album_info(self, url: str, recache: bool = False) -> AlbumInfo:
-        """Fetch (or read from cache) an album and its series page, return its metadata."""
-        html = self._get("album", url, recache).decode("utf-8", errors="replace")
+    def album_info(self, url: str, recache: bool = False, album_fresh: bool = False) -> AlbumInfo:
+        """Fetch (or read from cache) an album and its series page, return its metadata.
+        ``album_fresh``: the album page was just downloaded (``prefetch``), only the series page is asked for again."""
+        html = self._get("album", url, recache and not album_fresh).decode("utf-8", errors="replace")
         fields, series_href = parser.parse_album_page(html, url)
 
         abstract, series_extra = None, {}
