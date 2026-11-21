@@ -233,8 +233,6 @@ class FuzzyScreen(ModalScreen):
             if self.is_attached:
                 self.query_one("#count", Label).update(Text(f"the album list is not available: {err}", style="red"))
             return
-        from bdnex.ui.prompts import display_name
-
         if mine and mine != self.latest:
             return  # a newer search is on its way
         if not self.is_attached or not self.query("#hits"):

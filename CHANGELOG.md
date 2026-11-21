@@ -11,11 +11,13 @@ command runs, never while an import is fetching).
 
 ### Changed
 - Review screen: the next batch is weighed in the background while you work on the current one, so `n` (or the "next batch?" answer) shows it at once; the seconds counter of linked files no longer searches the list for every row.
+- Faster on a big library (measured on a copy of a 16,000-album library): text searches (`bdnex ls WORDS`, the web page's search) take a third of the time (`fold` is cached and skips its accent loop for plain text); `bdnex series` and the next review batch are about a third faster; the web page's list of files only builds the credits of the rows it shows. The batch no longer asks the library for each file's `checked` mark and last import one by one.
+
 ### Fixed
+- Review screen: a series with one album and no volume (a one-shot such as Scalp), given by its address or picked as a SERIES, links that album to the one file you chose when the file's name has no number; before it said "none with a volume number" and changed nothing.
 - Review screen: in the `a` search each hit says in its own column whether it is a **SERIES** (each file gets its volume) or one **album**, with a header line above the list.
 - Review screen: a link that fails (a file that moved, a locked library) is shown on its row and in the log; it no longer closes the screen. A series link no longer overwrites a file you decided while the question was open. The volumes box refuses digits like `²` instead of crashing.
 - `bdnex review --batch`: the "about how many files" total no longer counts files already checked or passed over, so the "Check the next batch?" question is not asked when nothing is left.
-### Fixed
 - Review screen: `a` on one file whose album has no volume (a one-shot such as `OS`) links that file to the album you picked instead of refusing; a refusal is now in the log, and says to use `o` for one file.
 
 ### Added
@@ -23,8 +25,6 @@ command runs, never while an import is fetching).
 
 ### Changed
 - Review screen: the `e` form has **OK** and **Cancel** buttons (`Ctrl-S` is taken by tmux); `x` cancels when the cursor is not in a text field, `Esc` always does.
-
-### Fixed
 - Review screen: when the files you asked for all fit in one batch (a query that finds 3 files), deciding the last one no longer asks "Check the next batch?" (there is none): it says everything is checked and `q` quits.
 - `bdnex review --batch`: closing the screen no longer drops the pages and covers still queued for the files you linked: they are fetched before the command returns (Ctrl-C leaves the rest to `bdnex import --fetch`), and a file whose import fails (a corrupt archive) is reported on its row without stopping the files queued after it. Before, a failed import said "page and cover fetched".
 - Review screen: a state that waits for the site turns a wheel (`⠹ linked · fetching 12s`), and giving the address of a bdtheque.com page shows `⠹ fetching the page 3s` in the state column while the page is read (it said `no album` until the link was made).
@@ -82,8 +82,6 @@ command runs, never while an import is fetching).
   The batch is shown folder by folder. Columns are now 1–8.
 - `review --batch`: **click a column header (or press 1–8) to sort** the table; the same column again reverses it. Every column has a fixed
   width, so a rebuilt table never paints stale widths (Textualize/textual#6759).
-
-### Fixed
 - The question "the cover looks little like the album's" (asked during `import`) was one plain line that was hard to read. The file, the album and the score are now on their own lines, in colour (the file and album in bold, the score in red), and the question is just "Keep this match?".
 - **`cover.match_percentage` is 3, not 40.** A right match scores about 50 on the cover comparison (the share of distinctive features found in both covers), so 40 flagged
   one right match in five. Measured with `tools/eval_covers.py` on a real library (each file against its own album's cover, another series' and the next volume's): AUC 0.98 and 0.95;
@@ -227,8 +225,6 @@ command runs, never while an import is fetching).
 - `hooks:` in the configuration (`after_import`, `after_write`, `after_move`): commands of your own that run afterwards.
 - Docs: a *Command reference* generated from the commands' own `--help` (a test keeps it current), and *Checking the
   matches* (by hand or with an assistant).
-
-### Fixed
 - Albums stored with the old role `Encrage` (not yet re-read) lost their inkers in the Komga push and the written
   ComicInfo: the old name is read as `Inker`.
 - CBR files that a `7z` without the RAR codec could not read (`Failed the read enough data` in the log, no cover, no

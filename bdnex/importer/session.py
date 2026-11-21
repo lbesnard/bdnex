@@ -119,7 +119,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
             else:
                 files.extend(self._collect([path]))
         if not paths:  # no path: everything the library already knows
-            files = [row["path"] for row in self.library.query([], files=True)]
+            files = [row["path"] for row in self.library.query([], files=True, light=True)]
         if not files:
             return report
         if "match" in self.steps and not self.source.is_ready():

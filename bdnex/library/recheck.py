@@ -69,10 +69,12 @@ def weak_matches(library: Library, settings, terms: list[str], compare: bool = T
     vote_min, cover_floor = settings.match.cover_vote_min, settings.cover.match_percentage
     albums: dict[int, dict] = {}
     found = []
-    for row in library.query([*(["review:true"] if flagged and not weak else []), *terms], files=True):
+    rows = library.query([*(["review:true"] if flagged and not weak else []), *terms], files=True, light=True)
+    lasts = library.last_imports() if len(rows) > 200 else None  # one query instead of one per file, when there are many
+    for row in rows:
         if row.get("id") is None:
             continue
-        last = library.last_import(row["path"])
+        last = lasts.get(row["path"]) if lasts is not None else library.last_import(row["path"])
         if last and last["score"] is None:
             continue  # chosen by you or read from its own tags
         under = bool(last) and last["score"] < strong

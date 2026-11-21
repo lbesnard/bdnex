@@ -35,7 +35,7 @@ def doubtful_matches(library: Library) -> list[tuple[str, str, Any]]:
 
     albums: dict[int, dict] = {}
     weighed = []
-    for row in library.query([], files=True):
+    for row in library.query([], files=True, light=True):
         file = library.get_file(row["path"])
         if file is None or file["album_id"] is None or file["review"]:
             continue

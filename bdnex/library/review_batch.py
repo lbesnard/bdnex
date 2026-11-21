@@ -87,13 +87,13 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
     verdicts = [v for v in weak_matches(library, settings, [*terms, *exclude], compare=False, store=False,
                                         flagged=True, weak=True) if v.kind in (WRONG, UNCONFIRMED) and v.path not in skip]
     verdicts.sort(key=lambda v: (v.kind != WRONG, v.cover if v.cover is not None else 101.0, v.path))
+    marks = library.file_marks(CHECKED)  # one query, not one per file
+
     def unchecked(found) -> bool:  # the files the loops below would show: not checked (unless asked again), not passed over
-        file = library.get_file(found["path"]) or {}
-        previous = library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""
-        return found["path"] not in skip and (again or not previous)
+        return found["path"] not in skip and (again or not marks.get(found["path"]))
 
     extra = len([f for f in library.unmatched(list(terms)) if unchecked(f)]) if (unmatched or everything) else 0
-    total = (len([f for f in library.query([*terms, *exclude], files=True) if f["path"] not in skip]) if everything
+    total = (len([f for f in library.query([*terms, *exclude], files=True, light=True) if f["path"] not in skip]) if everything
              else len(verdicts)) + extra
     rows = Batch()
     rows.total = total
@@ -111,13 +111,13 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
         rows.append(Row(verdict.path, folder_of(verdict.path), label(album) if album else verdict.album, verdict.album_id,
                         album.get("url"), verdict.score, cover, verdict.kind, why, file.get("id"),
                         facts=facts_of(album, file),
-                        previous=library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""))
+                        previous=marks.get(verdict.path, "")))
     if (unmatched or everything) and len(rows) < size:
         for found in sorted(library.unmatched(list(terms)), key=lambda r: r["path"]):
-            file = library.get_file(found["path"]) or {}
-            previous = library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""
+            previous = marks.get(found["path"], "")
             if (previous and not again) or found["path"] in skip:
                 continue
+            file = library.get_file(found["path"]) or {}
             rows.append(Row(found["path"], folder_of(found["path"]), None, None, None, found.get("score"), None, "unmatched",
                             [f"last import: {found.get('outcome')}"], file.get("id"),
                             facts=facts_of(None, file), previous=previous))
@@ -125,7 +125,7 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
                 break
     if everything and len(rows) < size:
         taken = {row.path for row in rows}
-        for found in sorted(library.query([*terms, *exclude], files=True), key=lambda r: r["path"]):
+        for found in sorted(library.query([*terms, *exclude], files=True, light=True), key=lambda r: r["path"]):
             if found["path"] in taken or found["path"] in skip or found.get("id") is None:
                 continue
             file = library.get_file(found["path"]) or {}
@@ -133,8 +133,7 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
             last = library.last_import(found["path"])
             rows.append(Row(found["path"], folder_of(found["path"]), label(album) if album else None, found["id"],
                             album.get("url"), last["score"] if last else None, file.get("cover_score"), "ok", [],
-                            file.get("id"), facts=facts_of(album, file),
-                            previous=library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""))
+                            file.get("id"), facts=facts_of(album, file), previous=marks.get(found["path"], "")))
             if len(rows) >= size:
                 break
     rank = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # in one folder, the files in most doubt first
@@ -327,6 +326,8 @@ def propose_for_series_address(source, address: str, paths: list[str], found=Non
         raise NoVolumeFound(
             f"{name}: the files are numbered up to {max(numbered)} but the series has {len(by_volume)} volume(s) (up to {max(by_volume)}): "
             "these look like chapters, not volumes. Nothing was linked.")
+    if not proposal.mapping and len(paths) == 1 and len(albums) == 1 and volumes[paths[0]] is None:
+        proposal.mapping[paths[0]] = albums[0]  # a one-shot series (one album, no volume) and one file without a number: that album
     if not proposal.mapping:
         listed = sorted(by_volume)
         raise NoVolumeFound(
