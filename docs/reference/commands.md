@@ -233,9 +233,9 @@ Examples:
 Go through the doubtful matches: one by one with both covers, or settled by rule with --auto.
 
 ```text
-usage: bdnex review [-h] [--list] [--json] [--auto] [--batch N] [--apply FILE]
-                    [--unmatched] [--all] [--again] [--candidates N] [--no-cover] [-y]
-                    [-n] [-v] [--log-file PATH]
+usage: bdnex review [-h] [--list] [--json] [--auto] [--batch N] [--unmatched] [--all]
+                    [--again] [--candidates N] [--no-cover] [-y] [-n] [-v]
+                    [--log-file PATH]
                     [query ...]
 
 ``bdnex review``: go through the flagged matches one by one, with the file's cover and
@@ -263,13 +263,6 @@ options:
                    pick another album from the album list. Every decision is saved at
                    once and the files checked are not shown again: run it again to
                    continue; a query limits the files, as in `bdnex ls --files`
-  --apply FILE     apply the decisions in FILE, one per line:
-                   `path<TAB>decision<TAB>album<TAB>reason` (or a JSON object with
-                   those keys), decision = keep | unlink | switch | leave; for an
-                   assistant or a script that read the evidence (`--auto -n --json`).
-                   Each one is written as the review screen writes it (a `checked`
-                   mark, the flag, the link); `-n` only counts. Nothing is applied
-                   from a file with a bad line; no comic file is touched
   --unmatched      with --batch: also the files that have no album
   --all            with --batch: every file of the query, not only the doubtful ones
                    (those come first, then the files without album, then the rest): to
@@ -308,8 +301,6 @@ Examples:
   bdnex review --batch 50 --again              also the files you already checked, with what you decided then
   bdnex review --list                          only list the flagged files and why; ask nothing
   bdnex review --auto -n                       preview the rule: how many are confirmed, switched, unlinked; changes nothing
-  bdnex review --apply decisions.tsv -n        count the decisions of an assistant or a script (path, keep|unlink|switch|leave, album, reason); changes nothing
-  bdnex review --apply decisions.tsv           write those decisions as the review screen writes them (a `checked` mark, the flag, the link)
   bdnex review --auto                          settle the doubtful matches by rule (asks once before changing anything)
 ```
 

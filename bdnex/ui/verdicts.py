@@ -145,7 +145,9 @@ def rematch(path: str, url: str, keep_both: bool = False) -> bool:
     ``keep_both``: also when the album has another file (this one becomes a spare version)."""
     from bdnex.ui import import_cmd
 
-    code = import_cmd.run([path, "--album", url, "--database-only", *(["--keep-both"] if keep_both else [])],
+    # --unattended: no question. The review screen owns the terminal, so a question (the cover looks different...) would wait for
+    # a key that its own input swallows, for ever. The link is the person's choice; a low cover only shows in the table.
+    code = import_cmd.run([path, "--album", url, "--database-only", "--unattended", *(["--keep-both"] if keep_both else [])],
                           out=io.StringIO())
     return code == 0
 

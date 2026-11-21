@@ -34,6 +34,7 @@ class Row:
     status: str = ""  # what was decided in this session: ``keep``, ``unlinked``, ``linked``, ``left``, ``skipped``
     message: str = ""  # what happened when it was decided (a refusal, for one)
     busy: bool = False  # a link is being made for it (the screen waits)
+    link_id: int = 0  # which link the screen is waiting for: an answer of an older one (after giving up) is ignored
     facts: str = ""  # what the album says (year, credits, pages) next to what the file is: to judge a match by eye
     previous: str = ""  # an earlier decision (the ``checked`` mark), shown when files already checked are asked for again
 
