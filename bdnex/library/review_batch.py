@@ -87,8 +87,14 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
     verdicts = [v for v in weak_matches(library, settings, [*terms, *exclude], compare=False, store=False,
                                         flagged=True, weak=True) if v.kind in (WRONG, UNCONFIRMED) and v.path not in skip]
     verdicts.sort(key=lambda v: (v.kind != WRONG, v.cover if v.cover is not None else 101.0, v.path))
-    extra = len(library.unmatched(list(terms))) if (unmatched or everything) else 0
-    total = (len(library.query([*terms, *exclude], files=True)) if everything else len(verdicts)) + extra
+    def unchecked(found) -> bool:  # the files the loops below would show: not checked (unless asked again), not passed over
+        file = library.get_file(found["path"]) or {}
+        previous = library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""
+        return found["path"] not in skip and (again or not previous)
+
+    extra = len([f for f in library.unmatched(list(terms)) if unchecked(f)]) if (unmatched or everything) else 0
+    total = (len([f for f in library.query([*terms, *exclude], files=True) if f["path"] not in skip]) if everything
+             else len(verdicts)) + extra
     rows = Batch()
     rows.total = total
     for verdict in verdicts[:size]:

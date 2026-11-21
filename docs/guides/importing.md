@@ -432,7 +432,7 @@ stops and names the command.
 `bdnex init` also reads the **series index**: the 27 letter pages of the site (`bandes_dessinees_0.html`, `_a` ... `_z`), one request each,
 which list every series by name (about 25,000 lines, with the country flag). Nothing else is read for it: a series page is fetched only when
 you ask for it (a series address, `bdnex import` of a file that needs it). The index is what the review screen's search (`a`, with a series
-in the list marked `[series]`) and `bdnex ls --sitemap WORDS` search besides the albums. `bdnex init --skip-series` leaves it out,
+in the list marked `SERIES`) and `bdnex ls --sitemap WORDS` search besides the albums. `bdnex init --skip-series` leaves it out,
 `bdnex init --series-only` reads only it (and tries again after a failed page without downloading the album list).
 
 ### An album from another site: bdtheque.com

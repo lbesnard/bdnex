@@ -197,6 +197,8 @@ class FuzzyScreen(ModalScreen):
             yield Input(value=self.start, id="words", placeholder=(
                 "words of the album, in any order, or the address of the series page" if self.series_ok else "type to find the album: words, in any order"))
             yield Label("", id="count")
+            if self.series_ok:
+                yield Label(Text("score  type    name   (a SERIES gives each file its volume; an album is just that one book)", style="dim"))
             yield OptionList(id="hits")
             yield Static("", id="preview")
             yield Label(Text("Enter picks the album · Ctrl-O opens its page · ↑↓ move · Ctrl-U clears · Esc goes back", style="dim"))
@@ -240,11 +242,25 @@ class FuzzyScreen(ModalScreen):
         self.hits = hits
         options = self.query_one(OptionList)
         options.clear_options()
-        options.add_options([Option(f"{score:>3.0f}  " + (f"[series] {candidate.name}" if is_series_address(candidate.url) else display_name(candidate)))
-                             for candidate, score in hits])
+        options.add_options([Option(self.hit_line(candidate, score)) for candidate, score in hits])
         if hits:
             options.highlighted = 0
         self.query_one("#count", Label).update(Text(f"{total} album(s) match" if text.strip() else "", style="dim"))
+
+    def hit_line(self, candidate, score: float) -> Text:
+        """One hit: the score, then (when series can be picked) what it is: a whole SERIES, or one album, then the name."""
+        from bdnex.ui.prompts import display_name
+
+        line = Text(f"{score:>3.0f}  ")
+        if is_series_address(candidate.url):
+            if self.series_ok:
+                line.append("SERIES  ", style="bold cyan")
+            line.append(candidate.name, style="bold")
+        else:
+            if self.series_ok:
+                line.append("album   ", style="dim")
+            line.append(display_name(candidate))
+        return line
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self.search(event.value)
@@ -382,7 +398,7 @@ class EditScreen(ModalScreen):
             numbers = []
             for line in lines:
                 first = line.split("\t", 1)[0].strip()
-                if first and not first.isdigit():
+                if first and not (first.isascii() and first.isdigit()):  # '²' is a digit to isdigit() but not to int()
                     self.query_one("#problem", Label).update(f"volume must be a number: {first!r}")
                     return
                 numbers.append(int(first) if first else None)
@@ -1064,6 +1080,7 @@ class ReviewApp(App):
 
     def link_many(self, pairs: list) -> None:
         """Link each file to its album at once (a write in the library); the pages and covers come in the background, one by one."""
+        pairs = [(row, candidate) for row, candidate in pairs if not row.status and not row.busy]  # decided while the question was open
         for row, candidate in pairs:
             self.link(row, candidate.url, candidate, notify=False, advance=False)
         self.notify(f"{len(pairs)} file(s) linked; their pages and covers are fetched in the background", timeout=6)
@@ -1172,7 +1189,11 @@ class ReviewApp(App):
         unlinking the file meanwhile cancels it, and quitting leaves it to `bdnex import --fetch`."""
         row.link_id += 1
         started = time.monotonic()
-        batch.link_now(self.library, row, candidate)
+        try:
+            batch.link_now(self.library, row, candidate)
+        except Exception as err:  # a file that moved, a locked library: say so on the row, the screen goes on
+            self.link_failed(row, err)
+            return
         took = time.monotonic() - started
         row.pending, row.queued_at, row.started_at = True, time.monotonic(), 0.0
         self.marked.discard(id(row))
@@ -1186,10 +1207,21 @@ class ReviewApp(App):
         if advance:
             self.advance()
 
+    def link_failed(self, row: batch.Row, err: Exception) -> None:
+        logger.warning("%s: could not link: %s", os.path.basename(row.path), err, exc_info=True)
+        row.busy, row.busy_what, row.pending = False, "", False
+        row.message = f"not linked: {err}"
+        self.refresh_row(row)
+        self.notify(row.message, severity="error", timeout=10)
+
     def link_page(self, row: batch.Row, info) -> None:
         """The file is linked to an album read from a page the person gave (bdtheque.com): nothing else is fetched."""
         row.link_id += 1
-        batch.link_info(self.library, row, info)
+        try:
+            batch.link_info(self.library, row, info)
+        except Exception as err:
+            self.link_failed(row, err)
+            return
         self.marked.discard(id(row))
         self.decided["linked"] = self.decided.get("linked", 0) + 1
         logger.info("%s: %s", os.path.basename(row.path), row.message)
