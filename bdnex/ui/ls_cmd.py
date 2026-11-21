@@ -39,6 +39,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
                                      "`year-` or `title+` sorts.",
         epilog="fields: " + ", ".join(ALL_FIELDS))
     parser.add_argument("query", nargs="*", help="terms such as  series:nains  author:uderzo  year:2010..2015  ^genre:humour")
+    parser.add_argument("--fields", action="store_true", help="list the fields a query can use, with their kind and what they mean (nothing else)")
     parser.add_argument("--files", action="store_true", help="list files instead of albums")
     parser.add_argument("--format", help="output template, e.g. '$series T$vol $title'")
     parser.add_argument("--limit", type=int, metavar="N", help="at most N results (after sorting: `year-` puts the newest first)")
@@ -57,6 +58,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
     parser.add_argument("--missing", action="store_true",
                         help="list registered files that are no longer on disk (moved or deleted outside bdnex)")
     args = parser.parse_args(argv)
+    if args.fields:
+        from bdnex.ui import stats_cmd
+
+        return stats_cmd.print_fields(out)
 
     settings = context.settings()
     if settings is None:

@@ -13,13 +13,11 @@ class Command:
     summary: str
     needs_config: bool = True  # False: works before a configuration exists
     by_name: bool = False  # ``run(name, argv)``: one module serves several commands (write, move, repair, convert)
-    by_function: str = ""  # the function of the module to call instead of ``run`` (``fields_run``)
 
 
 GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
     ("Import and match", (
-        Command("init", "init_cmd", "download or refresh the album list that file names are matched against"),
-        Command("mirror", "mirror_cmd", "keep the whole catalogue in the library: every album page, series page and cover not there yet"),
+        Command("init", "init_cmd", "download or refresh the album list that file names are matched against (--mirror: the whole catalogue)"),
         Command("import", "import_cmd", "match comic files to Bédéthèque albums and record them in the library"),
         Command("candidates", "candidates_cmd",
                 "for files whose match is in doubt: the other albums they could be, with the evidence"),
@@ -29,7 +27,6 @@ GROUPS: tuple[tuple[str, tuple[Command, ...]], ...] = (
         Command("ls", "ls_cmd", "list and search the library"),
         Command("series", "series_cmd", "what you have of each series, and what is missing"),
         Command("stats", "stats_cmd", "how much the library holds: albums read or only matched, files, formats, sizes"),
-        Command("fields", "stats_cmd", "the fields a query can use, with their kind", by_function="fields_run"),
         Command("duplicates", "duplicates_cmd", "the same book in several files"),
     )),
     ("Change the library", (
@@ -81,7 +78,10 @@ def _reparse(argv: list[str]) -> list[str]:
 
 # Commands that were folded into another: the old name still works, with a note, for a release.
 RENAMED: dict = {"recheck": lambda argv: ["review", "--auto", *argv], "reparse": _reparse,
-                 "relink": lambda argv: ["relocate", "--find", *argv]}
+                 "relink": lambda argv: ["relocate", "--find", *argv],
+                 "fields": lambda argv: ["ls", "--fields", *argv],
+                 # `bdnex mirror` never downloaded the list, and never asked: the same, for the scripts that call it
+                 "mirror": lambda argv: ["init", "--mirror", "--skip-list", "--skip-series", "--yes", *argv]}
 
 
 def parse_alias(text: str) -> tuple[str, list[str], str]:
@@ -149,7 +149,7 @@ def runner(command: Command):
 
     ``--help`` is followed by the command's examples (``ui/examples.py``), so no command is without one."""
     module = importlib.import_module(f"bdnex.ui.{command.module}")
-    run = getattr(module, command.by_function) if command.by_function else module.run
+    run = module.run
     call = (lambda argv: run(command.name, argv)) if command.by_name else run
 
     def with_examples(argv):
