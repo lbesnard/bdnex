@@ -389,13 +389,24 @@ def test_album_still_links_when_nothing_may_be_asked(cli):
         assert lib.get_album(lib.get_file(path)["album_id"])["source_id"] == "245127"
 
 
+def test_album_reads_the_stored_page_and_only_force_asks_the_site_again(cli):
+    web, db, make_cbz = cli
+    init()
+    path = make_cbz(FILE)
+    run_import(path)
+    web.calls.clear()
+    assert run_import("--album", "245127", path)[0] == 0
+    assert ALBUM_URL not in web.calls  # the page is in the library: a link is quick
+    run_import("--album", "245127", "--force", path)
+    assert ALBUM_URL in web.calls
+
 def test_album_takes_a_number_of_the_list_and_redoes_a_file_that_has_an_album(cli):
     web, db, make_cbz = cli
     init()
     path = make_cbz(FILE)
     run_import(path)
     code, text = run_import("--album", "245127", path)  # already imported: redone, not "already"
-    assert code == 0 and "already" not in text and "complete" in text
+    assert code == 0 and "complete" in text  # a stored page is read, not asked for again
 
 
 def test_album_refuses_what_is_not_an_album_and_more_than_one_file(cli, capsys, tmp_path):

@@ -60,8 +60,9 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
                  cover_check: Optional[bool] = None, series: Optional[str] = None,
                  phase: Optional[Callable[[str, str], None]] = None, retry_skipped: bool = False,
                  files_untouched: bool = False, verbosity: int = 1,
-                 pinned: Optional[Candidate] = None, duplicates: Optional[str] = None):
+                 pinned: Optional[Candidate] = None, duplicates: Optional[str] = None, refetch: Optional[bool] = None):
         self.library = library
+        self.refetch = refetch  # None: --force also asks the site again; False: match again but read the stored pages
         self.duplicates = duplicates  # `--keep-both`: this file is linked even when the album has another file (a spare version)
         self._loop_started = time.monotonic()
         self.verbosity = verbosity  # 0: a count now and then and what needs a look; 1 (-v): every file and why; 2 (-vv): + logging
@@ -103,6 +104,8 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
     @property
     def recache(self) -> bool:
         """Redoing the fetch means asking the site again, not reading the stored page."""
+        if self.refetch is not None:
+            return self.refetch and "fetch" in self.steps
         return self.force and "fetch" in self.steps
 
     # ------------------------------------------------------------------ run

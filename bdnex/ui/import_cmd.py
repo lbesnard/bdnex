@@ -153,7 +153,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
     if args.album:
         if len(args.paths) != 1 or os.path.isdir(args.paths[0]) or args.sources or args.select or args.skipped:
             parser.error("--album names the album of ONE file: give exactly that file (not a folder, --select or --sources)")
-        args.force = True  # a file that already has an album is matched again
+        refetch = args.force  # --album matches again a file that has an album, but only --force asks the site again
+        args.force = True
     elif args.keep_both:
         parser.error("--keep-both goes with --album (the album you name for one file)")
     steps, notes = resolve_steps(args)
@@ -217,7 +218,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         steps_order = [step for step in ("match", "fetch") if step in steps]
         session = ImportSession(library, source, settings, prompter=None if args.unattended else new_prompter(source=source, thumbnails=settings.import_.thumbnails),
                                 pretend=args.pretend, force=args.force, auto=args.auto, steps=steps, retry_skipped=getattr(args, "retry_skipped", False),
-                                workers=args.workers, cover_check=args.cover_check, series=args.series, files_untouched=args.database_only, duplicates="keep_both" if args.keep_both else None, verbosity=args.verbose, pinned=pinned, progress=progress, bar=lambda total, label: Bar(total, label),
+                                workers=args.workers, cover_check=args.cover_check, series=args.series, files_untouched=args.database_only, duplicates="keep_both" if args.keep_both else None, verbosity=args.verbose, pinned=pinned, refetch=(refetch if args.album else None), progress=progress, bar=lambda total, label: Bar(total, label),
                                 phase=lambda step, title: banner(title, steps_order.index(step) + 1, len(steps_order)))
         try:
             report = session.run(args.paths)
