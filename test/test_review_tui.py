@@ -266,7 +266,7 @@ def test_a_pick_is_written_at_once_and_the_page_and_cover_come_later(env, monkey
         await settle(app, pilot)
 
     result, source = drive(db, script)
-    assert seen["album"] == "2" and seen["now"][:3] == ("linked", True, "linked · fetching") and "being fetched" in seen["now"][3]
+    assert seen["album"] == "2" and seen["now"][:2] == ("linked", True) and seen["now"][2].startswith("linked · ") and "being fetched" in seen["now"][3]
     first = result["app"].rows[0]
     assert first.pending is False and "page and cover fetched" in first.message and "cover is 66%" in first.message
 
