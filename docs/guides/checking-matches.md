@@ -83,9 +83,8 @@ cover first, then the unconfirmed, then, with `--unmatched`, the files without a
 series sit together (click a header to sort otherwise). Under the table: the file's whole path, the album's address, what the album
 says (year, credits, pages) next to what the file is (format, pages, size), and what speaks for and against its match.
 
-When you link a file to an album that **already has another file**, bdnex asks whether to keep both: this file is then linked as a
-spare version (`bdnex duplicates` decides later which one stays). On the command line that is `bdnex import --album ADDRESS FILE
---keep-both`.
+When you link a file to an album that **already has another file**, it is linked at once as a spare version (no question;
+`bdnex duplicates` decides later which one stays). On the command line that is `bdnex import --album ADDRESS FILE --keep-both`.
 
 | Key | Does |
 |---|---|
@@ -115,10 +114,12 @@ spare version (`bdnex duplicates` decides later which one stays). On the command
 
 The screen **opens at once**. While the batch is made it shows a loading panel with the two jobs and how long each has taken:
 `weighing the files` (the table appears when that is done; the title then says `weighed in 6.2 s`) and `loading the album list`
-(the search waits for that one, in the background), so you always see what it is doing. Picking an album **links the file**, which reads
-that album's page: the row says `linking...` (with what it is doing under the table), keys on that row are refused until it
-is done, and when it is the row shows `linked`, the new album, the new cover score and `you` as the match. A link the import
-refuses (the album already has another file) shows `refused` in red.
+(the search waits for that one, in the background), so you always see what it is doing. Picking an album **links the file at once**: the link is written in the library before anything is fetched, the row says `linked`
+(`you` as the match) and you can go on, to the next row or the next batch. The album's page and cover are then fetched in the
+background, one file at a time (the log panel says what it is doing); the row's state says `linked · fetching` until they are
+there, then shows the cover score. A mistake is one `u` away: **unlink** removes the link from the library and cancels what was
+queued for that file (a fetch already running cannot be stopped, but its result is dropped). If you quit with some pages or
+covers still to come, bdnex says how many: `bdnex import --fetch` gets them.
 
 Each decision is **written at once** to the library (a `checked` mark, the flag, the link), so quitting, Ctrl-C or a lost SSH
 connection loses nothing. Files already checked are not shown again: **run the same command later to continue**. At the end

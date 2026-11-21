@@ -34,7 +34,8 @@ class Row:
     status: str = ""  # what was decided in this session: ``keep``, ``unlinked``, ``linked``, ``left``, ``skipped``
     message: str = ""  # what happened when it was decided (a refusal, for one)
     busy: bool = False  # a link is being made for it (the screen waits)
-    link_id: int = 0  # which link the screen is waiting for: an answer of an older one (after giving up) is ignored
+    link_id: int = 0  # bumped by every decision: the answer of a background job of an older one is ignored
+    pending: bool = False  # linked at once; its page and cover are still to come
     facts: str = ""  # what the album says (year, credits, pages) next to what the file is: to judge a match by eye
     previous: str = ""  # an earlier decision (the ``checked`` mark), shown when files already checked are asked for again
 
@@ -64,9 +65,15 @@ def is_checked(library: Library, file_id: Optional[int]) -> bool:
     return file_id is not None and CHECKED in library.attrs_of("file", file_id)
 
 
+class Batch(list):
+    """The rows of one batch, and ``total``: about how many files there are to check in all (a batch is ``size`` of them)."""
+
+    total: int = 0
+
+
 def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...] | list[str] = (),
                unmatched: bool = False, everything: bool = False, again: bool = False,
-               skip: frozenset[str] | set[str] = frozenset()) -> list[Row]:
+               skip: frozenset[str] | set[str] = frozenset()) -> "Batch":
     """The next ``size`` files to check, in this order: the contradicted (lowest cover first), the unconfirmed, then, with
     ``unmatched`` (or ``everything``), the files without album, then, with ``everything``, all the other files of the query.
     Files already checked are left out unless ``again``, and so are the ``skip`` paths (the ones a screen already showed:
@@ -77,7 +84,10 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
     verdicts = [v for v in weak_matches(library, settings, [*terms, *exclude], compare=False, store=False,
                                         flagged=True, weak=True) if v.kind in (WRONG, UNCONFIRMED) and v.path not in skip]
     verdicts.sort(key=lambda v: (v.kind != WRONG, v.cover if v.cover is not None else 101.0, v.path))
-    rows = []
+    extra = len(library.unmatched(list(terms))) if (unmatched or everything) else 0
+    total = (len(library.query([*terms, *exclude], files=True)) if everything else len(verdicts)) + extra
+    rows = Batch()
+    rows.total = total
     for verdict in verdicts[:size]:
         file = library.get_file(verdict.path) or {}
         album = library.get_album(verdict.album_id) or {}
@@ -154,6 +164,31 @@ def link_to(library: Library, row: Row, url: str, keep_both: bool = False) -> tu
     before = (library.get_file(row.path) or {}).get("album_id")
     verdicts.rematch(row.path, url, keep_both)
     return finish_link(library, row, before)
+
+
+def link_now(library: Library, row: Row, candidate) -> int:
+    """Write the link at once, before anything is fetched: the album from the address (a record of what the list says,
+    when the library has none yet), the file linked to it (a spare version when it already has another file), the
+    review flag gone, the decision saved. The page and the cover come later (``verdicts.rematch``, in the background)."""
+    import os
+
+    from bdnex.importer.bedetheque import parser
+    from bdnex.ui.describe import label
+
+    info = parser.partial_album_info(candidate)
+    album_id = library.find_album(info.source, info.source_id)
+    if album_id is None:
+        album_id = library.add_album(info)
+    others = [f for f in library.files_for_album(album_id) if f["path"] != os.path.abspath(row.path) and not f["spare"]]
+    library.set_file_album(row.path, album_id)
+    library.set_file_fields(row.path, spare=1 if others else 0)
+    album = library.get_album(album_id) or {}
+    row.album, row.album_id, row.album_url = label(album), album_id, album.get("url") or candidate.url
+    row.facts = facts_of(album, library.get_file(row.path))
+    row.cover, row.score, row.kind, row.why = None, None, "ok", ["+ chosen by you"]
+    decide(library, row, "other", album_id)
+    row.message = f"linked to {row.album}" + (" (a spare version: it has another file)" if others else "")
+    return album_id
 
 
 def record_manual(library: Library, row: Row, album_id: int) -> None:

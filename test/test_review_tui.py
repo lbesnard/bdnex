@@ -246,10 +246,10 @@ def _linking(monkeypatch, db, release, outcome="switch"):
     monkeypatch.setattr(verdicts, "rematch", rematch)
 
 
-def test_o_opens_the_search_and_a_pick_shows_linking_then_updates_the_row(env, monkeypatch):
+def test_a_pick_is_written_at_once_and_the_page_and_cover_come_later(env, monkeypatch):
     db, files = env
     release = threading.Event()
-    _linking(monkeypatch, db, release)
+    _linking(monkeypatch, db, release)  # the import of the page and cover is held: the site is slow
     seen = {}
 
     async def script(app, pilot):
@@ -259,64 +259,37 @@ def test_o_opens_the_search_and_a_pick_shows_linking_then_updates_the_row(env, m
         await pilot.press("enter")  # the first hit
         await pilot.pause()
         row = app.rows[0]
-        seen["busy"] = (row.busy, str(app.query_one("DataTable").get_row_at(0)[7]), row.message)  # while it is being made
-        await pilot.press("k")  # a decision on a file that is being linked is refused
-        assert not row.status
+        with Library(db) as lib:  # written already, before anything was fetched
+            seen["album"] = lib.get_album(lib.get_file(files["wrong"])["album_id"])["source_id"]
+        seen["now"] = (row.status, row.pending, str(app.query_one("DataTable").get_row_at(0)[7]), row.message)
         release.set()
         await settle(app, pilot)
 
     result, source = drive(db, script)
-    assert seen["busy"][0] is True and seen["busy"][1] == "linking..." and "reading the album page" in seen["busy"][2]
-    first = result["cells"][0]
-    assert first[7] == "linked" and "Forge" in first[3] and first[5] == "you" and first[6] == "66%"  # the row says what happened
-    assert "cover is 66%" in result["app"].rows[0].message
-    with Library(db) as lib:
-        assert lib.attrs_of("file", lib.get_file(files["wrong"])["id"])["checked"].startswith("other:")
+    assert seen["album"] == "2" and seen["now"][:3] == ("linked", True, "linked · fetching") and "being fetched" in seen["now"][3]
+    first = result["app"].rows[0]
+    assert first.pending is False and "page and cover fetched" in first.message and "cover is 66%" in first.message
 
 
-def test_a_link_that_ends_after_the_next_batch_was_loaded_does_not_crash(env, monkeypatch):
+def test_unlinking_while_the_page_is_fetched_wins_over_the_late_import(env, monkeypatch):
     db, files = env
     release = threading.Event()
-    _linking(monkeypatch, db, release, outcome="refuse")
+    _linking(monkeypatch, db, release)  # the held import links the file back when it ends
 
     async def script(app, pilot):
         await pilot.press("o")
         await settle(app, pilot)
         await pilot.press("enter")
         await pilot.pause()
-        app.rows = []  # the next batch replaced the table while the link was being made
-        app.query_one("DataTable").clear()
+        await pilot.press("up")  # the cursor moved on after the link
+        await pilot.press("u")  # a mistake: unlink it now
+        await pilot.pause()
         release.set()
         await settle(app, pilot)
 
     drive(db, script)
-
-
-def test_a_link_that_never_answers_is_given_up_and_the_row_can_be_decided_again(env, monkeypatch):
-    db, files = env
-    release = threading.Event()
-    _linking(monkeypatch, db, release)  # held until released: the site does not answer
-    monkeypatch.setattr(review_tui.ReviewApp, "LINK_WAIT", 2.0)
-    seen = {}
-
-    async def script(app, pilot):
-        await pilot.press("o")
-        await settle(app, pilot)
-        await pilot.press("enter")
-        await pilot.pause()
-        row = app.rows[0]
-        assert row.busy
-        await pilot.pause(2.6)
-        seen["after"] = (row.busy, row.message)
-        await pilot.press("u")  # no more "Still linking this file"
-        await pilot.pause()
-        seen["status"] = row.status
-        release.set()  # the late answer is ignored
-        await settle(app, pilot)
-
-    drive(db, script)
-    assert seen["after"][0] is False and "no answer" in seen["after"][1]
-    assert seen["status"]
+    with Library(db) as lib:
+        assert lib.get_file(files["wrong"])["album_id"] is None  # the late import did not put the link back
 
 
 def test_a_link_to_an_album_that_has_another_file_is_made_at_once_as_a_spare_version(env, monkeypatch):
@@ -891,3 +864,17 @@ def test_e_with_several_marked_files_writes_a_series(env):
     with Library(db) as lib:
         series = {lib.get_album(lib.get_file(p)["album_id"])["series"] for p in files.values()}
     assert series == {"Nains Bis"} and all(row[7] == "linked" for row in result["cells"])
+
+
+def test_the_title_says_which_batch_of_about_how_many(env):
+    db, files = env
+
+    async def script(app, pilot):
+        assert app.first_total == 3 and "batch 1/1" in app.sub_title  # three files to check (two doubtful, one without album), 50 a batch
+
+    drive(db, script, size=50)
+
+    async def small(app, pilot):
+        assert "batch 1/3" in app.sub_title  # a batch of one file: three batches
+
+    drive(db, small, size=1)

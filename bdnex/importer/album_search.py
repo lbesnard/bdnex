@@ -7,9 +7,11 @@ albums found by every query with the volume asked for.
 
 from __future__ import annotations
 
+import collections
 import os
 import re
 from dataclasses import dataclass, field
+from typing import Optional
 
 from bdnex.importer.matching import (query_from_filename, queries_for, rerank, series_queries, volumes_for)
 from bdnex.library.query import fold
@@ -67,19 +69,56 @@ def _word_start(name: str, index: int) -> bool:
     return False
 
 
-def search_folded(catalogue: list, folded: list[str], text: str, limit: int) -> tuple[list, int]:
+POOLS_KEPT = 24  # the word lists whose matching albums are remembered
+RESULTS_KEPT = 128  # the searches whose answer is remembered (typing, deleting a letter and typing it again asks the same questions)
+
+
+def _matching(folded: list[str], words: list[str], cache: dict) -> list[int]:
+    """The albums whose name has every word. The albums of a longer text are among those of a shorter one (a word that contains an
+    earlier word has it too), so a search that extends the last one only looks at what that one found, not at the whole list."""
+    pools = cache.setdefault("pools", collections.OrderedDict())
+    key = tuple(words)
+    if key in pools:
+        pools.move_to_end(key)
+        return pools[key]
+    start = None
+    for known, found in pools.items():
+        if all(any(old in word for word in words) for old in known) and (start is None or len(found) < len(start)):
+            start = found
+    pool = [i for i in (start if start is not None else range(len(folded))) if all(word in folded[i] for word in words)]
+    pools[key] = pool
+    while len(pools) > POOLS_KEPT:
+        pools.popitem(last=False)
+    return pool
+
+
+def search_folded(catalogue: list, folded: list[str], text: str, limit: int, cache: Optional[dict] = None) -> tuple[list, int]:
     """The albums of the whole list that look like ``text``, best first, as ``([(candidate, score)], matches)``.
 
     Every word has to be in the name (case and accents do not matter); when too few names have all of them, the letters typed are
     looked for in order, spaces ignored, as ``fzf`` does (``batmandarkvic2``, ``bat dk victory``: a trailing number is the volume); and when that finds
     nothing, a fuzzy match over the whole list (a typo) takes over, with a floor so that unrelated names are not listed."""
-    from rapidfuzz import fuzz, process
-
     query = fold(text).strip()
     if not query:
         return [], len(catalogue)
+    if cache is not None:
+        results = cache.setdefault("results", collections.OrderedDict())
+        if (query, limit) in results:
+            results.move_to_end((query, limit))
+            return results[(query, limit)]
+        answer = _search(catalogue, folded, query, limit, cache)  # the pools of the words are kept in it too
+        results[(query, limit)] = answer
+        while len(results) > RESULTS_KEPT:
+            results.popitem(last=False)
+        return answer
+    return _search(catalogue, folded, query, limit, {})
+
+
+def _search(catalogue: list, folded: list[str], query: str, limit: int, cache: dict) -> tuple[list, int]:
+    from rapidfuzz import fuzz, process
+
     words = query.split()
-    pool = [i for i, name in enumerate(folded) if all(word in name for word in words)]
+    pool = _matching(folded, words, cache)
     if len(pool) > TOO_MANY:
         pool.sort(key=lambda i: len(folded[i]))
         return [(catalogue[i], 0.0) for i in pool[:limit]], len(pool)
@@ -116,9 +155,10 @@ class AlbumList:
         self.source = source
         self.catalogue = list(source.catalogue())
         self.folded = folded_names(self.catalogue)
+        self.cache: dict = {}  # the albums of the words typed so far, and the last answers: typing one more letter is quick
 
     def search(self, text: str, limit: int = 20) -> tuple[list, int]:
-        return search_folded(self.catalogue, self.folded, text, limit)
+        return search_folded(self.catalogue, self.folded, text, limit, self.cache)
 
 
 @dataclass
