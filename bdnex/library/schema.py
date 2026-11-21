@@ -246,4 +246,14 @@ MIGRATIONS = [
     );
     CREATE INDEX idx_series_index_folded ON series_index(source, folded);
     """,
+    # --- version 13 ------------------------------------------------------
+    # The series pages of a second site (bdtheque.com), read for the albums a person gives by address: kept as received, compressed
+    # (zlib), apart from `source_cache` (Bédéthèque's).
+    """
+    CREATE TABLE bdtheque_pages (
+        url     TEXT PRIMARY KEY,        -- the canonical address of the series page
+        content BLOB NOT NULL,           -- the page, zlib-compressed
+        fetched TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    """,
 ]

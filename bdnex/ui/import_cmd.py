@@ -71,7 +71,8 @@ def build_parser() -> argparse.ArgumentParser:
                        help="leave files from outside your library folder where they are (`import.outside`); "
                             "`bdnex move staged:true` places them later")
     parser.add_argument("--album", metavar="ADDRESS|NUMBER",
-                        help="use this Bédéthèque album for the one file given (its page address, or its number), instead of "
+                        help="use this Bédéthèque album for the one file given (its page address, or its number), or the album of a "
+                             "bdtheque.com series page (its address), instead of "
                              "searching: nothing is asked, and a file already imported is redone. `bdnex candidates` finds "
                              "the numbers")
     parser.add_argument("--keep-both", action="store_true",
@@ -133,6 +134,28 @@ def _under_collection(path: str, settings) -> str:
     return candidate if os.path.exists(candidate) else path
 
 
+def _link_bdtheque(args, settings, library, out) -> int:
+    """``--album`` with the address of a bdtheque.com series page: the page is read (fetched once, kept), the file is linked to its album."""
+    from bdnex.importer import bdtheque
+    from bdnex.importer.folders import title_and_volume
+
+    path = args.paths[0]
+    if not os.path.isfile(path):
+        print(f"{path}: no such file", file=sys.stderr)
+        return 2
+    if args.pretend:  # a preview reads no page and writes nothing
+        print(f"Would read {bdtheque.canonical(args.album)} and link {path} to its album", file=out)
+        return 0
+    try:
+        info = bdtheque.create(library, settings).album_info(args.album, title_and_volume(path)[1])
+    except (ValueError, FetcherError, OSError, RuntimeError) as err:
+        print(f"Could not read {args.album}: {err}", file=sys.stderr)
+        return 1
+    bdtheque.link_file(library, path, info)
+    print(f"{path} -> {info.title} ({info.url}); `bdnex write` puts the metadata in the file.", file=out)
+    return 0
+
+
 def run(argv: list[str], out=sys.stdout) -> int:
     # a bare `--auto` must not take the next word (a path) as its value: only `--auto=all` has one
     argv = ["--auto=strong" if arg == "--auto" else arg for arg in argv]
@@ -191,6 +214,11 @@ def run(argv: list[str], out=sys.stdout) -> int:
         print(f"No folder given: importing your library folder, {args.paths[0]}", file=sys.stderr)
 
     with Library.for_settings(settings) as library:
+        if args.album:
+            from bdnex.importer import bdtheque
+
+            if bdtheque.is_address(args.album):
+                return _link_bdtheque(args, settings, library, out)
         try:
             source = create_source(settings.source, library, settings)
         except (UnknownSource, FetcherError, TypeError) as err:

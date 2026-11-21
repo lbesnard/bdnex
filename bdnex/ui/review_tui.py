@@ -1099,13 +1099,24 @@ class ReviewApp(App):
                 if chosen:
                     await self.propose(chosen, text.strip())
                 return
+            from bdnex.importer import bdtheque
+
+            if bdtheque.is_address(text):  # another site: its page is read (fetched once) and the file is linked to what it says
+                self.notify("Reading the bdtheque.com page (from the library, or fetched once)...", timeout=6)
+                try:
+                    info = await asyncio.to_thread(batch.read_bdtheque, self.settings, text.strip(), row.path)
+                except Exception as err:
+                    self.notify(f"Could not read that page: {err}", severity="error", timeout=10)
+                    return
+                self.link_page(row, info)
+                return
             candidate = await asyncio.wrap_future(self.hub.run(lambda hub: hub.source.candidate_for(text)))
             if candidate is None:
                 self.notify(f"{text!r} is not an album: give the address of its page, or its number.", severity="error")
                 return
             self.link(row, candidate.url, candidate)
 
-        self.push_screen(AskScreen("The album's page address, or its number:", ""),
+        self.push_screen(AskScreen("The album's page address (Bédéthèque, or a bdtheque.com series page), or its number:", ""),
                          lambda text: self.run_worker(given(text)) if text else None)
 
     # -- linking: the match is written at once; the album page and the cover are fetched in the background, one at a time
@@ -1127,6 +1138,17 @@ class ReviewApp(App):
             self.notify(row.message, timeout=5)
         if advance:
             self.advance()
+
+    def link_page(self, row: batch.Row, info) -> None:
+        """The file is linked to an album read from a page the person gave (bdtheque.com): nothing else is fetched."""
+        row.link_id += 1
+        batch.link_info(self.library, row, info)
+        self.marked.discard(id(row))
+        self.decided["linked"] = self.decided.get("linked", 0) + 1
+        logger.info("%s: %s", os.path.basename(row.path), row.message)
+        self.refresh_row(row)
+        self.notify(row.message, timeout=5)
+        self.advance()
 
     def queue_details(self, row: batch.Row, url: str, mine: int) -> None:
         if self.fetcher is None:

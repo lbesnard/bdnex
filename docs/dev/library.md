@@ -24,6 +24,7 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 | `file_attrs`, `album_attrs` | your own marks (`bdnex mark`): a name and a text value per file or album, deleted with their owner. No migration is needed to add a kind of mark |
 | `staged_files` | files imported without being moved into the library folder, with the path they came from |
 | `series_index` | the letter index of a source (`bdnex init`, schema v12): every series by its site number (`series_id`, the number of its page and of `series.source_id`), its name as listed (the article put in front: `Les Nains`), the same folded for searching (without the disambiguation `(Marvel - 2008)`), its address, the country flag and the letter page. It lists names only; a series page is read on demand |
+| `bdtheque_pages` | the series pages of bdtheque.com (a second site, read for the albums you give by address), by canonical address, zlib-compressed (schema v13), apart from `source_cache` |
 | `meta` | small values: that paths are stored relative, when the album list last grew |
 
 The schema version is stored in `PRAGMA user_version`; migrations live in

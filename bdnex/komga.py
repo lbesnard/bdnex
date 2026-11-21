@@ -153,6 +153,11 @@ def authors_of(album: dict[str, Any]) -> list[dict[str, str]]:
     return [{"name": name, "role": ROLES[role]} for role in ROLES for name in album["credits"].get(role, [])]
 
 
+def link_label(url: str) -> str:
+    """The name of the site a page address belongs to, for a Komga link."""
+    return "BDTheque" if "bdtheque.com" in (url or "") else "Bédéthèque"
+
+
 def book_fields(album: dict[str, Any], current: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """What the library knows of an album, in the fields of a Komga book (only those it knows).
 
@@ -170,7 +175,7 @@ def book_fields(album: dict[str, Any], current: Optional[dict[str, Any]] = None)
     if album.get("isbn"):
         fields["isbn"] = album["isbn"]
     if album.get("url"):
-        fields["links"] = [{"label": "Bédéthèque", "url": album["url"]}]
+        fields["links"] = [{"label": link_label(album["url"]), "url": album["url"]}]
     if album["genres"]:
         tags = {t.lower(): t for t in album["genres"]}
         tags.update({t.lower(): t for t in (current or {}).get("tags") or []})  # Komga's own spelling wins
@@ -208,7 +213,7 @@ def series_fields(albums: list[dict[str, Any]]) -> dict[str, Any]:
         if record.get("summary"):
             fields["summary"] = record["summary"]
         if record.get("url"):
-            fields["links"] = [{"label": "Bédéthèque", "url": record["url"]}]
+            fields["links"] = [{"label": link_label(record["url"]), "url": record["url"]}]
         extra = record.get("extra") or {}
         if status_of(extra.get("status")):
             fields["status"] = status_of(extra["status"])

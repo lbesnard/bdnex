@@ -138,9 +138,10 @@ options:
                         (`import.outside`); `bdnex move staged:true` places them later
   --album ADDRESS|NUMBER
                         use this Bédéthèque album for the one file given (its page
-                        address, or its number), instead of searching: nothing is
-                        asked, and a file already imported is redone. `bdnex
-                        candidates` finds the numbers
+                        address, or its number), or the album of a bdtheque.com series
+                        page (its address), instead of searching: nothing is asked,
+                        and a file already imported is redone. `bdnex candidates`
+                        finds the numbers
   --keep-both           with --album: link the file even when the album already has
                         another file; this one becomes a spare version (`bdnex
                         duplicates`). Only the library changes, no file is touched

@@ -172,12 +172,17 @@ def link_now(library: Library, row: Row, candidate) -> int:
     """Write the link at once, before anything is fetched: the album from the address (a record of what the list says,
     when the library has none yet), the file linked to it (a spare version when it already has another file), the
     review flag gone, the decision saved. The page and the cover come later (``verdicts.rematch``, in the background)."""
+    from bdnex.importer.bedetheque import parser
+
+    return link_info(library, row, parser.partial_album_info(candidate), candidate.url)
+
+
+def link_info(library: Library, row: Row, info, url: Optional[str] = None) -> int:
+    """``link_now`` for an album whose record is already known (``info``: from a page the person gave, or from the list's slug)."""
     import os
 
-    from bdnex.importer.bedetheque import parser
     from bdnex.ui.describe import label
 
-    info = parser.partial_album_info(candidate)
     album_id = library.find_album(info.source, info.source_id)
     if album_id is None:
         album_id = library.add_album(info)
@@ -187,12 +192,22 @@ def link_now(library: Library, row: Row, candidate) -> int:
     library.set_file_album(row.path, album_id)
     library.set_file_fields(row.path, spare=1 if others else 0)
     album = library.get_album(album_id) or {}
-    row.album, row.album_id, row.album_url = label(album), album_id, album.get("url") or candidate.url
+    row.album, row.album_id, row.album_url = label(album), album_id, album.get("url") or url or info.url
     row.facts = facts_of(album, library.get_file(row.path))
     row.cover, row.score, row.kind, row.why = None, None, "ok", ["+ chosen by you"]
     decide(library, row, "other", album_id)
     row.message = f"linked to {row.album}" + (" (a spare version: it has another file)" if others else "")
     return album_id
+
+
+def read_bdtheque(settings, address: str, path: str):
+    """The album a bdtheque.com series page stands for, for the file at ``path`` (the volume is the one in its name): the page from the
+    library, or fetched once with the configured fetcher and stored. Its own writable library: slow when it fetches, run it in a thread."""
+    from bdnex.importer import bdtheque
+    from bdnex.importer.folders import title_and_volume
+
+    with Library.for_settings(settings) as library:
+        return bdtheque.create(library, settings).album_info(address, title_and_volume(path)[1])
 
 
 def record_manual(library: Library, row: Row, album_id: int) -> None:
