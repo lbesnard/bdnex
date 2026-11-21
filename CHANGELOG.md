@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Review screen: a link now runs the import with `-v`, so the log panel says each step (album page from the library or fetched and how long, cover saved or downloaded); the level was reset to warnings after the first link.
 - Review screen: a link to an album that already has another file is made at once, as a spare version (no refusal, no question): which file stays is the job of `bdnex duplicates`. A file already linked to that album is reported as linked, not refused.
 - A series page whose albums are all collected editions or one-shots (no `Tome` in their addresses, e.g. Fell) listed no album at all: the series' own name, from its address, now tells which links are its albums.
 - Review screen, attaching files to a series by its page address: when no file finds its volume, the message says what the page lists and what the files ask for (a series of collected editions has no tome 2), instead of the generic "not in a series".

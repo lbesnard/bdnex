@@ -934,7 +934,7 @@ class ReviewApp(App):
                 captured, error = LineSink(self), ""
                 try:
                     with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
-                        verdicts.rematch(row.path, candidate.url, True)
+                        verdicts.rematch(row.path, candidate.url, True, max(1, self.verbose))
                 except BaseException as err:
                     error = str(err) or err.__class__.__name__
                 self.call_from_thread(self.linked, row, before, error, None, mine)
@@ -1054,7 +1054,7 @@ class ReviewApp(App):
             captured, error = LineSink(self), ""
             try:  # the import prints its progress: it must not land on the screen
                 with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
-                    verdicts.rematch(row.path, url, keep_both)
+                    verdicts.rematch(row.path, url, keep_both, max(1, self.verbose))
             except BaseException as err:  # a SystemExit of the import must not leave the row waiting for ever
                 error = str(err) or err.__class__.__name__
             self.call_from_thread(self.linked, row, before, error, (url, candidate, keep_both), mine)
