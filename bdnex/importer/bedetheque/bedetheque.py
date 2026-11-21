@@ -16,7 +16,7 @@ from typing import Callable, Optional
 import requests
 from rapidfuzz import fuzz, process
 
-from bdnex.importer.bedetheque import parser, sitemap
+from bdnex.importer.bedetheque import letters, parser, sitemap
 from bdnex.importer.bedetheque.sitemap import Candidate
 from bdnex.library import AlbumInfo, Library
 
@@ -213,7 +213,7 @@ class Bedetheque:
 
     def _download(self, kind: str, url: str) -> bytes:
         """One real request, after the polite wait. Touches no database: it can run in a worker thread."""
-        wait = uniform(*(self.sitemap_delay if kind == "sitemap" else self.delay))
+        wait = uniform(*(self.sitemap_delay if kind in ("sitemap", "letter") else self.delay))
         if self._sleep is time.sleep:
             self._stopped.wait(wait)  # the polite wait ends at once when the import is stopped
         else:
@@ -338,6 +338,36 @@ class Bedetheque:
         self._by_id: Optional[dict[str, Candidate]] = None
         self._facts: Optional[dict[str, dict]] = None
         return fetched
+
+    # --------------------------------------------------------------- the letter index (every series by name)
+    def update_series_index(self, recache: bool = False, progress: Optional[Callable[[str], None]] = None) -> int:
+        """Read the 27 letter pages (``bandes_dessinees_0.html``, ``_a`` ... ``_z``) into the library's series index.
+
+        A page already stored is parsed again without a request (``recache`` fetches it anew). Returns the number of series.
+        A page that cannot be fetched stops the update with its error; what was read before stays."""
+        for letter in letters.LETTERS:
+            url = letters.letter_url(letter)
+            if progress:
+                progress(f"  series {letter.upper()}")
+            content = self._get("letter", url, recache=recache)
+            entries = letters.parse_letter_page(content, letter)
+            announced = letters.announced_count(content)
+            if announced and len(entries) < announced * 0.9:
+                logger.warning(f"{url}: the page says {announced} series, {len(entries)} were read")
+            self.library.series_index_replace(SOURCE, [(e.series_id, e.name, e.folded, e.url, e.country, e.letter) for e in entries])
+        self._series_catalogue = None
+        return self.library.series_index_count(SOURCE)
+
+    def series_count(self) -> int:
+        return self.library.series_index_count(SOURCE)
+
+    def series_catalogue(self) -> list[Candidate]:
+        """Every series of the letter index as a candidate whose address is the series page's (empty before ``bdnex init`` read it).
+        No network access. ``name`` is the readable title, so the album search ranks them the same way."""
+        if getattr(self, "_series_catalogue", None) is None:
+            self._series_catalogue = [Candidate(row["series_id"], row["url"], row["name"], None)
+                                      for row in self.library.series_index_all(SOURCE)]
+        return self._series_catalogue
 
     # -- MetadataSource protocol
     def is_ready(self) -> bool:

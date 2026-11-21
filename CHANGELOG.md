@@ -6,6 +6,9 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Changed
+- Review screen: the `e` form has **OK** and **Cancel** buttons (`Ctrl-S` is taken by tmux); `x` cancels when the cursor is not in a text field, `Esc` always does.
+
 ### Fixed
 - Review screen: it could freeze (until the database's 30 s timeout) after linking files while a page was being fetched in the background: the background import's log line waited for the screen while holding the library's write lock, and the screen waited for that lock. Log lines no longer make a thread wait.
 - Review screen: mark all / none moved from `ctrl+a` (taken by tmux and some terminals) to `m`.
@@ -128,6 +131,9 @@ command runs, never while an import is fetching).
 - `review --auto` counted a switch to a better album as done when the import had refused it (the album already had another
   file): it now checks the library, says which files were not switched (they stay flagged, with the reason), and the summary
   says why the unconfirmed ones could not be judged (page not read, cover not compared).
+
+### Added
+- **Series index** (schema v12, **back up the database first**: an older bdnex refuses it): `bdnex init` also reads the 27 letter pages of the site (`bandes_dessinees_0.html` ... `_z`), every series by name, into a new `series_index` table; `--skip-series` / `--series-only`. The review screen's search for a series (`a`) and `bdnex ls --sitemap WORDS` search it besides the albums. Series pages are still read on demand only.
 
 ### Changed
 - **Every command's `--help` ends with examples** (what to type, and what it does), from one table (`bdnex/ui/examples.py`);

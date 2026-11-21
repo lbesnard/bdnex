@@ -956,3 +956,53 @@ def test_a_log_line_from_a_thread_holding_the_write_lock_does_not_freeze_the_scr
 
     drive(db, script)
     assert seen.get("logged") and seen["took"] < 5
+
+
+
+def _edit_screen_script(then):
+    async def script(app, pilot):
+        await pilot.press("u")
+        await pilot.press("up")
+        await pilot.press("e")
+        await settle(app, pilot)
+        assert app.screen.__class__.__name__ == "EditScreen"
+        app.screen.query_one("#f-series").value = "Fell"
+        await then(app, pilot)
+    return script
+
+
+def test_edit_form_ok_button_saves(env):
+    db, files = env
+
+    async def then(app, pilot):
+        await pilot.click("#ok")
+        await settle(app, pilot)
+        assert app.screen.__class__.__name__ != "EditScreen"
+
+    drive(db, _edit_screen_script(then))
+    with Library(db) as lib:
+        assert any((lib.get_album(lib.get_file(p)["album_id"]) or {}).get("series") == "Fell" for p in files.values())
+
+
+def test_edit_form_cancel_button_and_x_outside_a_text_field(env):
+    db, files = env
+
+    async def cancel(app, pilot):
+        await pilot.click("#cancel")
+        await settle(app, pilot)
+        assert app.screen.__class__.__name__ != "EditScreen"
+
+    async def x_in_field(app, pilot):
+        await pilot.press("x")  # typed into the focused field, not a cancel
+        assert app.screen.__class__.__name__ == "EditScreen"
+        assert app.screen.query_one("#f-series").value.endswith("x")
+        app.screen.set_focus(app.screen.query_one("#ok"))
+        await pilot.press("x")
+        await settle(app, pilot)
+        assert app.screen.__class__.__name__ != "EditScreen"
+
+    drive(db, _edit_screen_script(cancel))
+    drive(db, _edit_screen_script(x_in_field))
+    with Library(db) as lib:
+        assert not any((lib.get_album(lib.get_file(p)["album_id"]) or {}).get("series") == "Fell" for p in files.values()
+                       if lib.get_file(p)["album_id"])

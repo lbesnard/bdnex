@@ -30,7 +30,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
 from bdnex.library import review_batch as batch
@@ -84,6 +84,9 @@ class SourceHub:
         self.catalogue: Optional[list] = None
         self.folded: list[str] = []
         self.cache: dict = {}  # the albums of the words typed so far (see `album_search`): one more letter is a quick search
+        self.series: Optional[list] = None  # the series of the letter index, loaded when a search wants them
+        self.series_folded: list[str] = []
+        self.series_cache: dict = {}
         build = source if callable(source) and not hasattr(source, "candidates") else (lambda: source)
         self.ready = self.pool.submit(self._build, build)
 
@@ -144,12 +147,22 @@ def is_series_address(text: str) -> bool:
     return bool(SERIES_ADDRESS.search(text or ""))
 
 
-def fuzzy_search(hub: SourceHub, text: str, limit: int = SEARCH_LIMIT) -> tuple[list, int]:
+def fuzzy_search(hub: SourceHub, text: str, limit: int = SEARCH_LIMIT, series: bool = False) -> tuple[list, int]:
     """The albums of the whole list that look like ``text``, best first, as ``([(candidate, score)], matches)``.
 
     Every word has to be in the name (case and accents do not matter); when that finds few, a fuzzy match over the whole
-    list (letters missing, a typo) takes over: what ``fzf`` does, in the screen. Runs in the thread of the album list."""
+    list (letters missing, a typo) takes over: what ``fzf`` does, in the screen. Runs in the thread of the album list.
+    ``series``: the series of the letter index are searched too and listed with the albums (their address is a series page)."""
     from bdnex.importer import album_search
+
+    if series and hasattr(hub.source, "series_catalogue"):
+        albums, total = fuzzy_search(hub, text, limit)
+        if hub.series is None:
+            hub.series = list(hub.source.series_catalogue())
+            hub.series_folded = album_search.folded_names(hub.series)
+        found, more = album_search.search_folded(hub.series, hub.series_folded, text, limit, hub.series_cache)
+        merged = sorted([*found, *albums], key=lambda pair: -pair[1])  # a series ahead of an album with the same score (stable sort)
+        return merged[:limit], total + more
 
     if not hasattr(hub.source, "catalogue"):  # a source that cannot list its albums: its own search
         return [pair for pair in hub.source.candidates(text.strip(), limit=limit)], 0
@@ -207,7 +220,7 @@ class FuzzyScreen(ModalScreen):
         def look(hub):
             if mine and mine != self.latest:
                 return [], 0  # typed over meanwhile: the list's thread does not spend its time on it
-            return fuzzy_search(hub, text)
+            return fuzzy_search(hub, text, series=self.series_ok)
 
         try:
             hits, total = await asyncio.wrap_future(self.hub.run(look))
@@ -224,7 +237,8 @@ class FuzzyScreen(ModalScreen):
         self.hits = hits
         options = self.query_one(OptionList)
         options.clear_options()
-        options.add_options([Option(f"{score:>3.0f}  {display_name(candidate)}") for candidate, score in hits])
+        options.add_options([Option(f"{score:>3.0f}  " + (f"[series] {candidate.name}" if is_series_address(candidate.url) else display_name(candidate)))
+                             for candidate, score in hits])
         if hits:
             options.highlighted = 0
         self.query_one("#count", Label).update(Text(f"{total} album(s) match" if text.strip() else "", style="dim"))
@@ -252,7 +266,8 @@ class FuzzyScreen(ModalScreen):
 
     def pick(self, index: Optional[int]) -> None:
         if index is not None and 0 <= index < len(self.hits):
-            self.dismiss(self.hits[index][0])
+            picked = self.hits[index][0]
+            self.dismiss(picked.url if is_series_address(picked.url) else picked)  # a series is given as its address: its page is read
 
     def action_open(self) -> None:
         index = self.query_one(OptionList).highlighted
@@ -301,17 +316,20 @@ class AskScreen(ModalScreen):
 
 
 class EditScreen(ModalScreen):
-    """A form for an album written by hand (one file), or for the series of several files: Ctrl-S accepts, Esc cancels.
+    """A form for an album written by hand (one file), or for the series of several files: the OK button (or Ctrl-S) accepts, Cancel (Esc, or `x` outside a text field) cancels.
 
     ``volumes``: for several files, ``[(path, volume or None)]``: one line each, ``volume  file name``, the numbers can be changed."""
 
-    BINDINGS = [Binding("escape", "back", "Cancel"), Binding("ctrl+s", "accept", "Save")]
+    BINDINGS = [Binding("escape", "back", "Cancel"), Binding("x", "back_x", "Cancel", show=False),
+                Binding("ctrl+s", "accept", "Save")]  # Ctrl-S stays for who can use it; tmux takes it, hence the buttons
     CSS = """
     EditScreen { align: center middle; }
     #edit { width: 90%; height: auto; max-height: 95%; border: round $accent; padding: 1 2; background: $surface; overflow-y: auto; }
     #edit Input { margin-bottom: 0; }
     #volumes { height: 8; }
     #problem { color: $error; }
+    #buttons { height: auto; align-horizontal: right; }
+    #buttons Button { margin-left: 2; }
     """
 
     def __init__(self, heading: str, values: dict, fields, volumes=None):
@@ -328,13 +346,31 @@ class EditScreen(ModalScreen):
                 yield Label(Text("Volume and file (change a number if it was read wrong)", style="dim"))
                 yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}" for p, v in self.volumes), id="volumes")
             yield Label("", id="problem")
-            yield Label(Text("Tab moves · Ctrl-S saves and links · Esc cancels", style="dim"))
+            with Horizontal(id="buttons"):
+                yield Button("OK", id="ok", variant="success")
+                yield Button("Cancel", id="cancel")
+            yield Label(Text("Tab moves · OK (or Ctrl-S) saves and links · Cancel, Esc or x (outside a text field) closes", style="dim"))
 
     def on_mount(self) -> None:
         self.query_one(f"#f-{self.fields[0][0]}", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.screen.focus_next()
+
+    def check_action(self, action: str, parameters) -> bool:
+        if action == "back_x" and isinstance(self.focused, (Input, TextArea)):
+            return False  # `x` is a letter there; Esc has its own action
+        return True
+
+    def action_back_x(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "ok":
+            self.action_accept()
+        else:
+            self.dismiss(None)
 
     def action_accept(self) -> None:
         values = {key: self.query_one(f"#f-{key}", Input).value.strip() for key, _, _ in self.fields}
