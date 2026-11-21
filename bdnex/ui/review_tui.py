@@ -30,7 +30,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static
+from textual.widgets import DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
 from bdnex.library import review_batch as batch
@@ -279,6 +279,63 @@ class AskScreen(ModalScreen):
         self.dismiss(None)
 
 
+class EditScreen(ModalScreen):
+    """A form for an album written by hand (one file), or for the series of several files: Ctrl-S accepts, Esc cancels.
+
+    ``volumes``: for several files, ``[(path, volume or None)]``: one line each, ``volume  file name``, the numbers can be changed."""
+
+    BINDINGS = [Binding("escape", "back", "Cancel"), Binding("ctrl+s", "accept", "Save")]
+    CSS = """
+    EditScreen { align: center middle; }
+    #edit { width: 90%; height: auto; max-height: 95%; border: round $accent; padding: 1 2; background: $surface; overflow-y: auto; }
+    #edit Input { margin-bottom: 0; }
+    #volumes { height: 8; }
+    #problem { color: $error; }
+    """
+
+    def __init__(self, heading: str, values: dict, fields, volumes=None):
+        super().__init__()
+        self.heading, self.values, self.fields, self.volumes = heading, values, fields, volumes
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="edit"):
+            yield Label(Text(self.heading, style="bold"))
+            for key, label, hint in self.fields:
+                yield Label(Text(f"{label}" + (f"  ({hint})" if hint else ""), style="dim"))
+                yield Input(value=self.values.get(key, ""), id=f"f-{key}")
+            if self.volumes is not None:
+                yield Label(Text("Volume and file (change a number if it was read wrong)", style="dim"))
+                yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}" for p, v in self.volumes), id="volumes")
+            yield Label("", id="problem")
+            yield Label(Text("Tab moves · Ctrl-S saves and links · Esc cancels", style="dim"))
+
+    def on_mount(self) -> None:
+        self.query_one(f"#f-{self.fields[0][0]}", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        self.screen.focus_next()
+
+    def action_accept(self) -> None:
+        values = {key: self.query_one(f"#f-{key}", Input).value.strip() for key, _, _ in self.fields}
+        if self.volumes is not None:
+            lines = self.query_one("#volumes", TextArea).text.split("\n")
+            numbers = []
+            for line in lines:
+                first = line.split("\t", 1)[0].strip()
+                if first and not first.isdigit():
+                    self.query_one("#problem", Label).update(f"volume must be a number: {first!r}")
+                    return
+                numbers.append(int(first) if first else None)
+            if len(numbers) != len(self.volumes):
+                self.query_one("#problem", Label).update("keep one line per file")
+                return
+            values["__volumes__"] = numbers
+        self.dismiss(values)
+
+    def action_back(self) -> None:
+        self.dismiss(None)
+
+
 class CoverScreen(ModalScreen):
     """The file's first page next to the album's saved cover, drawn with text (works over SSH). Any key closes it."""
 
@@ -356,6 +413,7 @@ class ReviewApp(App):
         Binding("x", "mark_none", "Unmark all"),
         Binding("v", "toggle_log", "Log"),
         Binding("a", "attach", "Attach marked to a series"),
+        Binding("e", "edit", "Edit by hand"),
         Binding("n", "next_batch", "Next batch"),
         Binding("q", "quit", "Quit"),
         *[Binding(str(number), f"sort({number - 1})", f"Sort by {name}", show=False) for number, (name, _) in enumerate(COLUMNS, start=1)],
@@ -723,6 +781,68 @@ class ReviewApp(App):
         self.notify(f"{len(self.marked)} file(s) marked: `a` attaches them to a series", timeout=3)
         table = self.query_one(DataTable)
         table.move_cursor(row=min(table.cursor_row + 1, len(self.rows) - 1))
+
+    def action_edit(self) -> None:
+        """An album written by hand for the file under the cursor, or one series for the marked files (a comic the site does not know)."""
+        from bdnex.library import manual
+
+        row = self.current()
+        if row is None or row.busy:
+            return
+        marked = [r for r in self.rows if id(r) in self.marked and not r.busy]
+        if len(marked) >= 2:
+            files = [(r.path, manual.guess(r.path)["volume"]) for r in marked]
+            values = {**manual.guess(marked[0].path), "volume": ""}
+            fields = [f for f in manual.FIELDS if f[0] in manual.SHARED]
+            heading = f"A series for these {len(marked)} files (one album each, with the volume in its name)"
+            self.push_screen(EditScreen(heading, values, fields, [(p, int(v) if v else None) for p, v in files]),
+                             lambda got: self.save_series(marked, got) if got else None)
+            return
+        file = self.library.get_file(row.path) or {}
+        album_id = file.get("album_id")
+        if album_id is not None and not manual.is_manual(self.library, album_id):
+            self.notify("This file has an album of the site: `u` unlinks it first, or `bdnex edit` changes its fields.", severity="warning")
+            return
+        values = manual.form_of(self.library, album_id) if album_id is not None else {**manual.guess(row.path), "title": ""}
+        self.push_screen(EditScreen(f"Metadata of {os.path.basename(row.path)}", values, manual.FIELDS),
+                         lambda got: self.save_one(row, album_id, got) if got else None)
+
+    def save_one(self, row: batch.Row, album_id, values: dict) -> None:
+        from bdnex.library import manual
+
+        try:
+            if album_id is not None:
+                manual.update(self.library, album_id, values)
+            else:
+                album_id = manual.create(self.library, row.path, values)
+        except manual.FormError as err:
+            self.notify(str(err), severity="error")
+            return
+        batch.record_manual(self.library, row, album_id)
+        self.decided["linked"] = self.decided.get("linked", 0) + 1
+        logger.info("%s: %s", os.path.basename(row.path), row.message)
+        self.notify(row.message, timeout=5)
+        self.marked.discard(id(row))
+        self.refresh_row(row)
+        self.advance()
+
+    def save_series(self, rows: list, values: dict) -> None:
+        from bdnex.library import manual
+
+        numbers = values.pop("__volumes__")
+        try:
+            ids = manual.create_series(self.library, [(r.path, n) for r, n in zip(rows, numbers)], values)
+        except manual.FormError as err:
+            self.notify(str(err), severity="error")
+            return
+        for row, album_id in zip(rows, ids):
+            batch.record_manual(self.library, row, album_id)
+            self.marked.discard(id(row))
+            self.refresh_row(row)
+        self.decided["linked"] = self.decided.get("linked", 0) + len(rows)
+        logger.info("%d file(s) written by hand as the series %s", len(rows), values.get("series"))
+        self.notify(f"{len(rows)} file(s) linked to the series {values.get('series')!r} (written by hand)", timeout=6)
+        self.advance()
 
     def action_mark_all(self) -> None:
         """Mark every file not decided yet (and not being linked); when they are all marked already, unmark them."""
