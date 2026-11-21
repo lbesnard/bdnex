@@ -479,6 +479,7 @@ class ReviewApp(App):
         self.started = time.monotonic()
         self.hub.ready.add_done_callback(self.list_loaded)
         self.take_the_log()
+        self.set_interval(1.0, self.tick_pending)
         self.load_batch()
 
     def on_unmount(self) -> None:
@@ -511,6 +512,15 @@ class ReviewApp(App):
         own.setLevel(level)
         for owner, handler in handlers:
             owner.addHandler(handler)
+
+    def tick_pending(self) -> None:
+        """The seconds in the state column of the files still being fetched: a long wait is a number going up, not a frozen screen."""
+        for row in self.rows:
+            if row.pending and row in self.rows:
+                with contextlib.suppress(Exception):
+                    table = self.query_one(DataTable)
+                    index = self.rows.index(row)
+                    table.update_cell_at((index, len(COLUMNS) - 1), self.cells(index + 1, row)[-1])
 
     def log_from_anywhere(self, text: str) -> None:
         import threading
@@ -697,7 +707,9 @@ class ReviewApp(App):
         if row.busy:
             state = Text("linking...", style="bold yellow")
         elif row.pending:
-            state = Text("linked · fetching", style="yellow")
+            now = time.monotonic()
+            state = Text(f"linked · fetching {now - row.started_at:.0f}s" if row.started_at else
+                         f"linked · queued {now - row.queued_at:.0f}s", style="yellow")
         elif row.status:
             state = Text(row.status, style=STATUS_STYLE.get(row.status, ""))
         elif row.message.startswith(("refused", "failed")):
@@ -1045,7 +1057,7 @@ class ReviewApp(App):
         started = time.monotonic()
         batch.link_now(self.library, row, candidate)
         took = time.monotonic() - started
-        row.pending = True
+        row.pending, row.queued_at, row.started_at = True, time.monotonic(), 0.0
         self.marked.discard(id(row))
         self.decided["linked"] = self.decided.get("linked", 0) + 1
         logger.info("%s: %s (written in %.2f s); page and cover queued", os.path.basename(row.path), row.message, took)
@@ -1069,6 +1081,8 @@ class ReviewApp(App):
 
         error = ""
         if row.link_id == mine:  # not unlinked or decided again while it waited
+            row.started_at = time.monotonic()
+            logger.info("%s: fetching the page and cover now (the ones queued after it wait)", os.path.basename(row.path))
             captured = LineSink(self)
             try:
                 with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
@@ -1086,6 +1100,8 @@ class ReviewApp(App):
                 batch.decide(self.library, row, "unlink")
             return
         row.pending = False
+        if row.started_at:
+            logger.info("%s: page and cover done in %.1f s", os.path.basename(row.path), time.monotonic() - row.started_at)
         if error:
             row.message = f"linked; page and cover not fetched ({error}): `bdnex import --fetch` tries again"
             self.notify(f"{os.path.basename(row.path)}: {row.message}", severity="warning", timeout=8)
