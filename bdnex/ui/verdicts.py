@@ -71,7 +71,7 @@ def look_for_better(settings, library, verdicts: list[Verdict], limit: int, say=
     from bdnex.importer.matching import find_matches
     from bdnex.importer.registry import create_source
     from bdnex.importer.session_vote import LEAD
-    from bdnex.ui.candidates_cmd import compare_covers
+    from bdnex.importer.candidates import compare_covers
 
     try:
         source = create_source(settings.source, library, settings)

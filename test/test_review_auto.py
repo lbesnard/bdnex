@@ -228,7 +228,7 @@ class _Cand:
 def _compare_with(monkeypatch, covers_of, matches):
     """The candidates and their covers, as the real comparison would give them (it is tested with pictures elsewhere)."""
     from bdnex.importer import covers, matching, registry
-    from bdnex.ui import candidates_cmd
+    from bdnex.importer import candidates as candidates_cmd
 
     source = type("S", (), {"name": "bedetheque", "is_ready": lambda self: True})()
     monkeypatch.setattr(covers, "opencv_installed", lambda: True)

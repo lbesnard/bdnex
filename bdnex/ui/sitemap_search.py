@@ -7,7 +7,7 @@ import sys
 
 from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.library import Library
-from bdnex.ui.candidates_cmd import OFFLINE
+from bdnex.importer.candidates import OFFLINE
 
 
 def build(settings, library):

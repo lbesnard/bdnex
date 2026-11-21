@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Changed
+- Code: what `bdnex candidates` finds (`iter_report`, `build_report`, `compare_covers`, ...) moved from the command's module to `importer/candidates.py`; `review --auto`, the album search and the web page's candidates view no longer import from a command. The command and its output are the same.
 - `bdnex mirror` is now `bdnex init --mirror`: the same job, after the album list it needs. It asks before it fetches (the preview says how much: `-n`), `--yes` answers for a script, and without a terminal it refuses to start without `--yes`. `--skip-list` uses the list already here; `--limit`, `--no-covers`, `--covers-only`, `--workers` and `-n` moved over. `bdnex mirror` still works (it is `init --mirror --skip-list --skip-series --yes`) and says what it became.
 - `bdnex fields` is now `bdnex ls --fields`, next to the query syntax it explains; `bdnex fields` still works and says so.
 - Album search (the review screen's `o` and `a`, `bdnex ls --sitemap`) is faster on a big album list: on a 372,000-album list a word search takes about a third of the time (the rarest word is found by `str.find` over the whole list), and typing letters of an `fzf`-style search narrows what the shorter text found instead of scanning the list again. The answers are the same.
