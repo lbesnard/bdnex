@@ -236,7 +236,7 @@ bdnex duplicates --covers   # also files whose first pages look alike (reads eac
 
 It only reports, in groups: *identical content* (same checksum at several paths, with the space they waste), *same
 album* (several files linked to one album that are not marked as spare versions) and, with `--covers`, *similar
-cover*. `--workers N` sets how many files are read at once with `--covers` (default `import.workers`; `1` is one by one);
+cover* (spare versions are left out of it, as they share their album's cover on purpose, and so are blank or uniform first pages). `--workers N` sets how many files are read at once with `--covers` (default `import.workers`; `1` is one by one);
 the hashes are stored, so the next run only reads new files. Deciding is done by [`bdnex import`](versions.md), which compares the files and asks, and by
 `bdnex trash` for what was replaced.
 
