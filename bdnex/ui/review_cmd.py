@@ -46,7 +46,7 @@ def _batch(args, settings, out) -> int:
         return 2
     from bdnex.importer.registry import create_source
     from bdnex.ui import color
-    from bdnex.ui.candidates_cmd import OFFLINE
+    from bdnex.importer.candidates import OFFLINE
 
     if not context.has_library(settings, "nothing to review."):
         return 1

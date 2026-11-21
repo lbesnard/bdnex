@@ -6,7 +6,7 @@ import json
 import pytest
 import yaml
 
-from bdnex.importer import covers
+from bdnex.importer import candidates, covers
 from bdnex.importer.bedetheque import Bedetheque
 from bdnex.library import AlbumInfo, Library
 from bdnex.ui import candidates_cmd
@@ -229,7 +229,7 @@ def test_a_guessed_cover_address_that_is_not_there_is_replaced_by_the_one_the_pa
 
     source, candidate, seen = Source(), Candidate("11521", "https://www.bedetheque.com/BD-Nikopol-INT-11521.html", "nikopol"), []
     guess = "https://www.bedetheque.com/media/Couvertures/Couv_11521.jpg"
-    assert candidates_cmd.download_cover(source, candidate, guess, guessed=True, say=seen.append) == b"picture"
+    assert candidates.download_cover(source, candidate, guess, guessed=True, say=seen.append) == b"picture"
     assert source.asked == [guess, "https://www.bedetheque.com/media/Couvertures/NikopolInt_24012005.jpg"] and seen == [source.asked[1]]
     with pytest.raises(OSError):  # an address the library knows is not guessed: its 404 stands (no page is read)
-        candidates_cmd.download_cover(Source(), candidate, guess, guessed=False)
+        candidates.download_cover(Source(), candidate, guess, guessed=False)
