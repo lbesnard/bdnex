@@ -156,7 +156,8 @@ def _link_bdtheque(args, settings, library, out) -> int:
     return 0
 
 
-def run(argv: list[str], out=sys.stdout) -> int:
+def run(argv: list[str], out=sys.stdout, configure_logging: bool = True) -> int:
+    """``configure_logging=False``: a caller that owns the logging (the review screen's fetch thread) keeps its handlers."""
     # a bare `--auto` must not take the next word (a path) as its value: only `--auto=all` has one
     argv = ["--auto=strong" if arg == "--auto" else arg for arg in argv]
     parser = build_parser()
@@ -165,7 +166,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
         if args.write or args.move or args.copy:
             parser.error("--database-only changes no file: it can not be combined with --write, --move or --copy")
         args.no_move = True  # nothing from outside the collection is moved or copied either
-    setup_logging(args.verbose)
+    if configure_logging:
+        setup_logging(args.verbose)
     if args.reparse:
         if args.paths or args.sources or args.skipped or args.album or args.fetch:
             parser.error("--reparse works on the library, offline: limit it with --select TERM, not with files or folders")

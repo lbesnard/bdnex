@@ -1,6 +1,9 @@
 """`bdnex review --batch`: the Textual table, driven with Textual's pilot (no terminal needed)."""
 
+import contextlib
+import io
 import os
+import sys
 import asyncio
 import threading
 
@@ -746,7 +749,7 @@ def test_a_link_from_the_review_screen_asks_no_question(monkeypatch):
     from bdnex.ui import import_cmd, verdicts
 
     seen = []
-    monkeypatch.setattr(import_cmd, "run", lambda argv, out=None: seen.append(argv) or 0)
+    monkeypatch.setattr(import_cmd, "run", lambda argv, out=None, configure_logging=True: seen.append(argv) or 0)
     assert verdicts.rematch("/x/a.cbz", "https://x/BD-1.html", verbosity=1)
     assert "--unattended" in seen[0] and "--database-only" in seen[0] and "-v" in seen[0]  # -v: the steps reach the log panel
 
@@ -1340,3 +1343,34 @@ def test_n_before_the_batch_is_ready_waits_for_it_and_shows_it(env, monkeypatch)
 
     drive(db, script, unmatched=True, size=1)
     assert seen["loading"] and seen["number"] == 2 and len(calls) <= 3
+
+
+def test_a_fetch_for_the_review_screen_does_not_reconfigure_the_logging(monkeypatch):
+    from bdnex.ui import import_cmd, verdicts
+
+    seen = {}
+    monkeypatch.setattr(import_cmd, "run", lambda argv, out=None, configure_logging=True: seen.update(configure=configure_logging) or 0)
+    assert verdicts.rematch("/x/a.cbz", "https://www.bedetheque.com/BD-Nains-Forge-2.html") is True
+    assert seen["configure"] is False
+    calls = []
+    monkeypatch.undo()
+    monkeypatch.setattr(import_cmd, "setup_logging", lambda verbosity: calls.append(verbosity))
+    for configure in (False, True):
+        with contextlib.suppress(SystemExit, Exception):
+            import_cmd.run(["-n", "/nonexistent/a.cbz"], out=io.StringIO(), configure_logging=configure)
+    assert calls == [0]  # only the run that was asked to set the logging up did
+
+
+def test_the_wait_message_after_the_screen_closes_goes_to_the_terminal_not_to_a_redirected_stderr(env, monkeypatch):
+    db, files = env
+    from concurrent.futures import ThreadPoolExecutor
+
+    app = review_tui.ReviewApp(Library(db), load_config().settings, FakeSource(), 50, (), True)
+    terminal, redirected = io.StringIO(), io.StringIO()
+    assert app.terminal_stderr is sys.stderr
+    app.terminal_stderr = terminal
+    app.fetcher, app.remaining = ThreadPoolExecutor(max_workers=1), 1
+    threading.Timer(0.7, lambda: setattr(app, "remaining", 0)).start()
+    monkeypatch.setattr(sys, "stderr", redirected)  # a fetch still running has redirected it
+    app.finish_pending_fetches()
+    assert "Fetching the page and cover of 1 linked file(s)" in terminal.getvalue() and redirected.getvalue() == ""
