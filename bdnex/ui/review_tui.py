@@ -708,6 +708,7 @@ class ReviewApp(App):
         if self.first_total is None:
             self.first_total = getattr(rows, "total", 0)  # the files to check when the run began: the batches there will be about
         self.rows = rows
+        self.batch_total = getattr(rows, "total", len(rows))  # the files to check when this batch was weighed: more than the rows = another batch
         self.shown.update(row.path for row in rows)
         self.marked.clear()
         self.order = {id(row): place for place, row in enumerate(rows)}
@@ -863,6 +864,11 @@ class ReviewApp(App):
             after = [i for i in waiting if i > table.cursor_row]
             table.move_cursor(row=(after or waiting)[0])
         elif self.rows and not any(row.busy for row in self.rows):
+            if getattr(self, "batch_total", 0) <= len(self.rows):  # these were all the files there are: nothing to ask about
+                self.sub_title = "everything checked"
+                self.say("Everything is checked. Press q to quit: the pages still being fetched are finished first.", "green")
+                self.notify("Everything is checked: q quits", timeout=6)
+                return
             self.push_screen(AskScreen(f"Batch {self.number} is done. Check the next batch?", None), self.continue_with)
 
     def continue_with(self, answer) -> None:
