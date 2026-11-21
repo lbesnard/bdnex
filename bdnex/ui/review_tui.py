@@ -1045,7 +1045,14 @@ class ReviewApp(App):
         else:
             found = await asyncio.wrap_future(self.hub.run(lambda hub: batch.propose_for_series(hub.source, candidate, paths)))
         if found is None:
-            self.notify("That album is not in a series, or no file name has a volume number (T03, Tome 3...).", severity="warning")
+            names = ", ".join(os.path.basename(path) for path in paths[:3])
+            logger.info("attach: no volume found for %s (the album is in no series, or no file name has a volume number)", names)
+            if len(chosen) == 1 and not isinstance(candidate, str) and not chosen[0].busy and not chosen[0].status:
+                # a one-shot (or a file without a volume number): there is nothing to look up, the album picked is the answer
+                self.link(chosen[0], candidate.url, candidate)
+                return
+            self.notify("That album is not in a series, or no file name has a volume number (T03, Tome 3...). "
+                        "To link one file to one album, use `o`.", severity="warning", timeout=10)
             return
         pairs = [(r, found.mapping[r.path]) for r in chosen if r.path in found.mapping]
         lines = [f"{os.path.basename(r.path)}  ->  {c.url.rsplit('/', 1)[-1].removesuffix('.html')}" for r, c in pairs[:8]]
