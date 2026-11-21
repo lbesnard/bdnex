@@ -6,10 +6,12 @@ once an album is cached no further request is made unless ``recache`` is set.
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import re
 import time
+import zlib
 from random import uniform
 from typing import Callable, Optional
 
@@ -389,8 +391,43 @@ class Bedetheque:
             count += 1
         return count
 
+    INDEX_KEY = ("index", "sitemaps")  # the parsed album list, kept in the library (kind, url of its `source_cache` row)
+
+    def _sitemap_signature(self) -> str:
+        """Changes whenever a stored sitemap does (a new file, one fetched again, another size): what a stored index is checked against."""
+        row = self.library.conn.execute(
+            "SELECT COUNT(*), MAX(fetched), SUM(LENGTH(content)) FROM source_cache WHERE source = ? AND kind = 'sitemap'", (SOURCE,)).fetchone()
+        return f"{row[0]}|{row[1]}|{row[2]}"
+
+    def _stored_index(self, signature: str) -> Optional[list[Candidate]]:
+        """The album list as parsed last time, when the sitemaps are still the same ones (parsing 55 files and slugging 370,000 addresses
+        takes seconds; this takes a fraction of one)."""
+        raw = self.library.cache_get(SOURCE, *self.INDEX_KEY)
+        if raw is None:
+            return None
+        try:
+            data = json.loads(zlib.decompress(raw))
+            if data.get("sig") != signature:
+                return None
+            return [Candidate(i, u, n, v) for i, u, n, v in zip(data["ids"], data["urls"], data["names"], data["volumes"])]
+        except (ValueError, KeyError, zlib.error, TypeError):
+            return None  # damaged or from another version: parsed again
+
+    def _store_index(self, signature: str, index: list[Candidate]) -> None:
+        data = {"sig": signature, "ids": [c.source_id for c in index], "urls": [c.url for c in index],
+                "names": [c.name for c in index], "volumes": [c.volume for c in index]}
+        try:
+            self.library.cache_put(SOURCE, *self.INDEX_KEY, zlib.compress(json.dumps(data, separators=(",", ":")).encode("utf-8"), 3))
+        except Exception as err:  # a read-only library, or a lock: it is only a speed-up
+            logger.debug(f"the parsed album list was not kept: {err}")
+
     def _load_index(self) -> list[Candidate]:
         if self._index is None:
+            signature = self._sitemap_signature()
+            stored = self._stored_index(signature)
+            if stored:
+                self._index = stored
+                return self._index
             index: list[Candidate] = []
             for url in sitemap.sitemap_urls():
                 content = self.library.cache_get(SOURCE, "sitemap", url)
@@ -400,6 +437,7 @@ class Bedetheque:
             if not index:
                 raise FileNotFoundError("No Bédéthèque sitemaps cached: run update_sitemaps() first")
             self._index = index
+            self._store_index(signature, index)
         return self._index
 
     # --------------------------------------------------------------- matching
