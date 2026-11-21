@@ -670,16 +670,15 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
                    cover: bool = Query(False, description="also compare covers (a request for each candidate whose cover is "
                                                           "not saved: keep `limit` small)"),
                    lib: Library = Depends(library)):
-        from bdnex.importer import covers
-        from bdnex.ui import candidates_cmd
+        from bdnex.importer import candidates, covers
 
         if cover and limit * per_file > 25:  # a GET that sends requests to the site: a few at a time
             raise HTTPException(400, "with `cover`, `limit` x `per_file` is at most 25 (each candidate whose cover is not "
                                      "saved is a request to the site)")
         try:
-            items = candidates_cmd.build_report(settings, lib, terms(q), low=low, limit=per_file,
+            items = candidates.build_report(settings, lib, terms(q), low=low, limit=per_file,
                                                 cover=cover and covers.opencv_installed(), first=offset, files=limit)
-        except candidates_cmd.NotReady as err:
+        except candidates.NotReady as err:
             raise HTTPException(409, str(err)) from err
         except QueryError as err:
             raise HTTPException(400, f"bad query: {err}") from err
