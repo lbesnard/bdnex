@@ -64,10 +64,6 @@ def folder_of(path: str, depth: int = 2) -> str:
     return os.sep.join(parts[-depth:]) if parts else ""
 
 
-def is_checked(library: Library, file_id: Optional[int]) -> bool:
-    return file_id is not None and CHECKED in library.attrs_of("file", file_id)
-
-
 class Batch(list):
     """The rows of one batch, and ``total``: about how many files there are to check in all (a batch is ``size`` of them)."""
 
