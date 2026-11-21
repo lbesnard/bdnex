@@ -607,7 +607,8 @@ def _series_address_run(env, monkeypatch, keys):
         asked["address"], asked["paths"] = address, paths
         return SeriesProposal("Nains", "s1", {files["wrong"]: FORGE}, with_volume=1, total=len(paths))
 
-    monkeypatch.setattr(batch, "propose_for_series_address", propose)
+    monkeypatch.setattr(batch, "propose_for_series_address", lambda source, address, paths, found=None: propose(source, address, paths))
+    monkeypatch.setattr(batch, "read_series_address", lambda settings, address: None)
     seen = {}
 
     async def script(app, pilot):
@@ -796,3 +797,28 @@ def test_the_next_batch_does_not_repeat_the_files_of_the_batches_before(env):
         assert not set(first) & {row.path for row in app.rows}
 
     drive(db, script)
+
+
+def test_a_series_page_that_is_not_stored_is_fetched_with_the_real_fetcher(tmp_path, monkeypatch):
+    """The screen's own source is offline and read-only: the series page is read apart, with the configured fetcher, and stored."""
+    import yaml as _yaml
+
+    import bdnex.importer.bedetheque as plugin
+    from bdnex.config import load_config as _load
+
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(_yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"), "bedetheque": {"delay": [0, 0]}}))
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    html = '<a href="https://www.bedetheque.com/BD-Boys-Tome-1-Un-debut-100.html">1</a><a href="https://www.bedetheque.com/BD-Boys-Tome-2-La-suite-101.html">2</a>'
+    asked = []
+    monkeypatch.setattr(plugin, "build_fetcher", lambda settings: (lambda url: asked.append(url) or html.encode()))
+    monkeypatch.setattr(plugin, "uses_saved_pages", lambda settings: False, raising=False)
+    monkeypatch.setattr("bdnex.importer.bedetheque.bedetheque.uniform", lambda a, b: 0)
+    monkeypatch.setattr("time.sleep", lambda s: None)
+    with Library(tmp_path / "lib.sqlite"):
+        pass
+    settings = _load().settings
+    key, name, albums = batch.read_series_address(settings, SERIES_PAGE)
+    assert (key, name) == ("18658", "Boys") and [a.volume for a in albums] == [1, 2] and asked == [SERIES_PAGE]
+    batch.read_series_address(settings, SERIES_PAGE)
+    assert asked == [SERIES_PAGE]  # the second time it is in the library
