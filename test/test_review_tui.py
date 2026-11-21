@@ -319,30 +319,13 @@ def test_a_link_that_never_answers_is_given_up_and_the_row_can_be_decided_again(
     assert seen["status"]
 
 
-def test_a_refused_link_says_refused_in_the_table(env, monkeypatch):
-    db, files = env
-    release = threading.Event()
-    release.set()
-    _linking(monkeypatch, db, release, outcome="refuse")  # exit code 0, library unchanged: the album already has a file
-
-    async def script(app, pilot):
-        await pilot.press("o")
-        await settle(app, pilot)
-        await pilot.press("enter")
-        await settle(app, pilot)
-
-    result, _ = drive(db, script)
-    assert result["cells"][0][7] == "refused" and "refused" in result["app"].rows[0].message
-    with Library(db) as lib:
-        assert lib.get_file(files["wrong"])["album_id"] is not None  # nothing changed
-
-
-def test_a_refused_link_offers_to_keep_both_and_yes_links_the_file_as_a_spare_version(env, monkeypatch):
+def test_a_link_to_an_album_that_has_another_file_is_made_at_once_as_a_spare_version(env, monkeypatch):
+    """No refusal and no question: the file is linked to the metadata; which file stays is `bdnex duplicates`' job."""
     db, files = env
     release = threading.Event()
     release.set()
     seen_calls.clear()
-    _linking(monkeypatch, db, release, outcome="refuse")
+    _linking(monkeypatch, db, release, outcome="refuse")  # the album has a file: only keep_both gets the link through
     seen = {}
 
     async def script(app, pilot):
@@ -350,32 +333,11 @@ def test_a_refused_link_offers_to_keep_both_and_yes_links_the_file_as_a_spare_ve
         await settle(app, pilot)
         await pilot.press("enter")
         await settle(app, pilot)
-        seen["screen"] = app.screen.__class__.__name__  # the question: keep both?
-        await pilot.press("y")
-        await settle(app, pilot)
+        seen["screen"] = app.screen.__class__.__name__
 
     result, _ = drive(db, script)
-    assert seen["screen"] == "AskScreen" and seen_calls == [False, True]
+    assert seen["screen"] != "AskScreen" and seen_calls == [True]
     assert result["cells"][0][7] == "linked"
-
-
-def test_no_to_keep_both_changes_nothing(env, monkeypatch):
-    db, files = env
-    release = threading.Event()
-    release.set()
-    seen_calls.clear()
-    _linking(monkeypatch, db, release, outcome="refuse")
-
-    async def script(app, pilot):
-        await pilot.press("o")
-        await settle(app, pilot)
-        await pilot.press("enter")
-        await settle(app, pilot)
-        await pilot.press("n")
-        await settle(app, pilot)
-
-    result, _ = drive(db, script)
-    assert seen_calls == [False] and result["cells"][0][7] == "refused"
 
 
 def test_the_page_is_a_link_in_its_column_and_in_the_detail_and_p_copies_it_over_ssh(env, monkeypatch):
@@ -589,7 +551,7 @@ def test_marked_files_get_the_album_of_a_series_by_their_volume_after_one_questi
 
     result, _ = drive(db, script)
     assert seen["marked"] == 1 and asked["paths"] == [files["wrong"]] and seen["question"] == "AskScreen"
-    assert result["cells"][0][7] == "linked" and seen_calls == [False]
+    assert result["cells"][0][7] == "linked" and seen_calls == [True]
     assert not result["app"].marked  # the mark goes with the link
 
 
@@ -875,3 +837,13 @@ def test_a_series_page_without_the_files_volumes_says_what_each_side_has():
     with pytest.raises(batch.NoVolumeFound) as err:
         batch.propose_for_series_address(source, "https://www.bedetheque.com/serie-9-BD-Fell.html", ["/x/Fell 02 (2005).cbz", "/x/Fell 03 (2005).cbz"])
     assert "none with a volume number" in str(err.value) and "ask for 2, 3" in str(err.value)
+
+
+def test_a_series_page_of_collected_editions_still_lists_its_albums():
+    from bdnex.importer.bedetheque import parser
+
+    html = ('<a href="https://www.bedetheque.com/BD-Fell-2005-INT01-Feral-City-194887.html">Feral City</a>'
+            '<a href="https://www.bedetheque.com/BD-Batman-Tome-1-X-5.html">another series</a>')
+    assert [a["source_id"] for a in parser.parse_series_details(html)["albums"]] == ["5"]  # without the name, the other series wins
+    albums = parser.parse_series_details(html, "Fell")["albums"]
+    assert [a["source_id"] for a in albums] == ["194887"] and albums[0]["volume"] is None

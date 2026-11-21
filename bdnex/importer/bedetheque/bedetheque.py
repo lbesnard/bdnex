@@ -405,7 +405,7 @@ class Bedetheque:
         details = self._series_details.get(url)
         if details is None:
             html = self._get("series", url).decode("utf-8", errors="replace")
-            details = self._series_details[url] = parser.parse_series_details(html)
+            details = self._series_details[url] = parser.parse_series_details(html, match.group(2))
         albums = [c for c in (self.candidate_from_url(a["url"]) for a in details.get("albums", [])) if c is not None]
         return match.group(1), match.group(2).replace("-", " "), albums
 

@@ -7,6 +7,8 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Review screen: a link to an album that already has another file is made at once, as a spare version (no refusal, no question): which file stays is the job of `bdnex duplicates`. A file already linked to that album is reported as linked, not refused.
+- A series page whose albums are all collected editions or one-shots (no `Tome` in their addresses, e.g. Fell) listed no album at all: the series' own name, from its address, now tells which links are its albums.
 - Review screen, attaching files to a series by its page address: when no file finds its volume, the message says what the page lists and what the files ask for (a series of collected editions has no tome 2), instead of the generic "not in a series".
 - `ls --sitemap --for FILE`: the file's words count as whole words of an album's name (`fell` is not in `Rocketfellers`), and albums that tie at 100 are still told apart by them.
 - Review screen: a series address that is not stored is fetched with your fetcher (once, then stored), instead of failing with "the network is not used".

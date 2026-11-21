@@ -391,7 +391,7 @@ def fold_label(text: str) -> str:
 ALBUM_LINK = re.compile(r"/BD-(?P<slug>.+)-(?P<id>\d+)\.html$")
 
 
-def parse_series_details(html: str) -> dict[str, Any]:
+def parse_series_details(html: str, name_slug: str = "") -> dict[str, Any]:
     """What a series page says: its ``summary``, the ``albums`` it lists, and everything else it carries.
 
     The rest is harvested without knowing the layout (see :func:`harvest`): ``meta``, ``microdata``,
@@ -402,6 +402,8 @@ def parse_series_details(html: str) -> dict[str, Any]:
     scheme in every layout: the series is the slug most links share before ``-Tome-``, and only its albums
     are kept (not the "similar series" links of the page). Each album has ``source_id``, ``url`` (on the
     ``www`` site), ``volume`` (``None`` for a special) and a ``title`` taken from the address.
+    A series with no ``-Tome-`` album at all (collected editions, one-shots) has no such shared slug: ``name_slug`` (the
+    series' name as its own address spells it, ``Fell``) then tells which links are its albums.
     """
     details: dict[str, Any] = {}
     summary = parse_series_page(html)
@@ -417,9 +419,13 @@ def parse_series_details(html: str) -> dict[str, Any]:
         if match:
             links.append((match["slug"], match["id"], anchor["href"]))
     series_slug = collections.Counter(slug.split("-Tome-")[0] for slug, _, _ in links if "-Tome-" in slug)
-    if not series_slug:
+    named = [slug for slug, _, _ in links if name_slug and (slug.lower() == name_slug.lower() or slug.lower().startswith(name_slug.lower() + "-"))]
+    if named:  # the series' own name, as its address spells it: its albums start with it (the similar series on the page do not)
+        prefix = named[0][:len(name_slug)]
+    elif series_slug:
+        prefix = series_slug.most_common(1)[0][0]
+    else:
         return details
-    prefix = series_slug.most_common(1)[0][0]
     albums, seen = [], set()
     for slug, ident, href in links:
         if ident in seen or not (slug == prefix or slug.startswith(prefix + "-")):
