@@ -144,12 +144,12 @@ and come back later: you continue with the files not checked yet. See [the table
 ## …keep the whole Bédéthèque catalogue in my library?
 
 ```bash
-bdnex mirror -n               # how many albums and covers are missing, and about how much room they take
-bdnex mirror --limit 500      # fetch the next 500 (page, series page, cover), then stop
-bdnex mirror                  # everything that is left; Ctrl-C stops, run it again to go on
+bdnex init --mirror -n         # how many albums and covers are missing, and about how much room they take
+bdnex init --mirror --skip-list --limit 500  # fetch the next 500 (page, series page, cover), then stop
+bdnex init --mirror            # everything that is left; Ctrl-C stops, run it again to go on
 ```
 
-See [Keeping the whole catalogue](importing.md#keeping-the-whole-catalogue-bdnex-mirror).
+See [Keeping the whole catalogue](importing.md#keeping-the-whole-catalogue-bdnex-init-mirror).
 
 ## …shorten a command I type often?
 

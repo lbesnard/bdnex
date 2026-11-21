@@ -7,19 +7,36 @@ see the guides for how to use them). `bdnex --help` lists the commands by task.
 
 ### `bdnex init`
 
-Download or refresh the album list that file names are matched against.
+Download or refresh the album list that file names are matched against (--mirror: the whole catalogue).
 
 ```text
-usage: bdnex init [-h] [--skip-series] [--series-only] [-v] [--log-file PATH]
+usage: bdnex init [-h] [--skip-list] [--skip-series] [--series-only] [--mirror]
+                  [--limit N] [--no-covers] [--covers-only] [--workers N] [-n] [--yes]
+                  [-v] [--log-file PATH]
 
 ``bdnex init``: download (or refresh) the album list and the series index the matching
 and the searches work from.
 
 options:
   -h, --help       show this help message and exit
+  --skip-list      do not download the album list again: use the one already here
+                   (with --mirror)
   --skip-series    do not read the series index (the 27 letter pages, every series by
                    name)
   --series-only    only read the series index, not the album list
+  --mirror         after the list, download every album page, series page and cover
+                   the library lacks (long: asks first)
+  --limit N        with --mirror: fetch at most N albums this time (0: all that are
+                   left)
+  --no-covers      with --mirror: the pages only, do not download the covers
+  --covers-only    with --mirror: only the covers of the albums the library already
+                   holds without one (no page is fetched)
+  --workers N      album pages fetched with --mirror at once (0: the cores less one;
+                   1: one by one); default: `bedetheque.parallel`
+  -n, --pretend    show what would be fetched by --mirror: how many albums and covers
+                   are missing, and about how much room they take; change nothing
+  --yes            with --mirror: do not ask before fetching (a script, or the old
+                   `bdnex mirror`)
   -v, --verbose    more detail: -v what is decided and why (every file), -vv how
                    (reads, cache, requests, threads), -vvv everything, libraries and
                    SQL included
@@ -28,49 +45,17 @@ options:
 
 The matching of file names works offline from this list (about 55 files, 70 MB). Run
 it once before your first import, and again whenever you want to pick up new albums.
+`--mirror` goes further: it also downloads every album page, series page and cover the
+list has and the library lacks (a long run: tens of GB; Ctrl-C stops it, the next run
+goes on).
 
 Examples:
-  bdnex init  download the album list that file names are matched against (once; run it again to refresh)
-```
-
-### `bdnex mirror`
-
-Keep the whole catalogue in the library: every album page, series page and cover not there yet.
-
-```text
-usage: bdnex mirror [-h] [--limit N] [--no-covers] [--covers-only] [--workers N] [-n]
-                    [-v] [--log-file PATH]
-
-Download the whole Bédéthèque catalogue into the library: every album page, its series
-page and its cover, for the albums the album list (`bdnex init`) has and the library
-does not.
-
-options:
-  -h, --help       show this help message and exit
-  --limit N        fetch at most N albums this time (0: all that are left)
-  --no-covers      the pages only: do not download the covers
-  --covers-only    only the covers of the albums the library already holds without one
-                   (no page is fetched)
-  --workers N      album pages fetched at once (0: the cores less one; 1: one by one);
-                   default: `bedetheque.parallel`
-  -n, --pretend    show what would be fetched: how many albums and covers are missing,
-                   and about how much room they take; change nothing
-  -v, --verbose    more detail: -v what is decided and why (every file), -vv how
-                   (reads, cache, requests, threads), -vvv everything, libraries and
-                   SQL included
-  --log-file PATH  also write everything, at the debug level and with the time, to
-                   this file (for a long run)
-
-The library is the state: stop at any time (Ctrl-C) and run it again, it goes on with
-what is left. Pages go through the same endpoints and the same polite delay as an
-import (`bedetheque.fetcher_endpoint`, `parallel`).
-
-Examples:
-  bdnex mirror -n                       how many albums and covers are missing from the library, and about how much room they take; fetches nothing
-  bdnex mirror --limit 500              fetch the next 500 albums (page, series page and cover), then stop; run it again to go on
-  bdnex mirror                          fetch everything the album list has and the library lacks (Ctrl-C stops, the next run goes on)
-  bdnex mirror --covers-only            only the covers of the albums already in the library that have none saved
-  bdnex mirror --no-covers --workers 8  the pages only, 8 at once (more endpoints are faster, not more polite)
+  bdnex init                                               download the album list that file names are matched against (once; run it again to refresh)
+  bdnex init --mirror -n                                   how many albums and covers are missing from the library, and about how much room they take; fetches nothing
+  bdnex init --mirror --skip-list --limit 500              fetch the next 500 albums (page, series page and cover), then stop; run it again to go on
+  bdnex init --mirror                                      the list, then everything it has and the library lacks (asks first; Ctrl-C stops, the next run goes on)
+  bdnex init --mirror --skip-list --covers-only            only the covers of the albums already in the library that have none saved
+  bdnex init --mirror --skip-list --no-covers --workers 8  the pages only, 8 at once (more endpoints are faster, not more polite)
 ```
 
 ### `bdnex import`
@@ -316,8 +301,8 @@ Examples:
 List and search the library.
 
 ```text
-usage: bdnex ls [-h] [--files] [--format FORMAT] [--limit N] [-c] [-l] [--json]
-                [--sitemap] [--for PATH] [--unmatched] [--missing]
+usage: bdnex ls [-h] [--fields] [--files] [--format FORMAT] [--limit N] [-c] [-l]
+                [--json] [--sitemap] [--for PATH] [--unmatched] [--missing]
                 [query ...]
 
 List albums (or files) of the library. Terms are ANDed; a lone `,` means or; `year-`
@@ -329,6 +314,8 @@ positional arguments:
 
 options:
   -h, --help       show this help message and exit
+  --fields         list the fields a query can use, with their kind and what they mean
+                   (nothing else)
   --files          list files instead of albums
   --format FORMAT  output template, e.g. '$series T$vol $title'
   --limit N        at most N results (after sorting: `year-` puts the newest first)
@@ -415,25 +402,6 @@ and files it matches. Read-only, no file is touched.
 Examples:
   bdnex stats               how much the library holds
   bdnex stats series:nains  the same for a query
-```
-
-### `bdnex fields`
-
-The fields a query can use, with their kind.
-
-```text
-usage: bdnex fields [-h]
-
-List the fields a query can use, with their kind.
-
-options:
-  -h, --help  show this help message and exit
-
-Use them as `field:value` in `bdnex ls`, `review`, `write`, `komga`... (see the page
-*Querying the library*). `year-` or `title+` sorts.
-
-Examples:
-  bdnex fields  the fields a query can use (`series:`, `author:`, `year:`...), with their kind
 ```
 
 ### `bdnex duplicates`

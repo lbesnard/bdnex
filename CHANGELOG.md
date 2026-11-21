@@ -6,6 +6,9 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Changed
+- `bdnex mirror` is now `bdnex init --mirror`: the same job, after the album list it needs. It asks before it fetches (the preview says how much: `-n`), `--yes` answers for a script, and without a terminal it refuses to start without `--yes`. `--skip-list` uses the list already here; `--limit`, `--no-covers`, `--covers-only`, `--workers` and `-n` moved over. `bdnex mirror` still works (it is `init --mirror --skip-list --skip-series --yes`) and says what it became.
+- `bdnex fields` is now `bdnex ls --fields`, next to the query syntax it explains; `bdnex fields` still works and says so.
 ### Fixed
 - `bdnex duplicates --covers`: a spare version is no longer listed as a "similar cover" of its own album (it has that cover by design), and blank or uniform first pages are no longer grouped together as one big "same book" group.
 - Review screen: a series with one album and no volume (a one-shot such as Scalp), given by its address or picked as a SERIES, links that album to the one file you chose when the file's name has no number; before it said "none with a volume number" and changed nothing.

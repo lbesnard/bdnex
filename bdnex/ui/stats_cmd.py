@@ -1,4 +1,4 @@
-"""``bdnex stats`` and ``bdnex fields``: what the library holds, and what a query can say."""
+"""``bdnex stats``, and the list of fields of ``bdnex ls --fields``: what the library holds, and what a query can say."""
 
 from __future__ import annotations
 
@@ -66,15 +66,12 @@ def summary(library: Library, query: list[str]) -> dict:
 
 
 def field_list() -> list[dict]:
-    """The fields a query can use, with their kind and help (``bdnex fields``, and ``GET /api/fields``)."""
+    """The fields a query can use, with their kind and help (``bdnex ls --fields``, and ``GET /api/fields``)."""
     return [{"name": name, "kind": kind_of(name), "help": FIELD_HELP.get(name, "")} for name in q.ALL_FIELDS]
 
 
-def fields_run(argv: list[str], out=sys.stdout) -> int:
-    parser = argparse.ArgumentParser(prog="bdnex fields", description="List the fields a query can use, with their kind.",
-                                     epilog="Use them as `field:value` in `bdnex ls`, `review`, `write`, `komga`... "
-                                            "(see the page *Querying the library*). `year-` or `title+` sorts.")
-    parser.parse_args(argv)
+def print_fields(out=sys.stdout) -> int:
+    """``bdnex ls --fields``: the fields a query can use. Use them as `field:value` in `ls`, `review`, `write`, `komga`...; `year-` or `title+` sorts."""
     width = max(len(name) for name in q.ALL_FIELDS)
     from bdnex.ui import color
 

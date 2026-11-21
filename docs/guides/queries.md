@@ -53,9 +53,9 @@ saying what moved its score and which searches found it. To link a file to an al
 | `^term` | negation |
 | `a b , c` | a lone comma is **or**: albums matching `a` and `b`, or `c` (each side is ANDed). The comma must be a word of its own |
 | `attr:name`, `attr:name=value` | a mark you put with [`bdnex mark`](maintaining.md#your-own-marks-bdnex-mark): the file (or album) has it, or has it with that value |
-| `year-`, `title+` | sorts by that field, newest/last first (`-`) or oldest/first (`+`); several give several keys. See `bdnex fields` |
+| `year-`, `title+` | sorts by that field, newest/last first (`-`) or oldest/first (`+`); several give several keys. See `bdnex ls --fields` |
 
-`bdnex fields` lists every field with its kind (text, number, yes/no). `bdnex ls year- --limit 10` shows the ten most
+`bdnex ls --fields` lists every field with its kind (text, number, yes/no). `bdnex ls year- --limit 10` shows the ten most
 recent albums. Or and sort work in every command that takes a query (`review`, `write`, `komga`, `candidates`...);
 `--limit N` is an option of `bdnex ls`.
 
