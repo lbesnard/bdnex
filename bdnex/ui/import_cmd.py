@@ -122,6 +122,17 @@ def ensure_album_list(source, library, settings, out=sys.stdout) -> bool:
     return True
 
 
+def _under_collection(path: str, settings) -> str:
+    """The library shows (and `ls` prints) paths relative to the collection: a relative path that is not found from here is looked for there."""
+    if os.path.isabs(path) or os.path.exists(path):
+        return path
+    try:
+        candidate = os.path.join(str(settings.require_collection()), path)
+    except ConfigError:
+        return path
+    return candidate if os.path.exists(candidate) else path
+
+
 def run(argv: list[str], out=sys.stdout) -> int:
     # a bare `--auto` must not take the next word (a path) as its value: only `--auto=all` has one
     argv = ["--auto=strong" if arg == "--auto" else arg for arg in argv]
@@ -151,6 +162,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
     settings = context.settings(library=False)
     if settings is None:
         return 1
+    args.paths = [_under_collection(path, settings) for path in args.paths]
     if args.as_is:
         return _record_as_is(args, settings, out)
     if args.skipped:
