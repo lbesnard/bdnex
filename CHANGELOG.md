@@ -6,6 +6,11 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Fixed
+- `bdnex duplicates --covers`: a spare version is no longer listed as a "similar cover" of its own album (it has that cover by design), and blank or uniform first pages are no longer grouped together as one big "same book" group.
+
+### Changed
+- `bdnex duplicates --covers` is faster: the cover hashes are stored a few hundred per commit (not one disk sync per file), only the columns it needs are read, and similar covers are looked up by blocks of the hash instead of comparing every pair (about 3x on 16,000 files, the same groups).
 ### Changed
 - Faster on a big library (measured on a copy of a 16,000-album library): text searches (`bdnex ls WORDS`, the web page's search) take a third of the time (`fold` is cached and skips its accent loop for plain text); `bdnex series` and the next review batch are about a third faster; the web page's list of files only builds the credits of the rows it shows. The batch no longer asks the library for each file's `checked` mark and last import one by one.
 ### Fixed

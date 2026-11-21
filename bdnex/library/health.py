@@ -216,20 +216,33 @@ def duplicates(library: Library, compute_covers: bool = False, progress=None, wo
     * ``cover``: the first pages look alike (perceptual hash). Only the hashes the library already knows are used,
       unless ``compute_covers``: then the missing ones are worked out (the first page of every file is read).
     """
-    rows = [library._file_row(r) for r in library.conn.execute("SELECT * FROM files")]
+    # only what the groups and the report need: `SELECT *` would parse every file's embedded-metadata JSON for nothing
+    rows = [library._file_row(r) for r in library.conn.execute(
+        "SELECT id, path, album_id, md5, size, format, page_count, spare, cover_hash FROM files")]
     if compute_covers:
         missing = [row for row in rows if not row.get("cover_hash") and os.path.exists(row["path"])]
         from bdnex.parallel import map_ordered
 
         # the first page of each file is read in several processes at once; the library is written here, in order
         hashes = map_ordered(lambda row: covers.path_cover_hash(row["path"], row["format"]), missing, workers)
+        stored: list[tuple[str, str]] = []
+
+        def flush() -> None:  # a commit per file would be one disk sync each: a few hundred at a time
+            if stored:
+                with library.conn:
+                    library.conn.executemany("UPDATE files SET cover_hash = ? WHERE path = ?", stored)
+                stored.clear()
+
         for number, (row, value) in enumerate(hashes, start=1):
             if progress:
                 progress(f"[{number}/{len(missing)}] {os.path.basename(row['path'])}")
             if isinstance(value, Exception) or value is None:
                 continue
-            library.set_file_fields(row["path"], cover_hash=covers.format_hash(value))
             row["cover_hash"] = covers.format_hash(value)
+            stored.append((row["cover_hash"], library._store(row["path"])))
+            if len(stored) >= 200:
+                flush()
+        flush()
     groups: list[dict[str, Any]] = []
     seen: set[frozenset] = set()
 
@@ -252,14 +265,43 @@ def duplicates(library: Library, compute_covers: bool = False, progress=None, wo
     for files in by_album.values():
         add("same album", files)
 
-    hashed = [(covers.parse_hash(row["cover_hash"]), row) for row in rows if row.get("cover_hash")]
-    used: set[str] = set()
-    for i, (hash_a, row_a) in enumerate(hashed):
-        if row_a["path"] in used:
-            continue
-        near = [row_a] + [row_b for hash_b, row_b in hashed[i + 1:]
-                          if row_b["path"] not in used and covers.hash_distance(hash_a, hash_b) <= covers.SAME_COVER_DISTANCE]
-        if len(near) > 1:
-            used.update(f["path"] for f in near)
-            add("similar cover", near)
+    # a spare version has its album's cover by design, and a flat page (blank, white) has the same hash as every other flat page
+    hashed = [(covers.parse_hash(row["cover_hash"]), row) for row in rows if row.get("cover_hash") and not row["spare"]]
+    hashed = [(value, row) for value, row in hashed if not flat_hash(value)]
+    for near in similar_covers(hashed):
+        add("similar cover", near)
     return groups
+
+
+def flat_hash(value: int) -> bool:
+    """A difference hash with (almost) no bit set, or all set: a blank or uniform page, which says nothing about the book."""
+    return not 4 < value.bit_count() < 60
+
+
+def similar_covers(hashed: list[tuple[int, dict[str, Any]]]) -> list[list[dict[str, Any]]]:
+    """Groups of rows whose hashes are within ``covers.SAME_COVER_DISTANCE`` bits of the first of the group (in the order of
+    ``hashed``). Two hashes that differ by at most D bits are equal in at least one of D + 1 blocks of their bits, so only
+    the rows sharing a block are compared (the same groups as comparing every pair, a few times faster)."""
+    distance = covers.SAME_COVER_DISTANCE
+    blocks = distance + 1
+    width = 64 // blocks + 1
+    mask = (1 << width) - 1
+    buckets: list[dict[int, list[int]]] = [{} for _ in range(blocks)]
+    for index, (value, _) in enumerate(hashed):
+        for block in range(blocks):
+            buckets[block].setdefault((value >> (block * width)) & mask, []).append(index)
+    used = bytearray(len(hashed))
+    found = []
+    for index, (value, row) in enumerate(hashed):
+        if used[index]:
+            continue
+        candidates: set[int] = set()
+        for block in range(blocks):
+            candidates.update(buckets[block][(value >> (block * width)) & mask])
+        near = sorted(j for j in candidates if j > index and not used[j] and (value ^ hashed[j][0]).bit_count() <= distance)
+        if near:
+            used[index] = 1
+            for j in near:
+                used[j] = 1
+            found.append([row] + [hashed[j][1] for j in near])
+    return found

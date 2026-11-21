@@ -148,3 +148,50 @@ def test_check_lists_comic_files_of_the_collection_that_the_library_does_not_kno
         lib.add_file(str(collection / "known.cbz"), lib.add_album(AlbumInfo("bedetheque", "1", "Un", language="fr")))
         found = {f.key: f for f in check(lib, settings)}
     assert "unimported" in found and found["unimported"].items == [str(collection / "stranger.cbz")]
+
+
+def _hashed(env, values, spare=()):
+    db, settings, make_cbz = env
+    with Library(db) as lib:
+        paths = []
+        for n, value in enumerate(values):
+            path = make_cbz(f"c{n}.cbz", pages=2 + n)
+            lib.add_file(path, None)
+            lib.set_file_fields(path, cover_hash=f"{value:016x}", spare=1 if n in spare else 0)
+            paths.append(path)
+        return paths, duplicates(lib)
+
+
+def test_a_spare_version_is_not_a_similar_cover_of_its_album(env):
+    cover = 0x0123456789ABCDEF
+    paths, groups = _hashed(env, [cover, cover], spare={1})
+    assert [g for g in groups if g["why"] == "similar cover"] == []
+    paths, groups = _hashed(env, [cover, cover ^ 1])  # the same two, none spare: grouped
+    assert [sorted(f["path"] for f in g["files"]) for g in groups if g["why"] == "similar cover"] == [sorted(paths)]
+
+
+def test_blank_pages_are_not_one_big_group_of_similar_covers(env):
+    paths, groups = _hashed(env, [0, 0, (1 << 64) - 1, (1 << 64) - 1])  # flat pages: nothing to compare
+    assert [g for g in groups if g["why"] == "similar cover"] == []
+
+
+def test_the_block_search_for_similar_covers_finds_the_groups_of_comparing_every_pair():
+    import random
+
+    from bdnex.importer import covers
+    from bdnex.library.health import similar_covers
+
+    rnd = random.Random(3)
+    values = [rnd.getrandbits(64) for _ in range(400)]
+    for i in range(0, 399, 7):  # some close pairs, some farther than the limit
+        values[i + 1] = values[i] ^ sum(1 << rnd.randrange(64) for _ in range(rnd.choice([1, 5, 10, 14])))
+    hashed = [(v, {"path": str(i)}) for i, v in enumerate(values)]
+    used, expected = set(), []
+    for i, (a, row) in enumerate(hashed):
+        if row["path"] in used:
+            continue
+        near = [row] + [r for b, r in hashed[i + 1:] if r["path"] not in used and covers.hash_distance(a, b) <= covers.SAME_COVER_DISTANCE]
+        if len(near) > 1:
+            used.update(r["path"] for r in near)
+            expected.append([r["path"] for r in near])
+    assert [[r["path"] for r in g] for g in similar_covers(hashed)] == expected and expected
