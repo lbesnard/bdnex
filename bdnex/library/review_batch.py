@@ -156,6 +156,18 @@ def link_to(library: Library, row: Row, url: str, keep_both: bool = False) -> tu
     return finish_link(library, row, before)
 
 
+def record_manual(library: Library, row: Row, album_id: int) -> None:
+    """The file was linked to an album written by hand (``library.manual``): the row shows it and the decision is saved."""
+    from bdnex.ui.describe import label
+
+    album = library.get_album(album_id) or {}
+    row.album, row.album_id, row.album_url = label(album), album_id, None
+    row.facts = facts_of(album, library.get_file(row.path))
+    row.cover, row.score, row.kind, row.why = None, None, "ok", ["+ written by you"]
+    decide(library, row, "other", album_id)
+    row.message = f"linked to {row.album} (written by hand)"
+
+
 def finish_link(library: Library, row: Row, before: Optional[int], url: Optional[str] = None) -> tuple[bool, str]:
     """After the import of ``link_to`` ran (maybe in another thread): did the file's album change? Record it if so."""
     from bdnex.ui.describe import label

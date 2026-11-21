@@ -847,3 +847,47 @@ def test_a_series_page_of_collected_editions_still_lists_its_albums():
     assert [a["source_id"] for a in parser.parse_series_details(html)["albums"]] == ["5"]  # without the name, the other series wins
     albums = parser.parse_series_details(html, "Fell")["albums"]
     assert [a["source_id"] for a in albums] == ["194887"] and albums[0]["volume"] is None
+
+
+def test_e_writes_the_metadata_of_a_file_by_hand_and_links_it(env):
+    db, files = env
+
+    async def script(app, pilot):
+        await pilot.press("e")  # a file with an album of the site: not edited here
+        await settle(app, pilot)
+        assert app.screen.__class__.__name__ != "EditScreen"
+        await pilot.press("u")  # unlinked first, then written by hand
+        await pilot.press("up")
+        await pilot.press("e")
+        await settle(app, pilot)
+        assert app.screen.__class__.__name__ == "EditScreen"
+        app.screen.query_one("#f-series").value = "Fell"
+        app.screen.query_one("#f-volume").value = "2"
+        app.screen.query_one("#f-publisher").value = "Image"
+        await pilot.press("ctrl+s")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert result["cells"][0][7] == "linked" or result["cells"][1][7] == "linked"
+    with Library(db) as lib:
+        albums = [lib.get_album(lib.get_file(p)["album_id"]) for p in files.values()]
+    assert any(a["source"] == "manual" and a["series"] == "Fell" and a["volume"] == 2 for a in albums)
+
+
+def test_e_with_several_marked_files_writes_a_series(env):
+    db, files = env
+
+    async def script(app, pilot):
+        await pilot.press("ctrl+a")
+        await pilot.press("e")
+        await settle(app, pilot)
+        screen = app.screen
+        assert screen.__class__.__name__ == "EditScreen" and screen.volumes is not None
+        screen.query_one("#f-series").value = "Nains Bis"
+        await pilot.press("ctrl+s")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    with Library(db) as lib:
+        series = {lib.get_album(lib.get_file(p)["album_id"])["series"] for p in files.values()}
+    assert series == {"Nains Bis"} and all(row[7] == "linked" for row in result["cells"])

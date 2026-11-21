@@ -20,6 +20,7 @@ command runs, never while an import is fetching).
 - The review screen no longer waits for ever on a link: after 120 seconds without an answer (a slow site or fetcher) the file can be decided again, and a late answer is ignored.
 
 ### Added
+- Review screen: `e` writes the metadata of a file by hand, as an album of your own (`source: manual`) linked to it, for comics the site does not know: a form for one file, or one form for the series of several marked files (a volume per file, read from its name and editable).
 - Review screen: a log at the bottom (`v` hides it) shows what bdnex is doing while it looks idle: pages read or fetched, links, and the output of the import; `-vv` adds the debug lines. `x` unmarks everything.
 - A volume glued to the title (`SOA3.pdf`, `SonOfAnarchy6.pdf`) is read as the volume when the name has no other number, for the matcher and for attaching files to a series.
 - Review screen: `ctrl+a` marks every file not decided yet, and again marks none; files being linked drop their mark, so the next series can be marked while they link.
