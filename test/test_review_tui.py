@@ -864,3 +864,14 @@ def test_x_unmarks_everything(env):
         assert not app.marked
 
     drive(db, script)
+
+
+def test_a_series_page_without_the_files_volumes_says_what_each_side_has():
+    from bdnex.importer.bedetheque import Bedetheque, parser
+
+    html = '<a href="https://www.bedetheque.com/BD-Fell-2005-INT01-Feral-City-194887.html">intégrale</a>'
+    source = Bedetheque.__new__(Bedetheque)
+    source._series_details = {"https://www.bedetheque.com/serie-9-BD-Fell.html": parser.parse_series_details(html)}
+    with pytest.raises(batch.NoVolumeFound) as err:
+        batch.propose_for_series_address(source, "https://www.bedetheque.com/serie-9-BD-Fell.html", ["/x/Fell 02 (2005).cbz", "/x/Fell 03 (2005).cbz"])
+    assert "none with a volume number" in str(err.value) and "ask for 2, 3" in str(err.value)

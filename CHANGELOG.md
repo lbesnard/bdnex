@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Review screen, attaching files to a series by its page address: when no file finds its volume, the message says what the page lists and what the files ask for (a series of collected editions has no tome 2), instead of the generic "not in a series".
 - `ls --sitemap --for FILE`: the file's words count as whole words of an album's name (`fell` is not in `Rocketfellers`), and albums that tie at 100 are still told apart by them.
 - Review screen: a series address that is not stored is fetched with your fetcher (once, then stored), instead of failing with "the network is not used".
 - Review screen: the next batch (`n`) never shows again a file of the batches before in the same run (a file passed over with `s`, or without album, used to come back).

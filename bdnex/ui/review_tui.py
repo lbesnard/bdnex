@@ -773,6 +773,10 @@ class ReviewApp(App):
                 page = await asyncio.to_thread(batch.read_series_address, self.settings, candidate)  # may fetch: not in the screen's thread
                 found = await asyncio.wrap_future(self.hub.run(
                     lambda hub: batch.propose_for_series_address(hub.source, candidate, paths, found=page)))
+            except batch.NoVolumeFound as err:
+                self.notify(str(err), severity="warning", timeout=12)
+                logger.info("%s", err)
+                return
             except Exception as err:
                 self.notify(f"Could not read that series page: {err}", severity="error")
                 return
