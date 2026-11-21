@@ -10,6 +10,7 @@ command runs, never while an import is fetching).
 - Review screen: the `e` form has **OK** and **Cancel** buttons (`Ctrl-S` is taken by tmux); `x` cancels when the cursor is not in a text field, `Esc` always does.
 
 ### Fixed
+- Review screen: it could freeze (until the database's 30 s timeout) after linking files while a page was being fetched in the background: the background import's log line waited for the screen while holding the library's write lock, and the screen waited for that lock. Log lines no longer make a thread wait.
 - Review screen: mark all / none moved from `ctrl+a` (taken by tmux and some terminals) to `m`.
 - Review screen: closing the album search before its answer arrived could crash (`NoMatches: OptionList`).
 - Review screen: `y` copies the whole log to the clipboard, and the log panel follows new lines only while it is scrolled to its end (scroll up to read or select).

@@ -926,6 +926,39 @@ def test_a_file_the_import_skipped_has_no_record_and_gets_one_with_its_link(tmp_
     assert lib.get_file(path)["md5"].startswith("unread:")  # not read: a big file on a network disk would take seconds
 
 
+def test_a_log_line_from_a_thread_holding_the_write_lock_does_not_freeze_the_screen(env):
+    """A background import logs while it is in a write transaction; the screen then writes a link. The log line must not wait for
+    the screen (it used to: both waited for each other until the database's 30 s timeout)."""
+    import time
+
+    db, files = env
+    holding, done = threading.Event(), threading.Event()
+    seen = {}
+
+    def background(app):
+        with Library(db) as lib:
+            lib.conn.execute("BEGIN IMMEDIATE")
+            holding.set()
+            app.log_from_anywhere("I fetch a page while I hold the write lock")
+            seen["logged"] = True
+            time.sleep(0.3)
+            lib.conn.commit()
+        done.set()
+
+    async def script(app, pilot):
+        thread = threading.Thread(target=background, args=(app,))
+        thread.start()
+        holding.wait(5)
+        started = time.monotonic()
+        app.link(app.rows[0], FORGE.url, FORGE)  # the screen's own write: waits for the lock, which the thread frees at once
+        seen["took"] = time.monotonic() - started
+        thread.join(5)
+
+    drive(db, script)
+    assert seen.get("logged") and seen["took"] < 5
+
+
+
 def _edit_screen_script(then):
     async def script(app, pilot):
         await pilot.press("u")

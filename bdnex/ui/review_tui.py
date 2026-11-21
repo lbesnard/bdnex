@@ -482,6 +482,7 @@ class ReviewApp(App):
         super().__init__()
         self.verbose = verbose
         self.ui_thread = None
+        self.ui_loop = None
         self.fetcher: Optional[ThreadPoolExecutor] = None  # the background import of pages and covers (one thread)
         self.first_total: Optional[int] = None
         self.unfetched = 0  # linked files whose page and cover have not come yet
@@ -516,6 +517,7 @@ class ReviewApp(App):
         import threading
 
         self.ui_thread = threading.get_ident()
+        self.ui_loop = asyncio.get_running_loop()
         self.started = time.monotonic()
         self.hub.ready.add_done_callback(self.list_loaded)
         self.take_the_log()
@@ -568,7 +570,12 @@ class ReviewApp(App):
         if threading.get_ident() == self.ui_thread:
             self.log_line(text)
         else:
-            self.call_from_thread(self.log_line, text)
+            # never `call_from_thread`: it makes the calling thread WAIT for the screen. A background import that logs while it holds
+            # the library's write lock would then wait for the screen, and the screen (writing a link) for that lock: frozen.
+            try:
+                self.ui_loop.call_soon_threadsafe(self.log_line, text)
+            except Exception:  # the loop is closed: the screen is gone
+                pass
 
     def log_line(self, text: str) -> None:
         stamped = f"{time.strftime('%H:%M:%S')} {text}"
