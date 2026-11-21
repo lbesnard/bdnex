@@ -135,3 +135,36 @@ def test_the_old_names_still_work_and_say_what_they_became():
 
     assert RENAMED["fields"](["x"]) == ["ls", "--fields", "x"]
     assert RENAMED["mirror"](["-n", "--limit", "5"])[:2] == ["init", "--mirror"] and "--yes" in RENAMED["mirror"]([])
+
+
+# ---- the parsed album list is kept in the library
+def test_the_parsed_album_list_is_kept_and_read_back_without_parsing_the_sitemaps(world, monkeypatch, tmp_path):
+    from bdnex.importer.bedetheque import sitemap
+
+    web, library, source, settings = world
+    first = list(source.catalogue())  # parsed, then stored
+    assert first and library.cache_get("bedetheque", "index", "sitemaps") is not None
+    again = Bedetheque(library, fetch=web, sleep=lambda s: None)
+    monkeypatch.setattr(sitemap, "parse_sitemap", lambda content: (_ for _ in ()).throw(AssertionError("the sitemaps were parsed again")))
+    assert again.catalogue() == first  # the same candidates: address, name, volume
+
+
+def test_a_sitemap_fetched_again_makes_the_stored_list_stale_and_a_damaged_one_is_ignored(world):
+    web, library, source, settings = world
+    first = list(source.catalogue())
+    stored = library.cache_get("bedetheque", "index", "sitemaps")
+    library.conn.execute("UPDATE source_cache SET content = content || x'20' WHERE kind = 'sitemap' AND rowid = (SELECT MIN(rowid) FROM source_cache WHERE kind = 'sitemap')")
+    library.conn.commit()  # another size: the signature changes
+    assert Bedetheque(library, fetch=web, sleep=lambda s: None).catalogue() == first  # parsed again, same albums
+    assert library.cache_get("bedetheque", "index", "sitemaps") != stored  # and stored again for the new sitemaps
+    library.cache_put("bedetheque", "index", "sitemaps", b"not a stored list")
+    assert Bedetheque(library, fetch=web, sleep=lambda s: None).catalogue() == first
+
+
+def test_a_read_only_library_reads_the_list_and_keeps_nothing(world, tmp_path):
+    web, library, source, settings = world
+    library.conn.execute("DELETE FROM source_cache WHERE kind = 'index'")
+    library.conn.commit()
+    library.close()
+    with Library(tmp_path / "lib.sqlite", readonly=True) as reader:
+        assert len(Bedetheque(reader, fetch=web, sleep=lambda s: None).catalogue()) > 1  # no error, only no speed-up

@@ -15,7 +15,7 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 | `people`, `album_credits` | authors with a role (`Writer`, `Penciller`, `Colorist`, `Inker`, `Letterer`, `CoverArtist`) |
 | `genres`, `album_genres` | many-to-many |
 | `publishers` | |
-| `source_cache` | every page and sitemap fetched, **stored as received**, by source: a re-import never hits the website, and `bdnex import --reparse` can rebuild the albums from it offline |
+| `source_cache` | every page and sitemap fetched, **stored as received**, by source: a re-import never hits the website, and `bdnex import --reparse` can rebuild the albums from it offline. One more row, of kind `index`, is not a page but the parsed album list (every album's address, name and volume), kept so that starting a command does not parse 55 sitemaps again; it carries a signature of the stored sitemaps and is rebuilt when they change |
 | `import_log` | outcome and score of each import, used for resume and for remembered skips |
 | `trash` | files that were replaced: where they were, the album, checksum, size, why, and where they are now |
 | `operations` | files `move` renamed or moved, per run (`batch`): old and new path (stored like `files.path`), when, and whether `bdnex undo` took it back |
