@@ -65,6 +65,7 @@ def query_from_filename(path: str) -> str:
     """``/x/Nains - T01 - Redwin (Author) [2015].cbz`` -> ``Nains 1 Redwin``."""
     stem = os.path.splitext(os.path.basename(path))[0]
     text = re.sub(r"[_\-.]+", " ", _drop_groups(stem))
+    text = re.sub(r"(?<=\d)(?:lq|hq|hd|sd)\b", "", text, flags=re.I)  # a scan's quality tag glued to the number: `Death_Note_-_003lq`
     text = re.sub(r"\b(\d{1,3})\s+(?:of|de|sur)\s+\d{1,3}\b", r"\1", text, flags=re.I)  # "3 of 6" -> 3
     # "T01" / "Tome 1" / "Vol. 3" -> "1": the sitemap slugs keep only the number
     text = re.sub(r"\b(?:tome|vol|t)\s*0*(\d{1,3})\b", r"\1", text, flags=re.I)
