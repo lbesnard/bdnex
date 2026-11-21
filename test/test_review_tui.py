@@ -426,15 +426,14 @@ def test_the_next_batch_is_offered_when_the_batch_is_done(env):
     db, files = env
 
     async def script(app, pilot):
-        await pilot.press("k")
-        await pilot.press("k")
+        await pilot.press("k")  # a batch of one file, two to check: there is another batch
         await pilot.pause()
         assert app.screen.__class__.__name__ == "AskScreen"
         await pilot.press("y")
         await settle(app, pilot)
-        assert app.rows == [] and app.number == 2  # nothing left: the checked files are not shown again
+        assert len(app.rows) == 1 and app.number == 2  # the checked file is not shown again
 
-    drive(db, script, unmatched=False)
+    drive(db, script, unmatched=False, size=1)
 
 
 class Catalogue(FakeSource):
@@ -1089,3 +1088,19 @@ def test_the_state_column_turns_a_wheel_while_a_page_is_fetched(env, monkeypatch
     result, _ = drive(db, script)
     assert "fetching the page" in seen["during"] and seen["during"][0] in review_tui.SPINNER
     assert len(seen["frames"]) >= 1 and result["cells"][0][7] == "linked"
+
+
+def test_no_question_about_a_next_batch_when_there_is_none(env):
+    """Three files, a batch of fifty: once they are decided the screen says so; it does not ask for a next batch."""
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        for _ in range(3):
+            await pilot.press("s")  # a file passed over counts as decided for the screen
+            await settle(app, pilot)
+        seen["screen"] = app.screen.__class__.__name__
+        seen["total"], seen["rows"] = app.batch_total, len(app.rows)
+
+    drive(db, script)
+    assert seen["total"] <= seen["rows"] and seen["screen"] != "AskScreen"
