@@ -861,7 +861,7 @@ class Library:
         return self.conn.execute(sql, [album_id, *compiled.params]).fetchone() is not None
 
     # ----------------------------------------------------------- source cache
-    COMPRESSED_KINDS = ("album", "series")  # pages: about a tenth of their size once compressed (a whole catalogue is tens of GB)
+    COMPRESSED_KINDS = ("album", "series", "letter")  # pages: about a tenth of their size once compressed (a whole catalogue is tens of GB)
 
     def cache_put(self, source: str, kind: str, url: str, content: bytes | str) -> None:
         if isinstance(content, str):
@@ -874,6 +874,24 @@ class Library:
                    ON CONFLICT(source, kind, url) DO UPDATE SET
                        content = excluded.content, fetched = CURRENT_TIMESTAMP""",
                 (source, kind, url, content))
+
+    # -- the letter index of a source: every series by name (`bdnex init`)
+    def series_index_replace(self, source: str, rows: list[tuple[str, str, str, str, str, str]]) -> None:
+        """Put ``(series_id, name, folded, url, country, letter)`` rows in the index (a series already there is updated)."""
+        with self.conn:
+            self.conn.executemany(
+                """INSERT INTO series_index(source, series_id, name, folded, url, country, letter) VALUES (?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(source, series_id) DO UPDATE SET name = excluded.name, folded = excluded.folded,
+                       url = excluded.url, country = excluded.country, letter = excluded.letter""",
+                [(source, *row) for row in rows])
+
+    def series_index_all(self, source: str) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT series_id, name, folded, url, country, letter FROM series_index WHERE source = ? ORDER BY folded, series_id",
+            (source,)).fetchall()
+
+    def series_index_count(self, source: str) -> int:
+        return self.conn.execute("SELECT COUNT(*) FROM series_index WHERE source = ?", (source,)).fetchone()[0]
 
     def cache_get(self, source: str, kind: str, url: str) -> Optional[bytes]:
         row = self.conn.execute(

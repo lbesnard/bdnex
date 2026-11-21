@@ -48,6 +48,13 @@ class FakeWeb:
                                    f'BD-Dummy-{n}-{n + 1000000}.html</loc></url></urlset>').encode()
             else:
                 self.pages[url] = f'<?xml version="1.0"?><urlset {ns}>\n</urlset>'.encode()
+        from bdnex.importer.bedetheque import letters
+
+        for letter in letters.LETTERS:  # the letter index: one page with series for `a`, small generated ones for the others
+            self.pages[letters.letter_url(letter)] = (
+                _read(os.path.join(_TEST_ROOT, "bandes_dessinees_a.html")) if letter == "a" else
+                (f'<h1>Séries BD : {letter} <small>1 série</small></h1><ul class="bdt-liste"><li><a href="https://www.bedetheque.com/serie-'
+                 f'{900 + ord(letter)}-BD-Serie-{letter}.html"><span class="bdt-liste-libelle"><b>Serie {letter}</b></span></a></li></ul>').encode())
         for name in os.listdir(os.path.join(_BDGEST, 'sitemaps')):  # real fixtures replace files 25 and 26
             self.pages["https://www.bedetheque.com/" + name] = _read(os.path.join(os.path.join(_BDGEST, 'sitemaps'), name))
 

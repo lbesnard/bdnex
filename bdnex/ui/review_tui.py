@@ -84,6 +84,9 @@ class SourceHub:
         self.catalogue: Optional[list] = None
         self.folded: list[str] = []
         self.cache: dict = {}  # the albums of the words typed so far (see `album_search`): one more letter is a quick search
+        self.series: Optional[list] = None  # the series of the letter index, loaded when a search wants them
+        self.series_folded: list[str] = []
+        self.series_cache: dict = {}
         build = source if callable(source) and not hasattr(source, "candidates") else (lambda: source)
         self.ready = self.pool.submit(self._build, build)
 
@@ -144,12 +147,22 @@ def is_series_address(text: str) -> bool:
     return bool(SERIES_ADDRESS.search(text or ""))
 
 
-def fuzzy_search(hub: SourceHub, text: str, limit: int = SEARCH_LIMIT) -> tuple[list, int]:
+def fuzzy_search(hub: SourceHub, text: str, limit: int = SEARCH_LIMIT, series: bool = False) -> tuple[list, int]:
     """The albums of the whole list that look like ``text``, best first, as ``([(candidate, score)], matches)``.
 
     Every word has to be in the name (case and accents do not matter); when that finds few, a fuzzy match over the whole
-    list (letters missing, a typo) takes over: what ``fzf`` does, in the screen. Runs in the thread of the album list."""
+    list (letters missing, a typo) takes over: what ``fzf`` does, in the screen. Runs in the thread of the album list.
+    ``series``: the series of the letter index are searched too and listed with the albums (their address is a series page)."""
     from bdnex.importer import album_search
+
+    if series and hasattr(hub.source, "series_catalogue"):
+        albums, total = fuzzy_search(hub, text, limit)
+        if hub.series is None:
+            hub.series = list(hub.source.series_catalogue())
+            hub.series_folded = album_search.folded_names(hub.series)
+        found, more = album_search.search_folded(hub.series, hub.series_folded, text, limit, hub.series_cache)
+        merged = sorted([*found, *albums], key=lambda pair: -pair[1])  # a series ahead of an album with the same score (stable sort)
+        return merged[:limit], total + more
 
     if not hasattr(hub.source, "catalogue"):  # a source that cannot list its albums: its own search
         return [pair for pair in hub.source.candidates(text.strip(), limit=limit)], 0
@@ -207,7 +220,7 @@ class FuzzyScreen(ModalScreen):
         def look(hub):
             if mine and mine != self.latest:
                 return [], 0  # typed over meanwhile: the list's thread does not spend its time on it
-            return fuzzy_search(hub, text)
+            return fuzzy_search(hub, text, series=self.series_ok)
 
         try:
             hits, total = await asyncio.wrap_future(self.hub.run(look))
@@ -224,7 +237,8 @@ class FuzzyScreen(ModalScreen):
         self.hits = hits
         options = self.query_one(OptionList)
         options.clear_options()
-        options.add_options([Option(f"{score:>3.0f}  {display_name(candidate)}") for candidate, score in hits])
+        options.add_options([Option(f"{score:>3.0f}  " + (f"[series] {candidate.name}" if is_series_address(candidate.url) else display_name(candidate)))
+                             for candidate, score in hits])
         if hits:
             options.highlighted = 0
         self.query_one("#count", Label).update(Text(f"{total} album(s) match" if text.strip() else "", style="dim"))
@@ -252,7 +266,8 @@ class FuzzyScreen(ModalScreen):
 
     def pick(self, index: Optional[int]) -> None:
         if index is not None and 0 <= index < len(self.hits):
-            self.dismiss(self.hits[index][0])
+            picked = self.hits[index][0]
+            self.dismiss(picked.url if is_series_address(picked.url) else picked)  # a series is given as its address: its page is read
 
     def action_open(self) -> None:
         index = self.query_one(OptionList).highlighted

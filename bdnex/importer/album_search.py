@@ -160,6 +160,17 @@ class AlbumList:
     def search(self, text: str, limit: int = 20) -> tuple[list, int]:
         return search_folded(self.catalogue, self.folded, text, limit, self.cache)
 
+    def search_series(self, text: str, limit: int = 20) -> tuple[list, int]:
+        """The series of the letter index (``bdnex init``) that look like ``text``; nothing when the source has no index."""
+        if not hasattr(self, "series"):
+            lister = getattr(self.source, "series_catalogue", None)
+            self.series = list(lister()) if lister else []
+            self.series_folded = folded_names(self.series)
+            self.series_cache: dict = {}
+        if not self.series:
+            return [], 0
+        return search_folded(self.series, self.series_folded, text, limit, self.series_cache)
+
 
 @dataclass
 class Hit:
