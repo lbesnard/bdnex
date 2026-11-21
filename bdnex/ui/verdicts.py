@@ -140,14 +140,14 @@ def look_for_better(settings, library, verdicts: list[Verdict], limit: int, say=
     return found
 
 
-def rematch(path: str, url: str, keep_both: bool = False) -> bool:
+def rematch(path: str, url: str, keep_both: bool = False, verbosity: int = 0) -> bool:
     """Link the file to the album at ``url`` as ``bdnex import --album`` does (the library only; no file is touched).
     ``keep_both``: also when the album has another file (this one becomes a spare version)."""
     from bdnex.ui import import_cmd
 
     # --unattended: no question. The review screen owns the terminal, so a question (the cover looks different...) would wait for
     # a key that its own input swallows, for ever. The link is the person's choice; a low cover only shows in the table.
-    code = import_cmd.run([path, "--album", url, "--database-only", "--unattended", *(["--keep-both"] if keep_both else [])],
+    code = import_cmd.run([path, "--album", url, "--database-only", "--unattended", *(["--keep-both"] if keep_both else []), *(["-v"] * verbosity)],
                           out=io.StringIO())
     return code == 0
 

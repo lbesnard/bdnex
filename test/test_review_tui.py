@@ -234,7 +234,7 @@ def _linking(monkeypatch, db, release, outcome="switch"):
     ``release`` is set so that the test can look at the table while the link is being made."""
     from bdnex.ui import verdicts
 
-    def rematch(path, url, keep_both=False):
+    def rematch(path, url, keep_both=False, verbosity=0):
         release.wait(5)
         seen_calls.append(keep_both)
         if outcome == "switch" or (outcome == "refuse" and keep_both):
@@ -741,8 +741,8 @@ def test_a_link_from_the_review_screen_asks_no_question(monkeypatch):
 
     seen = []
     monkeypatch.setattr(import_cmd, "run", lambda argv, out=None: seen.append(argv) or 0)
-    assert verdicts.rematch("/x/a.cbz", "https://x/BD-1.html")
-    assert "--unattended" in seen[0] and "--database-only" in seen[0]
+    assert verdicts.rematch("/x/a.cbz", "https://x/BD-1.html", verbosity=1)
+    assert "--unattended" in seen[0] and "--database-only" in seen[0] and "-v" in seen[0]  # -v: the steps reach the log panel
 
 
 def test_the_next_batch_does_not_repeat_the_files_of_the_batches_before(env):
