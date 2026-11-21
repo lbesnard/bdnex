@@ -834,3 +834,33 @@ def test_ctrl_a_marks_every_undecided_file_and_again_none(env):
         assert not app.marked
 
     drive(db, script)
+
+
+def test_the_log_panel_shows_bdnex_log_lines_and_an_import_s_output(env):
+    import logging
+
+    db, files = env
+
+    async def script(app, pilot):
+        logging.getLogger("bdnex.test").info("a page was read")
+        sink = review_tui.LineSink(app)
+        sink.write("fetching the album page...\npage read in 1.2s\n")
+        await pilot.pause()
+        text = "\n".join(line.text for line in app.query_one("#log").lines)
+        assert "a page was read" in text and "page read in 1.2s" in text
+        await pilot.press("v")
+        assert app.query_one("#log").display is False
+
+    drive(db, script)
+
+
+def test_x_unmarks_everything(env):
+    db, files = env
+
+    async def script(app, pilot):
+        await pilot.press("space")
+        assert app.marked
+        await pilot.press("x")
+        assert not app.marked
+
+    drive(db, script)

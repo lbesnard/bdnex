@@ -42,6 +42,12 @@ def title_and_volume(path: str) -> tuple[list[str], Optional[int]]:
             volume = numbers[1][1] if numbers[0][0] == 0 and len(numbers) > 1 else numbers[0][1]
     words = [token for position, token in enumerate(tokens)
              if position < title_numbers or (not token.isdigit() and small_number(token) is None)]
+    if volume is None:  # last resort: the number glued to the title (``SOA1``, ``SonOfAnarchy6``)
+        for position in range(len(words) - 1, -1, -1):
+            glued = re.fullmatch(r"([^\W\d_]+)0*(\d{1,3})", words[position])
+            if glued:
+                words[position], volume = glued.group(1), int(glued.group(2))
+                break
     return words, volume
 
 

@@ -151,6 +151,8 @@ def volumes_in(query: str) -> list[int]:
     found = [int(n) for n in re.findall(r"(?:\bt|\btome\s*|\bvol\.?\s*|\b#)\s*0*(\d{1,3})\b", query, re.I)]
     if not found:
         found = [int(n) for n in re.findall(r"(?<![\d\w])0*(\d{1,3})(?![\d\w])", query)]
+    if not found:  # last resort: the number glued to the title (``SOA1``, ``SonOfAnarchy6``)
+        found = [int(n) for n in re.findall(r"(?<=[^\W\d_])0*(\d{1,3})\b", query)][-1:]
     return found
 
 
