@@ -316,6 +316,7 @@ class ReviewApp(App):
         Binding("p", "page", "Open page"),
         Binding("c", "cover", "Covers"),
         Binding("space", "mark", "Mark"),
+        Binding("ctrl+a", "mark_all", "Mark all / none"),
         Binding("a", "attach", "Attach marked to a series"),
         Binding("n", "next_batch", "Next batch"),
         Binding("q", "quit", "Quit"),
@@ -634,6 +635,17 @@ class ReviewApp(App):
         table = self.query_one(DataTable)
         table.move_cursor(row=min(table.cursor_row + 1, len(self.rows) - 1))
 
+    def action_mark_all(self) -> None:
+        """Mark every file not decided yet (and not being linked); when they are all marked already, unmark them."""
+        free = [r for r in self.rows if not r.status and not r.busy]
+        if not free:
+            return
+        everything = all(id(r) in self.marked for r in free)
+        self.marked.clear() if everything else self.marked.update(id(r) for r in free)
+        for row in self.rows:
+            self.refresh_row(row)
+        self.notify("no file marked" if everything else f"{len(self.marked)} file(s) marked: `a` attaches them to a series", timeout=3)
+
     def action_attach(self) -> None:
         """Pick an album of a series: each marked file (without a mark: the files of this folder not decided yet) gets the
         album of that series with the volume number in its name."""
@@ -687,6 +699,7 @@ class ReviewApp(App):
             before = (self.library.get_file(row.path) or {}).get("album_id")
             row.busy, row.message = True, "waiting to be linked..."
             row.link_id += 1
+            self.marked.discard(id(row))  # linking now: the marks are free for the next series
             self.refresh_row(row)
             todo.append((row, candidate, before, row.link_id))
 
