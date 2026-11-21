@@ -445,3 +445,18 @@ def test_force_downloads_an_album_page_once(cli, monkeypatch, tmp_path):
     web.calls.clear()
     run_import("--force", path)
     assert len([c for c in web.calls if "Redwin" in c]) == 1  # the page, not twice
+
+
+def test_keep_both_links_a_second_file_to_an_album_that_has_one_even_unattended(cli):
+    web, db, make_cbz = cli
+    init()
+    first = make_cbz("Nains - T01 - Redwin de la forge.cbz")
+    run_import(first)
+    second = make_cbz("Quelque chose de tout a fait different.cbz")
+    code, text = run_import("--album", ALBUM_URL, "--database-only", "--unattended", second)
+    with Library(db) as lib:
+        refused = (lib.get_file(second) or {}).get("album_id") is None
+    code2, text2 = run_import("--album", ALBUM_URL, "--database-only", "--unattended", "--keep-both", second)
+    with Library(db) as lib:
+        file = lib.get_file(second)
+        assert file["album_id"] is not None and file["spare"], (refused, text, text2)

@@ -814,7 +814,7 @@ class ReviewApp(App):
                 captured, error = LineSink(self), ""
                 try:
                     with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
-                        verdicts.rematch(row.path, candidate.url, False)
+                        verdicts.rematch(row.path, candidate.url, True)
                 except BaseException as err:
                     error = str(err) or err.__class__.__name__
                 self.call_from_thread(self.linked, row, before, error, None, mine)
@@ -911,7 +911,8 @@ class ReviewApp(App):
                          lambda text: self.run_worker(given(text)) if text else None)
 
     # -- linking: it reads an album page, so it runs in a thread and the table says so
-    def link(self, row: batch.Row, url: str, candidate=None, keep_both: bool = False) -> None:
+    def link(self, row: batch.Row, url: str, candidate=None, keep_both: bool = True) -> None:
+        """``keep_both``: also when the album has another file (this one becomes a spare version; `bdnex duplicates` decides later)."""
         import os
 
         from bdnex.ui.prompts import display_name
@@ -965,7 +966,7 @@ class ReviewApp(App):
             self.notify(f"{os.path.basename(row.path)}: {row.message}", severity="error")
             self.refresh_row(row)
             return
-        ok, message = batch.finish_link(self.library, row, before)
+        ok, message = batch.finish_link(self.library, row, before, asked[0] if asked else None)
         logger.info("%s: %s", os.path.basename(row.path), message)
         if ok:
             file = self.library.get_file(row.path) or {}

@@ -156,12 +156,13 @@ def link_to(library: Library, row: Row, url: str, keep_both: bool = False) -> tu
     return finish_link(library, row, before)
 
 
-def finish_link(library: Library, row: Row, before: Optional[int]) -> tuple[bool, str]:
+def finish_link(library: Library, row: Row, before: Optional[int], url: Optional[str] = None) -> tuple[bool, str]:
     """After the import of ``link_to`` ran (maybe in another thread): did the file's album change? Record it if so."""
     from bdnex.ui.describe import label
 
     now = (library.get_file(row.path) or {}).get("album_id")
-    if now is None or now == before:
+    already = url is not None and now is not None and ((library.get_album(now) or {}).get("url") or "") == url  # it was linked to it already
+    if now is None or (now == before and not already):
         row.message = "refused: the album may already have another file (`bdnex duplicates`)"
         return False, row.message
     album = library.get_album(now) or {}
