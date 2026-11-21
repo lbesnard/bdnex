@@ -48,7 +48,9 @@ def run(settings, words: list[str], files: list[str], limit: int, as_json: bool 
         if words:
             query = " ".join(words)
             hits, total = albums.search(query, limit=limit)
-            report.append({"query": query, "matches": total, "albums": [entry(c, s) for c, s in hits]})
+            series, _ = albums.search_series(query, limit=limit)
+            report.append({"query": query, "matches": total, "albums": [entry(c, s) for c, s in hits],
+                           "series": [{"score": round(float(s), 1), "name": c.name, "url": c.url} for c, s in series]})
         for path in files:
             hits = search_file(albums, path, limit=limit)
             report.append({"file": path, "albums": [entry(h.candidate, h.score, h.found_by, h.parts) for h in hits]})
@@ -62,6 +64,9 @@ def run(settings, words: list[str], files: list[str], limit: int, as_json: bool 
         title = block.get("file") or block["query"]
         total = f" ({block['matches']} in the list)" if "matches" in block else ""
         print(color.role(title, "name", on) + color.role(total, "note", on), file=out)
+        for item in block.get("series", [])[:5]:
+            print(f"      {color.role('series', 'note', on)} {color.paint_score(format(item['score'], '5.1f'), item['score'], on)}  {item['name']}"
+                  f"\n        {color.role(item['url'], 'path', on)}", file=out)
         if not block["albums"]:
             print("    " + color.role("nothing in the album list", "warn", on), file=out)
         for number, album in enumerate(block["albums"], start=1):

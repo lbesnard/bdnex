@@ -230,4 +230,20 @@ MIGRATIONS = [
     """
     SELECT 1;
     """,
+    # --- version 12 ------------------------------------------------------
+    # The letter index of a source (`bdnex init`): every series of the site by name, without reading any series page.
+    # `series_id` is the site's own number, the one in the album pages' series link, so a row can be joined to `series.source_id`.
+    """
+    CREATE TABLE series_index (
+        source    TEXT NOT NULL,
+        series_id TEXT NOT NULL,
+        name      TEXT NOT NULL,         -- as listed, the article put in front (`Les Nains`)
+        folded    TEXT NOT NULL,         -- the name without its disambiguation, accents and case folded: what a search compares
+        url       TEXT NOT NULL,
+        country   TEXT NOT NULL DEFAULT '',
+        letter    TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (source, series_id)
+    );
+    CREATE INDEX idx_series_index_folded ON series_index(source, folded);
+    """,
 ]

@@ -131,6 +131,9 @@ command runs, never while an import is fetching).
   file): it now checks the library, says which files were not switched (they stay flagged, with the reason), and the summary
   says why the unconfirmed ones could not be judged (page not read, cover not compared).
 
+### Added
+- **Series index** (schema v12, **back up the database first**: an older bdnex refuses it): `bdnex init` also reads the 27 letter pages of the site (`bandes_dessinees_0.html` ... `_z`), every series by name, into a new `series_index` table; `--skip-series` / `--series-only`. The review screen's search for a series (`a`) and `bdnex ls --sitemap WORDS` search it besides the albums. Series pages are still read on demand only.
+
 ### Changed
 - **Every command's `--help` ends with examples** (what to type, and what it does), from one table (`bdnex/ui/examples.py`);
   a test checks that each example uses real options.

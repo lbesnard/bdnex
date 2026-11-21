@@ -10,12 +10,16 @@ see the guides for how to use them). `bdnex --help` lists the commands by task.
 Download or refresh the album list that file names are matched against.
 
 ```text
-usage: bdnex init [-h] [-v] [--log-file PATH]
+usage: bdnex init [-h] [--skip-series] [--series-only] [-v] [--log-file PATH]
 
-``bdnex init``: download (or refresh) the album list the matching works from.
+``bdnex init``: download (or refresh) the album list and the series index the matching
+and the searches work from.
 
 options:
   -h, --help       show this help message and exit
+  --skip-series    do not read the series index (the 27 letter pages, every series by
+                   name)
+  --series-only    only read the series index, not the album list
   -v, --verbose    more detail: -v what is decided and why (every file), -vv how
                    (reads, cache, requests, threads), -vvv everything, libraries and
                    SQL included
