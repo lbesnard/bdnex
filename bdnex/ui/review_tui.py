@@ -212,12 +212,15 @@ class FuzzyScreen(ModalScreen):
         try:
             hits, total = await asyncio.wrap_future(self.hub.run(look))
         except Exception as err:  # the album list could not be loaded
-            self.query_one("#count", Label).update(Text(f"the album list is not available: {err}", style="red"))
+            if self.is_attached:
+                self.query_one("#count", Label).update(Text(f"the album list is not available: {err}", style="red"))
             return
         from bdnex.ui.prompts import display_name
 
         if mine and mine != self.latest:
             return  # a newer search is on its way
+        if not self.is_attached or not self.query("#hits"):
+            return  # the screen was closed while the search ran (Enter on a pasted address, Esc)
         self.hits = hits
         options = self.query_one(OptionList)
         options.clear_options()

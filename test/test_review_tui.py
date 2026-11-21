@@ -271,6 +271,24 @@ def test_a_pick_is_written_at_once_and_the_page_and_cover_come_later(env, monkey
     assert first.pending is False and "page and cover fetched" in first.message and "cover is 66%" in first.message
 
 
+def test_closing_the_search_before_its_answer_arrives_does_not_crash(env, monkeypatch):
+    db, files = env
+    import time
+    from bdnex.ui import review_tui
+
+    real = review_tui.fuzzy_search
+    monkeypatch.setattr(review_tui, "fuzzy_search", lambda hub, text: (time.sleep(0.5), real(hub, text))[1])
+
+    async def script(app, pilot):
+        await pilot.press("o")
+        await pilot.press("escape")  # the search is still running in its worker
+        await settle(app, pilot)
+        await pilot.pause(0.5)
+        assert app.screen.__class__.__name__ != "FuzzyScreen"
+
+    result, source = drive(db, script)
+
+
 def test_unlinking_while_the_page_is_fetched_wins_over_the_late_import(env, monkeypatch):
     db, files = env
     release = threading.Event()
