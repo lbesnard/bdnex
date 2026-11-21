@@ -7,6 +7,9 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Review screen: a series with one album and no volume (a one-shot such as Scalp), given by its address or picked as a SERIES, links that album to the one file you chose when the file's name has no number; before it said "none with a volume number" and changed nothing.
+
+### Fixed
 - Review screen: `a` on one file whose album has no volume (a one-shot such as `OS`) links that file to the album you picked instead of refusing; a refusal is now in the log, and says to use `o` for one file.
 
 ### Added
