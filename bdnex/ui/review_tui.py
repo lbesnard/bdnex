@@ -1042,11 +1042,13 @@ class ReviewApp(App):
         """The file is linked to the album in the library now. What the site has to say about it (page, series, cover) is queued;
         unlinking the file meanwhile cancels it, and quitting leaves it to `bdnex import --fetch`."""
         row.link_id += 1
+        started = time.monotonic()
         batch.link_now(self.library, row, candidate)
+        took = time.monotonic() - started
         row.pending = True
         self.marked.discard(id(row))
         self.decided["linked"] = self.decided.get("linked", 0) + 1
-        logger.info("%s: %s; page and cover queued", os.path.basename(row.path), row.message)
+        logger.info("%s: %s (written in %.2f s); page and cover queued", os.path.basename(row.path), row.message, took)
         self.queue_details(row, url, row.link_id)
         row.message += " · page and cover are being fetched"
         self.refresh_row(row)

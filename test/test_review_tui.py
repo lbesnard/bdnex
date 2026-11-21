@@ -890,3 +890,4 @@ def test_a_file_the_import_skipped_has_no_record_and_gets_one_with_its_link(tmp_
     candidate = Candidate("416850", "https://www.bedetheque.com/BD-Feuille-de-chou-INT-Gainsbourg-416850.html", "feuille", None)
     album_id = batch.link_now(lib, row, candidate)
     assert lib.get_file(path)["album_id"] == album_id and row.status == "linked" and row.file_id is not None
+    assert lib.get_file(path)["md5"].startswith("unread:")  # not read: a big file on a network disk would take seconds

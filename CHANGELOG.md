@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Review screen: picking an album for a file the import skipped no longer reads (hashes) the file before the link is written, which took seconds on a network disk: it is registered unread and the background import fills the rest in. The log panel says how long the write took.
 - Review screen: linking a file the import skipped (no record in the library yet, the `--unmatched` rows) crashed; it is now registered with its link (also for `e`).
 - Review screen: the title says which batch of about how many (`batch 3/53`). The `o` search is quicker: it waits for a short pause in the typing, skips searches already typed over, and looks for the words of a longer text among the albums of the shorter one (and remembers the last answers).
 - Review screen: **the match is written at once.** Picking an album links the file in the library right away (a spare version when the album has another file, no question); the page and the cover are fetched afterwards, in the background, one file at a time, and the screen stays free: go on to the next file or batch, or press `u` to unlink (which cancels what is queued). Quitting with fetches left says so (`bdnex import --fetch`).
