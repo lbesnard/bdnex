@@ -104,3 +104,11 @@ def test_a_file_is_also_searched_without_the_words_an_edition_adds():
     queries = album_search.file_queries("/comics/Yoko Tsuno/Yoko Tsuno - L'Integrale/Yoko Tsuno - Integrale T02.cbr")
     assert any(q.lower().startswith("yoko tsuno") and "integrale" not in q.lower() for q in queries)  # the series alone, with the volume
     assert len(queries) == len({q.lower() for q in queries})
+
+
+def test_a_word_of_the_file_is_a_whole_word_of_the_name_not_a_piece_of_another_word(monkeypatch):
+    """`Fell 02` must not rank `Rocketfellers Tome 2` as well as an album whose name has the word `fell`."""
+    catalogue = [album("1", "Rocketfellers-Tome-2", 2), album("2", "Fell-Tome-2", 2)]
+    monkeypatch.setattr(Source, "catalogue", lambda self: catalogue)
+    hits = album_search.search_file(album_search.AlbumList(Source()), "/x/Comics/fell/Fell 02 (2005).cbz", limit=5)
+    assert hits[0].candidate.source_id == "2"
