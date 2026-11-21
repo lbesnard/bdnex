@@ -274,6 +274,24 @@ def test_o_opens_the_search_and_a_pick_shows_linking_then_updates_the_row(env, m
         assert lib.attrs_of("file", lib.get_file(files["wrong"])["id"])["checked"].startswith("other:")
 
 
+def test_a_link_that_ends_after_the_next_batch_was_loaded_does_not_crash(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    _linking(monkeypatch, db, release, outcome="refuse")
+
+    async def script(app, pilot):
+        await pilot.press("o")
+        await settle(app, pilot)
+        await pilot.press("enter")
+        await pilot.pause()
+        app.rows = []  # the next batch replaced the table while the link was being made
+        app.query_one("DataTable").clear()
+        release.set()
+        await settle(app, pilot)
+
+    drive(db, script)
+
+
 def test_a_link_that_never_answers_is_given_up_and_the_row_can_be_decided_again(env, monkeypatch):
     db, files = env
     release = threading.Event()
