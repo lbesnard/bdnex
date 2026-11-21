@@ -34,6 +34,7 @@ class Row:
     status: str = ""  # what was decided in this session: ``keep``, ``unlinked``, ``linked``, ``left``, ``skipped``
     message: str = ""  # what happened when it was decided (a refusal, for one)
     busy: bool = False  # a link is being made for it (the screen waits)
+    busy_what: str = ""  # what it is waiting for, when it is not the link itself (``fetching the page``)
     link_id: int = 0  # bumped by every decision: the answer of a background job of an older one is ignored
     pending: bool = False  # linked at once; its page and cover are still to come
     queued_at: float = 0.0  # when it was queued (the state column counts the seconds)
