@@ -430,7 +430,7 @@ class ReviewApp(App):
         Binding("p", "page", "Open page"),
         Binding("c", "cover", "Covers"),
         Binding("space", "mark", "Mark"),
-        Binding("ctrl+a", "mark_all", "Mark all / none"),
+        Binding("m", "mark_all", "Mark all / none"),
         Binding("x", "mark_none", "Unmark all"),
         Binding("v", "toggle_log", "Log"),
         Binding("y", "copy_log", "Copy the log"),

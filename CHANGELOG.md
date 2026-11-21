@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Review screen: mark all / none moved from `ctrl+a` (taken by tmux and some terminals) to `m`.
 - Review screen: closing the album search before its answer arrived could crash (`NoMatches: OptionList`).
 - Review screen: `y` copies the whole log to the clipboard, and the log panel follows new lines only while it is scrolled to its end (scroll up to read or select).
 - Review screen: the state of a file whose page and cover are being fetched counts the seconds (`linked · fetching 42s`, or `queued` while the files before it are fetched) and the log panel says which file is being worked on and how long it took, so a long wait is visible.
