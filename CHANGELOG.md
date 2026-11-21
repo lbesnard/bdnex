@@ -10,6 +10,7 @@ command runs, never while an import is fetching).
 - Review screen: the `e` form has **OK** and **Cancel** buttons (`Ctrl-S` is taken by tmux); `x` cancels when the cursor is not in a text field, `Esc` always does.
 
 ### Fixed
+- `bdnex review --batch`: closing the screen no longer drops the pages and covers still queued for the files you linked: they are fetched before the command returns (Ctrl-C leaves the rest to `bdnex import --fetch`), and a file whose import fails (a corrupt archive) is reported on its row without stopping the files queued after it. Before, a failed import said "page and cover fetched".
 - Review screen: a state that waits for the site turns a wheel (`⠹ linked · fetching 12s`), and giving the address of a bdtheque.com page shows `⠹ fetching the page 3s` in the state column while the page is read (it said `no album` until the link was made).
 - File names with a scan's quality tag glued to the number (`Death_Note_-_003lq.cbz`) now have their volume (`lq`, `hq`, `hd`, `sd` are dropped); before, the review screen's `a` said "the files ask for no volume".
 - Review screen, `a` with a series page: files numbered mostly past the series' last volume (chapters, not volumes: files 3 to 42 for a 12-volume series) are refused with that explanation instead of linking the few numbers that happen to match.
