@@ -6,6 +6,11 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Added
+- Review screen: `b` goes back to the previous batch (with its decisions), and `n` comes forward again.
+
+### Changed
+- Review screen: the next batch is weighed in the background while you work on the current one, so `n` (or the "next batch?" answer) shows it at once; the seconds counter of linked files no longer searches the list for every row.
 ### Fixed
 - Review screen: in the `a` search each hit says in its own column whether it is a **SERIES** (each file gets its volume) or one **album**, with a header line above the list.
 - Review screen: a link that fails (a file that moved, a locked library) is shown on its row and in the log; it no longer closes the screen. A series link no longer overwrites a file you decided while the question was open. The volumes box refuses digits like `²` instead of crashing.

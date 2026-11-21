@@ -491,6 +491,7 @@ class ReviewApp(App):
         Binding("y", "copy_log", "Copy the log"),
         Binding("a", "attach", "Attach marked to a series"),
         Binding("e", "edit", "Edit by hand"),
+        Binding("b", "previous_batch", "Previous batch"),
         Binding("n", "next_batch", "Next batch"),
         Binding("q", "quit", "Quit"),
         *[Binding(str(number), f"sort({number - 1})", f"Sort by {name}", show=False) for number, (name, _) in enumerate(COLUMNS, start=1)],
@@ -515,6 +516,12 @@ class ReviewApp(App):
         self.rows: list[batch.Row] = []
         self.shown: set[str] = set()  # every file of every batch of this run: the next batch never repeats one
         self.number = 0
+        self.batches: list[list] = []  # every batch shown in this run, so `b` can go back to one (its rows keep their decisions)
+        self.batch_totals: list[int] = []  # for each: the files left to check when it was weighed
+        self.at = -1  # the batch on the screen (an index of ``batches``)
+        self.ahead: Optional[tuple] = None  # the next batch, weighed while the person works on this one: (rows, seconds)
+        self.ahead_running = False
+        self.want_ahead = False  # `n` was pressed before the next batch was ready: it is shown as soon as it is
         self.decided: dict[str, int] = {}
         self.loading = False
         self.timing = ""
@@ -601,12 +608,13 @@ class ReviewApp(App):
 
     def tick_pending(self) -> None:
         """The seconds and the turning dots in the state column of the files being fetched: a long wait is a number going up, not a frozen screen."""
-        for row in self.rows:
-            if (row.pending or row.busy) and row in self.rows:
-                with contextlib.suppress(Exception):
-                    table = self.query_one(DataTable)
-                    index = self.rows.index(row)
-                    table.update_cell_at((index, len(COLUMNS) - 1), self.cells(index + 1, row)[-1])
+        waiting = [(index, row) for index, row in enumerate(self.rows) if row.pending or row.busy]
+        if not waiting:
+            return
+        with contextlib.suppress(Exception):
+            table = self.query_one(DataTable)  # once, and the index from the loop: not a search of the list per row
+            for index, row in waiting:
+                table.update_cell_at((index, len(COLUMNS) - 1), self.cells(index + 1, row)[-1])
 
     def log_from_anywhere(self, text: str) -> None:
         import threading
@@ -686,15 +694,59 @@ class ReviewApp(App):
     def load_batch(self) -> None:
         if self.loading:
             return
+        self.number = len(self.batches) + 1
+        if self.ahead is not None:  # weighed meanwhile: nothing to wait for
+            rows, seconds = self.ahead
+            self.ahead = None
+            self.show_batch(rows, seconds)
+            return
         self.loading = True
-        self.number += 1
         self.rows = []
         self.query_one(DataTable).clear()
         self.sub_title = f"batch {self.batch_of()} · getting ready..."
         self.say("")
         self.started, self.weighed_in = time.monotonic(), None
         self.show_loading(True)
+        if self.ahead_running:  # on its way: shown by `prepared` when it lands
+            self.want_ahead = True
+            return
         self.run_worker(self.weigh, thread=True, exclusive=True, group="batch")
+
+    def prefetch(self) -> None:
+        """Weigh the next batch in the background while this one is looked at (a daemon thread with its own read-only library:
+        quitting never waits for it). ``shown`` already holds this batch's files, so it never repeats them."""
+        if self.ahead is not None or self.ahead_running or not self.rows or self.batch_total <= len(self.rows):
+            return  # already there, on its way, or these were all the files
+        self.ahead_running = True
+        threading.Thread(target=self.prepare, args=(set(self.shown),), name="bdnex-next-batch", daemon=True).start()
+
+    def prepare(self, skip: set) -> None:
+        from bdnex.library import Library
+
+        started = time.monotonic()
+        rows = None
+        try:
+            with Library.for_settings(self.settings, readonly=True) as library:
+                rows = batch.next_batch(library, self.settings, self.batch_size, self.terms, self.unmatched, self.everything, self.again, skip)
+        except Exception as err:
+            logger.info("the next batch could not be prepared ahead: %s", err)
+        try:
+            self.ui_loop.call_soon_threadsafe(self.prepared, rows, time.monotonic() - started)
+        except Exception:  # the loop is closed: the screen is gone
+            pass
+
+    def prepared(self, rows, seconds: float) -> None:
+        self.ahead_running = False
+        if rows is None:  # not weighed ahead: `n` weighs it as before
+            if self.want_ahead:
+                self.want_ahead = False
+                self.run_worker(self.weigh, thread=True, exclusive=True, group="batch")
+            return
+        if self.want_ahead:
+            self.want_ahead = False
+            self.show_batch(rows, seconds)
+        else:
+            self.ahead = (rows, seconds)
 
     def weigh(self) -> None:
         """In a thread: its own read-only library, the files weighed, the rows handed back to the screen."""
@@ -717,19 +769,27 @@ class ReviewApp(App):
         self.say(f"Could not weigh the files: {message}", "red")
 
     def show_batch(self, rows: list[batch.Row], seconds: float) -> None:
+        """A new batch: kept in ``batches`` (to come back to), shown, and the one after it is weighed in the background."""
+        self.batches.append(rows)
+        self.batch_totals.append(getattr(rows, "total", len(rows)))
+        self.at = len(self.batches) - 1
+        self.number = self.at + 1
+        self.display(rows, f"weighed in {seconds:.1f} s")
+        self.prefetch()
+
+    def display(self, rows: list[batch.Row], timing: str) -> None:
         self.loading = False
-        self.weighed_in = seconds
         self.show_loading(False)
         self.query_one(DataTable).focus()
         if self.first_total is None:
             self.first_total = getattr(rows, "total", 0)  # the files to check when the run began: the batches there will be about
         self.rows = rows
-        self.batch_total = getattr(rows, "total", len(rows))  # the files to check when this batch was weighed: more than the rows = another batch
+        self.batch_total = self.batch_totals[self.at]  # the files to check when this batch was weighed: more than the rows = another batch
         self.shown.update(row.path for row in rows)
         self.marked.clear()
         self.order = {id(row): place for place, row in enumerate(rows)}
         self.sort_column, self.sort_reverse = None, False
-        self.timing = f"weighed in {seconds:.1f} s"
+        self.timing = timing
         self.render_table()
         if not self.rows:
             self.sub_title = "nothing left to check"
@@ -790,6 +850,7 @@ class ReviewApp(App):
         keys = [(self.sort_key(index, row), row) for row in self.rows]
         present = sorted((pair for pair in keys if pair[0] is not None), key=lambda pair: pair[0], reverse=self.sort_reverse)
         self.rows = [row for _, row in present] + [row for key, row in keys if key is None]  # without a value: last
+        self.batches[self.at] = self.rows
         self.render_table()
         if keep is not None:
             self.query_one(DataTable).move_cursor(row=self.rows.index(keep))
@@ -880,6 +941,9 @@ class ReviewApp(App):
             after = [i for i in waiting if i > table.cursor_row]
             table.move_cursor(row=(after or waiting)[0])
         elif self.rows and not any(row.busy for row in self.rows):
+            if self.at < len(self.batches) - 1:  # an earlier batch: the next one is known, `n` shows it
+                self.notify("This batch is checked: n goes on to the next one.", timeout=4)
+                return
             if getattr(self, "batch_total", 0) <= len(self.rows):  # these were all the files there are: nothing to ask about
                 self.sub_title = "everything checked"
                 self.say("Everything is checked. Press q to quit: the pages still being fetched are finished first.", "green")
@@ -1283,7 +1347,27 @@ class ReviewApp(App):
             self.refresh_row(row)
 
     def action_next_batch(self) -> None:
-        self.load_batch()
+        if self.loading:
+            return
+        if self.at < len(self.batches) - 1:  # came back with `b`: the batch after this one is already known
+            self.go_to(self.at + 1)
+        else:
+            self.load_batch()
+
+    def action_previous_batch(self) -> None:
+        if self.loading:
+            return
+        if self.at <= 0:
+            self.notify("This is the first batch.", timeout=3)
+            return
+        self.go_to(self.at - 1)
+
+    def go_to(self, index: int) -> None:
+        """Show a batch seen before, with the decisions made in it (and the fetches still running for its rows)."""
+        self.batches[self.at] = self.rows  # a sort replaced the list
+        self.at = index
+        self.number = index + 1
+        self.display(self.batches[index], "seen before")
 
 
 def run(library, settings, source, size: int = 50, terms=(), unmatched: bool = False, everything: bool = False,
