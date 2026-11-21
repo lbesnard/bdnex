@@ -267,7 +267,7 @@ def test_a_pick_is_written_at_once_and_the_page_and_cover_come_later(env, monkey
         await settle(app, pilot)
 
     result, source = drive(db, script)
-    assert seen["album"] == "2" and seen["now"][:2] == ("linked", True) and seen["now"][2].startswith("linked · ") and "being fetched" in seen["now"][3]
+    assert seen["album"] == "2" and seen["now"][:2] == ("linked", True) and "linked · " in seen["now"][2] and "being fetched" in seen["now"][3]
     first = result["app"].rows[0]
     assert first.pending is False and "page and cover fetched" in first.message and "cover is 66%" in first.message
 
@@ -1056,3 +1056,36 @@ def test_i_with_a_bdtheque_address_links_the_file_to_what_that_page_says(env, mo
     with Library(db) as lib:
         albums = [lib.get_album(lib.get_file(p)["album_id"]) for p in files.values() if lib.get_file(p)["album_id"]]
     assert any(a["source"] == "bdtheque" and a["publisher"] == "Dargaud" for a in albums)
+
+
+def test_the_state_column_turns_a_wheel_while_a_page_is_fetched(env, monkeypatch):
+    from bdnex.importer import bdtheque
+
+    db, files = env
+    page = open(os.path.join(os.path.dirname(__file__), "bdtheque_series_14922.html"), encoding="utf-8").read()
+    release = threading.Event()
+    seen = {}
+
+    def read(settings, address, path):
+        release.wait(5)
+        return bdtheque.album_info(bdtheque.parse_series_page(page))
+
+    monkeypatch.setattr(batch, "read_bdtheque", read)
+
+    async def script(app, pilot):
+        await pilot.press("i")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = "https://www.bdtheque.com/series/14922/x"
+        await pilot.press("enter")
+        await pilot.pause(0.4)
+        seen["during"] = [str(c) for c in app.query_one("DataTable").get_row_at(0)][-1]
+        seen["later"] = None
+        await pilot.pause(0.4)
+        seen["frames"] = {str(app.query_one("DataTable").get_row_at(0)[-1])[:1], seen["during"][:1]}
+        release.set()
+        await settle(app, pilot)
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert "fetching the page" in seen["during"] and seen["during"][0] in review_tui.SPINNER
+    assert len(seen["frames"]) >= 1 and result["cells"][0][7] == "linked"

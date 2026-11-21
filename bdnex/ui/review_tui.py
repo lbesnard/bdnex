@@ -41,6 +41,7 @@ KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "
 KIND_WORD = {"wrong": "contradicted", "unconfirmed": "unconfirmed", "unmatched": "no album", "ok": "nothing against"}
 EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 SEARCH_LIMIT = 60
+SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # braille dots turning: a state that is waiting for the site
 COLUMNS = (("#", 3), ("File", 40), ("Folder", 22), ("Album now", 40), ("Page", 8), ("Match", 8), ("Cover", 8), ("State", 14))
 STATE_ORDER = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # the state column sorts by how doubtful, then by decision
 DECIDED_ORDER = {"keep": 10, "linked": 11, "unlinked": 12, "left": 13, "skipped": 14}
@@ -521,7 +522,7 @@ class ReviewApp(App):
         self.started = time.monotonic()
         self.hub.ready.add_done_callback(self.list_loaded)
         self.take_the_log()
-        self.set_interval(1.0, self.tick_pending)
+        self.set_interval(0.15, self.tick_pending)
         self.load_batch()
 
     def on_unmount(self) -> None:
@@ -556,9 +557,9 @@ class ReviewApp(App):
             owner.addHandler(handler)
 
     def tick_pending(self) -> None:
-        """The seconds in the state column of the files still being fetched: a long wait is a number going up, not a frozen screen."""
+        """The seconds and the turning dots in the state column of the files being fetched: a long wait is a number going up, not a frozen screen."""
         for row in self.rows:
-            if row.pending and row in self.rows:
+            if (row.pending or row.busy) and row in self.rows:
                 with contextlib.suppress(Exception):
                     table = self.query_one(DataTable)
                     index = self.rows.index(row)
@@ -763,11 +764,13 @@ class ReviewApp(App):
     def cells(self, number: int, row: batch.Row) -> list:
         import os
 
+        spin = SPINNER[int(time.monotonic() * 10) % len(SPINNER)]  # moves with every redraw: something is going on
         if row.busy:
-            state = Text("linking...", style="bold yellow")
+            waited = f" {time.monotonic() - row.started_at:.0f}s" if row.busy_what and row.started_at else ""
+            state = Text(f"{spin} {row.busy_what or 'linking'}{waited}", style="bold yellow")
         elif row.pending:
             now = time.monotonic()
-            state = Text(f"linked · fetching {now - row.started_at:.0f}s" if row.started_at else
+            state = Text(f"{spin} linked · fetching {now - row.started_at:.0f}s" if row.started_at else
                          f"linked · queued {now - row.queued_at:.0f}s", style="yellow")
         elif row.status:
             state = Text(row.status, style=STATUS_STYLE.get(row.status, ""))
@@ -1102,12 +1105,16 @@ class ReviewApp(App):
             from bdnex.importer import bdtheque
 
             if bdtheque.is_address(text):  # another site: its page is read (fetched once) and the file is linked to what it says
-                self.notify("Reading the bdtheque.com page (from the library, or fetched once)...", timeout=6)
+                row.busy, row.busy_what, row.started_at = True, "fetching the page", time.monotonic()  # the state column says so, and counts
+                self.refresh_row(row)
                 try:
                     info = await asyncio.to_thread(batch.read_bdtheque, self.settings, text.strip(), row.path)
                 except Exception as err:
                     self.notify(f"Could not read that page: {err}", severity="error", timeout=10)
                     return
+                finally:
+                    row.busy, row.busy_what, row.started_at = False, "", 0.0
+                    self.refresh_row(row)
                 self.link_page(row, info)
                 return
             candidate = await asyncio.wrap_future(self.hub.run(lambda hub: hub.source.candidate_for(text)))
