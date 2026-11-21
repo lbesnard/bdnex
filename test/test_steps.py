@@ -460,3 +460,17 @@ def test_keep_both_links_a_second_file_to_an_album_that_has_one_even_unattended(
     with Library(db) as lib:
         file = lib.get_file(second)
         assert file["album_id"] is not None and file["spare"], (refused, text, text2)
+
+
+def test_a_file_registered_without_being_read_is_completed_by_the_import(cli):
+    web, db, make_cbz = cli
+    init()
+    path = make_cbz("Quelque chose de tout a fait different.cbz")
+    with Library(db) as lib:
+        album = lib.add_album(Bedetheque.partial_info(None, type("C", (), {"url": ALBUM_URL, "source_id": "245127", "name": "", "volume": 1})()))
+        lib.add_unread_file(path, album)
+        assert lib.get_file(path)["md5"].startswith("unread:")
+    assert run_import("--album", ALBUM_URL, "--database-only", "--unattended", "--keep-both", path)[0] == 0
+    with Library(db) as lib:
+        file = lib.get_file(path)
+        assert not file["md5"].startswith("unread:") and file["page_count"] and file["album_id"] == album

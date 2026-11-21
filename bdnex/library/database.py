@@ -733,6 +733,18 @@ class Library:
         info, md5 = analyse_file(path)
         return self.add_analysed(info, md5, album_id)
 
+    def add_unread_file(self, path, album_id: Optional[int] = None) -> int:
+        """Register a file without reading it (no hash, no page count): what is known from the disk entry, so that a link can be written
+        at once. The ``md5`` is a placeholder that matches nothing; the import that follows (``add_analysed``) fills in the rest."""
+        stat = os.stat(path)
+        with self.conn:
+            self.conn.execute(
+                "INSERT INTO files(path, album_id, md5, size, format, mtime) VALUES (?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT(path) DO NOTHING",
+                (self._store(path), album_id, f"unread:{self._store(path)}", stat.st_size,
+                 os.path.splitext(str(path))[1].lstrip(".").lower() or "unknown", stat.st_mtime))
+        return self.conn.execute("SELECT id FROM files WHERE path = ?", (self._store(path),)).fetchone()["id"]
+
     def add_analysed(self, info, md5: str, album_id: Optional[int] = None) -> int:
         """Register a file that was already inspected and hashed (see :func:`analyse_file`)."""
         with self.conn:
