@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- `import --album` (and so a link in the review screen) read the album and series pages from the site again every time, through the fetcher: minutes per file. It now uses the stored pages; only `--force` asks the site again. And `import --force` no longer downloads an album page twice (the page fetched ahead was fetched again when its turn came).
 - `bdnex import FILE` finds a file by the path `bdnex ls` prints (relative to `collection_path`) when it is not found from where you are.
 - A link made in the review screen no longer asks questions (a cover that looked different asked one the screen could not show, so the row said `linking...` for ever).
 - The review screen no longer waits for ever on a link: after 120 seconds without an answer (a slow site or fetcher) the file can be decided again, and a late answer is ignored.

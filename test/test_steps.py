@@ -72,7 +72,7 @@ def cli(tmp_path, monkeypatch, make_cbz):
     monkeypatch.setattr(plugin, "http_fetch", web)
     monkeypatch.setattr(plugin, "build_fetcher", lambda settings: web)
     original = Bedetheque.album_info
-    monkeypatch.setattr(Bedetheque, "album_info", lambda self, url, recache=False: original(self, ALBUM_URL, recache))
+    monkeypatch.setattr(Bedetheque, "album_info", lambda self, url, recache=False, **more: original(self, ALBUM_URL, recache, **more))
     monkeypatch.setattr("bdnex.importer.bedetheque.bedetheque.uniform", lambda a, b: 0)
     monkeypatch.setattr("time.sleep", lambda s: None)
     return web, tmp_path / "lib.sqlite", make_cbz
@@ -389,13 +389,24 @@ def test_album_still_links_when_nothing_may_be_asked(cli):
         assert lib.get_album(lib.get_file(path)["album_id"])["source_id"] == "245127"
 
 
+def test_album_reads_the_stored_page_and_only_force_asks_the_site_again(cli):
+    web, db, make_cbz = cli
+    init()
+    path = make_cbz(FILE)
+    run_import(path)
+    web.calls.clear()
+    assert run_import("--album", "245127", path)[0] == 0
+    assert ALBUM_URL not in web.calls  # the page is in the library: a link is quick
+    run_import("--album", "245127", "--force", path)
+    assert ALBUM_URL in web.calls
+
 def test_album_takes_a_number_of_the_list_and_redoes_a_file_that_has_an_album(cli):
     web, db, make_cbz = cli
     init()
     path = make_cbz(FILE)
     run_import(path)
     code, text = run_import("--album", "245127", path)  # already imported: redone, not "already"
-    assert code == 0 and "already" not in text and "complete" in text
+    assert code == 0 and "complete" in text  # a stored page is read, not asked for again
 
 
 def test_album_refuses_what_is_not_an_album_and_more_than_one_file(cli, capsys, tmp_path):
@@ -419,3 +430,18 @@ def test_a_path_as_ls_prints_it_is_found_from_the_collection(tmp_path, monkeypat
     monkeypatch.chdir(tmp_path)
     assert import_cmd._under_collection("Series/A.cbz", settings) == str(root / "Series" / "A.cbz")
     assert import_cmd._under_collection("Series/none.cbz", settings) == "Series/none.cbz"
+
+
+def test_force_downloads_an_album_page_once(cli, monkeypatch, tmp_path):
+    web, db, make_cbz = cli
+    (tmp_path / "bdnex.yaml").write_text(yaml.safe_dump({"config_version": 2, "library": str(db), "import": {"auto": True},
+                                                          "bedetheque": {"delay": [0, 0], "parallel": 3}}))
+    import bdnex.importer.bedetheque as plugin
+
+    monkeypatch.setattr(plugin, "uses_saved_pages", lambda settings: False)  # a fetcher is set: pages are fetched ahead, several at once
+    init()
+    path = make_cbz(FILE)
+    run_import(path)
+    web.calls.clear()
+    run_import("--force", path)
+    assert len([c for c in web.calls if "Redwin" in c]) == 1  # the page, not twice

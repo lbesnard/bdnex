@@ -60,8 +60,10 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
                  cover_check: Optional[bool] = None, series: Optional[str] = None,
                  phase: Optional[Callable[[str, str], None]] = None, retry_skipped: bool = False,
                  files_untouched: bool = False, verbosity: int = 1,
-                 pinned: Optional[Candidate] = None, duplicates: Optional[str] = None):
+                 pinned: Optional[Candidate] = None, duplicates: Optional[str] = None, refetch: Optional[bool] = None):
         self.library = library
+        self._fresh: set[str] = set()  # album pages the queue has just downloaded
+        self.refetch = refetch  # None: --force also asks the site again; False: match again but read the stored pages
         self.duplicates = duplicates  # `--keep-both`: this file is linked even when the album has another file (a spare version)
         self._loop_started = time.monotonic()
         self.verbosity = verbosity  # 0: a count now and then and what needs a look; 1 (-v): every file and why; 2 (-vv): + logging
@@ -103,6 +105,8 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
     @property
     def recache(self) -> bool:
         """Redoing the fetch means asking the site again, not reading the stored page."""
+        if self.refetch is not None:
+            return self.refetch and "fetch" in self.steps
         return self.force and "fetch" in self.steps
 
     # ------------------------------------------------------------------ run
@@ -531,6 +535,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
                         _, failure = next(arriving)  # the page is in the library now (or why it is not)
                         if failure is not None:
                             raise failure
+                        self._fresh.add(candidate.url)  # downloaded just now: not asked for a second time
                     album_id, partial, note = self._album_for(candidate)
                 except Exception as err:
                     logger.exception(f"{candidate.url} failed")
@@ -816,7 +821,8 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         self.detail(f"    fetching the album page ({self.source.name}; the first request waits a few seconds)...")
         started = time.monotonic()
         try:
-            info = self.source.album_info(candidate.url, recache=self.recache)
+            extra = {"album_fresh": True} if self.recache and candidate.url in self._fresh else {}
+            info = self.source.album_info(candidate.url, recache=self.recache, **extra)
             partial, note = False, ""
             self.detail(f"    page read in {time.monotonic() - started:.1f}s")
         except self.source.fetch_errors as err:
