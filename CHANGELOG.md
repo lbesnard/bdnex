@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- `ls --sitemap --for FILE`: the file's words count as whole words of an album's name (`fell` is not in `Rocketfellers`), and albums that tie at 100 are still told apart by them.
 - Review screen: a series address that is not stored is fetched with your fetcher (once, then stored), instead of failing with "the network is not used".
 - Review screen: the next batch (`n`) never shows again a file of the batches before in the same run (a file passed over with `s`, or without album, used to come back).
 - The review screen no longer crashes when a link ends after the next batch was loaded.

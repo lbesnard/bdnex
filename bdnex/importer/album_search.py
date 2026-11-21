@@ -175,15 +175,18 @@ def search_file(albums: AlbumList, path: str, limit: int = 20, extra: tuple[str,
     matches = rerank(query_from_filename(path), [(hit.candidate, hit.score) for hit in ranked], volumes_for(path), albums.source,
                      integral=bool(re.search(r"\bint[eé]grales?\b", os.path.basename(path), re.I)) or None)
     words = [w for w in fold(query_from_filename(path)).split() if len(w) >= 3 and not w.isdigit()]
-    out = []
+    out, order = [], {}
     for match in matches:
         hit = by_url[match.candidate.url]
         score, parts = match.score, match.parts
+        raw = score
         if words:  # a short query (the folder, `Batman`) ties with the right album: the file's own words decide
-            name = fold(display_name(hit.candidate))
+            name = set(fold(display_name(hit.candidate)).split())  # whole words: `fell` is not in `Rocketfellers`
             share = sum(word in name for word in words) / len(words)
-            score = min(100.0, score + COVERAGE_BONUS * share)
+            raw = score + COVERAGE_BONUS * share  # not cut at 100: the albums that tie there are told apart by it
+            score = min(100.0, raw)
             parts = (*parts, f"{share:.0%} of the file's words are in the name: +{COVERAGE_BONUS * share:.0f}")
         out.append(Hit(hit.candidate, score, hit.found_by, parts))
-    out.sort(key=lambda hit: (-hit.score, hit.candidate.volume if hit.candidate.volume is not None else 0, hit.candidate.url))
+        order[hit.candidate.url] = raw
+    out.sort(key=lambda hit: (-order[hit.candidate.url], hit.candidate.volume if hit.candidate.volume is not None else 0, hit.candidate.url))
     return out[:limit]
