@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Review screen: mark all / none moved from `ctrl+a` (taken by tmux and some terminals) to `m`.
 - Review screen: the state of a file whose page and cover are being fetched counts the seconds (`linked · fetching 42s`, or `queued` while the files before it are fetched) and the log panel says which file is being worked on and how long it took, so a long wait is visible.
 - Review screen: picking an album for a file the import skipped no longer reads (hashes) the file before the link is written, which took seconds on a network disk: it is registered unread and the background import fills the rest in. The log panel says how long the write took.
 - Review screen: linking a file the import skipped (no record in the library yet, the `--unmatched` rows) crashed; it is now registered with its link (also for `e`).

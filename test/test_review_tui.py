@@ -763,9 +763,9 @@ def test_ctrl_a_marks_every_undecided_file_and_again_none(env):
     db, files = env
 
     async def script(app, pilot):
-        await pilot.press("ctrl+a")
+        await pilot.press("m")
         assert len(app.marked) == len(app.rows)
-        await pilot.press("ctrl+a")
+        await pilot.press("m")
         assert not app.marked
 
     drive(db, script)
@@ -851,7 +851,7 @@ def test_e_with_several_marked_files_writes_a_series(env):
     db, files = env
 
     async def script(app, pilot):
-        await pilot.press("ctrl+a")
+        await pilot.press("m")
         await pilot.press("e")
         await settle(app, pilot)
         screen = app.screen
