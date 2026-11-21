@@ -1165,6 +1165,19 @@ def test_a_one_shot_picked_with_a_is_linked_to_the_one_file_instead_of_a_refusal
     assert result["cells"][0][7] == "linked" and seen_calls == [True]
 
 
+def test_a_one_shot_series_page_gives_its_only_album_to_the_one_file_without_a_volume():
+    from bdnex.importer.bedetheque import Bedetheque, parser
+
+    html = '<a href="https://www.bedetheque.com/BD-Scalp-2005-INT01-Scalp-194887.html">Scalp</a>'
+    address = "https://www.bedetheque.com/serie-9-BD-Scalp.html"
+    source = Bedetheque.__new__(Bedetheque)
+    source._series_details = {address: parser.parse_series_details(html, "Scalp")}
+    found = batch.propose_for_series_address(source, address, ["/x/Scalp.cbz"])
+    assert list(found.mapping) == ["/x/Scalp.cbz"]
+    with pytest.raises(batch.NoVolumeFound):  # two files: which one is it? still refused
+        batch.propose_for_series_address(source, address, ["/x/Scalp.cbz", "/x/Scalp bis.cbz"])
+
+
 def test_a_volume_that_only_looks_like_a_digit_is_refused_not_a_crash(env):
     db, files = env
     seen = {}

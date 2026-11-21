@@ -327,6 +327,8 @@ def propose_for_series_address(source, address: str, paths: list[str], found=Non
         raise NoVolumeFound(
             f"{name}: the files are numbered up to {max(numbered)} but the series has {len(by_volume)} volume(s) (up to {max(by_volume)}): "
             "these look like chapters, not volumes. Nothing was linked.")
+    if not proposal.mapping and len(paths) == 1 and len(albums) == 1 and volumes[paths[0]] is None:
+        proposal.mapping[paths[0]] = albums[0]  # a one-shot series (one album, no volume) and one file without a number: that album
     if not proposal.mapping:
         listed = sorted(by_volume)
         raise NoVolumeFound(
