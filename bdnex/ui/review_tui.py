@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import io
+import logging
 import os
 import re
 import shutil
@@ -29,7 +30,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Footer, Header, Input, Label, OptionList, Static
+from textual.widgets import DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static
 from textual.widgets.option_list import Option
 
 from bdnex.library import review_batch as batch
@@ -98,6 +99,40 @@ class SourceHub:
             with contextlib.suppress(Exception):
                 self.pool.submit(self.close_it).result(timeout=5)
         self.pool.shutdown(wait=False, cancel_futures=True)
+
+
+logger = logging.getLogger("bdnex.review")
+
+
+class LogPanel(logging.Handler):
+    """bdnex's log lines (any thread) into the panel at the bottom of the screen."""
+
+    def __init__(self, app, level):
+        super().__init__(level)
+        self.app = app
+        self.setFormatter(logging.Formatter("%(levelname).1s %(name)s: %(message)s"))
+
+    def emit(self, record) -> None:
+        try:
+            self.app.log_from_anywhere(self.format(record))
+        except Exception:  # a log line is never a reason to fail
+            pass
+
+
+class LineSink(io.StringIO):
+    """What an import prints while it runs in a thread: each line goes to the panel (and is kept, for the error text)."""
+
+    def __init__(self, app):
+        super().__init__()
+        self.app, self.pending = app, ""
+
+    def write(self, text: str) -> int:
+        self.pending += text.replace("\r", "\n")
+        *lines, self.pending = self.pending.split("\n")
+        for line in lines:
+            if line.strip():
+                self.app.log_from_anywhere(line.rstrip())
+        return super().write(text)
 
 
 SERIES_ADDRESS = re.compile(r"bedetheque\.com/serie-\d+", re.I)
@@ -304,6 +339,7 @@ class ReviewApp(App):
     #loading { height: 2fr; min-height: 8; content-align: center middle; text-align: left; }
     #table { height: 2fr; min-height: 8; }
     #detail { height: 1fr; min-height: 8; border-top: solid $accent; padding: 0 1; overflow-y: auto; }
+    #log { height: 7; border-top: solid $accent; padding: 0 1; color: $text-muted; }
     """
     BINDINGS = [
         Binding("k", "keep", "Keep"),
@@ -317,6 +353,8 @@ class ReviewApp(App):
         Binding("c", "cover", "Covers"),
         Binding("space", "mark", "Mark"),
         Binding("ctrl+a", "mark_all", "Mark all / none"),
+        Binding("x", "mark_none", "Unmark all"),
+        Binding("v", "toggle_log", "Log"),
         Binding("a", "attach", "Attach marked to a series"),
         Binding("n", "next_batch", "Next batch"),
         Binding("q", "quit", "Quit"),
@@ -324,8 +362,10 @@ class ReviewApp(App):
     ]
 
     def __init__(self, library, settings, source, size: int = 50, terms=(), unmatched: bool = False,
-                 everything: bool = False, again: bool = False):
+                 everything: bool = False, again: bool = False, verbose: int = 0):
         super().__init__()
+        self.verbose = verbose
+        self.ui_thread = None
         self.library, self.settings = library, settings
         self.hub = SourceHub(source)
         self.batch_size, self.terms, self.unmatched = size, list(terms), unmatched
@@ -350,15 +390,64 @@ class ReviewApp(App):
         yield Static("", id="loading")
         yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
         yield Static("", id="detail")
+        yield RichLog(id="log", max_lines=500, wrap=True, markup=False, highlight=False)
         yield Footer()
 
     def on_mount(self) -> None:
+        import threading
+
+        self.ui_thread = threading.get_ident()
         self.started = time.monotonic()
         self.hub.ready.add_done_callback(self.list_loaded)
+        self.take_the_log()
         self.load_batch()
 
     def on_unmount(self) -> None:
+        self.give_back_the_log()
         self.hub.close()
+
+    # -- the log panel: what bdnex is doing (reads, fetches, links), so that a wait is never silent
+    def take_the_log(self) -> None:
+        """The log goes to the panel: a handler writing to the terminal would draw under the screen."""
+        import sys
+
+        wanted = logging.DEBUG if self.verbose >= 2 else logging.INFO
+        own = logging.getLogger("bdnex")
+        self._saved = (own.level, [(owner, handler) for owner in (logging.getLogger(), own) for handler in owner.handlers
+                                    if getattr(handler, "stream", None) in (sys.stderr, sys.stdout, sys.__stderr__, sys.__stdout__)
+                                    and not isinstance(handler, logging.FileHandler)])
+        for owner, handler in self._saved[1]:
+            owner.removeHandler(handler)
+        self.panel = LogPanel(self, wanted)
+        own.addHandler(self.panel)
+        own.setLevel(min(own.level or logging.WARNING, wanted) if own.level else wanted)
+
+    def give_back_the_log(self) -> None:
+        own = logging.getLogger("bdnex")
+        if getattr(self, "panel", None) is not None:
+            own.removeHandler(self.panel)
+        level, handlers = getattr(self, "_saved", (own.level, []))
+        own.setLevel(level)
+        for owner, handler in handlers:
+            owner.addHandler(handler)
+
+    def log_from_anywhere(self, text: str) -> None:
+        import threading
+
+        if threading.get_ident() == self.ui_thread:
+            self.log_line(text)
+        else:
+            self.call_from_thread(self.log_line, text)
+
+    def log_line(self, text: str) -> None:
+        try:
+            self.query_one("#log", RichLog).write(Text(f"{time.strftime('%H:%M:%S')} {text}", no_wrap=False))
+        except Exception:  # the screen is closing
+            pass
+
+    def action_toggle_log(self) -> None:
+        panel = self.query_one("#log", RichLog)
+        panel.display = not panel.display
 
     def list_loaded(self, future) -> None:  # called in the thread of the album list
         self.albums_in = time.monotonic() - self.started
@@ -640,11 +729,19 @@ class ReviewApp(App):
         free = [r for r in self.rows if not r.status and not r.busy]
         if not free:
             return
-        everything = all(id(r) in self.marked for r in free)
-        self.marked.clear() if everything else self.marked.update(id(r) for r in free)
+        if all(id(r) in self.marked for r in free):
+            self.action_mark_none()
+            return
+        self.marked.update(id(r) for r in free)
         for row in self.rows:
             self.refresh_row(row)
-        self.notify("no file marked" if everything else f"{len(self.marked)} file(s) marked: `a` attaches them to a series", timeout=3)
+        self.notify(f"{len(self.marked)} file(s) marked: `a` attaches them to a series", timeout=3)
+
+    def action_mark_none(self) -> None:
+        self.marked.clear()
+        for row in self.rows:
+            self.refresh_row(row)
+        self.notify("no file marked", timeout=3)
 
     def action_attach(self) -> None:
         """Pick an album of a series: each marked file (without a mark: the files of this folder not decided yet) gets the
@@ -710,7 +807,7 @@ class ReviewApp(App):
                 if row.link_id != mine:
                     continue  # decided again in the meantime
                 self.call_from_thread(self.say_linking, row, candidate)
-                captured, error = io.StringIO(), ""
+                captured, error = LineSink(self), ""
                 try:
                     with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
                         verdicts.rematch(row.path, candidate.url, False)
@@ -822,13 +919,14 @@ class ReviewApp(App):
         self.refresh_row(row)
         self.watch_link(row)
         self.notify(f"Linking {os.path.basename(row.path)} to {name}...", timeout=4)
+        logger.info("linking %s to %s (the album and series pages come from the library, or the fetcher)", os.path.basename(row.path), name)
 
         mine = row.link_id
 
         def work() -> None:
             from bdnex.ui import verdicts
 
-            captured, error = io.StringIO(), ""
+            captured, error = LineSink(self), ""
             try:  # the import prints its progress: it must not land on the screen
                 with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
                     verdicts.rematch(row.path, url, keep_both)
@@ -864,6 +962,7 @@ class ReviewApp(App):
             self.refresh_row(row)
             return
         ok, message = batch.finish_link(self.library, row, before)
+        logger.info("%s: %s", os.path.basename(row.path), message)
         if ok:
             file = self.library.get_file(row.path) or {}
             row.cover, row.score, row.kind = file.get("cover_score"), None, "ok"
@@ -895,8 +994,8 @@ class ReviewApp(App):
 
 
 def run(library, settings, source, size: int = 50, terms=(), unmatched: bool = False, everything: bool = False,
-        again: bool = False) -> dict[str, int]:
+        again: bool = False, verbose: int = 0) -> dict[str, int]:
     """Run the table until the person quits; returns how many files were decided, by decision."""
-    app = ReviewApp(library, settings, source, size, terms, unmatched, everything, again)
+    app = ReviewApp(library, settings, source, size, terms, unmatched, everything, again, verbose)
     app.run()
     return app.decided

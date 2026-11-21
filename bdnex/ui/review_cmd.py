@@ -73,7 +73,7 @@ def _batch(args, settings, out) -> int:
         except Exception as err:
             print(err, file=sys.stderr)
             return 1
-        decided = review_tui.run(library, settings, build_source, args.batch, args.query, args.unmatched, args.all, args.again)
+        decided = review_tui.run(library, settings, build_source, args.batch, args.query, args.unmatched, args.all, args.again, args.verbose)
     on = color.enabled(out)
     total = sum(decided.values())
     parts = ", ".join(f"{n} {what}" for what, n in sorted(decided.items()) if n)

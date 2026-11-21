@@ -16,6 +16,8 @@ command runs, never while an import is fetching).
 - The review screen no longer waits for ever on a link: after 120 seconds without an answer (a slow site or fetcher) the file can be decided again, and a late answer is ignored.
 
 ### Added
+- Review screen: a log at the bottom (`v` hides it) shows what bdnex is doing while it looks idle: pages read or fetched, links, and the output of the import; `-vv` adds the debug lines. `x` unmarks everything.
+- A volume glued to the title (`SOA3.pdf`, `SonOfAnarchy6.pdf`) is read as the volume when the name has no other number, for the matcher and for attaching files to a series.
 - Review screen: `ctrl+a` marks every file not decided yet, and again marks none; files being linked drop their mark, so the next series can be marked while they link.
 - Review screen: `a` (attach files to a series) and `i` accept the address of a series page (`bedetheque.com/serie-N-BD-Name.html`); the files get the album of that series with their volume number.
 - **`bdnex ls --sitemap WORDS`** searches the whole album list (every album of the site, not only yours) the way `fzf` does in the review screen: all the words in the name, a typo forgiven, 20 results, nothing requested. **`--for PATH`** gives the albums a file could be, by its name, its two last folder names and its volume (the right volume and the file's words first, with the reason). Both take `--json` and `-c`; the review screen and the command share one search (`importer/album_search.py`).
