@@ -143,3 +143,20 @@ def test_an_album_without_series_proposes_nothing():
             return AlbumInfo("bedetheque", "1", "Loose")  # no series
 
     assert batch.propose_for_series(Source(), Candidate("1", "u", "loose"), ["/a/T01.cbz"]) is None
+
+
+def test_the_batch_total_leaves_out_the_files_already_checked_and_skipped(env):
+    db, files = env
+    settings = load_config().settings
+    with Library(db) as lib:
+        first = batch.next_batch(lib, settings, size=50, unmatched=True)
+        assert first.total == len(first) == 3
+        loose = next(r for r in first if r.kind == "unmatched")
+        batch.decide(lib, loose, "leave")  # checked
+        second = batch.next_batch(lib, settings, size=50, unmatched=True)
+        assert second.total == len(second) == 2
+        wrong = next(r for r in second if r.kind == "wrong")
+        third = batch.next_batch(lib, settings, size=50, unmatched=True, skip={wrong.path})
+        assert third.total == len(third) == 1
+        everything = batch.next_batch(lib, settings, size=50, everything=True, skip={wrong.path})
+        assert everything.total == len(everything)

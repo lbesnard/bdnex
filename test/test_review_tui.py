@@ -1176,3 +1176,74 @@ def test_a_one_shot_series_page_gives_its_only_album_to_the_one_file_without_a_v
     assert list(found.mapping) == ["/x/Scalp.cbz"]
     with pytest.raises(batch.NoVolumeFound):  # two files: which one is it? still refused
         batch.propose_for_series_address(source, address, ["/x/Scalp.cbz", "/x/Scalp bis.cbz"])
+
+
+def test_a_volume_that_only_looks_like_a_digit_is_refused_not_a_crash(env):
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("m")
+        await pilot.press("e")
+        await settle(app, pilot)
+        screen = app.screen
+        screen.query_one("#f-series").value = "Nains Bis"
+        screen.query_one("#volumes").text = "²\n1\n2"
+        await pilot.press("ctrl+s")
+        await settle(app, pilot)
+        seen["still"] = app.screen is screen
+        await pilot.press("escape")
+
+    drive(db, script)
+    assert seen["still"]
+
+
+def test_a_failed_link_is_reported_on_the_row_and_does_not_close_the_screen(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    release.set()
+    _linking(monkeypatch, db, release)
+
+    def broken(library, row, candidate):
+        raise OSError("the disk is gone")
+
+    monkeypatch.setattr(batch, "link_now", broken)
+
+    async def script(app, pilot):
+        await pilot.press("o")
+        await settle(app, pilot)
+        await pilot.press("enter")
+        await settle(app, pilot)
+        assert app.is_running
+
+    result, _ = drive(db, script)
+    assert result["cells"][0][7] != "linked"
+
+
+def test_a_series_link_leaves_a_row_decided_meanwhile_alone(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    release.set()
+    seen_calls.clear()
+    _linking(monkeypatch, db, release)
+
+    async def script(app, pilot):
+        first, second = app.rows[0], app.rows[1]
+        second.status = "unlinked"  # decided while the question was open
+        candidate = FORGE
+        app.link_many([(first, candidate), (second, candidate)])
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert result["app"].rows[1].status == "unlinked" and len(seen_calls) == 1
+
+
+def test_the_picker_says_in_a_column_whether_a_hit_is_a_series_or_one_album():
+    serie = Candidate("18658", SERIES_PAGE, "BD Boys", None)
+    for series_ok, expect in ((True, ("SERIES", "album")), (False, ())):
+        screen = review_tui.FuzzyScreen(None, "", "x", series_ok=series_ok)
+        a, b = screen.hit_line(serie, 90.0).plain, screen.hit_line(FORGE, 80.0).plain
+        assert all(word in text for word, text in zip(expect, (a, b)))
+        if not series_ok:
+            assert "SERIES" not in a and "album" not in b
+    assert screen.hit_line(serie, 90.0).plain.strip().endswith("BD Boys")
