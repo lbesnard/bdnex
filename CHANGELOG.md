@@ -6,6 +6,9 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Added
+- API: `GET /api/review/batch` returns the next files to check as `bdnex review --batch` shows them (doubtful, `unmatched`, `all`, `again`, a query, a size), and `POST /api/review/{file_id}/decide` keeps, unlinks or leaves any file of a batch, flagged or not, and marks it checked.
+
 ### Changed
 - Review screen: the `e` form has **OK** and **Cancel** buttons (`Ctrl-S` is taken by tmux); `x` cancels when the cursor is not in a text field, `Esc` always does.
 
