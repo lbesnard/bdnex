@@ -120,3 +120,22 @@ def test_typing_letter_by_letter_gives_the_same_answers_as_asking_at_once(albums
     for typed in ["b", "ba", "bat", "batman", "batman d", "batman dark", "batman dark vic", "dark batman", "batmandarkvic2", "yoko ts", "yoko"]:
         assert albums.search(typed) == album_search.search_folded(cold.catalogue, cold.folded, typed, 20)
     assert albums.search("batman dark")[1] == 1 and "pools" in albums.cache and "results" in albums.cache
+
+
+def test_the_index_and_the_letter_pools_answer_exactly_as_the_plain_scan_does(monkeypatch):
+    import random
+
+    rnd = random.Random(5)
+    syllables = "ba ta man dark vic to ry yo ko tsu no ast er ix lé gion ai re lu cky luke kil ling jo ke".split()
+    names = [" ".join(rnd.choice(syllables) + rnd.choice(syllables) for _ in range(rnd.randint(1, 4))) for _ in range(3000)]
+    catalogue = [album(str(i), n.replace(" ", "-"), rnd.choice([None, 1, 2, 3])) for i, n in enumerate(names)]
+    folded = album_search.folded_names(catalogue)
+    typed = ["ba", "bata", "batam", "batamandark", "bat dk vic2", "yoko tsu", "asterx legionaire", "kil jo", "zzzq", "bata man", "luckyluke3"]
+
+    monkeypatch.setattr(album_search, "BIG_LIST", 10 ** 9)  # the plain scan
+    plain = [album_search.search_folded(catalogue, folded, text, 20, {}) for text in typed]
+    monkeypatch.setattr(album_search, "BIG_LIST", 0)  # the index on, and typed one letter after another with one cache
+    cache: dict = {}
+    indexed = [album_search.search_folded(catalogue, folded, text, 20, cache) for text in typed]
+    assert indexed == plain and any(count for _, count in plain)
+    assert "index" in cache and "letters" in cache
