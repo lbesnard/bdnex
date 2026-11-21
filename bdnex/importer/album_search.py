@@ -7,6 +7,7 @@ albums found by every query with the volume asked for.
 
 from __future__ import annotations
 
+import bisect
 import collections
 import os
 import re
@@ -19,6 +20,7 @@ from bdnex.ui.prompts import display_name
 
 COVERAGE_BONUS = 10.0  # at most, for an album whose name has every word of the file's
 POOL = 60  # albums read per query before the volume is looked at
+BIG_LIST = 20000  # names: from here a first look at the list goes through the joined-string index
 TOO_MANY = 4000  # a letter or two: too many names to rank, the shorter ones are listed
 
 
@@ -73,6 +75,72 @@ POOLS_KEPT = 24  # the word lists whose matching albums are remembered
 RESULTS_KEPT = 128  # the searches whose answer is remembered (typing, deleting a letter and typing it again asks the same questions)
 
 
+class _Index:
+    """The folded names joined in one string (one per line), so that a word is found by ``str.find`` over the whole list at once,
+    instead of one Python test per name (372,000 of them in the real album list). ``bisect`` turns a position back into the
+    name's number."""
+
+    def __init__(self, folded: list[str]):
+        self.big = "\n".join(folded) + "\n"
+        self.starts: list[int] = []
+        place = 0
+        for name in folded:
+            self.starts.append(place)
+            place += len(name) + 1
+        self.size = len(folded)
+
+    def line_of(self, position: int) -> int:
+        return bisect.bisect_right(self.starts, position) - 1
+
+    def with_word(self, word: str, limit: int = 60000) -> Optional[list[int]]:
+        """The names that contain ``word``, in order; ``None`` when there are more than ``limit`` (not worth it: scan instead)."""
+        found, position = [], self.big.find(word)
+        while position != -1:
+            line = self.line_of(position)
+            found.append(line)
+            if len(found) > limit:
+                return None
+            position = self.big.find(word, self.starts[line + 1]) if line + 1 < self.size else -1  # on to the next name
+        return found
+
+
+def _index(folded: list[str], cache: Optional[dict]) -> _Index:
+    if cache is None:
+        return _Index(folded)
+    held = cache.get("index")
+    if held is None or held[0] is not folded or held[1] != len(folded):
+        held = cache["index"] = (folded, len(folded), _Index(folded))
+    return held[2]
+
+
+def _in_order(letters: str, name: str) -> bool:
+    """Are ``letters`` in ``name``, one after the other (spaces ignored)? What ``subsequence_score`` needs before it scores."""
+    position = -1
+    squeezed = name.replace(" ", "")
+    for letter in letters:
+        position = squeezed.find(letter, position + 1)
+        if position == -1:
+            return False
+    return True
+
+
+def _with_letters(folded: list[str], letters: str, cache: dict) -> list[int]:
+    """The names that have ``letters`` in order. Typing one more letter keeps only some of the names the shorter text kept, so the
+    search starts from the longest text already looked for (the first letters cost one pass over the list, the next ones almost nothing)."""
+    pools = cache.setdefault("letters", collections.OrderedDict())
+    if letters in pools:
+        pools.move_to_end(letters)
+        return pools[letters]
+    start = None
+    for known in sorted((k for k in pools if letters.startswith(k)), key=len, reverse=True)[:1]:
+        start = pools[known]
+    pool = [i for i in (start if start is not None else range(len(folded))) if _in_order(letters, folded[i])]
+    pools[letters] = pool
+    while len(pools) > POOLS_KEPT:
+        pools.popitem(last=False)
+    return pool
+
+
 def _matching(folded: list[str], words: list[str], cache: dict) -> list[int]:
     """The albums whose name has every word. The albums of a longer text are among those of a shorter one (a word that contains an
     earlier word has it too), so a search that extends the last one only looks at what that one found, not at the whole list."""
@@ -85,6 +153,16 @@ def _matching(folded: list[str], words: list[str], cache: dict) -> list[int]:
     for known, found in pools.items():
         if all(any(old in word for word in words) for old in known) and (start is None or len(found) < len(start)):
             start = found
+    if start is None and len(folded) > BIG_LIST:  # a first look at a big list: the rarest word, found by `str.find`, narrows it
+        index = _index(folded, cache)
+        narrowed = None
+        for word in sorted(words, key=len, reverse=True):  # a long word is rarer
+            found = index.with_word(word)
+            if found is not None and (narrowed is None or len(found) < len(narrowed)):
+                narrowed = found
+            if narrowed is not None and len(narrowed) < 2000:
+                break
+        start = narrowed
     pool = [i for i in (start if start is not None else range(len(folded))) if all(word in folded[i] for word in words)]
     pools[key] = pool
     while len(pools) > POOLS_KEPT:
@@ -132,9 +210,10 @@ def _search(catalogue: list, folded: list[str], query: str, limit: int, cache: d
         if len(letters) >= 3:
             have = {key for key, _ in found}
             extra = []
-            for index, name in enumerate(folded):
+            for index in _with_letters(folded, letters, cache):
                 if index in have:
                     continue
+                name = folded[index]
                 score = subsequence_score(letters, name)
                 if score is not None:
                     bonus = 10 if volume is not None and catalogue[index].volume == volume else (-15 if volume is not None and catalogue[index].volume is not None else 0)
