@@ -878,3 +878,15 @@ def test_the_title_says_which_batch_of_about_how_many(env):
         assert "batch 1/3" in app.sub_title  # a batch of one file: three batches
 
     drive(db, small, size=1)
+
+
+def test_a_file_the_import_skipped_has_no_record_and_gets_one_with_its_link(tmp_path, make_cbz):
+    from bdnex.importer.source import Candidate
+
+    lib = Library(":memory:")
+    path = make_cbz("Feuille de chou.cbz")
+    assert lib.get_file(path) is None
+    row = batch.Row(path, "OneShot/Feuille", None, None, None, 65.0, None, "unmatched", [], None)
+    candidate = Candidate("416850", "https://www.bedetheque.com/BD-Feuille-de-chou-INT-Gainsbourg-416850.html", "feuille", None)
+    album_id = batch.link_now(lib, row, candidate)
+    assert lib.get_file(path)["album_id"] == album_id and row.status == "linked" and row.file_id is not None

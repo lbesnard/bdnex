@@ -44,3 +44,10 @@ def test_the_form_says_what_is_wrong(make_cbz):
 def test_a_first_form_comes_from_the_folder_and_the_name():
     assert manual.guess("/c/Comics/fell/Fell 02 (2005) (c2c).cbz") == {"series": "fell", "volume": "2"}
     assert manual.guess("/c/Comics/Sons Of Anarchy/Sons Of Anarchy - SOA3.pdf")["volume"] == "3"
+
+
+def test_a_file_the_import_skipped_is_registered_with_its_hand_written_album(make_cbz):
+    lib = Library(":memory:")
+    path = make_cbz("Skipped.cbz")
+    album = manual.create(lib, path, {"series": "S", "volume": "1"})
+    assert lib.get_file(path)["album_id"] == album

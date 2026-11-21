@@ -93,6 +93,8 @@ def create(library: Library, path: str, values: dict[str, str], volume: Optional
     if volume is None:
         volume = _number(values.get("volume", ""), "the volume", 0, 9999)
     album_id = library.add_album(_info(values, path, volume))
+    if library.get_file(path) is None:  # a file the import skipped has no record yet: register it (read once) with the link
+        library.add_file(path, album_id)
     library.set_file_album(path, album_id)
     library.clear_review(path)
     return album_id
