@@ -1247,3 +1247,96 @@ def test_the_picker_says_in_a_column_whether_a_hit_is_a_series_or_one_album():
         if not series_ok:
             assert "SERIES" not in a and "album" not in b
     assert screen.hit_line(serie, 90.0).plain.strip().endswith("BD Boys")
+
+
+async def _ready(app, pilot, what, seconds=10):
+    """Wait for the next batch to be weighed in the background (a plain thread: `settle` does not know it)."""
+    for _ in range(int(seconds / 0.05)):
+        if what(app):
+            return
+        await asyncio.sleep(0.05)
+        await pilot.pause()
+    raise AssertionError("the next batch was not prepared")
+
+
+def test_the_next_batch_is_weighed_while_the_first_is_looked_at_and_n_shows_it_at_once(env, monkeypatch):
+    db, files = env
+    weighed = []
+    real = batch.next_batch
+
+    def counting(*args, **kwargs):
+        weighed.append(len(args[7]) if len(args) > 7 else 0)  # how many files were already shown
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(batch, "next_batch", counting)
+    seen = {}
+
+    async def script(app, pilot):
+        await _ready(app, pilot, lambda a: a.ahead is not None)
+        first = app.rows[0].path
+        seen["prepared"] = [r.path for r in app.ahead[0]]
+        before = len(weighed)
+        await pilot.press("n")
+        await pilot.pause()
+        seen["shown"] = [r.path for r in app.rows]
+        seen["weighed_again"] = len(weighed) - before
+        seen["first"] = first
+
+    drive(db, script, unmatched=True, size=1)
+    assert seen["prepared"] == seen["shown"] and seen["first"] not in seen["shown"]
+    assert seen["weighed_again"] == 0 or seen["weighed_again"] == 1  # a batch after it may be prepared, never the same one twice
+
+
+def test_b_goes_back_to_the_batch_before_with_its_decisions_and_n_forward_again(env):
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        await _ready(app, pilot, lambda a: a.ahead is not None)
+        first = app.rows[0]
+        await pilot.press("k")  # decided in batch 1; batch 2 is asked for
+        await pilot.pause()
+        await pilot.press("y")
+        await settle(app, pilot)
+        seen["second"] = app.number
+        await pilot.press("b")
+        await pilot.pause()
+        seen["back"] = (app.number, app.rows[0] is first, app.rows[0].status)
+        await pilot.press("b")  # already the first
+        await pilot.pause()
+        seen["still"] = app.number
+        await pilot.press("n")
+        await pilot.pause()
+        seen["forward"] = app.number
+
+    drive(db, script, unmatched=True, size=1)
+    assert seen["second"] == 2 and seen["back"] == (1, True, "keep")
+    assert seen["still"] == 1 and seen["forward"] == 2
+
+
+def test_n_before_the_batch_is_ready_waits_for_it_and_shows_it(env, monkeypatch):
+    db, files = env
+    import threading as _t
+    gate = _t.Event()
+    real = batch.next_batch
+    calls = []
+
+    def slow(*args, **kwargs):
+        calls.append(1)
+        if len(calls) == 2:  # the batch weighed ahead
+            gate.wait(5)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(batch, "next_batch", slow)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("n")  # the next batch is still being weighed
+        await pilot.pause()
+        seen["loading"] = app.loading
+        gate.set()
+        await _ready(app, pilot, lambda a: not a.loading)
+        seen["number"] = app.number
+
+    drive(db, script, unmatched=True, size=1)
+    assert seen["loading"] and seen["number"] == 2 and len(calls) <= 3
