@@ -433,6 +433,7 @@ class ReviewApp(App):
         Binding("ctrl+a", "mark_all", "Mark all / none"),
         Binding("x", "mark_none", "Unmark all"),
         Binding("v", "toggle_log", "Log"),
+        Binding("y", "copy_log", "Copy the log"),
         Binding("a", "attach", "Attach marked to a series"),
         Binding("e", "edit", "Edit by hand"),
         Binding("n", "next_batch", "Next batch"),
@@ -534,10 +535,22 @@ class ReviewApp(App):
             self.call_from_thread(self.log_line, text)
 
     def log_line(self, text: str) -> None:
+        stamped = f"{time.strftime('%H:%M:%S')} {text}"
+        self.log_lines = [*getattr(self, "log_lines", [])[-499:], stamped]  # what `y` copies (the panel keeps 500 lines too)
         try:
-            self.query_one("#log", RichLog).write(Text(f"{time.strftime('%H:%M:%S')} {text}", no_wrap=False))
+            panel = self.query_one("#log", RichLog)
+            # follow the new lines only while the panel is at its end: someone who scrolled up (to read, to select) is left alone
+            panel.write(Text(stamped, no_wrap=False), scroll_end=panel.scroll_y >= panel.max_scroll_y - 1)
         except Exception:  # the screen is closing
             pass
+
+    def action_copy_log(self) -> None:
+        lines = getattr(self, "log_lines", [])
+        if not lines:
+            self.notify("the log is empty")
+            return
+        self.copy_to_clipboard("\n".join(lines))  # the terminal's clipboard (OSC 52), where it supports it
+        self.notify(f"{len(lines)} log line(s) copied")
 
     def action_toggle_log(self) -> None:
         panel = self.query_one("#log", RichLog)

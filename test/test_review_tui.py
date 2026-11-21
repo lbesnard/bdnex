@@ -289,6 +289,21 @@ def test_closing_the_search_before_its_answer_arrives_does_not_crash(env, monkey
     result, source = drive(db, script)
 
 
+def test_y_copies_the_log(env):
+    db, files = env
+    copied = []
+
+    async def script(app, pilot):
+        app.copy_to_clipboard = copied.append
+        app.log_line("first")
+        app.log_line("second")
+        await pilot.press("y")
+        await pilot.pause()
+
+    drive(db, script)
+    assert copied and "first" in copied[0] and copied[0].index("first") < copied[0].index("second")
+
+
 def test_unlinking_while_the_page_is_fetched_wins_over_the_late_import(env, monkeypatch):
     db, files = env
     release = threading.Event()
