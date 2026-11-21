@@ -822,3 +822,15 @@ def test_a_series_page_that_is_not_stored_is_fetched_with_the_real_fetcher(tmp_p
     assert (key, name) == ("18658", "Boys") and [a.volume for a in albums] == [1, 2] and asked == [SERIES_PAGE]
     batch.read_series_address(settings, SERIES_PAGE)
     assert asked == [SERIES_PAGE]  # the second time it is in the library
+
+
+def test_ctrl_a_marks_every_undecided_file_and_again_none(env):
+    db, files = env
+
+    async def script(app, pilot):
+        await pilot.press("ctrl+a")
+        assert len(app.marked) == len(app.rows)
+        await pilot.press("ctrl+a")
+        assert not app.marked
+
+    drive(db, script)
