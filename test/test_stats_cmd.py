@@ -8,7 +8,7 @@ import yaml
 
 from bdnex.library import AlbumInfo, Library
 from bdnex.library.query import ALL_FIELDS
-from bdnex.ui import stats_cmd
+from bdnex.ui import ls_cmd, stats_cmd
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def test_every_query_field_has_a_line_of_help():
 
 def test_fields_lists_each_field_with_its_kind():
     out = io.StringIO()
-    assert stats_cmd.fields_run([], out=out) == 0
+    assert ls_cmd.run(["--fields"], out=out) == 0  # no library needed to read the list
     text = out.getvalue()
     assert "year" in text and "number" in text and "complete" in text and "yes/no" in text
 

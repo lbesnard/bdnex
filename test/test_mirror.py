@@ -9,7 +9,7 @@ from bdnex.config import load_config
 from bdnex.importer import mirror
 from bdnex.importer.bedetheque import Bedetheque
 from bdnex.library import Library
-from bdnex.ui import mirror_cmd
+from bdnex.ui import init_cmd
 from helpers import FakeWeb
 
 
@@ -73,7 +73,7 @@ def test_the_preview_counts_and_fetches_nothing(world, capsys):
     library.close()
     before = len(web.calls)
     out = io.StringIO()
-    assert mirror_cmd.run(["-n"], out=out, bar_stream=io.StringIO()) == 0
+    assert init_cmd.run(["--mirror", "-n"], out=out, bar_stream=io.StringIO()) == 0
     assert "Album list" in out.getvalue() and "To do" in out.getvalue()
     assert len(web.calls) == before
 
@@ -116,3 +116,22 @@ def test_upgrading_from_v10_keeps_a_copy_and_compresses_the_pages_stored_before(
         assert library.conn.execute("SELECT content FROM source_cache WHERE kind = 'sitemap'").fetchone()[0] == b"<urlset/>"
     assert glob.glob(f"{path}.bak-v10")  # the copy the upgrade keeps (plain pages inside)
     assert "compressing the 5 stored pages" in capsys.readouterr().err
+
+
+def test_the_mirror_options_need_mirror_and_a_script_must_say_yes(world, capsys, monkeypatch):
+    import sys
+
+    with pytest.raises(SystemExit):
+        init_cmd.run(["--limit", "5"], out=io.StringIO())
+    assert "only for `bdnex init --mirror`" in capsys.readouterr().err
+    monkeypatch.setattr(sys, "stdin", io.StringIO())  # no terminal to ask on
+    with pytest.raises(SystemExit):
+        init_cmd.run(["--mirror", "--skip-list"], out=io.StringIO())
+    assert "add --yes" in capsys.readouterr().err
+
+
+def test_the_old_names_still_work_and_say_what_they_became():
+    from bdnex.ui.commands import RENAMED
+
+    assert RENAMED["fields"](["x"]) == ["ls", "--fields", "x"]
+    assert RENAMED["mirror"](["-n", "--limit", "5"])[:2] == ["init", "--mirror"] and "--yes" in RENAMED["mirror"]([])
