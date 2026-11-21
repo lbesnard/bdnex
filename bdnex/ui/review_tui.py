@@ -19,6 +19,8 @@ import logging
 import os
 import re
 import shutil
+import sys
+import threading
 import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
@@ -487,6 +489,9 @@ class ReviewApp(App):
         self.fetcher: Optional[ThreadPoolExecutor] = None  # the background import of pages and covers (one thread)
         self.first_total: Optional[int] = None
         self.unfetched = 0  # linked files whose page and cover have not come yet
+        self.remaining = 0  # the same, counted by the fetching thread itself (the screen may be gone): `finish_pending_fetches` waits on it
+        self.remaining_lock = threading.Lock()
+        self.finish_fetches = False  # `run` sets it: closing the screen then lets the queued fetches go on (see `finish_pending_fetches`)
         self.library, self.settings = library, settings
         self.hub = SourceHub(source)
         self.batch_size, self.terms, self.unmatched = size, list(terms), unmatched
@@ -527,9 +532,31 @@ class ReviewApp(App):
 
     def on_unmount(self) -> None:
         self.give_back_the_log()
-        if self.fetcher is not None:
+        if self.fetcher is not None and not self.finish_fetches:
             self.fetcher.shutdown(wait=False, cancel_futures=True)  # what is not fetched yet: `bdnex import --fetch`
         self.hub.close()
+
+    def finish_pending_fetches(self, out=None) -> int:
+        """After the screen is closed: wait for the pages and covers still queued (one failing, a corrupt file say, does not stop the
+        others). Ctrl-C gives up on the rest. Returns how many are left for `bdnex import --fetch`."""
+        out = out or sys.stderr
+        try:
+            while True:
+                with self.remaining_lock:
+                    left = self.remaining
+                if left <= 0 or self.fetcher is None:
+                    break
+                print(f"\rFetching the page and cover of {left} linked file(s)... (Ctrl-C leaves them to `bdnex import --fetch`)   ", end="", file=out, flush=True)
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            pass
+        if self.fetcher is not None:
+            self.fetcher.shutdown(wait=False, cancel_futures=True)
+        with self.remaining_lock:
+            left = max(0, self.remaining)
+        if left or self.unfetched:
+            print("", file=out)
+        return left
 
     # -- the log panel: what bdnex is doing (reads, fetches, links), so that a wait is never silent
     def take_the_log(self) -> None:
@@ -1167,6 +1194,8 @@ class ReviewApp(App):
         if self.fetcher is None:
             self.fetcher = ThreadPoolExecutor(max_workers=1, thread_name_prefix="bdnex-details")  # one import at a time: one writer
         self.unfetched += 1
+        with self.remaining_lock:
+            self.remaining += 1
         self.fetcher.submit(self.fetch_details, row, url, mine)
 
     def fetch_details(self, row: batch.Row, url: str, mine: int) -> None:
@@ -1174,17 +1203,23 @@ class ReviewApp(App):
         from bdnex.ui import verdicts
 
         error = ""
-        if row.link_id == mine:  # not unlinked or decided again while it waited
-            row.started_at = time.monotonic()
-            logger.info("%s: fetching the page and cover now (the ones queued after it wait)", os.path.basename(row.path))
-            captured = LineSink(self)
-            try:
-                with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
-                    verdicts.rematch(row.path, url, True, max(1, self.verbose))
-            except BaseException as err:
-                error = str(err) or err.__class__.__name__
-        with contextlib.suppress(Exception):
-            self.call_from_thread(self.details_done, row, mine, error)
+        try:
+            if row.link_id == mine:  # not unlinked or decided again while it waited
+                row.started_at = time.monotonic()
+                logger.info("%s: fetching the page and cover now (the ones queued after it wait)", os.path.basename(row.path))
+                captured = LineSink(self)
+                try:
+                    with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+                        done = verdicts.rematch(row.path, url, True, max(1, self.verbose))
+                    if done is False:  # the import said no (a corrupt file, a page that could not be read): the others go on
+                        error = "the import failed, see the log"
+                except BaseException as err:
+                    error = str(err) or err.__class__.__name__
+            with contextlib.suppress(Exception):
+                self.call_from_thread(self.details_done, row, mine, error)
+        finally:
+            with self.remaining_lock:
+                self.remaining -= 1
 
     def details_done(self, row: batch.Row, mine: int, error: str) -> None:
         self.unfetched = max(0, self.unfetched - 1)
@@ -1216,6 +1251,7 @@ def run(library, settings, source, size: int = 50, terms=(), unmatched: bool = F
         again: bool = False, verbose: int = 0) -> dict[str, int]:
     """Run the table until the person quits; returns how many files were decided, by decision."""
     app = ReviewApp(library, settings, source, size, terms, unmatched, everything, again, verbose)
+    app.finish_fetches = True
     app.run()
-    run.unfetched = app.unfetched  # the caller says what is left for `bdnex import --fetch`
+    run.unfetched = app.finish_pending_fetches()  # the caller says what is left for `bdnex import --fetch`
     return app.decided

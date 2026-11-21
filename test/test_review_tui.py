@@ -1104,3 +1104,41 @@ def test_no_question_about_a_next_batch_when_there_is_none(env):
 
     drive(db, script)
     assert seen["total"] <= seen["rows"] and seen["screen"] != "AskScreen"
+
+
+def test_a_failing_fetch_does_not_stop_the_next_ones_and_quitting_waits_for_them(env, monkeypatch):
+    """A corrupt file's import fails: the files queued after it are still fetched, also when the screen is closed meanwhile."""
+    import io
+
+    from bdnex.ui import verdicts
+
+    db, files = env
+    ran = []
+
+    def rematch(path, url, keep_both=False, verbosity=0):
+        ran.append(os.path.basename(path))
+        if len(ran) == 1:
+            print("failed: can not be opened: Corrupt input data")
+            return False
+        threading.Event().wait(0.3)
+        return True
+
+    monkeypatch.setattr(verdicts, "rematch", rematch)
+
+    async def script(app, pilot):
+        app.finish_fetches = True  # what `run` sets: closing the screen does not cancel the queue
+        await pilot.press("space")
+        await pilot.press("up")
+        await pilot.press("o")
+        await settle(app, pilot)
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await pilot.press("o")
+        await settle(app, pilot)
+        await pilot.press("enter")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    out = io.StringIO()
+    left = result["app"].finish_pending_fetches(out)
+    assert left == 0 and len(ran) >= 2, ran
