@@ -296,7 +296,7 @@ def test_a_link_that_never_answers_is_given_up_and_the_row_can_be_decided_again(
     db, files = env
     release = threading.Event()
     _linking(monkeypatch, db, release)  # held until released: the site does not answer
-    monkeypatch.setattr(review_tui.ReviewApp, "LINK_WAIT", 0.3)
+    monkeypatch.setattr(review_tui.ReviewApp, "LINK_WAIT", 2.0)
     seen = {}
 
     async def script(app, pilot):
@@ -306,7 +306,7 @@ def test_a_link_that_never_answers_is_given_up_and_the_row_can_be_decided_again(
         await pilot.pause()
         row = app.rows[0]
         assert row.busy
-        await pilot.pause(0.6)
+        await pilot.pause(2.6)
         seen["after"] = (row.busy, row.message)
         await pilot.press("u")  # no more "Still linking this file"
         await pilot.pause()
@@ -780,3 +780,19 @@ def test_a_link_from_the_review_screen_asks_no_question(monkeypatch):
     monkeypatch.setattr(import_cmd, "run", lambda argv, out=None: seen.append(argv) or 0)
     assert verdicts.rematch("/x/a.cbz", "https://x/BD-1.html")
     assert "--unattended" in seen[0] and "--database-only" in seen[0]
+
+
+def test_the_next_batch_does_not_repeat_the_files_of_the_batches_before(env):
+    """A file passed over (s) or left without an album is not checked, but this run has shown it: the next batch is new files."""
+    db, files = env
+
+    async def script(app, pilot):
+        first = [row.path for row in app.rows]
+        assert first
+        for _ in first:
+            await pilot.press("s")  # every file skipped: nothing is saved, nothing is `checked`
+        app.action_next_batch()
+        await settle(app, pilot)
+        assert not set(first) & {row.path for row in app.rows}
+
+    drive(db, script)

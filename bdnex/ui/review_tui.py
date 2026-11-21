@@ -330,6 +330,7 @@ class ReviewApp(App):
         self.batch_size, self.terms, self.unmatched = size, list(terms), unmatched
         self.everything, self.again = everything, again
         self.rows: list[batch.Row] = []
+        self.shown: set[str] = set()  # every file of every batch of this run: the next batch never repeats one
         self.number = 0
         self.decided: dict[str, int] = {}
         self.loading = False
@@ -419,7 +420,7 @@ class ReviewApp(App):
         try:
             with Library.for_settings(self.settings, readonly=True) as library:
                 rows = batch.next_batch(library, self.settings, self.batch_size, self.terms, self.unmatched,
-                                        self.everything, self.again)
+                                        self.everything, self.again, set(self.shown))
         except Exception as err:
             self.call_from_thread(self.show_error, str(err))
             return
@@ -437,6 +438,7 @@ class ReviewApp(App):
         self.show_loading(False)
         self.query_one(DataTable).focus()
         self.rows = rows
+        self.shown.update(row.path for row in rows)
         self.marked.clear()
         self.order = {id(row): place for place, row in enumerate(rows)}
         self.sort_column, self.sort_reverse = None, False

@@ -65,15 +65,17 @@ def is_checked(library: Library, file_id: Optional[int]) -> bool:
 
 
 def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...] | list[str] = (),
-               unmatched: bool = False, everything: bool = False, again: bool = False) -> list[Row]:
+               unmatched: bool = False, everything: bool = False, again: bool = False,
+               skip: frozenset[str] | set[str] = frozenset()) -> list[Row]:
     """The next ``size`` files to check, in this order: the contradicted (lowest cover first), the unconfirmed, then, with
     ``unmatched`` (or ``everything``), the files without album, then, with ``everything``, all the other files of the query.
-    Files already checked are left out unless ``again``."""
+    Files already checked are left out unless ``again``, and so are the ``skip`` paths (the ones a screen already showed:
+    a file passed over, or left without album, is not shown again by the next batch of the same run)."""
     from bdnex.ui.describe import label
 
     exclude = [] if again else [f"^attr:{CHECKED}"]
     verdicts = [v for v in weak_matches(library, settings, [*terms, *exclude], compare=False, store=False,
-                                        flagged=True, weak=True) if v.kind in (WRONG, UNCONFIRMED)]
+                                        flagged=True, weak=True) if v.kind in (WRONG, UNCONFIRMED) and v.path not in skip]
     verdicts.sort(key=lambda v: (v.kind != WRONG, v.cover if v.cover is not None else 101.0, v.path))
     rows = []
     for verdict in verdicts[:size]:
@@ -95,7 +97,7 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
         for found in sorted(library.unmatched(list(terms)), key=lambda r: r["path"]):
             file = library.get_file(found["path"]) or {}
             previous = library.attrs_of("file", file["id"]).get(CHECKED, "") if file.get("id") else ""
-            if previous and not again:
+            if (previous and not again) or found["path"] in skip:
                 continue
             rows.append(Row(found["path"], folder_of(found["path"]), None, None, None, found.get("score"), None, "unmatched",
                             [f"last import: {found.get('outcome')}"], file.get("id"),
@@ -105,7 +107,7 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
     if everything and len(rows) < size:
         taken = {row.path for row in rows}
         for found in sorted(library.query([*terms, *exclude], files=True), key=lambda r: r["path"]):
-            if found["path"] in taken or found.get("id") is None:
+            if found["path"] in taken or found["path"] in skip or found.get("id") is None:
                 continue
             file = library.get_file(found["path"]) or {}
             album = library.get_album(found["id"]) or {}
