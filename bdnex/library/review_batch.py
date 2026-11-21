@@ -180,6 +180,8 @@ def link_now(library: Library, row: Row, candidate) -> int:
     if album_id is None:
         album_id = library.add_album(info)
     others = [f for f in library.files_for_album(album_id) if f["path"] != os.path.abspath(row.path) and not f["spare"]]
+    if library.get_file(row.path) is None:  # a file the import skipped never got a record: register it (read once) with the link
+        library.add_file(row.path, album_id)
     library.set_file_album(row.path, album_id)
     library.set_file_fields(row.path, spare=1 if others else 0)
     album = library.get_album(album_id) or {}
