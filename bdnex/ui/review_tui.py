@@ -659,9 +659,11 @@ class ReviewApp(App):
         """``candidate``: an album of the series, or the address (text) of the series page."""
         paths = [r.path for r in chosen]
         if isinstance(candidate, str):
-            self.notify("Reading the series page (once, from the library or the site)...", timeout=4)
+            self.notify("Reading the series page (from the library, or fetched once)...", timeout=6)
             try:
-                found = await asyncio.wrap_future(self.hub.run(lambda hub: batch.propose_for_series_address(hub.source, candidate, paths)))
+                page = await asyncio.to_thread(batch.read_series_address, self.settings, candidate)  # may fetch: not in the screen's thread
+                found = await asyncio.wrap_future(self.hub.run(
+                    lambda hub: batch.propose_for_series_address(hub.source, candidate, paths, found=page)))
             except Exception as err:
                 self.notify(f"Could not read that series page: {err}", severity="error")
                 return

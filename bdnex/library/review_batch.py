@@ -212,13 +212,25 @@ def read_covers(path: str, fmt: str, saved) -> tuple[Optional[bytes], Optional[b
     return local, online, "; ".join(notes)
 
 
-def propose_for_series_address(source, address: str, paths: list[str]):
+def read_series_address(settings, address: str):
+    """``(series id, name, albums)`` of a series page address, or ``None``: the page from the library, or fetched once with the
+    configured fetcher and stored. Its own writable library and source: the screen's album list is offline and read-only.
+    Slow when it fetches: run it in a thread."""
+    from bdnex.importer.registry import create_source
+
+    with Library.for_settings(settings) as library:
+        source = create_source(settings.source, library, settings)
+        return source.series_by_address(address) if hasattr(source, "series_by_address") else None
+
+
+def propose_for_series_address(source, address: str, paths: list[str], found=None):
     """The album of the series page at ``address`` (``bedetheque.com/serie-N-BD-Name.html``) for each of ``paths``, by the volume
     number in the file name; ``None`` when it is not a series page or no file finds its volume. May read the page from the site
-    once (run it in the thread that owns the source)."""
+    once (run it in the thread that owns the source). ``found``: what ``read_series_address`` returned, when it was read apart."""
     from bdnex.importer import folders
 
-    found = source.series_by_address(address) if hasattr(source, "series_by_address") else None
+    if found is None:
+        found = source.series_by_address(address) if hasattr(source, "series_by_address") else None
     if found is None:
         return None
     key, name, albums = found
