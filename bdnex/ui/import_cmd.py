@@ -272,6 +272,7 @@ def run(argv: list[str], out=sys.stdout, configure_logging: bool = True) -> int:
 
     if report.results:
         banner("Result", stream=out)
+    reader = None  # opened at the first album to show, once for all the lines (not one library per line)
     for r in report.results:
         if r.outcome == ALREADY and not args.verbose and "not fetched yet" not in r.note:
             continue  # thousands of "already imported" lines would hide the rest; the summary counts them
@@ -280,12 +281,15 @@ def run(argv: list[str], out=sys.stdout, configure_logging: bool = True) -> int:
         label = OUTCOME_LABELS.get(r.outcome, r.outcome)
         print(f"{color.paint(f'{label:<9}', results.style(r.outcome), on)} {score}  {r.path}", file=out)
         if r.album_id is not None and r.outcome in ("tagged", "partial", "skipped", "duplicate"):
-            with Library.for_settings(settings) as library:
-                album = library.get_album(r.album_id)
+            if reader is None:
+                reader = Library.for_settings(settings)
+            album = reader.get_album(r.album_id)
             if album:
                 print(f"             -> {describe.short(album)}", file=out)
         if r.note:
             print(f"             {r.note}", file=out)
+    if reader is not None:
+        reader.close()
     if report.results:
         print("\nSee everything that was recorded with `bdnex ls --long` (add `--files` for the files).", file=out)
     order = (TAGGED, PARTIAL, ALREADY, SKIPPED, DUPLICATE, FAILED, PRETEND)

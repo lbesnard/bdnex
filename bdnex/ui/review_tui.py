@@ -127,7 +127,8 @@ class LogPanel(logging.Handler):
 
 
 class LineSink(io.StringIO):
-    """What an import prints while it runs in a thread: each line goes to the panel (and is kept, for the error text)."""
+    """What an import prints while it runs in a thread: each line goes to the panel. Nothing is kept (a long import prints a lot, and the
+    text was never read back)."""
 
     def __init__(self, app):
         super().__init__()
@@ -139,7 +140,7 @@ class LineSink(io.StringIO):
         for line in lines:
             if line.strip():
                 self.app.log_from_anywhere(line.rstrip())
-        return super().write(text)
+        return len(text)
 
 
 SERIES_ADDRESS = re.compile(r"bedetheque\.com/serie-\d+", re.I)

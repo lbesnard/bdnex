@@ -1374,3 +1374,16 @@ def test_the_wait_message_after_the_screen_closes_goes_to_the_terminal_not_to_a_
     monkeypatch.setattr(sys, "stderr", redirected)  # a fetch still running has redirected it
     app.finish_pending_fetches()
     assert "Fetching the page and cover of 1 linked file(s)" in terminal.getvalue() and redirected.getvalue() == ""
+
+
+def test_what_an_import_prints_in_the_fetch_thread_goes_to_the_panel_and_is_not_kept(env):
+    db, files = env
+    lines = []
+    app = type("App", (), {"log_from_anywhere": lambda self, text: lines.append(text)})()
+    sink = review_tui.LineSink(app)
+    for number in range(1000):
+        sink.write(f"line {number}\n")
+    sink.write("partial")
+    sink.write(" line\r")
+    assert lines[0] == "line 0" and lines[-1] == "partial line" and len(lines) == 1001
+    assert sink.getvalue() == ""  # nothing accumulates for the whole session
