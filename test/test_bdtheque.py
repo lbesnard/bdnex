@@ -103,3 +103,26 @@ def test_import_album_with_a_bdtheque_address(tmp_path, make_cbz, monkeypatch):
     assert import_cmd.run(["--album", URL, path], out=io.StringIO()) == 0 and len(calls) == 1
     with Library(str(tmp_path / "lib.sqlite")) as library:
         assert library.get_album(library.get_file(path)["album_id"])["source"] == "bdtheque"
+
+
+def test_the_album_maps_to_comicinfo_and_komga_like_a_bedetheque_one(tmp_path):
+    from bdnex import komga
+    from bdnex.organizer import comicinfo
+
+    with Library(str(tmp_path / "lib.db")) as library:
+        parsed = bdtheque.parse_series_page(PAGE)
+        album_id = library.add_album(bdtheque.album_info({**parsed, "tomes": 4}, volume=2))
+        album = library.get_album(album_id)
+        album["series_record"] = library.conn.execute("SELECT * FROM series").fetchone() and {"url": URL, "summary": parsed["summary"]}
+        info = comicinfo.album_to_fields(album)
+        assert info["Series"] == "Le Père des étoiles (Père ou Impairs)" and info["Number"] == "2" and info["Volume"] == "2"
+        assert (info["Year"], info["Month"], info["Day"]) == ("2015", "5", "22") and info["Publisher"] == "Dargaud"
+        assert info["Writer"] == info["Penciller"] == info["Colorist"] == "Piquet (Sébastien)"
+        assert info["Genre"] == "Humour" and info["LanguageISO"] == "fr" and info["Web"] == URL and info["CommunityRating"] == "3.20"
+        assert info["Summary"].startswith("Cet album")
+        book = komga.book_fields(album)
+        assert book["number"] == "2" and book["releaseDate"] == "2015-05-22" and book["links"] == [{"label": "BDTheque", "url": URL}]
+        assert {a["role"].lower() for a in book["authors"]} >= {"writer", "penciller", "colorist"} and book["tags"] == ["Humour"]
+        series = komga.series_fields([album])
+        assert series["title"] == "Le Père des étoiles (Père ou Impairs)" and series["publisher"] == "Dargaud"
+        assert series["links"] == [{"label": "BDTheque", "url": URL}] and series["genres"] == ["Humour"]
