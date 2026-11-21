@@ -1,5 +1,6 @@
 """`bdnex review --batch`: the Textual table, driven with Textual's pilot (no terminal needed)."""
 
+import os
 import asyncio
 import threading
 
@@ -1027,3 +1028,31 @@ def test_files_numbered_past_the_last_volume_are_chapters_and_are_not_linked_by_
     ok = batch.propose_for_series_address(None, "x", [f"/x/Death Note/Death Note T{n:02d}.cbz" for n in range(1, 13)],
                                           found=("1", "Death Note", albums))
     assert len(ok.mapping) == 12
+
+
+def test_i_with_a_bdtheque_address_links_the_file_to_what_that_page_says(env, monkeypatch):
+    from bdnex.importer import bdtheque
+
+    db, files = env
+    page = open(os.path.join(os.path.dirname(__file__), "bdtheque_series_14922.html"), encoding="utf-8").read()
+    asked = []
+
+    def read(settings, address, path):
+        asked.append((address, path))
+        return bdtheque.album_info(bdtheque.parse_series_page(page))
+
+    monkeypatch.setattr(batch, "read_bdtheque", read)
+
+    async def script(app, pilot):
+        await pilot.press("i")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = "https://www.bdtheque.com/series/14922/le-pere-des-etoiles-pere-ou-impairs"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert asked and result["cells"][0][7] == "linked"
+    with Library(db) as lib:
+        albums = [lib.get_album(lib.get_file(p)["album_id"]) for p in files.values() if lib.get_file(p)["album_id"]]
+    assert any(a["source"] == "bdtheque" and a["publisher"] == "Dargaud" for a in albums)

@@ -875,6 +875,18 @@ class Library:
                        content = excluded.content, fetched = CURRENT_TIMESTAMP""",
                 (source, kind, url, content))
 
+    # -- the series pages of bdtheque.com (`bdnex.importer.bdtheque`), compressed in their own table
+    def bdtheque_put(self, url: str, page: str) -> None:
+        with self.conn:
+            self.conn.execute(
+                """INSERT INTO bdtheque_pages(url, content) VALUES (?, ?)
+                   ON CONFLICT(url) DO UPDATE SET content = excluded.content, fetched = CURRENT_TIMESTAMP""",
+                (url, zlib.compress(page.encode("utf-8"), 6)))
+
+    def bdtheque_get(self, url: str) -> Optional[str]:
+        row = self.conn.execute("SELECT content FROM bdtheque_pages WHERE url = ?", (url,)).fetchone()
+        return None if row is None else zlib.decompress(row["content"]).decode("utf-8")
+
     # -- the letter index of a source: every series by name (`bdnex init`)
     def series_index_replace(self, source: str, rows: list[tuple[str, str, str, str, str, str]]) -> None:
         """Put ``(series_id, name, folded, url, country, letter)`` rows in the index (a series already there is updated)."""

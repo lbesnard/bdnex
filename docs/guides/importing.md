@@ -435,6 +435,16 @@ you ask for it (a series address, `bdnex import` of a file that needs it). The i
 in the list marked `[series]`) and `bdnex ls --sitemap WORDS` search besides the albums. `bdnex init --skip-series` leaves it out,
 `bdnex init --series-only` reads only it (and tries again after a failed page without downloading the album list).
 
+### An album from another site: bdtheque.com
+
+When Bédéthèque has no page for a file, give the address of its **series page on bdtheque.com**
+(`https://www.bdtheque.com/series/14922/le-pere-des-etoiles-pere-ou-impairs`): in the review screen with `i`,
+or `bdnex import --album ADDRESS FILE`. The page is fetched once with your `bedetheque.fetcher` (FlareSolverr and all its endpoints; there
+is nothing to configure), kept compressed in its own table, and read into an ordinary album with `source: bdtheque`: title, summary,
+credits (`Scénario`, `Dessin`, `Couleurs`...), publisher, genre, date, rating and cover address. `bdnex write` then puts it in the file.
+The site's album list is loaded by its JavaScript, so a series page gives the **series' own data**: a series of one tome is a one-shot,
+and for several tomes the volume is the one in the file's name. Nothing searches bdtheque.com: it is only used for the addresses you give.
+
 ### Matching never waits for you
 
 Matching needs no network and no database, so it runs in background processes **ahead**
