@@ -36,6 +36,8 @@ class Row:
     busy: bool = False  # a link is being made for it (the screen waits)
     link_id: int = 0  # bumped by every decision: the answer of a background job of an older one is ignored
     pending: bool = False  # linked at once; its page and cover are still to come
+    queued_at: float = 0.0  # when it was queued (the state column counts the seconds)
+    started_at: float = 0.0  # when its page and cover started to be fetched (0: still waiting for the ones before)
     facts: str = ""  # what the album says (year, credits, pages) next to what the file is: to judge a match by eye
     previous: str = ""  # an earlier decision (the ``checked`` mark), shown when files already checked are asked for again
 
