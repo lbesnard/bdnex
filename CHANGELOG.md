@@ -6,6 +6,9 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Changed
+- Review screen: the `e` form has **OK** and **Cancel** buttons (`Ctrl-S` is taken by tmux); `x` cancels when the cursor is not in a text field, `Esc` always does.
+
 ### Fixed
 - Review screen: mark all / none moved from `ctrl+a` (taken by tmux and some terminals) to `m`.
 - Review screen: closing the album search before its answer arrived could crash (`NoMatches: OptionList`).

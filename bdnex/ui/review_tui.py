@@ -30,7 +30,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
+from textual.widgets import Button, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
 from bdnex.library import review_batch as batch
@@ -301,17 +301,20 @@ class AskScreen(ModalScreen):
 
 
 class EditScreen(ModalScreen):
-    """A form for an album written by hand (one file), or for the series of several files: Ctrl-S accepts, Esc cancels.
+    """A form for an album written by hand (one file), or for the series of several files: the OK button (or Ctrl-S) accepts, Cancel (Esc, or `x` outside a text field) cancels.
 
     ``volumes``: for several files, ``[(path, volume or None)]``: one line each, ``volume  file name``, the numbers can be changed."""
 
-    BINDINGS = [Binding("escape", "back", "Cancel"), Binding("ctrl+s", "accept", "Save")]
+    BINDINGS = [Binding("escape", "back", "Cancel"), Binding("x", "back_x", "Cancel", show=False),
+                Binding("ctrl+s", "accept", "Save")]  # Ctrl-S stays for who can use it; tmux takes it, hence the buttons
     CSS = """
     EditScreen { align: center middle; }
     #edit { width: 90%; height: auto; max-height: 95%; border: round $accent; padding: 1 2; background: $surface; overflow-y: auto; }
     #edit Input { margin-bottom: 0; }
     #volumes { height: 8; }
     #problem { color: $error; }
+    #buttons { height: auto; align-horizontal: right; }
+    #buttons Button { margin-left: 2; }
     """
 
     def __init__(self, heading: str, values: dict, fields, volumes=None):
@@ -328,13 +331,31 @@ class EditScreen(ModalScreen):
                 yield Label(Text("Volume and file (change a number if it was read wrong)", style="dim"))
                 yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}" for p, v in self.volumes), id="volumes")
             yield Label("", id="problem")
-            yield Label(Text("Tab moves · Ctrl-S saves and links · Esc cancels", style="dim"))
+            with Horizontal(id="buttons"):
+                yield Button("OK", id="ok", variant="success")
+                yield Button("Cancel", id="cancel")
+            yield Label(Text("Tab moves · OK (or Ctrl-S) saves and links · Cancel, Esc or x (outside a text field) closes", style="dim"))
 
     def on_mount(self) -> None:
         self.query_one(f"#f-{self.fields[0][0]}", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.screen.focus_next()
+
+    def check_action(self, action: str, parameters) -> bool:
+        if action == "back_x" and isinstance(self.focused, (Input, TextArea)):
+            return False  # `x` is a letter there; Esc has its own action
+        return True
+
+    def action_back_x(self) -> None:
+        self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "ok":
+            self.action_accept()
+        else:
+            self.dismiss(None)
 
     def action_accept(self) -> None:
         values = {key: self.query_one(f"#f-{key}", Input).value.strip() for key, _, _ in self.fields}
