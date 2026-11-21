@@ -115,6 +115,8 @@ JSON. The reading endpoints are `GET`; the ones that change something are marked
 | `/api/series/{id}` | one series, volume by volume: owned or missing |
 | `/api/files/{id}/cover` | the first page of a file, as a small picture |
 | `/api/review` | the matches waiting for a look |
+| `/api/review/batch` | the next files to check, as `bdnex review --batch` shows them: `size`, `q` (the `ls --files` query), `unmatched`, `all`, `again`; each item has `kind` (`wrong`, `unconfirmed`, `unmatched`, `ok`), `why`, `facts`, `cover`, `previous`; `total` is how many there are in all |
+| `POST /api/review/{file_id}/decide` | **change:** `{"action": "keep"}`, `"unlink"` or `"leave"` for any file of a batch (flagged or not); the file is marked `checked`, so the next batch leaves it out |
 | `POST /api/review/{file_id}` | **change:** `{"action": "keep"}` or `{"action": "unlink"}`; `{"action": "album", "album": "245127"}` uses that album (its number or page address; the `apply-album` task, answered with `job`); `{"action": "rematch", "interactive": true}` starts the `rematch` task, which asks which album. Neither task ever moves a file |
 | `/api/candidates?q=&low=&per_file=&limit=&offset=&cover=` | the albums each file could be, with where each score comes from, what for and against each candidate says, and (`cover=true`, needs OpenCV) how much its cover looks like the file's: what `bdnex candidates --json` prints, a window of `limit` files at a time (`cover` makes a request per candidate whose cover is not saved: keep `limit` small) |
 | `POST /api/marks` | **change (a preview is not):** `{"q": "series:nains", "set": {"checked": "keep"}, "remove": ["old"], "albums": false, "preview": true}`, as `bdnex mark`; find them with `attr:checked` in any query |

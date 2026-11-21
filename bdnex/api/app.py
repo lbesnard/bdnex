@@ -580,6 +580,37 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
                                     "has_cover": bool(kept and (settings.cover_path / kept).exists())}})
         return {"count": len(items), "items": items}
 
+    @app.get("/api/review/batch", dependencies=guarded,
+             summary="The next files to check, as `bdnex review --batch` shows them (doubtful, and with `unmatched` / `all` more)")
+    def review_batch_view(q: str = "", size: int = Query(50, ge=1, le=MAX_LIMIT), unmatched: bool = False,
+                          all: bool = False, again: bool = False, lib: Library = Depends(library)):
+        from bdnex.library import review_batch
+
+        try:
+            rows = review_batch.next_batch(lib, settings, size, terms(q), unmatched=unmatched, everything=all, again=again)
+        except QueryError as err:
+            raise HTTPException(400, f"bad query: {err}") from err
+        items = [{"file_id": r.file_id, "path": r.path, "folder": r.folder, "kind": r.kind, "album": r.album,
+                  "album_id": r.album_id, "album_url": r.album_url, "score": r.score, "cover": r.cover, "why": r.why,
+                  "facts": r.facts, "previous": r.previous} for r in rows]
+        return {"count": len(items), "total": rows.total, "items": items}
+
+    @app.post("/api/review/{file_id}/decide", dependencies=changing,
+              summary="**Change:** decide a file of a batch (`keep`, `unlink` or `leave`), flagged or not; it is marked checked")
+    def decide_review(file_id: int, answer: ReviewAnswer, request: Request):
+        from bdnex.library import review_batch
+
+        if answer.action not in ("keep", "unlink", "leave"):
+            raise HTTPException(400, "`action` is `keep`, `unlink` or `leave`")
+        with Library.for_settings(settings) as lib:
+            file = lib.file_by_id(file_id)
+            if file is None:
+                raise HTTPException(404, f"no file {file_id}")
+            row = review_batch.Row(file["path"], "", None, None, None, None, file.get("cover_score"), "ok", [], file_id)
+            review_batch.decide(lib, row, answer.action)
+            request.state.detail = {"file": file["path"], "answer": answer.action}
+            return {"ok": True, "status": row.status}
+
     @app.post("/api/review/{file_id}", dependencies=changing,
               summary="Answer a review: `keep`, `unlink`, `rematch` (a task that asks which album) or `album` (use that album)")
     def answer_review(file_id: int, answer: ReviewAnswer, request: Request):
