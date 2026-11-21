@@ -210,6 +210,28 @@ def read_covers(path: str, fmt: str, saved) -> tuple[Optional[bytes], Optional[b
     return local, online, "; ".join(notes)
 
 
+def propose_for_series_address(source, address: str, paths: list[str]):
+    """The album of the series page at ``address`` (``bedetheque.com/serie-N-BD-Name.html``) for each of ``paths``, by the volume
+    number in the file name; ``None`` when it is not a series page or no file finds its volume. May read the page from the site
+    once (run it in the thread that owns the source)."""
+    from bdnex.importer import folders
+
+    found = source.series_by_address(address) if hasattr(source, "series_by_address") else None
+    if found is None:
+        return None
+    key, name, albums = found
+    volumes = {path: folders.title_and_volume(path)[1] for path in paths}
+    by_volume = {}
+    for album in albums:
+        if album.volume is not None:
+            by_volume.setdefault(album.volume, album)
+    proposal = folders.SeriesProposal(name, key, with_volume=sum(v is not None for v in volumes.values()), total=len(paths))
+    for path, volume in volumes.items():
+        if volume in by_volume:
+            proposal.mapping[path] = by_volume[volume]
+    return proposal if proposal.mapping else None
+
+
 def propose_for_series(source, candidate, paths: list[str]):
     """The album of the series of ``candidate`` for each of ``paths`` (by the volume number in the file name): a
     ``SeriesProposal`` (``mapping`` file -> album), or ``None`` when the album has no series or no file names a volume.

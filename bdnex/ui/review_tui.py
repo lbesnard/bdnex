@@ -16,6 +16,7 @@ import asyncio
 import contextlib
 import io
 import os
+import re
 import shutil
 import time
 import webbrowser
@@ -99,6 +100,14 @@ class SourceHub:
         self.pool.shutdown(wait=False, cancel_futures=True)
 
 
+SERIES_ADDRESS = re.compile(r"bedetheque\.com/serie-\d+", re.I)
+
+
+def is_series_address(text: str) -> bool:
+    """The address of a series page, not of an album: it is not in the album list (that lists albums), the series page has them."""
+    return bool(SERIES_ADDRESS.search(text or ""))
+
+
 def fuzzy_search(hub: SourceHub, text: str, limit: int = SEARCH_LIMIT) -> tuple[list, int]:
     """The albums of the whole list that look like ``text``, best first, as ``([(candidate, score)], matches)``.
 
@@ -125,15 +134,16 @@ class FuzzyScreen(ModalScreen):
     #hits { height: 1fr; }
     """
 
-    def __init__(self, hub: SourceHub, start: str, title: str):
+    def __init__(self, hub: SourceHub, start: str, title: str, series_ok: bool = False):
         super().__init__()
-        self.hub, self.start, self.heading = hub, start, title
+        self.hub, self.start, self.heading, self.series_ok = hub, start, title, series_ok
         self.hits: list = []
 
     def compose(self) -> ComposeResult:
         with Vertical(id="search"):
             yield Label(Text(self.heading, style="bold"))
-            yield Input(value=self.start, placeholder="type to find the album: words, in any order", id="words")
+            yield Input(value=self.start, id="words", placeholder=(
+                "words of the album, in any order, or the address of the series page" if self.series_ok else "type to find the album: words, in any order"))
             yield Label("", id="count")
             yield OptionList(id="hits")
             yield Static("", id="preview")
@@ -167,6 +177,9 @@ class FuzzyScreen(ModalScreen):
         self.search(event.value)
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        if self.series_ok and is_series_address(event.value):
+            self.dismiss(event.value.strip())  # the address of a series page: its albums are read from that page
+            return
         self.pick(self.query_one(OptionList).highlighted)
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
@@ -622,22 +635,36 @@ class ReviewApp(App):
     def action_attach(self) -> None:
         """Pick an album of a series: each marked file (without a mark: the files of this folder not decided yet) gets the
         album of that series with the volume number in its name."""
+        chosen = self.files_to_attach()
+        if not chosen:
+            return
+        self.push_screen(FuzzyScreen(self.hub, self.search_start(chosen[0]),
+                                     f"An album of the series, or the address of the series page, for these {len(chosen)} file(s)", series_ok=True),
+                         lambda candidate: self.run_worker(self.propose(chosen, candidate)) if candidate is not None else None)
+
+    def files_to_attach(self) -> list:
         row = self.current()
         if row is None:
-            return
+            return []
         chosen = [r for r in self.rows if id(r) in self.marked and not r.busy]
         if not chosen:
             chosen = [r for r in self.rows if r.folder == row.folder and not r.status and not r.busy]
         if not chosen:
             self.notify("Nothing to attach: mark files with space.", severity="warning")
-            return
-        self.push_screen(FuzzyScreen(self.hub, self.search_start(chosen[0]),
-                                     f"An album of the series for these {len(chosen)} file(s)"),
-                         lambda candidate: self.run_worker(self.propose(chosen, candidate)) if candidate is not None else None)
+        return chosen
 
     async def propose(self, chosen: list, candidate) -> None:
+        """``candidate``: an album of the series, or the address (text) of the series page."""
         paths = [r.path for r in chosen]
-        found = await asyncio.wrap_future(self.hub.run(lambda hub: batch.propose_for_series(hub.source, candidate, paths)))
+        if isinstance(candidate, str):
+            self.notify("Reading the series page (once, from the library or the site)...", timeout=4)
+            try:
+                found = await asyncio.wrap_future(self.hub.run(lambda hub: batch.propose_for_series_address(hub.source, candidate, paths)))
+            except Exception as err:
+                self.notify(f"Could not read that series page: {err}", severity="error")
+                return
+        else:
+            found = await asyncio.wrap_future(self.hub.run(lambda hub: batch.propose_for_series(hub.source, candidate, paths)))
         if found is None:
             self.notify("That album is not in a series, or no file name has a volume number (T03, Tome 3...).", severity="warning")
             return
@@ -750,6 +777,11 @@ class ReviewApp(App):
 
         async def given(text) -> None:
             if not text:
+                return
+            if is_series_address(text):  # a series, not an album: the files of the folder (or the marked ones) get their volumes
+                chosen = self.files_to_attach()
+                if chosen:
+                    await self.propose(chosen, text.strip())
                 return
             candidate = await asyncio.wrap_future(self.hub.run(lambda hub: hub.source.candidate_for(text)))
             if candidate is None:

@@ -14,6 +14,7 @@ command runs, never while an import is fetching).
 - The review screen no longer waits for ever on a link: after 120 seconds without an answer (a slow site or fetcher) the file can be decided again, and a late answer is ignored.
 
 ### Added
+- Review screen: `a` (attach files to a series) and `i` accept the address of a series page (`bedetheque.com/serie-N-BD-Name.html`); the files get the album of that series with their volume number.
 - **`bdnex ls --sitemap WORDS`** searches the whole album list (every album of the site, not only yours) the way `fzf` does in the review screen: all the words in the name, a typo forgiven, 20 results, nothing requested. **`--for PATH`** gives the albums a file could be, by its name, its two last folder names and its volume (the right volume and the file's words first, with the reason). Both take `--json` and `-c`; the review screen and the command share one search (`importer/album_search.py`).
 - `tools/eval_covers.py` no longer judges a cover comparison by a guess: besides the matches that something confirms, it compares each file with a cover of ANOTHER SERIES and of the nearest OTHER VOLUME of its own series (wrong for sure), and reports the AUC and the catch rate against each.
 - `tools/eval_covers.py`: measures how well a cover comparison tells a right match from a wrong one on a real library (the answer key of `eval_matching.py`): the current score and

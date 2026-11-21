@@ -593,6 +593,80 @@ def test_marked_files_get_the_album_of_a_series_by_their_volume_after_one_questi
     assert not result["app"].marked  # the mark goes with the link
 
 
+def _series_address_run(env, monkeypatch, keys):
+    from bdnex.importer.folders import SeriesProposal
+
+    db, files = env
+    release = threading.Event()
+    release.set()
+    seen_calls.clear()
+    _linking(monkeypatch, db, release)
+    asked = {}
+
+    def propose(source, address, paths):
+        asked["address"], asked["paths"] = address, paths
+        return SeriesProposal("Nains", "s1", {files["wrong"]: FORGE}, with_volume=1, total=len(paths))
+
+    monkeypatch.setattr(batch, "propose_for_series_address", propose)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("space")
+        await pilot.press("up")
+        await keys(app, pilot)
+        await settle(app, pilot)
+        seen["question"] = app.screen.__class__.__name__
+        await pilot.press("y")
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    return asked, seen, result
+
+
+SERIES_PAGE = "https://www.bedetheque.com/serie-18658-BD-Boys.html"
+
+
+def test_a_series_address_in_the_search_attaches_the_marked_files_by_volume(env, monkeypatch):
+    async def keys(app, pilot):
+        await pilot.press("a")
+        await settle(app, pilot)
+        app.screen.query_one("#words").value = SERIES_PAGE
+        await pilot.press("enter")
+
+    asked, seen, result = _series_address_run(env, monkeypatch, keys)
+    assert asked["address"] == SERIES_PAGE and len(asked["paths"]) == 1 and seen["question"] == "AskScreen"
+    assert result["cells"][0][7] == "linked"
+
+
+def test_i_with_a_series_address_attaches_the_files_too(env, monkeypatch):
+    async def keys(app, pilot):
+        await pilot.press("i")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = SERIES_PAGE
+        await pilot.press("enter")
+
+    asked, seen, result = _series_address_run(env, monkeypatch, keys)
+    assert asked["address"] == SERIES_PAGE and seen["question"] == "AskScreen"
+
+
+def test_a_series_page_gives_its_albums_by_volume():
+    from bdnex.library import review_batch
+    from bdnex.importer.bedetheque import Bedetheque
+    from bdnex.importer.bedetheque import parser
+
+    html = ('<html><body>'
+            '<a href="https://www.bedetheque.com/BD-Boys-Tome-1-Un-debut-100.html">1</a>'
+            '<a href="https://www.bedetheque.com/BD-Boys-Tome-2-La-suite-101.html">2</a></body></html>')
+    source = Bedetheque.__new__(Bedetheque)
+    source._series_details = {SERIES_PAGE: parser.parse_series_details(html)}
+    assert source.series_by_address("https://www.bedetheque.com/BD-Boys-Tome-1-Un-debut-100.html") is None
+    assert source.is_series_address(SERIES_PAGE) and not source.is_series_address("https://www.bedetheque.com/BD-Boys-Tome-1-Un-debut-100.html")
+    key, name, albums = source.series_by_address(SERIES_PAGE)
+    assert (key, name) == ("18658", "Boys") and [a.volume for a in albums] == [1, 2]
+    proposal = review_batch.propose_for_series_address(source, SERIES_PAGE, ["/x/Boys T02.cbz", "/x/Boys T07.cbz"])
+    assert [c.volume for c in proposal.mapping.values()] == [2] and proposal.total == 2
+
+
 def test_the_number_and_title_are_read_from_the_pages_sub_title():
     from bs4 import BeautifulSoup
 

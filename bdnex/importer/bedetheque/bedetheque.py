@@ -390,6 +390,25 @@ class Bedetheque:
             return None
         return Candidate(source_id, url, sitemap.normalise_slug(url), sitemap.volume_from_url(url))
 
+    SERIES_PAGE = re.compile(r"^https?://(?:www\.|m\.)?bedetheque\.com/serie-(\d+)-BD-([^/\s]+)\.html$", re.I)
+
+    def is_series_address(self, text: str) -> bool:
+        return bool(self.SERIES_PAGE.match((text or "").strip().split("#")[0].split("?")[0]))
+
+    def series_by_address(self, text: str) -> Optional[tuple[str, str, list[Candidate]]]:
+        """``(series id, name, its albums)`` for the address of a series page (``bedetheque.com/serie-18658-BD-Boys.html``), or
+        ``None`` when it is not one. The page is read from the library, or fetched once when it is not there."""
+        match = self.SERIES_PAGE.match((text or "").strip().split("#")[0].split("?")[0])
+        if match is None:
+            return None
+        url = f"https://www.bedetheque.com/serie-{match.group(1)}-BD-{match.group(2)}.html"
+        details = self._series_details.get(url)
+        if details is None:
+            html = self._get("series", url).decode("utf-8", errors="replace")
+            details = self._series_details[url] = parser.parse_series_details(html)
+        albums = [c for c in (self.candidate_from_url(a["url"]) for a in details.get("albums", [])) if c is not None]
+        return match.group(1), match.group(2).replace("-", " "), albums
+
     def candidate_for(self, text: str) -> Optional[Candidate]:
         """The album a user means by an address or an album number (``None``: neither is an album of the site).
 
