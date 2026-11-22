@@ -978,6 +978,15 @@ class Library:
                 "INSERT INTO import_log(path, outcome, score, album_id) VALUES (?, ?, ?, ?)",
                 (self._store(path), outcome, score, album_id))
 
+    def last_import_id(self, path) -> int:
+        """The id of the newest import-log row of a file (0: none yet)."""
+        return self.conn.execute("SELECT COALESCE(MAX(id), 0) FROM import_log WHERE path = ?", (self._store(path),)).fetchone()[0]
+
+    def forget_imports_since(self, path, last_kept: int) -> None:
+        """Delete the import-log rows of a file newer than ``last_kept`` (an id from :meth:`last_import_id`): everything an import wrote."""
+        with self.conn:
+            self.conn.execute("DELETE FROM import_log WHERE path = ? AND id > ?", (self._store(path), last_kept))
+
     def forget_last_import(self, path) -> None:
         """Delete the newest import-log row of a file (used to take a decision back)."""
         with self.conn:

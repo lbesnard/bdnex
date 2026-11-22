@@ -102,6 +102,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         self._undecided: list = []  # (path, matches) the strict `--auto=all` left undecided: their covers vote at the end
         self._cover_pool = None  # worker threads that download covers while the matching goes on (CoverPass._queue_cover)
         self._cover_jobs: list = []  # (result, future) of the covers on their way
+        self._cover_futures: dict = {}  # (source, album id) -> the download of its cover: files of one album share it
         self._cover_failed = 0  # covers that did not come, this run
         self._ask_covers = True  # False while the matching still runs: a cover that differs is flagged, not asked about
         self._cover_off = False  # set when the check turns out to be impossible (no OpenCV)
@@ -257,7 +258,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
 
     def _skip_file(self, path: str, note: str) -> ImportResult:
         """Leave a file out without asking (remembered like any other skip; `--force` looks at it again)."""
-        self._journal = Journal()
+        self._journal = self._start_journal(path)
         self._log(path, SKIPPED)
         journal, self._journal = self._journal, None
         result = ImportResult(path, SKIPPED, note=note)
@@ -610,7 +611,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         kind, album = self._classify(path)
         if kind != "match":
             return self._without_matching(path, kind, album, defer_fetch)
-        self._journal = Journal()
+        self._journal = self._start_journal(path)
         try:
             result = self._import_matched(path, matches, defer_fetch, chosen)
         except BaseException as err:  # a question left unanswered, a failure, Ctrl-C: leave nothing half done behind
@@ -675,7 +676,10 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         if replaced:
             self._trash_others(replaced, path)
             note = "; ".join(n for n in (note, f"{len(replaced)} replaced file(s) are in the trash (`bdnex trash`)") if n)
-        self._journal.new_file = self.library.get_file(path) is None
+        before = self.library.get_file(path)
+        self._journal.new_file = before is None
+        if before is not None:  # imported again (--force, --album): taking it back means going back to what it was linked to
+            self._journal.previous_album, self._journal.previous_review = before["album_id"], before.get("review")
         self.library.add_analysed(info, md5, album_id)
         self._journal.linked = True
         if album_action == "keep_both" and any(
@@ -724,6 +728,10 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         self._done.add(id(result))  # a page still on its way must not complete the album for a file taken back
         self._undo_journal(result.journal, result.path)
 
+    def _start_journal(self, path: str) -> Journal:
+        """A journal for one file's import, that knows where the file's import log stood before."""
+        return Journal(log_floor=None if self.pretend else self.library.last_import_id(path))
+
     def _undo_journal(self, journal: Optional[Journal], path: str) -> None:
         if journal is None or self.pretend:
             return
@@ -731,9 +739,14 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
             if journal.new_file:
                 self.library.remove_file(path)
             else:
-                self.library.set_file_album(path, None)
+                self.library.set_file_album(path, journal.previous_album)  # what it was linked to before, not nothing
+                if journal.previous_review:
+                    self.library.flag_review(path, journal.previous_review)
         if journal.logged:
-            self.library.forget_last_import(path)
+            if journal.log_floor is None:
+                self.library.forget_last_import(path)
+            else:  # an import writes a row when it matches and another when the page arrives: both go
+                self.library.forget_imports_since(path, journal.log_floor)
         if journal.created_album is not None and self.library.delete_album_if_unused(journal.created_album):
             self.library.prune_orphan_series()
         for entry in reversed(journal.trashed):  # files this one replaced come back
