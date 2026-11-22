@@ -28,7 +28,7 @@ from bdnex.library.query import QueryError
 
 STATIC = Path(__file__).resolve().parent / "static"
 MAX_LIMIT = 1000
-MAX_BULK = 2000  # albums one edit may change
+from bdnex.ui.edit_cmd import MAX_BULK  # albums one edit may change (the CLI has the same limit)
 MAX_BODY = 1_000_000  # bytes of a request body: the page sends a few lines of JSON
 LOOPBACK_NAMES = {"localhost", "127.0.0.1", "::1"}  # what `Host` says when the server is reached on this machine
 

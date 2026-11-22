@@ -257,3 +257,70 @@ def test_a_relative_library_without_directory_is_explained_not_a_traceback(env, 
     with pytest.raises(SystemExit) as stop:
         main(["ls", "--files"])
     assert stop.value.code == 1 and "`collection_path` is not set" in capsys.readouterr().err
+
+
+# ------------------------------------------------------------------- what a value may be
+def test_a_string_for_credits_or_genres_is_a_list_as_with_set(env):
+    """`Writer: "A; B"` in the editor or on the web used to be one person called 'A; B' (and --set made two)."""
+    db, (one, two, shot) = env
+    doc = {"id": two, "credits": {"Writer": "A; B"}, "genres": "Humour; Fantasy"}
+    changes, problems = {}, []
+    changes = edit_cmd.doc_changes(album(db, two), doc, problems)
+    assert not problems and changes["credits"] == {"Writer": ["A", "B"]} and changes["genres"] == ["Humour", "Fantasy"]
+
+
+def test_a_credit_role_must_be_a_known_one_and_its_case_is_fixed(env):
+    db, (one, two, shot) = env
+    problems = []
+    assert edit_cmd.doc_changes(album(db, two), {"id": two, "credits": {"writer": ["X"]}}, problems)["credits"] == {"Writer": ["X"]}
+    assert not problems
+    edit_cmd.doc_changes(album(db, two), {"id": two, "credits": {"Auteur": ["X"]}}, problems)
+    assert problems and "not a credit role" in problems[0]
+    code, text = run(["series:nains", "--set", "credits.Auteur=X", "-y"])
+    assert code == 2 and "Auteur" not in album(db, one)["credits"]  # refused as a whole, nothing stored
+
+
+def test_text_values_are_one_line_short_and_numbers_that_lose_digits_must_be_quoted(env):
+    db, (one, two, shot) = env
+    problems = []
+    edit_cmd.doc_changes(album(db, two), {"id": two, "title": "a\nb"}, problems)
+    edit_cmd.doc_changes(album(db, two), {"id": two, "publisher": "x" * 2000}, problems)
+    edit_cmd.doc_changes(album(db, two), {"id": two, "isbn": 42798}, problems)  # `isbn: 0123456` read by YAML as octal
+    assert len(problems) == 3 and "one line" in problems[0] and "characters long" in problems[1] and "quotes" in problems[2]
+    assert edit_cmd.doc_changes(album(db, two), {"id": two, "summary": "two\nlines"}, [])["summary"] == "two\nlines"  # a summary may have lines
+    with pytest.raises(ValueError, match="one line"):
+        edit_cmd.parse_assignments(["title=a\tb"])
+
+
+def test_an_edit_that_touches_more_albums_than_the_limit_is_refused(env, monkeypatch):
+    monkeypatch.setattr(edit_cmd, "MAX_BULK", 1)
+    code, text = run(["series:nains", "--set", "publisher=Zed", "-y"])
+    assert code == 2 and album(env[0], env[1][0])["publisher"] != "Zed"
+
+
+# ------------------------------------------------------------------- what survives
+def test_a_renamed_series_keeps_its_name_when_another_album_of_it_is_imported(env):
+    db, (one, two, shot) = env
+    with Library(db) as lib:
+        lib.edit_album(one, {"series": "Les Nains"})
+        lib.add_album(AlbumInfo("b", "9", "Brand new", series=SeriesInfo("b", "s1", "Nains"), volume=9))  # the site still says "Nains"
+        assert {lib.get_album(i)["series"] for i in (one, two)} == {"Les Nains"}
+        assert lib.get_album(lib.conn.execute("SELECT id FROM albums WHERE source_id = '9'").fetchone()[0])["series"] == "Les Nains"
+
+
+def test_an_album_with_hand_edits_or_marks_is_not_deleted_with_its_last_file(env):
+    db, (one, two, shot) = env
+    with Library(db) as lib:
+        assert lib.delete_album_if_unused(two) is True  # nothing of yours on it
+        lib.edit_album(one, {"publisher": "Mine"})
+        assert lib.delete_album_if_unused(one) is False and lib.get_album(one)["publisher"] == "Mine"
+        lib.set_attr("album", shot, "checked", "keep")
+        assert lib.delete_album_if_unused(shot) is False
+
+
+def test_a_mark_name_with_a_trailing_newline_or_a_control_character_is_refused(env):
+    db, (one, two, shot) = env
+    with Library(db) as lib:
+        for name, value in (("checked\n", ""), ("checked", "a\nb")):
+            with pytest.raises(ValueError):
+                lib.set_attr("album", one, name, value)
