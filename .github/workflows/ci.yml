@@ -33,6 +33,32 @@ jobs:
         with:
           files: coverage.xml
 
+  docker:
+    # The image is built and run like a user would (a login, a library on a volume, a user that is not root): a release publishes it.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker build -t bdnex:ci .
+
+      - name: Start it with empty volumes and look at it
+        run: |
+          mkdir -p "$RUNNER_TEMP/comics" "$RUNNER_TEMP/config" "$RUNNER_TEMP/data" "$RUNNER_TEMP/covers"
+          docker run -d --name bdnex-ci --user "$(id -u):$(id -g)" -p 8765:8765 -e BDNEX_PASSWORD=ci-password \
+            -v "$RUNNER_TEMP/comics:/comics" -v "$RUNNER_TEMP/config:/config" -v "$RUNNER_TEMP/data:/data" -v "$RUNNER_TEMP/covers:/covers" bdnex:ci
+          for i in $(seq 1 30); do curl -fs http://127.0.0.1:8765/healthz && break; sleep 2; done
+          curl -fs http://127.0.0.1:8765/healthz
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8765/api/stats)" = 401        # the page is not open without a login
+          curl -fs -u bdnex:ci-password http://127.0.0.1:8765/api/stats > /dev/null                    # and the login works
+          ls "$RUNNER_TEMP/config/bdnex.yaml" "$RUNNER_TEMP/data/bdnex.sqlite"                          # the config and the library are on the volumes
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+
+      - name: Logs, when something failed
+        if: failure()
+        run: docker logs bdnex-ci
+
   docs:
     runs-on: ubuntu-latest
     steps:

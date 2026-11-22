@@ -1,6 +1,10 @@
 # bdnex with its web page: `docker compose up`. See docs/guides/docker.md.
 FROM python:3.12-slim
 
+# Links the image (ghcr.io) to this repository: it shows under the repo's Packages and takes its visibility.
+LABEL org.opencontainers.image.source="https://github.com/lbesnard/bdnex" \
+      org.opencontainers.image.description="bdnex: a library manager for French comics, with its web page"
+
 # bsdtar reads CBR (RAR) files; build tools are not needed, every dependency has a wheel.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libarchive-tools \

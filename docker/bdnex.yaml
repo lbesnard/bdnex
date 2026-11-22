@@ -5,6 +5,8 @@ collection_path: /comics            # the volume with your comics
 library: /data/bdnex.sqlite         # the library (a volume: keep it)
 cover:
   dir: /covers                      # downloaded covers (a volume: keep it, or lose nothing but a download)
+bedetheque:
+  pages_dir: /data/pages            # album pages you save from a browser (a volume: under HOME they would be lost at each restart)
 api:
   host: 0.0.0.0
   allow_changes: true               # the page can run tasks; the login is BDNEX_USER / BDNEX_PASSWORD

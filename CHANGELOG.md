@@ -6,7 +6,11 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Added
+- **Docker image on the GitHub Container Registry**: each release (the Release workflow) builds and pushes `ghcr.io/lbesnard/bdnex` for amd64 and arm64, tagged with the version and `latest`. `compose.yaml` now pulls it (`BDNEX_VERSION` pins a release; `docker compose pull` updates); `compose.build.yaml` builds from the checkout instead. CI builds the image on every change and starts it for real (healthz, the login, the config and library on the volumes).
+
 ### Fixed
+- Docker: the saved pages (`bedetheque.pages_dir`) were under the container's temporary home and lost at each restart: they are in `/data/pages`. A missing or not-writable `/config`, `/data` or `/covers` (Docker creates missing ones as root) is named at start, with the way out, instead of a traceback.
 - Matching: a year or an author found on an album's page no longer lifts a match above the cap of a wrong or missing volume (a wrong-volume album could reach 90, "strong"); the series-only cap holds too. Measured with `tools/eval_matching.py` on 1500 linked files: wrong first choices among those scoring 85 or more went from 6 to 4, none among the strong ones before or after, and 2 files fewer are applied unasked (266 to 264).
 - Matching: `Intégrale 2` (no `T`/`Tome`) asks for the second collected edition, so tome 2 no longer gets the volume bonus; `T`/`Vol` followed by a three-digit number only count as a volume when glued (`T105`: `Le Vol 714 pour Sydney` is a title); `Cœur` and `Œil` are searched as `Coeur` and `Oeil` (the ligature was dropped, leaving `c ur`).
 - Covers: a cover with too little detail to describe (a flat or dark one, a tiny placeholder) is "not compared" instead of scoring 0 (which flagged right matches as "the cover differs") or a lucky high score. The cover vote decides nothing when a competitor's cover did not come, or when the best cover is of a volume the file does not say. Duplicates: two first pages that are blank or uniform are no longer "the same book" by their hash.

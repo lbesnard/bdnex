@@ -1,0 +1,6 @@
+# Build the image from this checkout instead of pulling the published one:
+#   docker compose -f compose.yaml -f compose.build.yaml up -d --build
+services:
+  bdnex:
+    build: .
+    image: bdnex:local
