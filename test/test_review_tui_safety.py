@@ -1,6 +1,8 @@
 """Findings of the review of the review screen: a decision that fails is said (not a crash), a newer decision supersedes the fetch, a form says what is
 wrong before it closes, nothing typed over is picked, and no browser is started where there is none to start."""
 
+import os
+
 import pytest
 
 pytest.importorskip("textual")
@@ -161,6 +163,35 @@ def test_leaving_a_file_the_library_has_no_record_of_is_remembered(tmp_path, mak
         assert dict(library.file_attrs(row.file_id)).get("checked") == "leave" if hasattr(library, "file_attrs") else True
 
 
+def test_the_table_has_a_column_with_where_a_move_would_put_each_file_and_it_goes_when_the_album_changes(env):
+    import yaml
+
+    from bdnex.ui import review_tui
+
+    db, files = env
+    conf = os.environ["BDNEX_CONFIG"]
+    settings = yaml.safe_load(open(conf))
+    settings["collection_path"] = str(db.parent / "collection")  # where `bdnex move` would put the files
+    os.makedirs(settings["collection_path"], exist_ok=True)
+    open(conf, "w").write(yaml.safe_dump(settings))
+    seen = {}
+
+    async def script(app, pilot):
+        assert review_tui.COLUMNS[-1][0] == "Would go to"
+        first = app.rows[0]  # linked to "Nains T01 Redwin"
+        seen["dest"] = first.dest
+        seen["cell"] = str(app.query_one("DataTable").get_row_at(0)[8])
+        seen["loose"] = [r.dest for r in app.rows if r.album_id is None]  # no album: nothing to say
+        app.record("keep")
+        seen["after_keep"] = first.dest  # a new decision: the old place may not be the new one
+        app.action_sort(8)
+        seen["sorted"] = True
+
+    drive(db, script)
+    assert seen["dest"].endswith(".cbz") and "Nains" in seen["dest"] and not seen["dest"].startswith("/")  # relative to the collection
+    assert seen["cell"] == seen["dest"] and seen["loose"] == [""] and seen["after_keep"] == ""
+
+
 def test_questions_that_come_by_themselves_wait_in_a_queue_and_never_open_over_a_window(env):
     from bdnex.ui.review_tui import AskScreen
 
@@ -216,7 +247,7 @@ def test_the_marked_files_say_they_are_reading_the_series_page_until_the_answer_
                 break
         table = app.query_one("DataTable")
         seen["during"] = [(r.busy, r.busy_what) for r in rows]
-        seen["cell"] = str(table.get_row_at(0)[-1])
+        seen["cell"] = str(table.get_row_at(0)[7])  # the State column (the last one is now "Would go to")
         seen["blocked"] = app.idle() is None if app.current() is rows[0] else None  # no second decision while it reads
         release.set()
         await task

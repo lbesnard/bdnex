@@ -1101,10 +1101,10 @@ def test_the_state_column_turns_a_wheel_while_a_page_is_fetched(env, monkeypatch
         app.screen.query_one("Input").value = "https://www.bdtheque.com/series/14922/x"
         await pilot.press("enter")
         await pilot.pause(0.4)
-        seen["during"] = [str(c) for c in app.query_one("DataTable").get_row_at(0)][-1]
+        seen["during"] = [str(c) for c in app.query_one("DataTable").get_row_at(0)][7]
         seen["later"] = None
         await pilot.pause(0.4)
-        seen["frames"] = {str(app.query_one("DataTable").get_row_at(0)[-1])[:1], seen["during"][:1]}
+        seen["frames"] = {str(app.query_one("DataTable").get_row_at(0)[7])[:1], seen["during"][:1]}
         release.set()
         await fetched(app, pilot)
         await settle(app, pilot)
