@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import json
 import logging
 import os
 import re
+import shutil
 import sqlite3
 import sys
 import zlib
 from typing import Any, Iterable, Optional
+from urllib.parse import quote
 
 from bdnex.library.hashing import file_md5
 from bdnex.library.query import FROM_JOINS, build_sql, compile_query, fold, register_functions, run_query, split_query
@@ -26,6 +29,10 @@ logger = logging.getLogger(__name__)
 
 class SchemaTooNewError(RuntimeError):
     """The database was created by a newer bdnex."""
+
+
+class BackupError(RuntimeError):
+    """The copy kept before an upgrade could not be made: the upgrade is not done."""
 
 
 class LibraryRootError(RuntimeError):
@@ -79,7 +86,8 @@ class Library:
         if readonly:
             # a read-only connection may be closed by another thread than the one that opened it (a web request
             # is set up and torn down in different worker threads)
-            self.conn = sqlite3.connect(f"file:{os.path.abspath(path)}?mode=ro", uri=True, check_same_thread=False)
+            # the path is quoted (a `?`, `#` or `%` in it would cut or change the address), and a busy file is waited for (an import commits)
+            self.conn = sqlite3.connect(f"file:{quote(os.path.abspath(path))}?mode=ro", uri=True, check_same_thread=False, timeout=30)
         else:
             self.conn = sqlite3.connect(path, timeout=30)  # several processes may write (see `Organizer.run(workers=)`)
         self.conn.row_factory = sqlite3.Row
@@ -139,14 +147,18 @@ class Library:
             with self.conn:
                 for rowid, content in rows:
                     last = rowid
-                    if content[:1] == b"x":
-                        continue  # already compressed
+                    if not isinstance(content, bytes) or content[:1] == b"x":
+                        continue  # already compressed, or not a page (a NULL, or text from a very old version): left as it is
                     packed = zlib.compress(content, 6)
                     self.conn.execute("UPDATE source_cache SET content = ? WHERE rowid = ?", (packed, rowid))
                     count, after = count + 1, after + len(packed)
             if count and count % 2000 < batch:
                 print(f"bdnex:   {count:,}/{total:,} pages", file=sys.stderr)
-        self.conn.execute("VACUUM")  # the freed pages go back to the file system only now
+        try:
+            self.conn.execute("VACUUM")  # the freed pages go back to the file system only now (it needs room to work: it may not have it)
+        except sqlite3.Error as err:
+            print(f"bdnex: the pages are compressed, but the file could not be shrunk now ({err}); `sqlite3 <library> VACUUM` does it later",
+                  file=sys.stderr)
         print(f"bdnex: pages compressed: {size / 2**30:.1f} GiB -> {after / 2**30:.1f} GiB", file=sys.stderr)
 
     def _back_up(self, version: int) -> None:
@@ -156,17 +168,41 @@ class Library:
             return
         target = f"{self.path}.bak-v{version}"
         if os.path.exists(target):
-            return
+            if self._backup_is_good(target, version):
+                return
+            os.replace(target, target + ".unusable")  # an earlier, cut-short copy: never trusted, kept aside, and made again
+        free = shutil.disk_usage(os.path.dirname(os.path.abspath(self.path))).free
+        if free < os.path.getsize(self.path) * 1.1:
+            raise BackupError(f"{self.path} (schema v{version}) must be upgraded to v{SCHEMA_VERSION}, and a copy of it is kept first, but "
+                              f"there are only {free / 2**30:.1f} GiB free next to it for the {os.path.getsize(self.path) / 2**30:.1f} GiB copy: "
+                              "free some room (nothing was changed)")
+        partial = target + ".part"
         try:
-            copy = sqlite3.connect(target)
-            with copy:
-                self.conn.backup(copy)
-            copy.close()
-        except (sqlite3.Error, OSError) as err:  # a copy that fails must not make the library unusable
-            logger.warning(f"could not back up {self.path} before upgrading it: {err}")
-            return
+            copy = sqlite3.connect(partial)
+            try:
+                with copy:
+                    self.conn.backup(copy)
+            finally:
+                copy.close()
+            os.replace(partial, target)  # whole, or not there at all
+        except (sqlite3.Error, OSError) as err:
+            with contextlib.suppress(OSError):
+                os.remove(partial)
+            raise BackupError(f"could not keep a copy of {self.path} before upgrading it ({err}); nothing was changed") from err
         print(f"bdnex: your library (schema v{version}) is being upgraded to v{SCHEMA_VERSION}; the old one is kept "
               f"as {target}", file=sys.stderr)
+
+    @staticmethod
+    def _backup_is_good(target: str, version: int) -> bool:
+        """A copy made by an earlier bdnex could have been cut short (a full disk): it must open, and say the schema it was made for."""
+        try:
+            copy = sqlite3.connect(f"file:{quote(os.path.abspath(target))}?mode=ro", uri=True)
+            try:
+                return copy.execute("PRAGMA user_version").fetchone()[0] == version and copy.execute("PRAGMA quick_check").fetchone()[0] == "ok"
+            finally:
+                copy.close()
+        except (sqlite3.Error, OSError):
+            return False
 
     # ------------------------------------------------------------------ paths
     def _load_roots(self) -> None:
@@ -177,12 +213,16 @@ class Library:
         under a registered source, absolute otherwise."""
         absolute = os.path.abspath(os.path.expanduser(str(path)))
         if self.root and absolute.startswith(self.root + os.sep):
-            relative = absolute[len(self.root) + 1:]
-            return "./" + relative if relative.startswith("@") else relative  # '@' is the mark of a source
+            return self._relative_form(absolute[len(self.root) + 1:])
         for alias, folder in sorted(self.roots.items(), key=lambda item: -len(item[1])):
             if absolute.startswith(folder + os.sep):
                 return f"@{alias}/{absolute[len(folder) + 1:]}"
         return absolute
+
+    @staticmethod
+    def _relative_form(relative: str) -> str:
+        """A path below the collection as it is stored: a name that starts with `@` (the mark of a source) is written `./@...`."""
+        return "./" + relative if relative.startswith("@") else relative
 
     def _resolve(self, stored: str) -> str:
         """The absolute path of a stored one."""
@@ -293,7 +333,7 @@ class Library:
                 for row in rows:
                     try:
                         self.conn.execute(f"UPDATE {table} SET path = ? WHERE rowid = ?",
-                                          (row["path"][len(prefix):], row["rid"]))
+                                          (self._relative_form(row["path"][len(prefix):]), row["rid"]))
                         converted += 1
                     except sqlite3.IntegrityError:  # the relative form is registered already: leave it
                         logger.warning(f"{row['path']} is registered twice; left as it was")
@@ -1096,6 +1136,11 @@ class Library:
         old, new = os.path.abspath(os.path.expanduser(old)), os.path.abspath(os.path.expanduser(new))
         for alias, folder in self.roots.items():  # a registered source: its files follow one changed row
             if folder == old.rstrip("/"):
+                if not os.path.isdir(new):  # a typo would point every file of the source at a folder that is not there
+                    return {"files": 0, "log": 0, "collisions": [], "moved": [], "source": alias, "error": f"{new} is not a folder"}
+                if new.rstrip("/") in self.roots.values():
+                    return {"files": 0, "log": 0, "collisions": [], "moved": [], "source": alias,
+                            "error": f"{new} is already the folder of another source"}
                 if apply:
                     with self.conn:
                         self.conn.execute("UPDATE roots SET path = ? WHERE alias = ?", (new.rstrip("/"), alias))

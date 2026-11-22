@@ -42,8 +42,11 @@ def run(argv: list[str], out=sys.stdout) -> int:
     if settings is None:
         return 1
 
-    with Library.for_settings(settings, sync_sources=False) as library:  # the sources are about to change
+    with Library.for_settings(settings, sync_sources=False, readonly=args.pretend) as library:  # the sources are about to change
         result = library.relocate(args.old, args.new, apply=not args.pretend)
+    if result.get("error"):
+        print(f"Nothing changed: {result['error']}.", file=sys.stderr)
+        return 1
     if result.get("source"):
         verb = "Would point" if args.pretend else "Pointed"
         print(f"{verb} the source {result['source']!r} at {os.path.abspath(os.path.expanduser(args.new))}: its "
