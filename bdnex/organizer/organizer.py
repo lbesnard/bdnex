@@ -93,6 +93,13 @@ def free_space(path: str) -> int:
     return shutil.disk_usage(folder).free
 
 
+def _copy_mode(source: Optional[str], target: str) -> None:
+    """The new file keeps the permissions of the one it replaces (a temporary file is made with the default ones)."""
+    if source and os.path.exists(source):
+        with contextlib.suppress(OSError):
+            os.chmod(target, os.stat(source).st_mode & 0o7777)
+
+
 def _flush_to_disk(path: str) -> None:
     """Make sure the bytes are on the disk, not only in the cache, before the file takes its place."""
     try:
@@ -232,16 +239,20 @@ class Organizer:
             except Exception:  # a question, or a template problem: the main process deals with it
                 continue
             planned[index] = dest if isinstance(dest, str) else row["path"]
+        def same(path: str) -> str:  # `A.cbz` and `a.cbz` are one file on a case-insensitive disk: never work on both at once
+            return os.path.abspath(path).casefold()
+
         taken: dict[str, int] = {}
         for index, dest in planned.items():
-            taken[dest] = taken.get(dest, 0) + 1
-        leaving = {os.path.abspath(row["path"]) for row in rows}
+            taken[same(dest)] = taken.get(same(dest), 0) + 1
+        leaving = {same(row["path"]) for row in rows}
         return {index for index, dest in planned.items()
-                if taken[dest] == 1 and (dest == rows[index]["path"] or os.path.abspath(dest) not in leaving)}
+                if taken[same(dest)] == 1 and (dest == rows[index]["path"] or same(dest) not in leaving)}
 
     def _run_parallel(self, rows, mode, progress, on_result, workers, on_busy, repair=False) -> list[FileResult]:
         from concurrent.futures import ProcessPoolExecutor
         from concurrent.futures import TimeoutError as Waiting
+        from concurrent.futures.process import BrokenProcessPool
 
         global _STATE
         parallel = self._independent(rows, mode, repair)
@@ -251,6 +262,7 @@ class Organizer:
         executor = ProcessPoolExecutor(max_workers=workers, mp_context=context,
                                        initializer=_init_worker, initargs=(self.settings, self.force, self.batch))
         futures = {index: executor.submit(_work, (index, rows[index], mode, repair)) for index in sorted(parallel)}
+        pool_broke = False
         try:
             for index, row in enumerate(rows):
                 number = index + 1
@@ -266,6 +278,14 @@ class Organizer:
                             except Waiting:
                                 if on_busy:
                                     on_busy([os.path.basename(rows[i]["path"]) for i in futures if _STATE[i] == 1])
+                            except BrokenProcessPool:
+                                # a worker was killed (usually out of memory on a huge file) and the pool took every file after it
+                                # down too: the first is reported as the one that failed, the others are done here, in order
+                                if not pool_broke and _STATE[index] == 1:
+                                    pool_broke = True
+                                    result = FileResult(row["path"], FAILED, note="the worker process died (out of memory? "
+                                                        "lower write.workers): the file was not changed")
+                                break
                     if result is None:  # not independent, or a question to ask: here, in order
                         result = self.repair(row) if repair else self.process(row, mode)
                 except WriteAborted:
@@ -416,7 +436,8 @@ class Organizer:
             archive.verify_tagged_pdf(tmp, path, xml)
             self._stage("making sure it is on the disk")
             _flush_to_disk(tmp)
-        except Exception:
+            _copy_mode(path, tmp)
+        except BaseException:  # Ctrl-C too
             if os.path.exists(tmp):
                 os.remove(tmp)
             raise
@@ -671,7 +692,8 @@ class Organizer:
                 before, after = os.path.getsize(compare_to), os.path.getsize(tmp)
                 if abs(after - before) > max(before * tolerance / 100, MIN_SIZE_CHANGE):
                     raise SizeChanged(before, after, sum(1 for entry in entries if entry.rendered))
-        except Exception:
+            _copy_mode(dest if os.path.exists(dest) else compare_to, tmp)
+        except BaseException:  # Ctrl-C too: no half-written `.bdnex-tmp` left beside the album
             if os.path.exists(tmp):
                 os.remove(tmp)
             raise
@@ -839,14 +861,14 @@ class Organizer:
             else:
                 final = {**old_fields, **new_fields, **chosen}
                 self._keep_in_library(album_id, {c.field: final[c.field] for c in diff if c.field in final}, new_fields)
-                return comicinfo.build_xml(final)
+                return comicinfo.build_xml(final, keep=existing)
         if choice == "skip":
             return FileResult(path, SKIPPED, note="ComicInfo.xml conflict: skipped")
         if choice == "file":
             self._keep_in_library(album_id, {c.field: old_fields[c.field] for c in diff if c.field in old_fields},
                                   new_fields)
             return existing
-        return comicinfo.build_xml(comicinfo.merge_with_existing(old_fields, new_fields))
+        return comicinfo.build_xml(comicinfo.merge_with_existing(old_fields, new_fields), keep=existing)
 
     def _keep_in_library(self, album_id: int, values: dict[str, str], database: dict[str, str]) -> None:
         """What was chosen over the database's value becomes the library's: a hand edit (so it survives a
