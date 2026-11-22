@@ -101,7 +101,8 @@ def _auto(args, settings, out, prompter) -> int:
                                  flagged=True, weak=True)
         except QueryError as err:
             return context.bad_query(err)
-        if not args.no_cover:
+        if not args.no_cover:  # (it may download the covers of other candidates into the cover folder, also in a preview: that is how the preview
+            # says which files would be switched to a better album; the library is not changed. `--no-cover` skips it.)
             try:
                 rules.look_for_better(settings, library, found, args.candidates,
                                       say=lambda text: print(text, file=sys.stderr, flush=True))
@@ -186,10 +187,10 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     settings = context.settings()
     if settings is None:
         return 1
-    if (args.unmatched or args.all or args.again) and not args.batch:
+    if (args.unmatched or args.all or args.again) and args.batch is None:
         print("--unmatched, --all and --again go with --batch N (the table).", file=sys.stderr)
         return 2
-    if args.batch:
+    if args.batch is not None:  # (`--batch 0` is refused by the screen's own check: it used to be read as 'no batch' and start --auto)
         return _batch(args, settings, out)
     if args.auto:
         return _auto(args, settings, out, prompter)
