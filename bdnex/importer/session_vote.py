@@ -16,7 +16,7 @@ from typing import Optional
 
 from bdnex.importer import covers
 from bdnex.importer.matching import Match
-from bdnex.importer.session_types import ImportReport, Journal
+from bdnex.importer.session_types import ImportReport
 
 logger = logging.getLogger(__name__)
 
@@ -141,7 +141,7 @@ class CoverVote:
                 if winner is None:
                     continue
                 candidate, score, similarity = winner
-                self._journal = Journal()
+                self._journal = self._start_journal(path)
                 try:
                     result = self._import_matched(path, matches, False, (candidate, score, f"cover vote {similarity:.0f}%"))
                 except Exception as err:  # one file's failure must not stop the pass, nor leave a half-done link behind
