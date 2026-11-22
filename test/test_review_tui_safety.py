@@ -1,15 +1,12 @@
 """Findings of the review of the review screen: a decision that fails is said (not a crash), a newer decision supersedes the fetch, a form says what is
 wrong before it closes, nothing typed over is picked, and no browser is started where there is none to start."""
 
-import dataclasses
-import os
-
 import pytest
 
 pytest.importorskip("textual")
 
 from bdnex.library import review_batch as batch  # noqa: E402
-from bdnex.ui import review_fetch, review_tui  # noqa: E402
+from bdnex.ui import review_tui  # noqa: E402
 
 from test_review_tui import FORGE, drive, env  # noqa: E402,F401  (the fixture and the driver of the screen's tests)
 
