@@ -1,8 +1,10 @@
-# bdnex and its web page. Copy .env.example to .env, fill it in, then: docker compose up -d --build
+# bdnex and its web page. Copy .env.example to .env, fill it in, create the three folders (mkdir -p config data covers: Docker
+# would create them as root, and the container does not run as root), then: docker compose up -d
+# The image is the one published by each release (ghcr.io). To build it from this checkout instead (your own changes):
+#   docker compose -f compose.yaml -f compose.build.yaml up -d --build
 services:
   bdnex:
-    build: .
-    image: bdnex:local
+    image: ghcr.io/lbesnard/bdnex:${BDNEX_VERSION:-latest}   # BDNEX_VERSION=0.13.0 pins a release; `docker compose pull` updates
     restart: unless-stopped
     user: "${PUID:-1000}:${PGID:-1000}"          # the owner of the files it writes: `id -u` and `id -g`
     ports:

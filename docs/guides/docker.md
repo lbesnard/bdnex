@@ -8,8 +8,14 @@ container: `docker compose exec bdnex bdnex import ...`.
 
 ```bash
 cp .env.example .env          # then edit it: COMICS_DIR, BDNEX_PASSWORD, PUID / PGID (`id -u`, `id -g`)
-docker compose up -d --build
+mkdir -p config data covers   # yourself: Docker would create missing folders as root, and the container does not run as root
+docker compose up -d
 ```
+
+The image is the one each release publishes on the GitHub Container Registry (`ghcr.io/lbesnard/bdnex`, tags `latest` and the
+version): nothing is built on your machine, and you do not need the repository, only `compose.yaml` and `.env`. To update:
+`docker compose pull && docker compose up -d`. To stay on a release, set `BDNEX_VERSION=0.13.0` in `.env`. To build the image
+from a checkout instead (your own changes): `docker compose -f compose.yaml -f compose.build.yaml up -d --build`.
 
 Open `http://localhost:8765/`: the browser asks for the user name (`BDNEX_USER`, `bdnex` by default) and the
 password (`BDNEX_PASSWORD`). The compose file refuses to start without a password, because the page can change your
@@ -22,7 +28,8 @@ files. The first start writes a configuration and an empty library.
 | `DATA_DIR` (`./data`) | `/data` | the library (SQLite) |
 | `COVERS_DIR` (`./covers`) | `/covers` | the downloaded covers: map it wherever you like, even to another disk |
 
-Keep `/data` and `/config` in volumes: they are your library. The container runs as `PUID:PGID`, so the files it
+Keep `/data` and `/config` in volumes: they are your library (the saved pages of `bedetheque.pages_dir` are in `/data/pages`, the trash is inside
+your comics folder). If one of the three folders is missing or not yours, the container says so at start and stops. The container runs as `PUID:PGID`, so the files it
 writes in your comics folder belong to you, not to root.
 
 ## The first time
