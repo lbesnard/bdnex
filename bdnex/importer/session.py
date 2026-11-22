@@ -866,6 +866,8 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
                 return existing, False, "kept earlier metadata"
             info = self.source.partial_info(candidate)
             partial, note = True, f"partial: save the page {candidate.url} to import full metadata"
+        before = self.library.series_id_of(existing)
         album_id = self.library.add_album(info)
-        self.library.prune_orphan_series()
+        if before is not None and before != self.library.series_id_of(album_id):
+            self.library.delete_series_if_unused(before)  # the placeholder series a partial album had, replaced by the real one
         return album_id, partial, note

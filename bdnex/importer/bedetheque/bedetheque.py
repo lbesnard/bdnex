@@ -102,7 +102,7 @@ class PageQueue:
             return "queued"
         if key in self._failed:
             return "failed"
-        if self.source.library.cache_get(SOURCE, kind, url) is not None:
+        if self.source.library.cache_has(SOURCE, kind, url):  # not `cache_get`: that would decompress a whole page just to know it is there
             return "cached"
         logger.debug(f"page queued: {url}")
         self._futures[key] = self._executor.submit(self.source._tracked_download, url, kind)
