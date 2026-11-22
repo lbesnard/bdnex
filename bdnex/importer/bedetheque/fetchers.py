@@ -110,6 +110,10 @@ def _order(endpoints: list[str]) -> list[str]:
         return healthy + [e for e in rotated if e not in healthy]
 
 
+class PageUnavailable(OSError):
+    """The site answered, and the page is not there (404, 410): asking another endpoint would get the same answer."""
+
+
 def _flaresolverr_request(endpoint: str, url: str, timeout: int) -> bytes:
     payload = {
         "cmd": "request.get",
@@ -120,8 +124,16 @@ def _flaresolverr_request(endpoint: str, url: str, timeout: int) -> bytes:
     response.raise_for_status()
     data = response.json()
     if data.get("status") == "ok":
-        # FlareSolverr returns the page HTML inside solution.response
-        return data["solution"]["response"].encode("utf-8")
+        # FlareSolverr returns the page HTML inside solution.response, and the HTTP status the site answered in solution.status
+        solution = data.get("solution")
+        if not isinstance(solution, dict) or not isinstance(solution.get("response"), str):
+            raise ValueError(f"FlareSolverr answered without a page for {url}")  # a malformed answer: the next endpoint is tried
+        status = solution.get("status")
+        if isinstance(status, int) and status in (404, 410):
+            raise PageUnavailable(f"{url}: the site says the page is not there (HTTP {status})")
+        if isinstance(status, int) and status >= 400:  # 429, 5xx...: not a page, whatever FlareSolverr's own status says
+            raise RuntimeError(f"the site answered {url} with HTTP {status}, not a page")
+        return solution["response"].encode("utf-8")
     raise RuntimeError(f"FlareSolverr failed to fetch {url}: {data.get('message')}")
 
 
@@ -143,7 +155,9 @@ def flaresolverr_fetch(url: str, timeout: int = 60) -> bytes:
         started = time.monotonic()
         try:
             content = _flaresolverr_request(endpoint, url, timeout)
-        except (requests.RequestException, RuntimeError, ValueError, KeyError) as err:
+        except PageUnavailable:
+            raise  # the page does not exist: no other endpoint would find it, and this one is working (it is not marked down)
+        except (requests.RequestException, RuntimeError, ValueError, KeyError, AttributeError, TypeError) as err:
             _down[endpoint] = time.monotonic()
             problems.append(f"{endpoint}: {err}")
             logger.warning(f"{endpoint} failed ({err}): trying the next endpoint")  # a fallback is never silent
