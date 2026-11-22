@@ -207,6 +207,7 @@ def test_a_result_taken_back_cannot_hand_its_id_to_the_next_one():
 
     session = ImportSession.__new__(ImportSession)
     session._pending, session._done, session._undone, session.pretend = [], set(), [], False
+    session._covers, session._cover_jobs = [], []
     gone = ImportResult("/x/a.cbz", "tagged")
     session._undo(gone)
     del gone  # what `del report.results[...]` does to it
