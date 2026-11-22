@@ -291,9 +291,7 @@ def duplicates(library: Library, compute_covers: bool = False, progress=None, wo
     return groups
 
 
-def flat_hash(value: int) -> bool:
-    """A difference hash with (almost) no bit set, or all set: a blank or uniform page, which says nothing about the book."""
-    return not 4 < value.bit_count() < 60
+flat_hash = covers.flat_hash  # (it lives with the hash it judges)
 
 
 def similar_covers(hashed: list[tuple[int, dict[str, Any]]]) -> list[list[dict[str, Any]]]:

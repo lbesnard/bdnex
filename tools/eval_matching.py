@@ -24,8 +24,9 @@ def run(out_path: str, sample: int | None) -> None:
     from bdnex.ui import context
 
     settings = context.settings()
-    offline = settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
-        update={"fetcher": "bdnex.importer.registry:offline_fetch", "delay": (0, 0), "sitemap_delay": (0, 0)})})
+    from bdnex.importer.registry import offline_settings
+
+    offline = offline_settings(settings)
     with Library.for_settings(settings, readonly=True) as library:
         source = create_source(settings.source, library, offline)
         source.warm()

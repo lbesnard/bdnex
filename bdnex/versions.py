@@ -79,7 +79,7 @@ def relation(a: FileFacts, b: FileFacts) -> str:
     if a.md5 and a.md5 == b.md5:
         return IDENTICAL
     if a.pages and a.pages == b.pages:
-        if a.cover is not None and b.cover is not None:
+        if a.cover is not None and b.cover is not None and not (covers.flat_hash(a.cover) or covers.flat_hash(b.cover)):
             return SAME_BOOK if covers.hash_distance(a.cover, b.cover) <= covers.SAME_COVER_DISTANCE else DIFFERENT
         return PROBABLY_SAME
     return DIFFERENT

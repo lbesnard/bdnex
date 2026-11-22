@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Literal, Optional, Union
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 CONFIG_VERSION = 2
 LOCAL_HOSTS = ("127.0.0.1", "localhost", "::1")  # `api.host` values that do not leave this machine
@@ -76,6 +76,12 @@ class Match(_Section):
     auto_all: Literal["strong", "medium"]  # what `import --auto=all` (never ask) applies: strong matches only, or medium ones too
     cover_vote: bool  # a file left undecided is decided by comparing its cover with the covers of its best candidates
     cover_vote_min: float = Field(ge=0, le=100)  # similarity (0-100) a candidate's cover needs to win that vote
+
+    @model_validator(mode="after")
+    def _strong_is_not_below_medium(self):
+        if self.strong_threshold < self.medium_threshold:
+            raise ValueError(f"strong_threshold ({self.strong_threshold:g}) must not be below medium_threshold ({self.medium_threshold:g})")
+        return self
 
 
 class Source(_Section):

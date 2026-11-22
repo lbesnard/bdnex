@@ -35,11 +35,15 @@ class QueryError(ValueError):
     """The query text is invalid."""
 
 
+# letters that accent-stripping does not decompose: `Cœur` is `Coeur` in an address (without this the word lost its letters: `c ur`)
+LIGATURES = str.maketrans({"œ": "oe", "Œ": "oe", "æ": "ae", "Æ": "ae", "ß": "ss", "ø": "o", "Ø": "o"})
+
+
 @lru_cache(maxsize=1 << 17)  # a search folds every title, name and path of the library: the same ones again for the next term
 def _fold(text: str) -> str:
     if text.isascii():  # nothing to strip: the common case, and the loop below is the cost of a search
         return text.casefold()
-    text = unicodedata.normalize("NFKD", text)
+    text = unicodedata.normalize("NFKD", text.translate(LIGATURES))
     return "".join(c for c in text if not unicodedata.combining(c)).casefold()
 
 

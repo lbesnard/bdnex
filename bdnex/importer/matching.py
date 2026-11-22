@@ -41,6 +41,7 @@ class Match:
     base_score: float  # plain title similarity
     doubt: str = ""  # why it must not be applied unasked even with a strong score ("" = no reason to doubt it)
     parts: tuple[str, ...] = ()  # what moved the score after the title score, in words (`bdnex candidates` shows them)
+    ceiling: float = 100.0  # what no later bonus (a year, an author) may lift the score above: the caps of a wrong or missing volume
 
 
 VOLUME_GROUP = re.compile(r"^\s*(?:t|tome|vol\.?|n°|#)?\s*0*\d{1,3}\s*$", re.I)
@@ -68,11 +69,12 @@ def query_from_filename(path: str) -> str:
     text = re.sub(r"(?<=\d)(?:lq|hq|hd|sd)\b", "", text, flags=re.I)  # a scan's quality tag glued to the number: `Death_Note_-_003lq`
     text = re.sub(r"\b(\d{1,3})\s+(?:of|de|sur)\s+\d{1,3}\b", r"\1", text, flags=re.I)  # "3 of 6" -> 3
     # "T01" / "Tome 1" / "Vol. 3" -> "1": the sitemap slugs keep only the number
-    text = re.sub(r"\b(?:tome|vol|t)\s*0*(\d{1,3})\b", r"\1", text, flags=re.I)
+    text = VOLUME_MARKER.sub(lambda m: m.group(1) or m.group(2) or m.group(3), text)
     return re.sub(r"\s+", " ", text).strip()
 
 
-VOLUME_MARKER = re.compile(r"\b(?:tome|vol|t)\s*0*(\d{1,3})\b", re.I)
+# `Tome 105`, `T01`, `Vol. 3`; a 3-digit number after the short markers `t` / `vol` only when glued to them (`T105`): `Vol 714 pour Sydney` is a title
+VOLUME_MARKER = re.compile(r"\b(?:tome\s*0*(\d{1,3})|(?:vol|t)\s*0*(\d{1,2})|(?:vol|t)0*(\d{3}))\b", re.I)
 
 
 def explicit_volume(path: str) -> Optional[int]:
@@ -80,7 +82,7 @@ def explicit_volume(path: str) -> Optional[int]:
     is volume 1 of a series whose second cycle this is), so when the name says it, that number wins. ``None``: it does not say."""
     stem = os.path.splitext(os.path.basename(path))[0]
     found = VOLUME_MARKER.search(re.sub(r"[_\-.]+", " ", _drop_groups(stem)))
-    return int(found.group(1)) if found else None
+    return int(found.group(1) or found.group(2) or found.group(3)) if found else None
 
 
 def queries_for(path: str) -> list[str]:
@@ -165,7 +167,7 @@ def volumes_in(query: str) -> list[int]:
     """Numbers that look like volume numbers in a file name (``T01``, ``Tome 3``, ``- 2 -``)."""
     found = [int(n) for n in re.findall(r"(?:\bt|\btome\s*|\bvol\.?\s*|\b#)\s*0*(\d{1,3})\b", query, re.I)]
     if not found:
-        found = [int(n) for n in re.findall(r"(?<![\d\w])0*(\d{1,3})(?![\d\w])", query)]
+        found = [int(n) for n in re.findall(r"(?<![\d\w])0*(\d{1,3})(?![\d\w])", query)]  # every number: the title may hold one (`Fantastic 4 20`) but so may what follows the volume (`07 - Les 3 crimes`); measured: no rule on the position does better
     if not found:  # last resort: the number glued to the title (``SOA1``, ``SonOfAnarchy6``)
         found = [int(n) for n in re.findall(r"(?<=[^\W\d_])0*(\d{1,3})\b", query)][-1:]
     return found
@@ -198,8 +200,11 @@ def weight(source, name: str) -> float:
 
 
 def rerank(query: str, hits: list[tuple[Candidate, float]], wanted: Optional[list[int]] = None,
-           source=None, integral: Optional[bool] = None) -> list[Match]:
-    """Adjust title scores with the volume number found in the file name (``wanted``: the volumes already worked out)."""
+           source=None, integral: Optional[bool] = None, integral_numbered: bool = False) -> list[Match]:
+    """Adjust title scores with the volume number found in the file name (``wanted``: the volumes already worked out).
+
+    ``integral_numbered``: the name is an intégrale WITHOUT a ``T``/``Tome`` marker (``Intégrale 2``), so its number is the
+    collected edition's, not a tome's (``Intégrale - T05`` says tome 5: the number is a volume)."""
     wanted = volumes_in(query) if wanted is None else wanted
     bonus, penalty = weight(source, "volume_match"), weight(source, "volume_mismatch")
     if integral is None:
@@ -207,13 +212,19 @@ def rerank(query: str, hits: list[tuple[Candidate, float]], wanted: Optional[lis
     integral_exists = bool(integral) and any(is_integral(cand) for cand, _ in hits)
     matches = []
     for cand, base in hits:
-        score, parts = base, []
-        if wanted and cand.volume is not None:
+        score, parts, ceiling = base, [], 100.0
+        # "Intégrale 2" asks for the collected edition: a numbered tome 2 is not what it asks for, whatever its number says
+        numbered_for_integral = integral_numbered and bool(integral_exists) and cand.volume is not None and not is_integral(cand)
+        if numbered_for_integral and wanted:
+            score -= INTEGRAL_NUMBERED_PENALTY
+            parts.append(f"the file is an intégrale, the album is tome {cand.volume}: -{INTEGRAL_NUMBERED_PENALTY:g}")
+        elif wanted and cand.volume is not None:
             if cand.volume in wanted:
                 score += bonus
                 parts.append(f"volume {cand.volume} asked for and found: +{bonus:g}")
             else:
                 score = min(score - penalty, VOLUME_MISMATCH_CAP)
+                ceiling = VOLUME_MISMATCH_CAP
                 parts.append(f"the file says volume {', '.join(map(str, wanted[:2]))}, the album is volume {cand.volume}: "
                              f"-{penalty:g}, at most {VOLUME_MISMATCH_CAP:g}")
         elif wanted and cand.volume is None and integral and is_integral(cand) and integral_number(cand) in wanted:
@@ -223,6 +234,7 @@ def rerank(query: str, hits: list[tuple[Candidate, float]], wanted: Optional[lis
             if score > NO_VOLUME_CAP:
                 parts.append(f"the file has a volume, the album has none: at most {NO_VOLUME_CAP:g}")
             score = min(score, NO_VOLUME_CAP)
+            ceiling = NO_VOLUME_CAP
         if integral and not wanted:  # "Universal War One (Intégrale).cbz": the collected edition, not tome 5 that has the same title words
             if is_integral(cand):
                 points = INTEGRAL_BONUS if integral_number(cand) is None else INTEGRAL_VOLUME_BONUS  # the whole one, or one of several
@@ -232,7 +244,7 @@ def rerank(query: str, hits: list[tuple[Candidate, float]], wanted: Optional[lis
             elif cand.volume is not None and integral_exists:  # (without one among the candidates, a penalty would only lift unrelated albums)
                 score -= INTEGRAL_NUMBERED_PENALTY
                 parts.append(f"the file is an intégrale, the album is tome {cand.volume}: -{INTEGRAL_NUMBERED_PENALTY:g}")
-        matches.append(Match(cand, max(0.0, min(100.0, score)), base, parts=tuple(parts)))
+        matches.append(Match(cand, max(0.0, min(100.0, score)), base, parts=tuple(parts), ceiling=ceiling))
     return sorted(matches, key=lambda m: m.score, reverse=True)
 
 
@@ -260,7 +272,11 @@ def adjust_by_facts(matches: list[Match], path: str, embedded: Optional[dict], f
         if shared:
             score += author_bonus
             parts.append(f"an author ({', '.join(sorted(shared)[:2])}) agrees: +{author_bonus:g}")
-        adjusted.append(replace(match, score=max(0.0, min(100.0, score)), parts=tuple(parts)) if parts != list(match.parts) else match)
+        score = min(score, max(match.ceiling, match.score))  # a wrong or missing volume stays capped: a year or an author does not undo it
+        if score <= match.score:
+            adjusted.append(match)  # nothing was added (or the ceiling took it all back): no line saying so
+            continue
+        adjusted.append(replace(match, score=max(0.0, min(100.0, score)), parts=tuple(parts)))
     return sorted(adjusted, key=lambda m: m.score, reverse=True)
 
 
@@ -289,8 +305,8 @@ def find_matches(source, path: str, limit: int = 5) -> list[Match]:
     ranked = sorted(((c, sc) for c, sc, _ in best.values()), key=lambda hit: hit[1], reverse=True)
     hits = ranked[:limit + 3]
     matches = rerank(query_from_filename(path), hits, volumes_for(path), source,  # volumes are read from the file name only
-                     integral=integral_file)
-    matches = [replace(m, score=min(m.score, SERIES_QUERY_CAP),
+                     integral=integral_file, integral_numbered=integral_file and explicit_volume(path) is None)
+    matches = [replace(m, score=min(m.score, SERIES_QUERY_CAP), ceiling=min(m.ceiling, SERIES_QUERY_CAP),
                        parts=(*m.parts, f"found by series and volume only: at most {SERIES_QUERY_CAP:g}") if m.score > SERIES_QUERY_CAP else m.parts)
                if m.candidate.source_id in series_only else m for m in matches]
     matches = sorted(matches, key=lambda m: m.score, reverse=True)

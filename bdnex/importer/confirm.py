@@ -104,7 +104,9 @@ def _year_signal(stem: str, embedded: dict, album: dict, ev: Evidence) -> None:
     years = years_named(stem, embedded)
     agrees = year_agrees(years, album.get("year"))
     if agrees:
-        ev.agree.append(f"the year {album['year']}")
+        exact = album.get("year") in years
+        # a year off by one is common between two albums of one series: it is no confirmation by itself (see `assess`)
+        ev.agree.append(f"the year {album['year']}" if exact else f"about the year {album['year']}")
     elif agrees is False:
         ev.weak.append(f"the file says {min(years)}, the album is from {album['year']} (a reissue, or another album)")
 
@@ -163,7 +165,7 @@ def assess(path: str, album: dict[str, Any], embedded: Optional[dict] = None) ->
     _year_signal(stem, embedded, album, ev)
     _author_signal(stem, album, ev)
     # the volume number is what the match was ranked on: it agrees by construction, so it confirms nothing
-    independent = [a for a in ev.agree if not a.startswith("tome")]
+    independent = [a for a in ev.agree if not a.startswith(("tome", "about the year"))]
     if ev.strong:
         ev.verdict = CONTRADICTED if not independent else DOUBTFUL
     elif len(ev.weak) >= 2 and not independent:
