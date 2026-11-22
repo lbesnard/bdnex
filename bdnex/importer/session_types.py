@@ -49,6 +49,7 @@ class Journal:
     created_album: Optional[int] = None  # an album that was added for it
     previous_album: Optional[int] = None  # what the file was linked to before (a file imported again with --force or --album)
     previous_review: Optional[str] = None  # ... and its review flag
+    previous_spare: int = 0  # ... and whether it was a spare version of it
     log_floor: Optional[int] = None  # the newest import-log row of the file before this one: what is newer than it is taken back
     trashed: list[int] = field(default_factory=list)  # files it replaced (trash ids)
 
@@ -68,6 +69,7 @@ class ImportReport:
     results: list[ImportResult] = field(default_factory=list)
     aborted_at: Optional[str] = None  # the file being decided when the user aborted
     total: int = 0  # files the run had to look at (only set when it was aborted)
+    stopped: bool = False  # Ctrl-C during the fetch: the run stops there, nothing is moved or written afterwards
 
     def count(self, outcome: str) -> int:
         return sum(1 for r in self.results if r.outcome == outcome)

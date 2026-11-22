@@ -109,7 +109,7 @@ def ensure_album_list(source, library, settings, out=sys.stdout) -> bool:
 
     print("There is no album list yet: file names are matched against it (`bdnex init` downloads it).",
           file=sys.stderr)
-    if not can_ask():
+    if not can_ask() or library.readonly or library.path == ":memory:":  # (a preview changes nothing: it can not download the list)
         print("Run `bdnex init`, then import again.", file=sys.stderr)
         return False
     if not new_prompter().confirm("Download it now (about 70 MB, around a minute)?", default=True):
@@ -215,7 +215,9 @@ def run(argv: list[str], out=sys.stdout, configure_logging: bool = True) -> int:
             return 2
         print(f"No folder given: importing your library folder, {args.paths[0]}", file=sys.stderr)
 
-    with Library.for_settings(settings) as library:
+    exists = settings.library_path.exists()
+    # a preview creates, migrates and changes nothing: it reads the library read-only, or looks at an empty one in memory
+    with Library.for_settings(settings, readonly=args.pretend and exists, ephemeral=args.pretend and not exists) as library:
         if args.album:
             from bdnex.importer import bdtheque
 
@@ -258,6 +260,8 @@ def run(argv: list[str], out=sys.stdout, configure_logging: bool = True) -> int:
         try:
             if report.aborted_at:
                 organize_results, placement_notes = [], _after_abort(library, report)
+            elif report.stopped:  # Ctrl-C: the files stay linked as they are (`import --fetch` goes on); nothing is moved or written now
+                organize_results, placement_notes = [], ["stopped by Ctrl-C: the files were not moved or written"]
             else:
                 organize_results, placement_notes = (_place(args, settings, library, report) if not (args.pretend or args.database_only) else ([], []))
         except ConfigError as err:

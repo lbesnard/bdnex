@@ -67,6 +67,19 @@ async def settle(app, pilot):
         await pilot.pause()
 
 
+async def fetched(app, pilot, timeout=15.0):
+    """Wait until the queue of the page and cover downloads is empty: it runs in its own thread, which `settle` (Textual's workers) does not
+    wait for. Without this a slow machine looked at the library before the late import had ended (and the screen had answered it)."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        with app.remaining_lock:
+            left = app.remaining
+        if left <= 0:
+            break
+        await asyncio.sleep(0.05)
+    await settle(app, pilot)
+
+
 def drive(db, script, unmatched=True, size=50, source=None):
     """Run the app, call ``script(app, pilot)`` once the batch is shown, and return the cells of the table."""
     settings = load_config().settings
@@ -118,7 +131,7 @@ def test_a_loading_panel_says_what_is_being_done_until_the_table_is_ready(env, m
                 panel = app.query_one("#loading")
                 seen["during"] = (panel.display, app.query_one("DataTable").display, str(panel.render()))
                 release.set()
-                await settle(app, pilot)
+                await fetched(app, pilot)
                 seen["after"] = (panel.display, app.query_one("DataTable").display, app.query_one("DataTable").row_count)
 
     asyncio.run(go())
@@ -268,7 +281,7 @@ def test_a_pick_is_written_at_once_and_the_page_and_cover_come_later(env, monkey
             seen["album"] = lib.get_album(lib.get_file(files["wrong"])["album_id"])["source_id"]
         seen["now"] = (row.status, row.pending, str(app.query_one("DataTable").get_row_at(0)[7]), row.message)
         release.set()
-        await settle(app, pilot)
+        await fetched(app, pilot)
 
     result, source = drive(db, script)
     assert seen["album"] == "2" and seen["now"][:2] == ("linked", True) and "linked · " in seen["now"][2] and "being fetched" in seen["now"][3]
@@ -323,7 +336,7 @@ def test_unlinking_while_the_page_is_fetched_wins_over_the_late_import(env, monk
         await pilot.press("u")  # a mistake: unlink it now
         await pilot.pause()
         release.set()
-        await settle(app, pilot)
+        await fetched(app, pilot)
 
     drive(db, script)
     with Library(db) as lib:
@@ -1086,7 +1099,7 @@ def test_the_state_column_turns_a_wheel_while_a_page_is_fetched(env, monkeypatch
         await pilot.pause(0.4)
         seen["frames"] = {str(app.query_one("DataTable").get_row_at(0)[-1])[:1], seen["during"][:1]}
         release.set()
-        await settle(app, pilot)
+        await fetched(app, pilot)
         await settle(app, pilot)
 
     result, _ = drive(db, script)
