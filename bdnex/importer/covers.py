@@ -276,9 +276,14 @@ def save_cover(directory, source: str, source_id: str, data: bytes) -> str:
     relative = f"{cover_folder(source, source_id)}/cover{image_extension(data)}"
     target = Path(directory) / relative
     target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_name(target.name + ".part")
-    tmp.write_bytes(data)
-    os.replace(tmp, target)
+    # a name of its own: two threads (or two runs) saving one album's cover must not write, then rename, the same temporary file
+    tmp = target.with_name(f"{target.name}.{os.getpid()}.{threading.get_ident()}.part")
+    try:
+        tmp.write_bytes(data)
+        os.replace(tmp, target)
+    finally:
+        with contextlib.suppress(OSError):
+            tmp.unlink()  # still there only when the write or the rename failed
     return relative
 
 

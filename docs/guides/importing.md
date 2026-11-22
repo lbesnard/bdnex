@@ -323,6 +323,8 @@ Go through the flagged files later with [`bdnex review`](#reviewing-doubtful-mat
 is already complete gets its cover compared the first time it goes through `bdnex import --fetch`.
 `bdnex ls --files cover:..40` lists the doubtful ones by score, `review:true` the flagged ones.
 
+A flagged file is **not written or moved** by that import (`--write`, `--move`, `--copy`, `import.mode`, a source's mode): the album it is linked to may be the wrong one, and its tags and its place would follow it. The import says how many were left, and `bdnex write` / `bdnex move` place them once `bdnex review` has decided.
+
 ### Reviewing doubtful matches: `bdnex review`
 
 ```bash

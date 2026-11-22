@@ -258,3 +258,16 @@ def test_import_database_only_on_the_whole_collection_changes_nothing_with_every
     assert not list(tmp_path.glob("**/trash*")) and not list(root.rglob("*.cbz.bak"))
     with library(tmp_path) as lib:
         assert lib.conn.execute("SELECT COUNT(*) FROM files").fetchone()[0] >= 1  # and it did fill the library
+
+
+def test_a_file_whose_match_looks_wrong_is_neither_written_nor_moved(world, tmp_path, monkeypatch):
+    """The match check flags it: filing it under the wrong album's series and writing that album's tags would be hard to take back."""
+    from bdnex.importer.session import ImportSession
+
+    root, downloads, comic, _ = world
+    monkeypatch.setattr(ImportSession, "_confirm", lambda self, result: self.library.flag_review(result.path, "looks contradicted"))
+    code, text = do("--move", str(downloads))
+    assert code == 0 and os.path.exists(comic) and not list(root.rglob("*.cbz"))  # left where it was
+    assert "whose match looks wrong were not written or moved" in text and "bdnex review" in text
+    with library(tmp_path) as lib:
+        assert lib.get_file(comic)["review"] and lib.get_file(comic)["album_id"] is not None  # still linked, still flagged

@@ -33,9 +33,13 @@ class CoverPass:
                 or not album.get("cover_url") or self._kept_cover(album) is not None):
             self._covers.append(result)  # nothing to download (already saved, or not wanted): the end of the run compares
             return
-        if self._cover_pool is None:
-            self._cover_pool = ThreadPoolExecutor(max_workers=self._cover_workers(), thread_name_prefix="bdnex-cover")
-        future = self._cover_pool.submit(self._save_cover_file, fetch, album["cover_url"], album["source"], album["source_id"])
+        key = (album["source"], album["source_id"])
+        future = self._cover_futures.get(key)  # another file of the same album (a spare version, a duplicate): the same download
+        if future is None:
+            if self._cover_pool is None:
+                self._cover_pool = ThreadPoolExecutor(max_workers=self._cover_workers(), thread_name_prefix="bdnex-cover")
+            future = self._cover_futures[key] = self._cover_pool.submit(
+                self._save_cover_file, fetch, album["cover_url"], album["source"], album["source_id"])
         self._cover_jobs.append((result, future))
 
     def _cover_workers(self) -> int:
@@ -81,6 +85,7 @@ class CoverPass:
         """Stop means stop: forget the covers still waiting (the next `--fetch` gets them)."""
         self._covers = []
         self._cover_jobs = []
+        self._cover_futures = {}
         stop = getattr(self.source, "stop_requests", None)
         if stop:
             stop()  # the waiting threads would keep the program from exiting until their polite delay ended

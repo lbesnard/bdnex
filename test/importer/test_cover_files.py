@@ -206,3 +206,40 @@ def test_a_vote_needs_a_clear_winner_and_a_good_enough_cover(tmp_path):
     env.session._cover_urls = lambda pool: {}  # nothing to request: the covers are given
     if len(matches) > 1:
         assert env.session._vote(path, matches) is None  # two identical covers: no clear winner
+
+
+def test_two_files_of_one_album_share_one_cover_download(tmp_path):
+    from bdnex.importer.session_types import ImportResult
+
+    web = web_with_cover()
+    env = env_for(web, check=False, download=False)
+    path = cbz_with_cover(tmp_path, FILE, 1)
+    env.session.run([path])
+    album_id = env.lib.get_file(path)["album_id"]
+    assert env.lib.get_album(album_id)["cover_file"] is None
+    env.session.settings.cover.download = True
+    import threading
+
+    asked, gate = [], threading.Event()
+    real = env.source.fetch_cover
+    env.source.fetch_cover = lambda url: (asked.append(url), gate.wait(5), real(url))[2]  # the download is in flight until `gate` opens
+    first, second = ImportResult(path, "tagged", album_id=album_id), ImportResult(path + "2", "tagged", album_id=album_id)
+    env.session._queue_cover(first)
+    env.session._queue_cover(second)  # a spare version, or a duplicate of the file: the same picture
+    assert len(env.session._cover_jobs) == 2 and env.session._cover_jobs[0][1] is env.session._cover_jobs[1][1]
+    gate.set()
+    env.session._cover_jobs[0][1].result()
+    assert asked == [COVER_URL]  # one request, not two (each one waits its polite delay, and both wrote the same temporary file)
+    env.session._drop_covers()
+
+
+def test_saving_a_cover_from_several_threads_at_once_leaves_one_clean_file(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    pictures = [b"\x89PNG" + bytes([n]) * 300 for n in range(8)]
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        relative = list(pool.map(lambda data: covers.save_cover(tmp_path, "bedetheque", "55", data), pictures))
+    assert set(relative) == {"bedetheque/55/cover.png"}
+    folder = tmp_path / "bedetheque" / "55"
+    assert [p.name for p in folder.iterdir()] == ["cover.png"]  # no temporary file left behind
+    assert (folder / "cover.png").read_bytes() in pictures  # one of them, whole

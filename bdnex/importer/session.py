@@ -102,6 +102,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         self._undecided: list = []  # (path, matches) the strict `--auto=all` left undecided: their covers vote at the end
         self._cover_pool = None  # worker threads that download covers while the matching goes on (CoverPass._queue_cover)
         self._cover_jobs: list = []  # (result, future) of the covers on their way
+        self._cover_futures: dict = {}  # (source, album id) -> the download of its cover: files of one album share it
         self._cover_failed = 0  # covers that did not come, this run
         self._ask_covers = True  # False while the matching still runs: a cover that differs is flagged, not asked about
         self._cover_off = False  # set when the check turns out to be impossible (no OpenCV)
