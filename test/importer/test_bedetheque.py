@@ -469,3 +469,20 @@ def test_a_library_that_stored_encrage_reads_it_back_as_inker(lib):
     album = lib.add_album(AlbumInfo("bedetheque", "9", "T", credits={"Encrage": ["Martin"], "Writer": ["A"]}))
     lib.merge_album(AlbumInfo("bedetheque", "9", "T", credits={"Writer": ["A"]}))  # a re-read that has no inking
     assert lib.get_album(album)["credits"].get("Inker") == ["Martin"] and "Encrage" not in lib.get_album(album)["credits"]
+
+
+def test_a_series_page_that_failed_makes_the_album_partial_so_that_fetch_tries_again(lib, web):
+    del web.pages[SERIES_URL]
+    info = Bedetheque(lib, fetch=web, sleep=lambda s: None).album_info(ALBUM_URL)
+    assert info.title == "Redwin de la Forge" and info.extra["partial"] and info.extra["series_page_missing"]
+
+
+def test_a_series_page_that_is_only_missing_because_we_work_offline_is_not_a_failure(lib, web):
+    from bdnex.importer.registry import offline_fetch
+
+    online = Bedetheque(lib, fetch=web, sleep=lambda s: None)
+    online.album_info(ALBUM_URL)  # the album page is stored
+    lib.conn.execute("DELETE FROM source_cache WHERE kind = 'series'")
+    lib.conn.commit()
+    info = Bedetheque(lib, fetch=offline_fetch, sleep=lambda s: None).album_info(ALBUM_URL)  # `import --reparse`: no request
+    assert info.title == "Redwin de la Forge" and not info.extra.get("partial")
