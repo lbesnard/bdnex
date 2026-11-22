@@ -36,7 +36,11 @@ def listing(ships: list[str], mine: list[str]) -> list[dict]:
     for text in mine:
         if _name(text) in gone:
             continue
-        name, words, why = parse_alias(text)
+        try:
+            name, words, why = parse_alias(text)
+        except ValueError as err:  # hand-edited and wrong: say so here (`--rm NAME` removes it), never a traceback
+            rows.append({"name": _name(text), "command": "", "why": str(err), "from": "broken (ignored)"})
+            continue
         shipped = name in {_name(item) for item in ships}
         rows.append({"name": name, "command": "bdnex " + " ".join(words), "why": why,
                      "from": "yours (replaces bdnex's)" if shipped else "yours"})
@@ -80,6 +84,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
             mine = [item for item in mine if _name(item) != name]
             back = " (bdnex's own of that name is back)" if name in {_name(s) for s in ships} else ""
             print(f"{'Would remove' if args.pretend else 'Removed'} {name}{back}", file=out)
+        elif any(_name(item) == name and not parse_alias_ok(item) for item in mine):
+            mine = [item for item in mine if _name(item) != name]  # a switched-off or broken entry: removing it brings back bdnex's own
+            print(f"{'Would remove' if args.pretend else 'Removed'} {name} (bdnex's own of that name is back, if there is one)", file=out)
         elif name in {_name(s) for s in ships} and not any(_name(item) == name for item in mine):
             mine.append(f"{name} =")
             print(f"{'Would switch off' if args.pretend else 'Switched off'} {name} (one of bdnex's)", file=out)
@@ -96,9 +103,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
             print(f"Nothing changed: {err}", file=sys.stderr)
             return 1
         if not args.pretend:
-            backup = path.with_name(path.name + ".bak")
-            backup.write_text(text, encoding="utf-8")
-            path.write_text(new_text, encoding="utf-8")
+            from bdnex.config import write_config_file
+
+            backup = write_config_file(path, new_text) or path.with_name(path.name + ".bak")
             print(f"Updated {path} (the previous file is {backup.name}).", file=out)
         text = new_text
         mine = _own(yaml.safe_load(text) or {}) if not args.pretend else mine

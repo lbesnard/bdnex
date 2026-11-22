@@ -58,17 +58,39 @@ def _has_comment_for(lines: list[str], name: str, start: int = 0, stop: Optional
     return any(pattern.match(line) for line in lines[start:stop])
 
 
+def _lines(text: str) -> list[str]:
+    """The lines of a file, split on newlines only (``str.splitlines`` also cuts at U+2028, ``\\x85``...: inside a quoted
+    password or path that would change the value when the file is joined back)."""
+    lines = re.split(r"\r?\n", text)
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines
+
+
+def _section_names() -> set[str]:
+    return {item.name for item in packaged()}
+
+
 def _header(lines: list[str], name: str) -> Optional[int]:
-    pattern = re.compile(rf"^(?:#\s*)?{re.escape(name)}:\s*(?:#.*)?$")
-    return next((i for i, line in enumerate(lines) if pattern.match(line)), None)
+    """The line of the section ``name``: the active one when there is one, else a commented one."""
+    active = re.compile(rf"^{re.escape(name)}:\s*(?:#.*)?$")
+    commented = re.compile(rf"^#\s*{re.escape(name)}:\s*(?:#.*)?$")
+    for pattern in (active, commented):
+        found = next((i for i, line in enumerate(lines) if pattern.match(line)), None)
+        if found is not None:
+            return found
+    return None
 
 
 def _span_end(lines: list[str], header: int) -> int:
     """The line after the last line of the section that starts at ``header`` (trailing blank lines excluded)."""
-    top_level = re.compile(r"^(?:# ?)?[A-Za-z_][\w-]*:")  # `# write:`, not an indented-by-hand `#   cbr:`
-    end = len(lines)
+    sections = _section_names()
+    active = re.compile(r"^[A-Za-z_][\w-]*:")
+    commented = re.compile(r"^# ?([A-Za-z_][\w-]*):")  # `# write:` is a section only when bdnex has one of that name:
+    end = len(lines)                                    # a user's own `# Note: ...` comment does not end the section
     for i in range(header + 1, len(lines)):
-        if top_level.match(lines[i]):
+        found = commented.match(lines[i])
+        if active.match(lines[i]) or (found and found.group(1) in sections):
             end = i
             break
     while end > header + 1 and not lines[end - 1].strip():
@@ -81,7 +103,7 @@ def missing(text: str, user: Optional[dict[str, Any]] = None) -> list[str]:
     import yaml
 
     user = user if user is not None else (yaml.safe_load(text) or {})
-    lines = text.splitlines()
+    lines = _lines(text)
     absent = []
     for item in packaged():
         if not item.children:
@@ -110,7 +132,7 @@ def complete(text: str) -> tuple[str, list[str]]:
     import yaml
 
     user = yaml.safe_load(text) or {}
-    lines = text.splitlines()
+    lines = _lines(text)
     added: list[str] = []
     for item in packaged():
         if not item.children:
@@ -163,7 +185,7 @@ def annotate(text: str) -> tuple[str, list[str]]:
     """``text`` with the help comment (the possible values and what the option does) put back after every option the
     file already mentions, active or commented out, that has no comment of its own, or only an old list of choices (``# a | b``). Values are never changed.
     Returns (new text, dotted names annotated)."""
-    lines = text.splitlines()
+    lines = _lines(text)
     done: list[str] = []
     for item in packaged():
         if item.children:
@@ -207,12 +229,33 @@ def format_scalar(value: Any) -> str:
     return yaml.safe_dump(str(value), allow_unicode=True, default_flow_style=True, width=10 ** 6).split("\n...")[0].strip()
 
 
+def _trailing_comment(rest: str) -> str:
+    """The ``  # comment`` at the end of the text after ``key:`` (a ``#`` inside a quoted value is not one)."""
+    rest = rest.rstrip()
+    if rest[:1] in ("'", '"'):
+        quote, i = rest[0], 1
+        while i < len(rest):
+            if quote == '"' and rest[i] == "\\":
+                i += 2
+                continue
+            if rest[i] == quote:
+                if quote == "'" and rest[i + 1:i + 2] == "'":  # '' is a quote inside single quotes
+                    i += 2
+                    continue
+                break
+            i += 1
+        rest = rest[i + 1:]
+        return rest.rstrip() if rest.strip().startswith("#") else ""
+    found = re.search(r"([ \t]+#.*)$", rest)
+    return found.group(1) if found else ""
+
+
 def set_value(text: str, dotted: str, value: Any) -> str:
     """``text`` with the option ``dotted`` (``write.pdf``, or ``library``) set to the scalar ``value``.
 
     An active line keeps its own trailing comment; a commented-out line is made active (and so is a commented section
     line); a missing option is added under its section, and a missing section at the end. Everything else is left as it is."""
-    lines = text.splitlines()
+    lines = _lines(text)
     section, _, name = dotted.rpartition(".")
     indent = "  " if section else ""
     rendered = format_scalar(value)
@@ -226,12 +269,13 @@ def set_value(text: str, dotted: str, value: Any) -> str:
             lines += [f"{section}:", f"  {name}: {rendered}"]
             return "\n".join(lines) + "\n"
         scope = range(header + 1, _span_end(lines, header))
-    for pattern, commented in ((rf"^{indent}{re.escape(name)}:[ \t]*(.*?)([ \t]+#.*)?$", False),
-                                (rf"^[ \t]*#[ \t]*{re.escape(name)}:[ \t]*(.*?)([ \t]+#.*)?$", True)):
+    gap = " " * (len(indent) + 1)  # `  # pdf:` (comment_out) or `#   pdf:` (written by hand); a deeper `#     mode:` is an example of something else
+    for pattern in (rf"^{indent}{re.escape(name)}:[ \t]*(.*)$",
+                    rf"^(?:{indent}#[ \t]?|#{gap}){re.escape(name)}:[ \t]*(.*)$"):
         for i in scope:
             found = re.match(pattern, lines[i])
             if found:
-                lines[i] = f"{indent}{name}: {rendered}" + (found.group(2) or "")
+                lines[i] = f"{indent}{name}: {rendered}" + _trailing_comment(found.group(1))
                 if header is not None and re.match(r"^#\s*", lines[header]):
                     lines[header] = re.sub(r"^#\s*", "", lines[header])  # the section has to be active too
                 return "\n".join(lines) + "\n"
@@ -252,7 +296,7 @@ def set_aliases(text: str, items: list[str]) -> str:
     ``aliases:`` gets the block at its end (a commented ``# aliases:`` stays as the help it is)."""
     import json
 
-    lines = text.splitlines()
+    lines = _lines(text)
     block = [f"  - {json.dumps(item, ensure_ascii=False)}" for item in items]
     header = next((i for i, line in enumerate(lines) if re.match(r"^aliases:", line)), None)
     if header is None:
@@ -262,6 +306,9 @@ def set_aliases(text: str, items: list[str]) -> str:
         return "\n".join(lines) + "\n"
     comment = re.match(r"^aliases:[ \t]*(?:\[.*?\])?[ \t]*(#.*)?$", lines[header])
     end = header + 1
+    if re.match(r"^aliases:[ \t]*\[[^\]]*$", lines[header]):  # a flow list written over several lines: up to its `]`
+        while end < len(lines) and "]" not in lines[end - 1]:
+            end += 1
     while end < len(lines) and (not lines[end].strip() or re.match(r"^[ \t]+(-|#)", lines[end])):
         end += 1
     while end > header + 1 and not lines[end - 1].strip():

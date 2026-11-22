@@ -7,6 +7,11 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Config: a typo inside a list entry (`import.sources[].mod`, a `paths.rules` entry) is named in the error instead of crashing every command with a traceback.
+- Config: `config --update`, `aliases --add/--rm`, the first-run file and the settings page write the file the same safe way: beside it, flushed, then moved over it (a crash never leaves a half file), the `.bak` copy keeps the file's 0600 mode, and a config that is a symbolic link (dotfiles) stays a link.
+- Config: a comment of your own like `# Note: ...` no longer ends a section for `set_value` / `config --update` (which wrote an option twice), an active section wins over a commented one of the same name, a `#` inside a quoted value is not taken for a comment, `config --update` does not rename `directory` when `collection_path` is there, and Unicode line separators inside a value are kept.
+- Config: an alias named like a command a newer bdnex added is ignored with a warning (the command wins) instead of making the whole config invalid; `aliases` lists a broken entry instead of crashing, and `aliases --rm NAME` removes a switched-off or broken one.
+- Config: a source that is a symbolic link to the collection is refused; a relative `collection_path` is refused where it is used; a password in `komga.url` and secret-looking keys of `plugins` are hidden by `bdnex config` and the settings page.
 - `bdnex undo` checks the library too before it moves a file back (a file the library forgot, or a stale row at the old place, is refused), and when the library cannot follow the move it puts the file back, so disk and library never disagree.
 - `bdnex relocate OLD NEW` also rewrites the paths kept in the trash, the `undo` list, the files waiting to be moved in and the copies' origins (`trash --restore` and `undo` no longer recreate the old folder).
 - Rewriting a file keeps the `<Pages>` list (page types) an existing ComicInfo.xml had, and the permissions of the file it replaces.

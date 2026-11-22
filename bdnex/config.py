@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import os
 import re
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Optional, Union
@@ -88,6 +89,10 @@ class Source(_Section):
     @property
     def folder(self) -> str:
         return os.path.abspath(os.path.expanduser(self.path)).rstrip("/")
+
+
+def _real(path: str) -> str:
+    return os.path.realpath(os.path.expandvars(os.path.expanduser(path))).rstrip("/") or "/"
 
 
 class Import(_Section):
@@ -323,7 +328,12 @@ class Settings(_Section):
 
         seen = set()
         for text in value:
-            name = parse_alias(text)[0]
+            try:
+                name = parse_alias(text)[0]
+            except ValueError as err:
+                if "is already a command" in str(err):
+                    continue  # a command of a newer bdnex has this name: the command wins and the alias is ignored, not an error
+                raise
             if name in seen:
                 raise ValueError(f"alias {name!r} is given twice")
             seen.add(name)
@@ -339,7 +349,8 @@ class Settings(_Section):
             return value
         folders = [(source.alias, source.folder) for source in value.sources]
         if collection and collection != PLACEHOLDER_COLLECTION:
-            root = os.path.abspath(os.path.expanduser(collection)).rstrip("/")
+            root = _real(collection)
+            folders = [(alias, _real(folder)) for alias, folder in folders]  # through symbolic links: `~/in -> ~/comics` is the collection
             for alias, folder in folders:
                 if folder == root:
                     raise ValueError(f"source {alias!r} is your collection_path ({root}): the collection can not be "
@@ -393,7 +404,10 @@ class Settings(_Section):
             raise ConfigError(
                 "`collection_path` is not set in your bdnex config: edit it "
                 "(`bdnex config --edit`) and set it to your comics folder.")
-        return Path(os.path.expanduser(self.collection_path))
+        path = Path(os.path.expandvars(os.path.expanduser(self.collection_path)))
+        if not path.is_absolute():  # it would mean another folder from cron, Docker or another working directory
+            raise ConfigError(f"`collection_path` ({self.collection_path}) is not an absolute path: write it in full, or start it with ~")
+        return path
 
 
 @dataclass
@@ -468,8 +482,10 @@ def _drop_keys(data: dict, dotted_keys: list[str]) -> dict:
 
 
 def _format_errors(err: ValidationError) -> list[str]:
-    return [f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}"
-            for e in err.errors() if e["type"] != "extra_forbidden"]  # reported as unknown keys
+    """What pydantic found. An unknown key is reported by ``find_unknown_keys`` (which does not look inside lists), so it is
+    dropped here, except inside a list (``import.sources.0.mod``), which nobody else reports."""
+    return [f"{'.'.join(str(p) for p in e['loc'])}: " + ("unknown option (typo?)" if e["type"] == "extra_forbidden" else e["msg"])
+            for e in err.errors() if e["type"] != "extra_forbidden" or any(isinstance(p, int) for p in e["loc"])]
 
 
 def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
@@ -490,6 +506,14 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
             user["aliases"] = combine_aliases(defaults.get("aliases") or [], user["aliases"])
     warnings: list[str] = []
     errors: list[str] = []
+    from bdnex.ui.commands import parse_alias
+
+    for item in user.get("aliases") or []:  # a name a newer bdnex made a command: the command wins, the alias is only reported
+        try:
+            parse_alias(str(item))
+        except ValueError as err:
+            if "is already a command" in str(err):
+                warnings.append(f"{err}: the alias is ignored (rename or remove it: `bdnex aliases --rm NAME`)")
     for old, new in RENAMED_KEYS.items():  # an old name keeps working, once, with a warning
         if old in user:
             value = user.pop(old)
@@ -538,9 +562,40 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
                 "'package.module:function' that should fetch pages.")
     except ValidationError as err:
         errors.extend(_format_errors(err))
+        if not errors:  # never an unexplained failure
+            errors.append("; ".join(f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in err.errors()))
     if errors:
         raise ConfigError("invalid bdnex config:\n  - " + "\n  - ".join(errors))
     return settings, warnings, merged
+
+
+def write_config_file(path, text: str, backup: bool = True) -> Optional[Path]:
+    """Replace the configuration file with ``text``: written beside it, flushed, then moved over it (a crash never leaves a
+    half file), keeping its permissions (it holds passwords and tokens: the copy too is never readable by others), and
+    through a symbolic link (a dotfiles repo keeps its file). Returns the ``.bak`` copy of the old file, when there is one."""
+    path = Path(os.path.realpath(path))
+    kept = None
+    if path.exists():
+        if backup:
+            kept = path.with_name(path.name + ".bak")
+            fd = os.open(kept, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(path.read_bytes())
+            shutil.copymode(path, kept)
+    tmp = path.with_name(path.name + ".tmp")
+    try:
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600 if path.exists() else 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as handle:
+            handle.write(text)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if path.exists():
+            shutil.copymode(path, tmp)
+        os.replace(tmp, path)
+    finally:
+        if tmp.exists():
+            tmp.unlink()
+    return kept
 
 
 def ensure_user_config(path: Optional[Path] = None) -> tuple[Path, bool]:
@@ -552,7 +607,7 @@ def ensure_user_config(path: Optional[Path] = None) -> tuple[Path, bool]:
     from bdnex.config_template import complete
 
     text, _ = complete(USER_TEMPLATE.format(version=CONFIG_VERSION, placeholder=PLACEHOLDER_COLLECTION))
-    path.write_text(text, encoding="utf-8")
+    write_config_file(path, text, backup=False)
     return path, True
 
 
@@ -596,4 +651,14 @@ def masked(raw: dict) -> dict:
         section, _, name = dotted.partition(".")
         if isinstance(copy.get(section), dict) and copy[section].get(name) not in (None, "", []):
             copy[section][name] = HIDDEN_VALUE
+    if isinstance(copy.get("komga"), dict) and isinstance(copy["komga"].get("url"), str):
+        copy["komga"]["url"] = hide_userinfo(copy["komga"]["url"])  # http://user:password@host
+    for key, value in (copy.get("plugins") or {}).items() if isinstance(copy.get("plugins"), dict) else []:
+        if isinstance(value, dict):
+            copy["plugins"][key] = {k: (HIDDEN_VALUE if re.search(r"pass|token|secret|key", k, re.I) and v else v) for k, v in value.items()}
     return copy
+
+
+def hide_userinfo(url: str) -> str:
+    """``http://admin:pw@host:1`` -> ``http://<hidden>@host:1``."""
+    return re.sub(r"^([a-z][a-z0-9+.-]*://)[^/@]+@", rf"\1{HIDDEN_VALUE}@", url, flags=re.I)

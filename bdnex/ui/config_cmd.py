@@ -84,6 +84,8 @@ def _update(path) -> int:
 
     renamed = []
     for old, new_name in RENAMED_KEYS.items():  # an option that changed its name keeps its value
+        if re.search(rf"(?m)^{new_name}:", text):  # both are there: renaming would give two (the last wins); build_settings warns
+            continue
         text2 = re.sub(rf"(?m)^{old}:", f"{new_name}:", text)
         if text2 != text:
             renamed.append(f"{old} -> {new_name}")
@@ -93,9 +95,9 @@ def _update(path) -> int:
     if not added and not renamed and not helped:
         print(f"{path} already lists every option, with its help.")
         return 0
-    backup = path.with_name(path.name + ".bak")
-    backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
-    path.write_text(new, encoding="utf-8")
+    from bdnex.config import write_config_file
+
+    backup = write_config_file(path, new) or path.with_name(path.name + ".bak")
     for line in renamed:
         print(f"Renamed the option {line}.")
     print(f"Updated {path} (the previous file is {backup.name}):")
