@@ -883,9 +883,9 @@ def test_e_writes_the_metadata_of_a_file_by_hand_and_links_it(env):
     db, files = env
 
     async def script(app, pilot):
-        await pilot.press("e")  # a file with an album of the site: the form of its metadata (without the series name)
+        await pilot.press("e")  # a file with an album of the site: the form of its metadata (the series name included)
         await settle(app, pilot)
-        assert app.screen.__class__.__name__ == "EditScreen" and not app.screen.query("#f-series")
+        assert app.screen.__class__.__name__ == "EditScreen" and app.screen.query("#f-series")
         await pilot.press("escape")  # closed unchanged
         await settle(app, pilot)
         await pilot.press("u")  # unlinked first, then written by hand

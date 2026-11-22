@@ -1324,21 +1324,40 @@ class ReviewApp(App):
                          lambda got: self.save_one(row, album_id, got) if got else None)
 
     def edit_metadata(self, row: batch.Row, album_id: int) -> None:
-        """The metadata the library holds for the album of the file, in the form of a hand-written album (the series name is left out: it
-        would rename the series of every album of it). What changes is saved as the person's own edits (`bdnex edit`): a later import or
-        `--fetch --force` does not undo them."""
+        """The metadata the library holds for the album of the file, in the form of a hand-written album. What changes is saved as the person's
+        own edits (`bdnex edit`): a later import or `--fetch --force` does not undo them. The series name can be changed too: it renames the
+        series of EVERY album of it, so the person is asked first (and told how many)."""
         from bdnex.library import manual
 
         values = manual.form_of(self.library, album_id)
-        fields = [f for f in manual.FIELDS if f[0] != "series"]
-        self.push_screen(EditScreen(f"Metadata of {values.get('title') or 'the album'} (saved as your own edits)", values, fields),
-                         lambda got: self.save_metadata(row, album_id, got) if got else None)
+        in_series = (self.library.get_album(album_id) or {}).get("kind") == "series"
+        fields = list(manual.FIELDS) if in_series else [f for f in manual.FIELDS if f[0] != "series"]  # a one-shot has no series
+        heading = f"Metadata of {values.get('title') or 'the album'} (saved as your own edits)"
+        if in_series:
+            heading += " · the series name renames it for all its albums"
+        self.push_screen(EditScreen(heading, values, fields), lambda got: self.save_metadata(row, album_id, got) if got else None)
 
     def save_metadata(self, row: batch.Row, album_id: int, values: dict) -> None:
+        album = self.library.get_album(album_id) or {}
+        old, new = album.get("series") or "", (values.get("series") or "").strip()
+        if album.get("kind") != "series":
+            values = {**values, "series": old}  # a one-shot has none
+        elif not new:
+            self.notify("A series needs its name (to remove the album from it, unlink it).", severity="error")
+            return
+        elif new != old:
+            count = len(self.library.series_albums(album_id))
+            if count > 1:  # it is the series of every one of them that changes: said, and asked, before it is done
+                self.push_screen(
+                    AskScreen(f"Rename the series {old!r} to {new!r}?\nIt changes all {count} albums of that series, and where a move would put "
+                              "their files.", None),
+                    lambda yes: self.apply_metadata(row, album_id, values if yes else {**values, "series": old}))
+                return
+        self.apply_metadata(row, album_id, values)
+
+    def apply_metadata(self, row: batch.Row, album_id: int, values: dict) -> None:
         from bdnex.library import manual
 
-        album = self.library.get_album(album_id) or {}
-        values = {**values, "series": album.get("series") or ""}  # unchanged: a series is renamed with `bdnex edit`, for all its albums
         try:
             manual.update(self.library, album_id, values)
         except manual.FormError as err:
@@ -1347,16 +1366,23 @@ class ReviewApp(App):
         except Exception as err:  # a locked library: said, nothing was half written (one transaction)
             self.notify(f"Not saved ({err}): try again", severity="error", timeout=8)
             return
-        album = self.library.get_album(album_id) or {}
-        file = self.library.get_file(row.path) or {}
-        from bdnex.ui.describe import label
-
-        row.album, row.facts = label(album), batch.facts_of(album, file)
-        self.refresh_dest(row)  # a title or a volume changes the name a move would give
-        self.refresh_row(row)
+        self.refresh_album_rows(set(self.library.series_albums(album_id)) | {album_id})  # (a renamed series changes every album of it)
         self.show_meta(row)
         logger.info("%s: metadata of the album %s changed by hand", os.path.basename(row.path), album_id)
         self.notify("Saved: kept when the album is read again. `bdnex write` puts it in the file.", timeout=6)
+
+    def refresh_album_rows(self, album_ids: set) -> None:
+        """The rows of this batch whose file has one of these albums: their label, facts and destination are read again (a title, a volume or a
+        series name changed), so the table says what the library holds."""
+        from bdnex.ui.describe import label
+
+        for other in self.rows:
+            file = self.library.get_file(other.path) or {}
+            if file.get("album_id") in album_ids:
+                album = self.library.get_album(file["album_id"]) or {}
+                other.album, other.facts = label(album), batch.facts_of(album, file)
+                self.refresh_dest(other)  # the name a move would give
+                self.refresh_row(other)
 
     def edit_series(self, rows: list, series: str = "") -> None:
         """The form that writes one series by hand for these files: the volume of each is read from its name, the series name is the folder's
