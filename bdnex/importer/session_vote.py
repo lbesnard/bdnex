@@ -144,6 +144,14 @@ class CoverVote:
                 self._journal = Journal()
                 try:
                     result = self._import_matched(path, matches, False, (candidate, score, f"cover vote {similarity:.0f}%"))
+                except Exception as err:  # one file's failure must not stop the pass, nor leave a half-done link behind
+                    logger.exception(f"{path}: the cover vote could not apply its choice")
+                    try:
+                        self._undo_journal(self._journal, path)
+                    except Exception:
+                        logger.exception(f"{path}: what was recorded for it could not be taken back")
+                    self.detail(f"    cover vote failed for {os.path.basename(path)}: {err}")
+                    continue
                 finally:
                     journal, self._journal = self._journal, None
                 result.journal = journal
