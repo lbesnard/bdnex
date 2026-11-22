@@ -90,8 +90,12 @@ def test_earlier_runs_survive_a_restart_and_a_run_cut_short_says_so(env, tmp_pat
     store = tmp_path / "history.json"
     first = jobs.JobManager(settings, store=store)
     job = first.start("check", {})
-    for _ in range(100):
-        if first.get(job.id).status != "running":
+    for _ in range(600):  # until the FILE says the run is over: the manager saves it after it sets the status, and this test then
+        try:              # rewrites the file, so a late save of the first manager (a slow machine) would clobber it
+            saved = json.loads(store.read_text())
+        except (OSError, ValueError):
+            saved = []
+        if any(r["id"] == job.id and r["status"] != "running" for r in saved):
             break
         time.sleep(0.05)
     assert store.exists()

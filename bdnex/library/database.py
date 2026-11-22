@@ -535,6 +535,21 @@ class Library:
                 "DELETE FROM series WHERE id NOT IN (SELECT series_id FROM albums WHERE series_id IS NOT NULL)"
             ).rowcount
 
+    def series_id_of(self, album_id: Optional[int]) -> Optional[int]:
+        """The series row an album belongs to (``None``: a one-shot, or no such album)."""
+        if album_id is None:
+            return None
+        row = self.conn.execute("SELECT series_id FROM albums WHERE id = ?", (album_id,)).fetchone()
+        return row["series_id"] if row else None
+
+    def delete_series_if_unused(self, series_id: Optional[int]) -> bool:
+        """Delete one series no album refers to (an indexed lookup: :meth:`prune_orphan_series` scans every album). Returns whether it went."""
+        if series_id is None:
+            return False
+        with self.conn:
+            return self.conn.execute("DELETE FROM series WHERE id = ? AND NOT EXISTS (SELECT 1 FROM albums WHERE series_id = ?)",
+                                     (series_id, series_id)).rowcount > 0
+
     def series_of_album(self, album_id: int) -> Optional[tuple[str, str]]:
         """``(the series' identity at its source, its name)`` for an album of a series; ``None`` for a one-shot."""
         row = self.conn.execute("SELECT s.source_id, s.name FROM albums a JOIN series s ON s.id = a.series_id WHERE a.id = ?",
