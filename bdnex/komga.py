@@ -275,15 +275,22 @@ def _same(key: str, mine: Any, theirs: Any) -> bool:
 
 
 def changes(fields: dict[str, Any], current: dict[str, Any], locks: dict[str, str],
-            lock: bool) -> tuple[dict[str, Any], list[str]]:
+            lock: bool, respect_locks: bool = True, locked_out: Optional[list[str]] = None) -> tuple[dict[str, Any], list[str]]:
     """``(payload, differing)``: what to send, and which fields really differ from what Komga holds.
 
     Nothing differing and nothing to lock sends nothing, so a second run is a no-op. A field that is the same but not
     locked yet is still sent when ``lock`` is on, so the lock is set once.
+
+    ``respect_locks``: a field that differs and is **already locked in Komga** is left alone (someone locked it there on purpose, or an earlier
+    push did and it was changed since): it is added to ``locked_out`` instead of being sent. ``False`` overwrites it (``--overwrite-locked``).
     """
     payload, differing = {}, []
     for key, value in fields.items():
         different = not _same(key, value, current.get(key))
+        if different and respect_locks and key in locks and current.get(locks[key]):
+            if locked_out is not None:
+                locked_out.append(key)
+            continue
         unlocked = lock and key in locks and not current.get(locks[key])
         if different:
             differing.append(key)

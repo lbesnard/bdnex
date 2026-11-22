@@ -134,6 +134,12 @@ Only what differs from Komga's current value is sent, so a second run says `alre
 **locked** (`komga.lock`, `--no-lock` to skip) so that a Komga rescan does not replace them with what it reads in the
 file.
 
+A field that **is already locked in Komga** and differs from the library's value is **left alone**: someone locked it there on purpose,
+or an earlier push locked it and it was changed since. The summary says how many were left (`N field(s) locked in Komga left alone`);
+`--overwrite-locked` changes them too (after you edited the library on purpose: bdnex's own earlier push locked the fields it sent, so a
+changed value needs it once). A push is not one transaction (Komga takes one request per book or series): what was sent stays, it stops after
+five failures in a row (a server that is down), and running it again finishes the rest, since it only sends what still differs.
+
 Note that, for a book, the roles the library has names for (writer, penciller...) are replaced by the library's list (a role
 Komga holds that the library has no names for, a colorist added there, stays), and that your own edits in Komga for the same
 fields are overwritten and locked, **even a field you locked in Komga yourself** (that is the point: the library wins; bdnex
