@@ -34,6 +34,9 @@ def run(argv: list[str], out=sys.stdout, prompter=None, session=None) -> int:
     parser.add_argument("--with-review", action="store_true",
                         help="push: also send the files whose match waits for a look (`bdnex review`); by default they are "
                              "left out, so that a doubtful match never puts wrong metadata (and a lock) in Komga")
+    parser.add_argument("--overwrite-locked", action="store_true",
+                        help="push: also change the fields that are locked in Komga (by default a locked field that differs is left alone: "
+                             "someone locked it there on purpose, or an earlier push did and it was changed since)")
     parser.add_argument("--json", action="store_true", help="show: print what Komga holds as JSON")
     parser.add_argument("--missing", action="store_true",
                         help="show: list the Komga books that no library file matches (instead of the matches)")
@@ -214,10 +217,11 @@ def _plan(client, pairs, albums, args, lock) -> list[dict]:
         if args.only == "series" or (args.wanted[0] is not None and not args.wanted[0]):
             continue
         current = book.get("metadata") or {}
+        locked: list[str] = []
         payload, differing = komga.changes(_only(komga.book_fields(album, current), args.wanted[0]), current,
-                                           komga.BOOK_LOCKS, lock)
+                                           komga.BOOK_LOCKS, lock, not getattr(args, "overwrite_locked", False), locked)
         plan.append({"kind": "book", "id": book["id"], "label": _label(album), "how": how, "payload": payload,
-                     "differing": differing, "current": book.get("metadata") or {}})
+                     "differing": differing, "current": book.get("metadata") or {}, "locked": locked})
     if args.only != "books" and not (args.wanted[1] is not None and not args.wanted[1]):
         for series_id, group in by_series.items():
             current = client.series(series_id).get("metadata") or {}
@@ -228,9 +232,11 @@ def _plan(client, pairs, albums, args, lock) -> list[dict]:
                              "skipped": f"its Komga folder holds {len(named)} different series or albums: no series data is sent"})
                 continue
             fields = komga.series_fields(group, current)
-            payload, differing = komga.changes(_only(fields, args.wanted[1]), current, komga.SERIES_LOCKS, lock)
+            locked = []
+            payload, differing = komga.changes(_only(fields, args.wanted[1]), current, komga.SERIES_LOCKS, lock,
+                                               not getattr(args, "overwrite_locked", False), locked)
             plan.append({"kind": "series", "id": series_id, "label": fields["title"], "how": "", "payload": payload,
-                         "differing": differing, "current": current})
+                         "differing": differing, "current": current, "locked": locked})
     return plan
 
 
@@ -253,9 +259,12 @@ def _show(plan, found, args, out, on) -> None:
         print(results.block("would update", title, lines, on), file=out)
     n_books = sum(1 for s in plan if s["kind"] == "book" and s["payload"])
     n_series = sum(1 for s in plan if s["kind"] == "series" and s["payload"])
+    held = sum(len(s.get("locked") or []) for s in plan)
     same = sum(1 for s in plan if not s["payload"] and not s.get("skipped"))
     parts = [(f"{n_books} book(s) and {n_series} series to update", "would update"),
              (f"{same} already up to date", "unchanged")]
+    if held:
+        parts.append((f"{held} field(s) locked in Komga left alone (`--overwrite-locked` changes them)", "skipped"))
     if found["no_book"]:
         parts.append((f"{len(found['no_book'])} file(s) not in Komga (not scanned yet, or another size)", "skipped"))
     if found["ambiguous"]:
@@ -268,15 +277,26 @@ def _short(value) -> str:
     return text if len(text) <= 60 else text[:57] + "..."
 
 
+GIVE_UP_AFTER = 5  # failures in a row: the server is down, or the key is refused: asking the other thousands would only repeat it
+
+
 def _send(client, todo, out, on) -> int:
-    failed = 0
-    for step in todo:
+    failed = row = sent = 0
+    for number, step in enumerate(todo):
         send = client.patch_book if step["kind"] == "book" else client.patch_series
         try:
             send(step["id"], step["payload"])
+            sent += 1
+            row = 0
         except komga.KomgaError as err:
             failed += 1
+            row += 1
             print(results.block("failed", f"{step['kind']}  {step['label']}", [str(err)], on), file=out)
-    done = len(todo) - failed
-    print(f"Sent to Komga: {color.paint(str(done), 'green_bold', on)} of {len(todo)}.", file=out)
-    return 1 if failed else 0
+            if row >= GIVE_UP_AFTER:
+                left = len(todo) - number - 1
+                print(f"{GIVE_UP_AFTER} failures in a row: stopped, {left} more not tried.", file=out)
+                break
+    print(f"Sent to Komga: {color.paint(str(sent), 'green_bold', on)} of {len(todo)}.", file=out)
+    if failed or sent < len(todo):  # (a push is not one transaction: what was sent stays; `push` only sends what differs, so again finishes it)
+        print(color.hints("Run `bdnex komga push` again: it sends only what still differs, so it finishes the rest.", on), file=out)
+    return 1 if failed or sent < len(todo) else 0
