@@ -17,11 +17,27 @@ class MissingField(Exception):
         self.field = field
 
 
+SUBTITLE_COLON = re.compile(r"\s*:\s+")
+
+
 def sanitize(value: str) -> str:
-    """Make one path component safe on every platform."""
-    value = ILLEGAL.sub("_", str(value))
+    """Make one path component safe on every platform.
+
+    A colon that opens a subtitle (``Batman: Dark Victory``) becomes `` - `` (``Batman - Dark Victory``), as a person would write it; any other
+    character a file system refuses (a colon in ``12:30``, ``?``, ``*``...) becomes ``_``."""
+    value = SUBTITLE_COLON.sub(" - ", str(value))
+    value = ILLEGAL.sub("_", value)
     value = re.sub(r"\s+", " ", value).strip().rstrip(". ")
     return value[:MAX_COMPONENT].rstrip(". ") or "_"
+
+
+TRAILING_YEAR = re.compile(r"\s*\((?:1[5-9]|20)\d{2}\)\s*$")
+
+
+def strip_year(series: str) -> str:
+    """``Batman: Dark Victory (1999)`` -> ``Batman: Dark Victory``: the site adds the year of its first album to a series name that another series
+    has too. Never leaves nothing (a series called ``(1999)`` keeps it)."""
+    return TRAILING_YEAR.sub("", series) or series
 
 
 def fields_for(album: dict[str, Any]) -> dict[str, Any]:

@@ -797,7 +797,10 @@ class Organizer:
             if self.library.album_matches(album_id, rule.match):
                 tpl = rule.template
                 break
-        rendered = template.render(tpl, template.fields_for(album),
+        fields = template.fields_for(album)
+        if self.settings.paths.series_year == "strip":
+            fields["series"] = template.strip_year(fields["series"])  # (two series of one name told apart by their year share a folder then)
+        rendered = template.render(tpl, fields,
                                    lambda name: self._missing(name, album_id, album))
         if rendered.skipped_field:
             return FileResult(path, SKIPPED, note=f"no value for `{rendered.skipped_field}` in the path template")
