@@ -1344,3 +1344,52 @@ def test_a_move_across_file_systems_removes_the_original_only_after_the_copy_is_
     monkeypatch.setattr(Organizer, "_same_device", staticmethod(lambda a, b: False))  # as if the library were on another disk
     Organizer._place_bytes(str(source), str(dest), move=True)
     assert dest.read_bytes() == b"y" * 3000 and not source.exists()
+
+
+def test_writing_over_an_existing_comicinfo_keeps_its_page_types(lib, make_cbz, tmp_path):
+    """ComicTagger and Komga write `<Pages>`; the file's other tags are merged, and rewriting used to drop that list."""
+    path = make_cbz("a.cbz", pages=3)
+    with zipfile.ZipFile(path) as zf:
+        members = {n: zf.read(n) for n in zf.namelist()}
+    members["ComicInfo.xml"] = (b"<ComicInfo><Title>Mine</Title><Pages><Page Image=\"0\" Type=\"FrontCover\"/>"
+                                b"<Page Image=\"1\" Type=\"Story\"/></Pages></ComicInfo>")
+    with zipfile.ZipFile(path, "w") as zf:
+        for name, data in members.items():
+            zf.writestr(name, data)
+    row = registered(lib, path, add_series_album(lib))
+    result = Organizer(lib, settings_for(tmp_path), force=True).process(row, WRITE)  # the database wins the Title
+    assert result.outcome == WRITTEN
+    with zipfile.ZipFile(path) as zf:
+        from xml.etree import ElementTree as ET
+        root = ET.fromstring(zf.read("ComicInfo.xml"))
+    assert root.find("Title").text != "Mine" and [p.get("Type") for p in root.find("Pages")] == ["FrontCover", "Story"]
+
+
+def test_a_new_file_keeps_the_permissions_of_the_one_it_replaces(lib, make_cbz, tmp_path):
+    path = make_cbz("a.cbz", pages=2)
+    os.chmod(path, 0o640)
+    row = registered(lib, path, add_series_album(lib))
+    assert Organizer(lib, settings_for(tmp_path), force=True).process(row, WRITE).outcome == WRITTEN
+    assert os.stat(path).st_mode & 0o777 == 0o640
+
+
+def test_a_ctrl_c_while_writing_leaves_no_temporary_file(lib, make_cbz, tmp_path, monkeypatch):
+    path = make_cbz("a.cbz", pages=2)
+    row = registered(lib, path, add_series_album(lib))
+
+    def interrupted(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(archive, "verify_cbz", interrupted)
+    with pytest.raises(KeyboardInterrupt):
+        Organizer(lib, settings_for(tmp_path), force=True).process(row, WRITE)
+    assert not [n for n in os.listdir(tmp_path) if n.endswith(".bdnex-tmp")]
+
+
+def test_destinations_that_differ_only_by_case_are_not_worked_on_at_once(lib, make_cbz, tmp_path):
+    a, b = make_cbz("x.cbz", pages=1), make_cbz("y.cbz", pages=1)
+    rows = [{"path": a, "format": "cbz"}, {"path": b, "format": "cbz"}]
+    organizer = Organizer(lib, settings_for(tmp_path))
+    assert organizer._independent(rows, WRITE, repair=True) == {0, 1}
+    rows[1] = {"path": make_cbz("X.cbz", pages=1), "format": "cbr"}  # the repair of `x.cbz` and of `X.cbz.cbr` both end as one file name
+    assert organizer._independent(rows, WRITE, repair=True) == set()

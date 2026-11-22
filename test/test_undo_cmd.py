@@ -63,3 +63,35 @@ def test_undo_skips_what_changed_since(env):
 def test_an_unknown_run_is_refused(env):
     code, text = undo("nope")
     assert code == 1
+
+
+def test_undo_does_not_move_a_file_the_library_no_longer_knows_or_into_a_place_it_already_holds(env):
+    tmp, files = env
+    run("move", "--force", "volume:1")
+    dest = tmp / "comics" / "Series" / "Nains" / "Nains - T01 - Redwin de la Forge.cbz"
+    with Library.for_settings(load_config().settings) as lib:
+        lib.remove_file(str(dest))  # forgotten since: moving it back would leave a file the library does not know
+    code, text = undo("last")
+    assert code == 1 and "no longer has" in text and dest.exists() and not os.path.exists(files["a"])
+    with Library.for_settings(load_config().settings) as lib:
+        lib.add_file(str(dest))
+        lib.conn.execute("INSERT INTO files(path, md5, size, format) VALUES (?, 'stale', 1, 'cbz')", (lib._store(files["a"]),))  # a stale row
+        lib.conn.commit()  # already holds the old path (the file itself is not there)
+    code, text = undo("last")
+    assert code == 1 and "already has a file at" in text and dest.exists()
+
+
+def test_when_the_library_cannot_follow_the_file_goes_back_where_it_was(env, monkeypatch):
+    tmp, files = env
+    run("move", "--force", "volume:1")
+    dest = tmp / "comics" / "Series" / "Nains" / "Nains - T01 - Redwin de la Forge.cbz"
+
+    def broken(self, old, new):
+        raise RuntimeError("database is locked")
+
+    monkeypatch.setattr(Library, "move_file", broken)
+    code, text = undo("last")
+    assert code == 1 and "could not follow" in text
+    assert dest.exists() and not os.path.exists(files["a"])  # disk and library agree: the file is where the library has it
+    with Library.for_settings(load_config().settings) as lib:
+        assert lib.get_file(str(dest)) is not None and not [b for b in lib.batches() if b["undone"]]
