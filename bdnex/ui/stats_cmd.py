@@ -44,15 +44,15 @@ def kind_of(name: str) -> str:
 def summary(library: Library, query: list[str]) -> dict:
     """What the library holds (``bdnex stats --json``, and ``GET /api/stats``). Raises ``QueryError``."""
     albums = library.query(query)
-    files = library.query(query, files=True)
+    files = library.query(query, files=True, light=True)  # (only counted: the authors and genres of every file are not needed, and cost three times as much)
     cache = library.cache_summary()
     flagged = sum(1 for f in files if f.get("review"))
     complete = sum(1 for a in albums if not a["partial"])
     kinds = Counter(a["kind"] for a in albums)
-    by_format = Counter(f["format"] for f in files)
+    by_format = Counter(f["format"] or "unknown" for f in files)  # (a file with no format next to others used to fail the sort)
     size_by_format = Counter()
     for f in files:
-        size_by_format[f["format"]] += f["size"] or 0
+        size_by_format[f["format"] or "unknown"] += f["size"] or 0
     linked = sum(1 for f in files if f.get("album_id") is not None or f.get("id") is not None)
     return {
         "albums": {"total": len(albums), "complete": complete, "partial": len(albums) - complete,

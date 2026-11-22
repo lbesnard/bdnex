@@ -80,7 +80,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
     if args.unmatched or args.missing:
         return _file_problems(settings, args, out)
 
-    with Library.for_settings(settings) as library:
+    if not context.has_library(settings, "nothing to list."):
+        return 1
+    with Library.for_settings(settings, readonly=True) as library:  # listing changes nothing: no migration, no path rewriting, no backup
         try:
             rows = library.query(args.query, files=args.files, limit=args.limit)
         except QueryError as err:
@@ -144,7 +146,9 @@ def _file_problems(settings, args, out) -> int:
     """``--unmatched`` and ``--missing``: files, not albums."""
     from bdnex.library.query import fold
 
-    with Library.for_settings(settings) as library:
+    if not context.has_library(settings, "nothing to list."):
+        return 1
+    with Library.for_settings(settings, readonly=True) as library:
         if args.unmatched:
             rows = library.unmatched(args.query)
             default = "$outcome  $best  $path"
@@ -152,17 +156,18 @@ def _file_problems(settings, args, out) -> int:
             wanted = [fold(t) for t in args.query]
             rows = [r for r in library.missing_files() if all(t in fold(r["path"]) for t in wanted)]
             default = "$path"
-    for row in rows:
-        score = row.get("score")
-        row["best"] = f"{score:5.1f}" if score is not None else "    -"
+    if args.limit:
+        rows = rows[:args.limit]  # (it was ignored here)
     if args.count:
         print(len(rows), file=out)
     elif args.json:
-        print(json.dumps(rows, ensure_ascii=False, indent=2, default=str), file=out)
+        print(json.dumps(rows, ensure_ascii=False, indent=2, default=str), file=out)  # the rows as they are: `score` is a number or null
     else:
+        # `best` is only for the screen (a padded column): it is added to a copy, never to what JSON prints
+        shown_rows = [{**row, "best": f"{row['score']:5.1f}" if row.get("score") is not None else "    -"} for row in rows]
         template = string.Template(args.format or default)
         on = color.enabled(out) and not args.format
-        for row in rows:
+        for row in shown_rows:
             shown = {k: ("" if v is None else v) for k, v in row.items()}
             if on:  # what happened to the file, how good the best match was, and the path (quiet)
                 if "outcome" in shown:

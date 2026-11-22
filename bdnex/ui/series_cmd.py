@@ -42,7 +42,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
     if settings is None:
         return 1
 
-    with Library.for_settings(settings) as library:
+    if not context.has_library(settings, "no series yet."):
+        return 1
+    with Library.for_settings(settings, readonly=True) as library:
         rows = library.series_overview(args.name)
     if args.missing:
         rows = [r for r in rows if r["missing"]]

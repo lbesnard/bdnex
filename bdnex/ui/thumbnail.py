@@ -64,12 +64,21 @@ def passthrough(env=None) -> bool:
     """Is tmux set to hand escape sequences to the terminal (``set -g allow-passthrough on``)?"""
     import subprocess
 
+    key = (env if env is not None else os.environ).get("TMUX", "")
+    if env is None and key in _PASSTHROUGH:
+        return _PASSTHROUGH[key]  # asked once per tmux session: a match question would otherwise start a process (up to 2 s) every time
     try:
         out = subprocess.run(["tmux", "show", "-gv", "allow-passthrough"], capture_output=True, text=True,
                              timeout=2, env=dict(os.environ if env is None else env)).stdout.strip()
     except Exception:
-        return False
-    return out in ("on", "all")
+        out = ""
+    result = out in ("on", "all")
+    if env is None:
+        _PASSTHROUGH[key] = result
+    return result
+
+
+_PASSTHROUGH: dict[str, bool] = {}
 
 
 def through_tmux(sequence: str) -> str:
@@ -81,7 +90,10 @@ def small_png(image: bytes, width: int = PICTURE_WIDTH) -> Optional[tuple[bytes,
     """``(png, width, height)`` of the image scaled to ``width`` pixels; ``None`` if it can not be read."""
     import pymupdf
 
+    from bdnex.importer import covers
+
     try:
+        covers.refuse_bomb(image)  # a header that promises gigabytes is not decoded
         pixmap = pymupdf.Pixmap(image)
         if pixmap.alpha:
             pixmap = pymupdf.Pixmap(pixmap, 0)

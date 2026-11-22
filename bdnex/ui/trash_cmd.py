@@ -41,7 +41,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     if args.restore is not None:
         return _restore(args, settings, out)
 
-    with Library.for_settings(settings) as library:
+    with Library.for_settings(settings, readonly=not args.empty or args.pretend) as library:  # only emptying writes
         entries = library.trash_entries(args.older_than if args.empty else None)
         if not args.empty:
             from bdnex.ui import color
