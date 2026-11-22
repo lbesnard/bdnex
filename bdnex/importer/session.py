@@ -858,6 +858,8 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
             extra = {"album_fresh": True} if self.recache and candidate.url in self._fresh else {}
             info = self.source.album_info(candidate.url, recache=self.recache, **extra)
             partial, note = False, ""
+            if (info.extra or {}).get("series_page_missing"):  # kept, but without its summary and its series' albums: not complete
+                partial, note = True, "the series page could not be read: `bdnex import --fetch` tries again"
             self.detail(f"    page read in {time.monotonic() - started:.1f}s")
         except self.source.fetch_errors as err:
             self.progress(f"    page unavailable after {time.monotonic() - started:.1f}s: {err}")
