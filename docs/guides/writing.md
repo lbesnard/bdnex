@@ -245,7 +245,7 @@ paths:
 
 - `$field` or `${field}`; `$volume:02` zero-pads a number. A special such as *Hors-série* is used
   as `$volume` when there is no number.
-- Fields: `kind series title volume special language year publisher isbn genre authors writer penciller colorist`.
+- Fields: `kind series title volume special language year publisher isbn genre authors writer penciller colorist collection cycle`.
 - **Functions**, written `%name{argument,argument}`; arguments can hold `$fields` and other functions:
   `%upper{}` `%lower{}` `%title{}` `%capitalize{}`, `%left{text,n}` and `%right{text,n}` (the first or last `n`
   characters), `%asciify{text}` (no accents), `%first{text,count,skip,sep,join}` (some of the items of a list such as
@@ -257,19 +257,21 @@ paths:
   `alternate_number`). To put it in the name: `Series/$series/$series - %if{$special,$special,T$volume:02} - $title`.
   A function can not contain a `/` (a folder separator), and a typo in a function name is refused when the configuration is read.
 - The site names some series with the year of their first album, to tell them from another series of the same name (`Batman: Dark Victory (1999)`): `$series` has it too. `paths.series_year: strip` leaves a trailing `(year)` out of `$series` in paths (two series told apart only by their year then share a folder).
-- **`$collection`**: a family of albums the site does not group (Tintin, Astérix and their special issues, spread over several series, or none): the
-  first rule of `paths.collections` that matches gives the name. A rule is `"FIELD REGEX": NAME` (beets' syntax; the regex is found anywhere in the
-  value, case ignored); FIELD is a template field or `path` / `filename`, the file's own location (your folders already group them):
+- **`$collection` and `$cycle`**: some editions carry the site's own "Collection" and "Cycle" (its edition table, e.g. *Les mondes d'Aldébaran*,
+  cycle `3`); bdnex fills them in from there when present. For a family of albums the site does *not* group this way (Tintin, Astérix and their
+  special issues, spread over several series, or none), the first rule of `paths.collections` that matches wins instead and names `$collection`
+  itself. A rule is `"FIELD REGEX": NAME` (beets' syntax; the regex is found anywhere in the value, case ignored); FIELD is a template field or
+  `path` / `filename`, the file's own location (your folders already group them):
 
   ```yaml
   paths:
-    series: 'Series/%ifdef{collection,$collection}/$series/$series - T$volume:02 - $title'
+    series: 'Series/%ifdef{collection,$collection/}%ifdef{cycle,Cycle $cycle:02 - }$series/$series - T$volume:02 - $title'
     collections:
       'path .*/Astérix/.*': Astérix et Obélix
-      'series .*Antarès.*': Les cycles d'Aldébaran
   ```
 
-  `%ifdef{collection,$collection}` leaves the folder out when no rule matched (a bare `$collection` would be asked about, like any empty field).
+  `%ifdef{collection,$collection/}` leaves the folder out when there is neither a rule match nor a site value (a bare `$collection` would be
+  asked about, like any empty field). `$cycle` has no rule of its own: it is only ever the site's value.
 - **`paths.rewrite`** (beets' `rewrite`) changes the value of a field *in the paths only* (the library keeps what it has): `'series .*Hors Série.*': Hors Série`.
   The first rule of a field whose regex is found in its value wins; the collection is worked out before the rewrites.
 - **`paths.replace`** (beets' `replace`) applies `REGEX: replacement` in order to every folder and file name, before bdnex's own safety rules (which stay):

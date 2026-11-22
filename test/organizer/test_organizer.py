@@ -1420,6 +1420,18 @@ def test_collections_rewrite_and_replace_shape_the_destination(lib, make_cbz, tm
     assert "Series/Astérix (Hors Série)/" in plain  # no collection matched: the collection folder is simply not there
 
 
+def test_the_site_s_own_collection_is_used_when_no_rule_matches_but_a_rule_still_wins(lib, make_cbz, tmp_path):
+    album = lib.add_album(AlbumInfo("b", "9", "Episode 1", series=SeriesInfo("b", "s9", "Antarès"), volume=1, language="fr",
+                                    extra={"edition_fields": {"Collection": "Les mondes d'Aldébaran", "Cycle": "3"}}))
+    path = make_cbz("a.cbz")
+    paths = {"series": "Series/%ifdef{collection,$collection}/Cycle $cycle/$series/$series - T$volume:02 - $title"}
+    dest = Organizer(lib, settings_for(tmp_path, paths=paths), force=True)._destination(path, "cbz", album, MOVE)
+    assert "Series/Les mondes d'Aldébaran/Cycle 3/Antarès/" in dest  # the site's own fields, no rule needed
+    overridden = Organizer(lib, settings_for(tmp_path, paths={**paths, "collections": {"series .*Antarès.*": "Overridden"}}),
+                           force=True)._destination(path, "cbz", album, MOVE)
+    assert "Series/Overridden/Cycle 3/Antarès/" in overridden  # an explicit rule still wins over the site's value
+
+
 def test_a_bad_rule_is_refused_when_the_configuration_is_read():
     import pytest
 

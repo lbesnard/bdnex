@@ -136,6 +136,15 @@ def test_long_view_columns_never_run_together(tmp_path, monkeypatch, make_cbz):
     assert "coverartist  Goux" in text  # the longest label still leaves a gap
 
 
+def test_long_shows_the_site_s_collection_and_cycle():
+    from bdnex.ui import describe
+    album = {"kind": "series", "series": "Antarès", "volume": 1, "alternate_number": None, "title": "Épisode 1",
+             "credits": {}, "genres": [], "source": "s", "source_id": "1",
+             "extra": {"edition_fields": {"Collection": "Les mondes d'Aldébaran", "Cycle": "3"}}}
+    text = describe.long(album, [])
+    assert "collection   Les mondes d'Aldébaran" in text and "cycle        3" in text
+
+
 def test_complete_is_the_opposite_of_partial(setup):
     code, text = run("complete:false")
     assert code == 0 and "bibliomule" in text.lower() and "[not fetched]" in text
