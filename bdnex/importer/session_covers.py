@@ -119,6 +119,7 @@ class CoverPass:
                 self._check_cover(result)
                 tick(result)
         except KeyboardInterrupt:
+            self._stopped = True  # stop means stop: no cover vote afterwards (its requests are refused now, and would end in a traceback)
             self._drop_covers()
             self.progress("Interrupted: the other covers are downloaded by the next `bdnex import --fetch`.")
         finally:
