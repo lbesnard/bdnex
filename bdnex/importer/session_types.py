@@ -47,6 +47,9 @@ class Journal:
     linked: bool = False  # the file was linked to an album
     new_file: bool = False  # ... and its row in the library did not exist before
     created_album: Optional[int] = None  # an album that was added for it
+    previous_album: Optional[int] = None  # what the file was linked to before (a file imported again with --force or --album)
+    previous_review: Optional[str] = None  # ... and its review flag
+    log_floor: Optional[int] = None  # the newest import-log row of the file before this one: what is newer than it is taken back
     trashed: list[int] = field(default_factory=list)  # files it replaced (trash ids)
 
 

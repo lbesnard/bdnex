@@ -212,3 +212,42 @@ def test_a_result_taken_back_cannot_hand_its_id_to_the_next_one():
     del gone  # what `del report.results[...]` does to it
     fresh = [ImportResult("/x/b.cbz", "tagged") for _ in range(50)]
     assert not any(id(result) in session._done for result in fresh)  # none of them is taken for "already completed"
+
+
+def test_a_failure_while_importing_a_linked_file_again_puts_back_what_it_was_linked_to(make_cbz):
+    """`--force` / `--album` on a file that already has an album: taking the new link back must not leave the file with no album."""
+    from .test_session import Env, make_settings
+
+    (a,) = files(make_cbz, A)
+    env = Env(FakeWeb(), make_settings(**{"import": {"auto": False, "series": "never"}}), Script(0, 1), steps=("match",), force=True)
+    env.source._index = list(FOO)
+    env.source.is_ready = lambda: True
+    env.session.import_file(a)  # linked to the first candidate
+    assert volume_of(env, a) == 1
+    before = [r["outcome"] for r in env.lib.conn.execute("SELECT outcome FROM import_log WHERE path = ? ORDER BY id", (a,))]
+    real = env.session._log
+
+    def broken(path, outcome, *rest, **kw):
+        if outcome in ("tagged", "partial"):
+            raise RuntimeError("the disk said no")
+        return real(path, outcome, *rest, **kw)
+
+    env.session._log = broken
+    with pytest.raises(RuntimeError):
+        env.session.import_file(a)  # asked again (--force): the second candidate is chosen, then the failure
+    assert volume_of(env, a) == 1  # linked to what it was linked to, not to nothing
+    assert [r["outcome"] for r in env.lib.conn.execute("SELECT outcome FROM import_log WHERE path = ? ORDER BY id", (a,))] == before
+
+
+def test_both_import_log_rows_of_a_matched_file_are_taken_back(make_cbz):
+    (a,) = files(make_cbz, A)
+    env = env_for(Script())
+    env.lib.add_file(a, None)
+    env.lib.log_import(a, "skipped")  # an earlier run's row stays
+    journal = env.session._start_journal(a)
+    env.session._journal = journal
+    env.session._log(a, "partial", 70.0)  # when it is matched
+    journal.logged = True
+    env.lib.log_import(a, "tagged", 70.0)  # when its page arrives, after the journal is gone
+    env.session._undo_journal(journal, a)
+    assert [r["outcome"] for r in env.lib.conn.execute("SELECT outcome FROM import_log WHERE path = ? ORDER BY id", (a,))] == ["skipped"]
