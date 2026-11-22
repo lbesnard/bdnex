@@ -28,7 +28,11 @@ SERIES_LOCKS = {"title": "titleLock", "publisher": "publisherLock", "language": 
 
 
 class KomgaError(Exception):
-    """Komga can not be reached, or refused: the message says what to check."""
+    """Komga can not be reached, or refused: the message says what to check. ``status``: the HTTP status, when there was one."""
+
+    def __init__(self, message: str, status: Optional[int] = None):
+        super().__init__(message)
+        self.status = status
 
 
 class Client:
@@ -38,6 +42,8 @@ class Client:
         if not config.url:
             raise KomgaError("komga.url is not set: put the address of your Komga server in the configuration "
                              "(`bdnex config --edit`), e.g. http://localhost:25600")
+        if not config.url.lower().startswith(("http://", "https://")):
+            raise KomgaError(f"komga.url must start with http:// or https:// (it is {config.url!r})")
         self.base = config.url.rstrip("/")
         self.timeout = config.timeout
         self.session = session or requests.Session()
@@ -50,15 +56,18 @@ class Client:
                              "komga.username and komga.password")
 
     def _call(self, method: str, path: str, **kwargs) -> Any:
-        try:
-            response = self.session.request(method, f"{self.base}{path}", timeout=self.timeout, **kwargs)
+        try:  # never follow a redirect: the key would go with it (to another host), and a PATCH answered by a 301 could be replayed as a GET
+            response = self.session.request(method, f"{self.base}{path}", timeout=self.timeout, allow_redirects=False, **kwargs)
         except requests.RequestException as err:
             raise KomgaError(f"can not reach Komga at {self.base}: {err}") from err
+        if 300 <= response.status_code < 400:
+            raise KomgaError(f"Komga redirected {method} {path} to {response.headers.get('Location', 'another address')}: set komga.url to "
+                             "that address (bdnex does not send your login along a redirect)", response.status_code)
         if response.status_code in (401, 403):
             raise KomgaError(f"Komga refused the login ({response.status_code}): check komga.api_key or the "
-                             "username and password, and that the account may edit metadata")
+                             "username and password, and that the account may edit metadata", response.status_code)
         if response.status_code >= 400:
-            raise KomgaError(f"Komga answered {response.status_code} to {method} {path}: {response.text[:200]}")
+            raise KomgaError(f"Komga answered {response.status_code} to {method} {path}: {response.text[:200]}", response.status_code)
         return response.json() if response.content else None
 
     def books(self) -> Iterable[dict[str, Any]]:
@@ -69,16 +78,22 @@ class Client:
             fetch = lambda page: self._call("POST", "/api/v1/books/list",  # noqa: E731
                                             params={"page": page, "size": PAGE_SIZE}, json={})
         except KomgaError as err:
-            if "refused the login" in str(err) or "can not reach" in str(err):
+            if err.status not in (400, 404, 405, 415, 501):  # only "this server does not take that call": not a login, a network or a passing 500
                 raise
             first = self._call("GET", "/api/v1/books", params={"page": 0, "size": PAGE_SIZE})
             fetch = lambda page: self._call("GET", "/api/v1/books",  # noqa: E731
                                             params={"page": page, "size": PAGE_SIZE})
-        page, data = 0, first
+        page, data, seen = 0, first, set()
         while True:
-            yield from data["content"]
+            for book in data["content"]:
+                if book.get("id") not in seen:  # a book added or removed during the listing shifts the pages: never twice
+                    seen.add(book.get("id"))
+                    yield book
             page += 1
-            if data.get("last", True) or not data["content"]:
+            last = data.get("last")
+            if last is None:  # no `last` flag: the page count says it (never "stop after the first page" on a missing key)
+                last = page >= int(data.get("totalPages") or 1)
+            if last or not data["content"]:
                 return
             data = fetch(page)
 
@@ -104,25 +119,34 @@ def _common_tail(a: str, b: str) -> int:
     return count
 
 
+def _name(path: str) -> str:
+    """A file name to compare: Unicode-composed (a name typed on one system and one scanned on another differ only in how `é` is written)
+    and lower case."""
+    import unicodedata
+
+    return unicodedata.normalize("NFC", os.path.basename(path)).lower()
+
+
 def match(files: list[dict[str, Any]], books: list[dict[str, Any]]) -> dict[str, list]:
     """Pair library files with Komga books: ``{"pairs": [(file, book, how)], "no_book": [file], "ambiguous": [file]}``.
 
-    First by file name and size; then by file name alone when that name is unique on both sides (a file that changed
-    since Komga scanned it has another size). When several books have the same name and size, the one whose folders
+    First by file name and size; then by file name alone when that name is unique on both sides AND the folder it is in
+    has the same name (a file that changed since Komga scanned it has another size, but `01.cbz` of one series is not
+    `01.cbz` of another). When several books have the same name and size, the one whose folders
     end like the file's wins; a tie is left alone, never guessed.
     """
     by_key: dict[tuple, list] = {}
     by_name: dict[str, list] = {}
     for book in books:
-        name = os.path.basename(book["url"]).lower()
+        name = _name(book["url"])
         by_key.setdefault((name, book.get("sizeBytes")), []).append(book)
         by_name.setdefault(name, []).append(book)
-    names = Counter(os.path.basename(f["path"]).lower() for f in files)
+    names = Counter(_name(f["path"]) for f in files)
     pairs, no_book, ambiguous, taken = [], [], [], set()
     for file in files:
-        name = os.path.basename(file["path"]).lower()
+        name = _name(file["path"])
         found, how = by_key.get((name, file.get("size")), []), "name and size"
-        if not found and names[name] == 1 and len(by_name.get(name, [])) == 1:
+        if not found and names[name] == 1 and len(by_name.get(name, [])) == 1 and _common_tail(file["path"], by_name[name][0]["url"]) >= 2:
             found, how = by_name[name], "name"
         if not found:
             no_book.append(file)
@@ -161,17 +185,22 @@ def link_label(url: str) -> str:
 def book_fields(album: dict[str, Any], current: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     """What the library knows of an album, in the fields of a Komga book (only those it knows).
 
-    The genres become the book's tags, added to the tags Komga already has (yours are never removed)."""
+    The genres become the book's tags, added to the tags Komga already has (yours are never removed), and the authors keep the roles
+    Komga holds that the library has no names for."""
     fields: dict[str, Any] = {"title": album["title"]}
     if album.get("summary"):
         fields["summary"] = album["summary"]
     if album.get("volume") is not None:
-        fields["number"] = str(album["volume"])
-        fields["numberSort"] = float(album["volume"])
+        volume = float(album["volume"])
+        fields["number"] = str(int(volume)) if volume.is_integer() else str(volume)  # `1`, not `1.0`: Komga's own number is `1`
+        fields["numberSort"] = volume
     if release_date(album):
         fields["releaseDate"] = release_date(album)
     if authors_of(album):
-        fields["authors"] = authors_of(album)
+        mine = authors_of(album)
+        said = {a["role"].lower() for a in mine}
+        # the roles the library has names for are replaced; the other roles Komga holds (a colorist someone added there) are kept
+        fields["authors"] = mine + [a for a in (current or {}).get("authors") or [] if str(a.get("role", "")).lower() not in said]
     if album.get("isbn"):
         fields["isbn"] = album["isbn"]
     if album.get("url"):
@@ -190,12 +219,19 @@ STATUSES = (("ONGOING", ("en cours", "continu")), ("ENDED", ("termin", "fini", "
 def status_of(text: Optional[str]) -> Optional[str]:
     """Komga's series status from Bédéthèque's words (``Terminée``, ``En cours``...); ``None`` when not recognised."""
     import unicodedata
+    import re
+
     folded = "".join(c for c in unicodedata.normalize("NFKD", (text or "").lower()) if not unicodedata.combining(c))
+    if re.search(r"\b(?:non|pas)\s+(?:termin|fini|complet)", folded):  # `Non terminée` is not "ended"
+        return "ONGOING"
+    if "discontinu" in folded or re.search(r"\bnon\s+continu", folded):  # nor is `discontinuée` "ongoing"
+        return "ABANDONED"
     return next((status for status, words in STATUSES if any(w in folded for w in words)), None)
 
 
-def series_fields(albums: list[dict[str, Any]]) -> dict[str, Any]:
-    """The fields of a Komga series from the albums of the library that are in it (names: the commonest wins).
+def series_fields(albums: list[dict[str, Any]], current: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """The fields of a Komga series from the albums of the library that are in it (names: the commonest wins). The genres are added
+    to the genres Komga already has (Komga's spelling wins), as the tags of a book are: yours are never removed.
 
     The series' own record (``album["series_record"]``, read by the command) adds its summary, page link, status and
     the number of numbered albums the source lists."""
@@ -205,9 +241,10 @@ def series_fields(albums: list[dict[str, Any]]) -> dict[str, Any]:
         values = Counter(a[key] for a in albums if a.get(key))
         if values:
             fields[name] = values.most_common(1)[0][0]
-    genres = sorted({g for a in albums for g in a["genres"]})
+    genres = {g.lower(): g for a in albums for g in a["genres"]}
     if genres:
-        fields["genres"] = genres
+        genres.update({g.lower(): g for g in (current or {}).get("genres") or []})
+        fields["genres"] = sorted(genres.values(), key=str.lower)
     record = next((a["series_record"] for a in albums if a.get("series_record")), None)
     if record:
         if record.get("summary"):

@@ -17,7 +17,8 @@ from bdnex.config import SECRET_KEYS, ConfigError, Settings, build_settings, loa
 from bdnex.config_template import _help_of, packaged, set_value
 
 HIDDEN = SECRET_KEYS  # secrets: never sent to the page
-FIXED = {"collection_path", "library"}  # where the volumes are: set in the file, not from the page
+# where the volumes are, and where the Komga login is sent: set in the file, not from the page (a changed `komga.url` would send the key to another host)
+FIXED = {"collection_path", "library", "komga.url"}
 
 
 def _kind(annotation: Any) -> tuple[str, list, bool]:

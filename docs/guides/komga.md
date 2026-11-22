@@ -95,7 +95,9 @@ Changing metadata needs an account with the ADMIN role. Logins: `X-API-Key` or H
 
 Komga and bdnex may see the same folder under different paths (a container, another machine), so the path is not
 used. A library file is paired with the Komga book that has **the same file name and the same size**. When a file
-changed since Komga scanned it (another size), it is still paired if its name is unique on both sides. When two books
+changed since Komga scanned it (another size), it is still paired if its name is unique on both sides **and the folder it
+is in has the same name** (`01.cbz` of one series is not `01.cbz` of another: a generic name in another folder is left unpaired,
+not guessed). Names are compared composed (`é`) and without case. When two books
 share a name and size, the one whose folders end like the file's wins; a tie is left alone and counted as
 ambiguous. The summary also counts the files Komga does not know yet: start a scan in Komga, then run it again.
 
@@ -112,13 +114,17 @@ ambiguous. The summary also counts the files Komga does not know yet: start a sc
 
 | Series (Komga) | From the library |
 |---|---|
-| title, publisher, language, genres | those of its albums (the commonest title and publisher; every genre) |
+| title, publisher, language | those of its albums (the commonest title and publisher) |
+| genres | every genre of its albums, **added** to the genres Komga already has (Komga's spelling wins; yours are never removed) |
 | summary, link | the series page's summary, and its address |
 | status | `En cours` is ongoing, `Terminée` ended, `Abandonnée` abandoned, `Suspendue` hiatus; any other word is not sent |
 | total book count | the albums the series page lists that have a volume number (an integral or a special issue is not counted), so Komga can show "5 of 25" |
 
 The series values need the series page: an album that is only linked (`bdnex ls partial:true`) has none of them, and
-an album of a one-shot has no series. The status is only there when the page says it.
+an album of a one-shot has no series. The status is only there when the page says it. A Komga series is a folder: when the
+albums of one Komga folder belong to **several different series** (or are several one-shots), no series data is sent for it
+(the report says so), since one title, summary and status would be wrong for some of its books. A status with a negation
+(`Non terminée`) is not read as the word it contains.
 
 **Doubtful matches are not pushed.** A file whose match waits for a look (`bdnex review`, `ls review:true`) is left out of
 `push`, and the run says how many: a wrong match would put another album's title and credits in Komga, locked.
@@ -128,5 +134,8 @@ Only what differs from Komga's current value is sent, so a second run says `alre
 **locked** (`komga.lock`, `--no-lock` to skip) so that a Komga rescan does not replace them with what it reads in the
 file.
 
-Note that the authors of a book are replaced by the library's list when it has one, and that your own edits in Komga
-for the same fields are overwritten (that is the point: the library wins). Use `-n` first.
+Note that, for a book, the roles the library has names for (writer, penciller...) are replaced by the library's list (a role
+Komga holds that the library has no names for, a colorist added there, stays), and that your own edits in Komga for the same
+fields are overwritten and locked, **even a field you locked in Komga yourself** (that is the point: the library wins; bdnex
+can not tell your lock from its own). Use `-n` first. bdnex never follows a redirect from Komga (your key would go with it): if
+Komga answers with one, set `komga.url` to the address it redirects to. `komga.url` can not be changed from the settings page.
