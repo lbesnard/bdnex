@@ -159,3 +159,32 @@ def test_leaving_a_file_the_library_has_no_record_of_is_remembered(tmp_path, mak
         batch.decide(library, row, "leave")
         assert row.file_id is not None and library.get_file(path) is not None  # the mark has a file to sit on
         assert dict(library.file_attrs(row.file_id)).get("checked") == "leave" if hasattr(library, "file_attrs") else True
+
+
+def test_the_marked_files_say_they_are_reading_the_series_page_until_the_answer_is_here(env, monkeypatch):
+    import asyncio
+    import threading
+
+    db, files = env
+    release = threading.Event()
+    monkeypatch.setattr(batch, "read_series_address", lambda settings, address: (release.wait(5), None)[1])  # a slow site
+    seen = {}
+
+    async def script(app, pilot):
+        rows = app.rows[:2]
+        task = asyncio.ensure_future(app.propose(rows, "https://www.bedetheque.com/serie-47467-BD-Nains.html"))
+        for _ in range(20):  # the worker is on its way to the slow read
+            await pilot.pause()
+            if all(r.busy for r in rows):
+                break
+        table = app.query_one("DataTable")
+        seen["during"] = [(r.busy, r.busy_what) for r in rows]
+        seen["cell"] = str(table.get_row_at(0)[-1])
+        seen["blocked"] = app.idle() is None if app.current() is rows[0] else None  # no second decision while it reads
+        release.set()
+        await task
+        seen["after"] = [(r.busy, r.busy_what) for r in rows]
+
+    drive(db, script)
+    assert seen["during"] == [(True, "reading the series")] * 2 and "reading the series" in seen["cell"]  # with the dots and the seconds
+    assert seen["after"] == [(False, "")] * 2  # cleared even though the read gave nothing and the rest failed
