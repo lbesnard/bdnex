@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Web API, from a security review: a preview of the **`check-fix`** task no longer runs `bdnex check --fix` for real (it runs the check, which changes nothing, so a preview passes no change safeguard and still changes nothing); the server answers only to the **`Host` names it expects** (this machine's names while it listens on `127.0.0.1`, plus the new `api.allowed_hosts`), which stops a DNS-rebinding page from passing the same-site check; behind a proxy (`api.behind_proxy`) the client is the **last** `X-Forwarded-For` entry, so a client can no longer start every wrong guess from a new address to avoid the lockout; the schema and the docs pages (`/openapi.json`, `/docs`, `/redoc`) need the login; a chunked body or a bad `Content-Length` is refused; the `undo` task's `batch` can no longer be a flag (`--yes`, `-n`); a cancel that arrives just as a job ends can no longer leave the server "busy" for ever; the settings editor keeps the config file's mode (and gives its `.bak` the same), instead of making a `chmod 600` file world-readable; the page only puts `http(s)` addresses in links; the Docker image's first-start config is `chmod 600`.
 - Review screen: `a` (and `i` with a series address) with nothing marked is now for the file under the cursor only; it used to take every undecided file of the folder ("for these 2 file(s)" when you had highlighted one), which is wrong for one-shots that share a folder. The heading says which file, or how many marked files. It also works on a file already decided, so a wrong `keep` can be matched again. `m` marks every file not decided yet when a whole folder is one series.
 - Import: when the album page is read but its series page cannot be (a block, a timeout), the album is now stored as **partial** and the file reported as partial ("the series page could not be read: `bdnex import --fetch` tries again"). Before, the album was stored as complete without its summary and its series' album list, the file showed as fully tagged, and `import --fetch` never asked for the page again (only `--force` did). Working offline (`import --reparse`), where series pages are expected to be missing, is unchanged.
 - Import: taking back a file's import (Back, a failure, Ctrl-C) now puts back what the file was linked to before when it was imported again (`--force`, `--album`, `import --select ... --force`); it used to leave the file with no album at all. It also removes both import-log rows a match writes (when matched, and when its page arrives), not only the newest, so a taken-back file no longer keeps a stale "partial" row.
@@ -23,75 +24,8 @@ command runs, never while an import is fetching).
 - Import: a failure after a file was linked (an unexpected error, Ctrl-C) now takes the link and the album created for it back, as Back does; before the report said FAILED while the library kept the link. Going Back could also make the next file be taken for one already completed (its album page was then never filled); fixed.
 - Review screen: a fetch no longer reconfigures the logging from its thread (log lines could appear twice in the panel, and later warnings went to a closed one), and the "Fetching ... (Ctrl-C leaves them)" line after quitting is written to the terminal, not to a redirected stream, so it is no longer lost.
 
-### Changed
-- Review screen: with several fetcher endpoints (`bedetheque.fetcher_endpoint`, or `bedetheque.parallel`) the page, series page and cover of **several linked files are downloaded at the same time**, as many as `bdnex import` fetches (each request still waits its polite delay), and every file being fetched shows the turning wheel. The library is still written by one thread, one file at a time, so two files of one series never write the same rows at once. With one endpoint nothing changes (one file at a time).
-- Import is a little cheaper per album: the series an album left (the placeholder made from its address before its page was read) is deleted by an indexed lookup instead of a scan of every album (2.6 ms to 0.013 ms on a 16,000-album library, per album fetched), and a page already stored is found without decompressing it.
-- `bdnex import` opens the library once for the whole result list instead of once per line (thousands of opens on a big run), and the review screen no longer keeps everything its background imports print in memory for the whole session.
-- Starting a command that needs the album list (`import`, `candidates`, the review screen's album search, `ls --sitemap`) is about 3.4 s faster on a list of 372,000 albums (4.1 s to 0.65 s): the parsed list is kept in the library (a `source_cache` row of kind `index`, about 14 MB, no schema change) and read back while the stored sitemaps are the same ones; `bdnex init` rebuilds it when they change. A read-only library just parses as before.
-- Code: what `bdnex candidates` finds (`iter_report`, `build_report`, `compare_covers`, ...) moved from the command's module to `importer/candidates.py`; `review --auto`, the album search and the web page's candidates view no longer import from a command. The command and its output are the same.
-- `bdnex mirror` is now `bdnex init --mirror`: the same job, after the album list it needs. It asks before it fetches (the preview says how much: `-n`), `--yes` answers for a script, and without a terminal it refuses to start without `--yes`. `--skip-list` uses the list already here; `--limit`, `--no-covers`, `--covers-only`, `--workers` and `-n` moved over. `bdnex mirror` still works (it is `init --mirror --skip-list --skip-series --yes`) and says what it became.
-- `bdnex fields` is now `bdnex ls --fields`, next to the query syntax it explains; `bdnex fields` still works and says so.
-- Album search (the review screen's `o` and `a`, `bdnex ls --sitemap`) is faster on a big album list: on a 372,000-album list a word search takes about a third of the time (the rarest word is found by `str.find` over the whole list), and typing letters of an `fzf`-style search narrows what the shorter text found instead of scanning the list again. The answers are the same.
-- Faster on a big library (measured on a copy of a 16,000-album library): text searches (`bdnex ls WORDS`, the web page's search) take a third of the time (`fold` is cached and skips its accent loop for plain text); `bdnex series` and the next review batch are about a third faster; the web page's list of files only builds the credits of the rows it shows. The batch no longer asks the library for each file's `checked` mark and last import one by one.
-- `bdnex duplicates --covers` is faster: the cover hashes are stored a few hundred per commit (not one disk sync per file), only the columns it needs are read, and similar covers are looked up by blocks of the hash instead of comparing every pair (about 3x on 16,000 files, the same groups).
-- Review screen: the next batch is weighed in the background while you work on the current one, so `n` (or the "next batch?" answer) shows it at once; the seconds counter of linked files no longer searches the list for every row.
-- Review screen: the `e` form has **OK** and **Cancel** buttons (`Ctrl-S` is taken by tmux); `x` cancels when the cursor is not in a text field, `Esc` always does.
-- Review screen: when the files you asked for all fit in one batch (a query that finds 3 files), deciding the last one no longer asks "Check the next batch?" (there is none): it says everything is checked and `q` quits.
-- `bdnex review --batch`: closing the screen no longer drops the pages and covers still queued for the files you linked: they are fetched before the command returns (Ctrl-C leaves the rest to `bdnex import --fetch`), and a file whose import fails (a corrupt archive) is reported on its row without stopping the files queued after it. Before, a failed import said "page and cover fetched".
-- Review screen: a state that waits for the site turns a wheel (`⠹ linked · fetching 12s`), and giving the address of a bdtheque.com page shows `⠹ fetching the page 3s` in the state column while the page is read (it said `no album` until the link was made).
-- File names with a scan's quality tag glued to the number (`Death_Note_-_003lq.cbz`) now have their volume (`lq`, `hq`, `hd`, `sd` are dropped); before, the review screen's `a` said "the files ask for no volume".
-- Review screen, `a` with a series page: files numbered mostly past the series' last volume (chapters, not volumes: files 3 to 42 for a 12-volume series) are refused with that explanation instead of linking the few numbers that happen to match.
-- Review screen: it could freeze (until the database's 30 s timeout) after linking files while a page was being fetched in the background: the background import's log line waited for the screen while holding the library's write lock, and the screen waited for that lock. Log lines no longer make a thread wait.
-- Review screen: mark all / none moved from `ctrl+a` (taken by tmux and some terminals) to `m`.
-- Review screen: closing the album search before its answer arrived could crash (`NoMatches: OptionList`).
-- Review screen: `y` copies the whole log to the clipboard, and the log panel follows new lines only while it is scrolled to its end (scroll up to read or select).
-- Review screen: the state of a file whose page and cover are being fetched counts the seconds (`linked · fetching 42s`, or `queued` while the files before it are fetched) and the log panel says which file is being worked on and how long it took, so a long wait is visible.
-- Review screen: picking an album for a file the import skipped no longer reads (hashes) the file before the link is written, which took seconds on a network disk: it is registered unread and the background import fills the rest in. The log panel says how long the write took.
-- Review screen: linking a file the import skipped (no record in the library yet, the `--unmatched` rows) crashed; it is now registered with its link (also for `e`).
-- Review screen: the title says which batch of about how many (`batch 3/53`). The `o` search is quicker: it waits for a short pause in the typing, skips searches already typed over, and looks for the words of a longer text among the albums of the shorter one (and remembers the last answers).
-- Review screen: **the match is written at once.** Picking an album links the file in the library right away (a spare version when the album has another file, no question); the page and the cover are fetched afterwards, in the background, one file at a time, and the screen stays free: go on to the next file or batch, or press `u` to unlink (which cancels what is queued). Quitting with fetches left says so (`bdnex import --fetch`).
-- Review screen: a link now runs the import with `-v`, so the log panel says each step (album page from the library or fetched and how long, cover saved or downloaded); the level was reset to warnings after the first link.
-- Review screen: a link to an album that already has another file is made at once, as a spare version (no refusal, no question): which file stays is the job of `bdnex duplicates`. A file already linked to that album is reported as linked, not refused.
-- A series page whose albums are all collected editions or one-shots (no `Tome` in their addresses, e.g. Fell) listed no album at all: the series' own name, from its address, now tells which links are its albums.
-- Review screen, attaching files to a series by its page address: when no file finds its volume, the message says what the page lists and what the files ask for (a series of collected editions has no tome 2), instead of the generic "not in a series".
-- `ls --sitemap --for FILE`: the file's words count as whole words of an album's name (`fell` is not in `Rocketfellers`), and albums that tie at 100 are still told apart by them.
-- Review screen: a series address that is not stored is fetched with your fetcher (once, then stored), instead of failing with "the network is not used".
-- Review screen: the next batch (`n`) never shows again a file of the batches before in the same run (a file passed over with `s`, or without album, used to come back).
-- The review screen no longer crashes when a link ends after the next batch was loaded.
-- `import --album` (and so a link in the review screen) read the album and series pages from the site again every time, through the fetcher: minutes per file. It now uses the stored pages; only `--force` asks the site again. And `import --force` no longer downloads an album page twice (the page fetched ahead was fetched again when its turn came).
-- `bdnex import FILE` finds a file by the path `bdnex ls` prints (relative to `collection_path`) when it is not found from where you are.
-- A link made in the review screen no longer asks questions (a cover that looked different asked one the screen could not show, so the row said `linking...` for ever).
-- The review screen no longer waits for ever on a link: after 120 seconds without an answer (a slow site or fetcher) the file can be decided again, and a late answer is ignored.
-- **Every command's `--help` ends with examples** (what to type, and what it does), from one table (`bdnex/ui/examples.py`);
-  a test checks that each example uses real options.
-- **Default aliases**: bdnex ships eleven, with long names and an explanation, listed by `bdnex --help`
-  (`settle-doubtful-matches`, `first-import`, `import-skipped-files-again`...). Your own `aliases:` are added to them (the same name replaces one; `NAME =` removes it).
-- **`bdnex relink` is `bdnex relocate --find`** (find the files that were moved by hand, by their content; `relocate OLD NEW` is still for a moved folder). The old name still works, with a note.
-- **`bdnex reparse` is `bdnex import --reparse`** (offline, from the stored pages; `--select TERM` limits it to some albums). The old name still works, with a note.
-- **One command for the doubtful matches: `bdnex review`.** `bdnex recheck` is now `bdnex review --auto` (the old name still
-  works, with a note). **Breaking:** the flags `--unlink`, `--unconfirmed`, `--rematch`, `--flag-unconfirmed` are gone: `--auto`
-  switches a contradicted file to the better album found by the covers of its other candidates, else unlinks it; the
-  ones nothing confirms are left alone. `--auto` now weighs the flagged files *and* the matches applied under the strong
-  threshold, and prints, for each contradicted file, the covers it compared. `--json` prints the verdicts.
-- **OpenCV is a normal dependency** (the cover check, `recheck`, the cover vote need it): `uv sync` and `pip install bdnex`
-  install it. An optional extra was dropped by every plain `uv sync`, and the covers were then silently not compared.
-  `bdnex[cover]` still installs (an empty extra). The Docker image grows by about 100 MB.
-- `import -v`: the match score is a percentage in its own colour (red to green), and each cover comparison prints
-  `cover: 87%  file name`.
-- `bdnex komga push` leaves out the files whose match waits for a review (`--with-review` sends them): a doubtful
-  match no longer puts another album's metadata, locked, in Komga.
-- The web page's review answers and `bdnex review` share one function; a test checks every flag a web task builds
-  against its command's `--help`.
-- Covers are downloaded (and compared with the file's cover) in the background as each album completes, no longer
-  all at the end of the run: an interrupted or still-running import already has the covers and scores of what it did.
-  `bdnex candidates --cover` reads the saved covers instead of requesting them again.
-- **Breaking:** `bdnex review --scan` is now `bdnex check --matches --fix` (the old spelling still works for a release);
-  `bdnex review -l` is `--list`.
-- **Breaking:** the import options `--no-fetch`, `--retry-partial` and `--recache` are gone (`--match`, `--fetch`,
-  `--fetch --force`); the config option `match.use_facts` is gone (`bdnex config --update`).
-- `bdnex --help` groups the commands by task.
-
 ### Added
+- `api.allowed_hosts`: the names the server answers to (see above).
 - Review screen: `t` shows the few albums the current file could be (the list `bdnex candidates` prints: score, year, publisher, what the evidence says, and where the score comes from), and Enter links the highlighted one. It is quick, unlike `o`'s search of the whole album list, which is one `o` away from there.
 - API: `GET /api/review/batch` returns the next files to check as `bdnex review --batch` shows them (doubtful, `unmatched`, `all`, `again`, a query, a size), and `POST /api/review/{file_id}/decide` keeps, unlinks or leaves any file of a batch, flagged or not, and marks it checked.
 - Review screen: `b` goes back to the previous batch (with its decisions), and `n` comes forward again.
@@ -254,6 +188,74 @@ command runs, never while an import is fetching).
 - Ctrl-C during an import stops at once: the requests waiting for their polite delay give up (they kept the
   program alive for up to ten seconds each, so it took several Ctrl-C), and `import --database-only` no longer goes
   through the file-placement step, which looked up every imported file again for nothing.
+
+### Changed
+- Review screen: with several fetcher endpoints (`bedetheque.fetcher_endpoint`, or `bedetheque.parallel`) the page, series page and cover of **several linked files are downloaded at the same time**, as many as `bdnex import` fetches (each request still waits its polite delay), and every file being fetched shows the turning wheel. The library is still written by one thread, one file at a time, so two files of one series never write the same rows at once. With one endpoint nothing changes (one file at a time).
+- Import is a little cheaper per album: the series an album left (the placeholder made from its address before its page was read) is deleted by an indexed lookup instead of a scan of every album (2.6 ms to 0.013 ms on a 16,000-album library, per album fetched), and a page already stored is found without decompressing it.
+- `bdnex import` opens the library once for the whole result list instead of once per line (thousands of opens on a big run), and the review screen no longer keeps everything its background imports print in memory for the whole session.
+- Starting a command that needs the album list (`import`, `candidates`, the review screen's album search, `ls --sitemap`) is about 3.4 s faster on a list of 372,000 albums (4.1 s to 0.65 s): the parsed list is kept in the library (a `source_cache` row of kind `index`, about 14 MB, no schema change) and read back while the stored sitemaps are the same ones; `bdnex init` rebuilds it when they change. A read-only library just parses as before.
+- Code: what `bdnex candidates` finds (`iter_report`, `build_report`, `compare_covers`, ...) moved from the command's module to `importer/candidates.py`; `review --auto`, the album search and the web page's candidates view no longer import from a command. The command and its output are the same.
+- `bdnex mirror` is now `bdnex init --mirror`: the same job, after the album list it needs. It asks before it fetches (the preview says how much: `-n`), `--yes` answers for a script, and without a terminal it refuses to start without `--yes`. `--skip-list` uses the list already here; `--limit`, `--no-covers`, `--covers-only`, `--workers` and `-n` moved over. `bdnex mirror` still works (it is `init --mirror --skip-list --skip-series --yes`) and says what it became.
+- `bdnex fields` is now `bdnex ls --fields`, next to the query syntax it explains; `bdnex fields` still works and says so.
+- Album search (the review screen's `o` and `a`, `bdnex ls --sitemap`) is faster on a big album list: on a 372,000-album list a word search takes about a third of the time (the rarest word is found by `str.find` over the whole list), and typing letters of an `fzf`-style search narrows what the shorter text found instead of scanning the list again. The answers are the same.
+- Faster on a big library (measured on a copy of a 16,000-album library): text searches (`bdnex ls WORDS`, the web page's search) take a third of the time (`fold` is cached and skips its accent loop for plain text); `bdnex series` and the next review batch are about a third faster; the web page's list of files only builds the credits of the rows it shows. The batch no longer asks the library for each file's `checked` mark and last import one by one.
+- `bdnex duplicates --covers` is faster: the cover hashes are stored a few hundred per commit (not one disk sync per file), only the columns it needs are read, and similar covers are looked up by blocks of the hash instead of comparing every pair (about 3x on 16,000 files, the same groups).
+- Review screen: the next batch is weighed in the background while you work on the current one, so `n` (or the "next batch?" answer) shows it at once; the seconds counter of linked files no longer searches the list for every row.
+- Review screen: the `e` form has **OK** and **Cancel** buttons (`Ctrl-S` is taken by tmux); `x` cancels when the cursor is not in a text field, `Esc` always does.
+- Review screen: when the files you asked for all fit in one batch (a query that finds 3 files), deciding the last one no longer asks "Check the next batch?" (there is none): it says everything is checked and `q` quits.
+- `bdnex review --batch`: closing the screen no longer drops the pages and covers still queued for the files you linked: they are fetched before the command returns (Ctrl-C leaves the rest to `bdnex import --fetch`), and a file whose import fails (a corrupt archive) is reported on its row without stopping the files queued after it. Before, a failed import said "page and cover fetched".
+- Review screen: a state that waits for the site turns a wheel (`⠹ linked · fetching 12s`), and giving the address of a bdtheque.com page shows `⠹ fetching the page 3s` in the state column while the page is read (it said `no album` until the link was made).
+- File names with a scan's quality tag glued to the number (`Death_Note_-_003lq.cbz`) now have their volume (`lq`, `hq`, `hd`, `sd` are dropped); before, the review screen's `a` said "the files ask for no volume".
+- Review screen, `a` with a series page: files numbered mostly past the series' last volume (chapters, not volumes: files 3 to 42 for a 12-volume series) are refused with that explanation instead of linking the few numbers that happen to match.
+- Review screen: it could freeze (until the database's 30 s timeout) after linking files while a page was being fetched in the background: the background import's log line waited for the screen while holding the library's write lock, and the screen waited for that lock. Log lines no longer make a thread wait.
+- Review screen: mark all / none moved from `ctrl+a` (taken by tmux and some terminals) to `m`.
+- Review screen: closing the album search before its answer arrived could crash (`NoMatches: OptionList`).
+- Review screen: `y` copies the whole log to the clipboard, and the log panel follows new lines only while it is scrolled to its end (scroll up to read or select).
+- Review screen: the state of a file whose page and cover are being fetched counts the seconds (`linked · fetching 42s`, or `queued` while the files before it are fetched) and the log panel says which file is being worked on and how long it took, so a long wait is visible.
+- Review screen: picking an album for a file the import skipped no longer reads (hashes) the file before the link is written, which took seconds on a network disk: it is registered unread and the background import fills the rest in. The log panel says how long the write took.
+- Review screen: linking a file the import skipped (no record in the library yet, the `--unmatched` rows) crashed; it is now registered with its link (also for `e`).
+- Review screen: the title says which batch of about how many (`batch 3/53`). The `o` search is quicker: it waits for a short pause in the typing, skips searches already typed over, and looks for the words of a longer text among the albums of the shorter one (and remembers the last answers).
+- Review screen: **the match is written at once.** Picking an album links the file in the library right away (a spare version when the album has another file, no question); the page and the cover are fetched afterwards, in the background, one file at a time, and the screen stays free: go on to the next file or batch, or press `u` to unlink (which cancels what is queued). Quitting with fetches left says so (`bdnex import --fetch`).
+- Review screen: a link now runs the import with `-v`, so the log panel says each step (album page from the library or fetched and how long, cover saved or downloaded); the level was reset to warnings after the first link.
+- Review screen: a link to an album that already has another file is made at once, as a spare version (no refusal, no question): which file stays is the job of `bdnex duplicates`. A file already linked to that album is reported as linked, not refused.
+- A series page whose albums are all collected editions or one-shots (no `Tome` in their addresses, e.g. Fell) listed no album at all: the series' own name, from its address, now tells which links are its albums.
+- Review screen, attaching files to a series by its page address: when no file finds its volume, the message says what the page lists and what the files ask for (a series of collected editions has no tome 2), instead of the generic "not in a series".
+- `ls --sitemap --for FILE`: the file's words count as whole words of an album's name (`fell` is not in `Rocketfellers`), and albums that tie at 100 are still told apart by them.
+- Review screen: a series address that is not stored is fetched with your fetcher (once, then stored), instead of failing with "the network is not used".
+- Review screen: the next batch (`n`) never shows again a file of the batches before in the same run (a file passed over with `s`, or without album, used to come back).
+- The review screen no longer crashes when a link ends after the next batch was loaded.
+- `import --album` (and so a link in the review screen) read the album and series pages from the site again every time, through the fetcher: minutes per file. It now uses the stored pages; only `--force` asks the site again. And `import --force` no longer downloads an album page twice (the page fetched ahead was fetched again when its turn came).
+- `bdnex import FILE` finds a file by the path `bdnex ls` prints (relative to `collection_path`) when it is not found from where you are.
+- A link made in the review screen no longer asks questions (a cover that looked different asked one the screen could not show, so the row said `linking...` for ever).
+- The review screen no longer waits for ever on a link: after 120 seconds without an answer (a slow site or fetcher) the file can be decided again, and a late answer is ignored.
+- **Every command's `--help` ends with examples** (what to type, and what it does), from one table (`bdnex/ui/examples.py`);
+  a test checks that each example uses real options.
+- **Default aliases**: bdnex ships eleven, with long names and an explanation, listed by `bdnex --help`
+  (`settle-doubtful-matches`, `first-import`, `import-skipped-files-again`...). Your own `aliases:` are added to them (the same name replaces one; `NAME =` removes it).
+- **`bdnex relink` is `bdnex relocate --find`** (find the files that were moved by hand, by their content; `relocate OLD NEW` is still for a moved folder). The old name still works, with a note.
+- **`bdnex reparse` is `bdnex import --reparse`** (offline, from the stored pages; `--select TERM` limits it to some albums). The old name still works, with a note.
+- **One command for the doubtful matches: `bdnex review`.** `bdnex recheck` is now `bdnex review --auto` (the old name still
+  works, with a note). **Breaking:** the flags `--unlink`, `--unconfirmed`, `--rematch`, `--flag-unconfirmed` are gone: `--auto`
+  switches a contradicted file to the better album found by the covers of its other candidates, else unlinks it; the
+  ones nothing confirms are left alone. `--auto` now weighs the flagged files *and* the matches applied under the strong
+  threshold, and prints, for each contradicted file, the covers it compared. `--json` prints the verdicts.
+- **OpenCV is a normal dependency** (the cover check, `recheck`, the cover vote need it): `uv sync` and `pip install bdnex`
+  install it. An optional extra was dropped by every plain `uv sync`, and the covers were then silently not compared.
+  `bdnex[cover]` still installs (an empty extra). The Docker image grows by about 100 MB.
+- `import -v`: the match score is a percentage in its own colour (red to green), and each cover comparison prints
+  `cover: 87%  file name`.
+- `bdnex komga push` leaves out the files whose match waits for a review (`--with-review` sends them): a doubtful
+  match no longer puts another album's metadata, locked, in Komga.
+- The web page's review answers and `bdnex review` share one function; a test checks every flag a web task builds
+  against its command's `--help`.
+- Covers are downloaded (and compared with the file's cover) in the background as each album completes, no longer
+  all at the end of the run: an interrupted or still-running import already has the covers and scores of what it did.
+  `bdnex candidates --cover` reads the saved covers instead of requesting them again.
+- **Breaking:** `bdnex review --scan` is now `bdnex check --matches --fix` (the old spelling still works for a release);
+  `bdnex review -l` is `--list`.
+- **Breaking:** the import options `--no-fetch`, `--retry-partial` and `--recache` are gone (`--match`, `--fetch`,
+  `--fetch --force`); the config option `match.use_facts` is gone (`bdnex config --update`).
+- `bdnex --help` groups the commands by task.
 
 ## 0.10.0
 

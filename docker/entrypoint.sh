@@ -3,6 +3,7 @@
 set -e
 if [ ! -f "$BDNEX_CONFIG" ]; then
     cp /usr/share/bdnex-docker.yaml "$BDNEX_CONFIG"
+    chmod 600 "$BDNEX_CONFIG"  # you will put passwords and tokens in it: nobody else on the host should read it
     echo "bdnex: wrote $BDNEX_CONFIG (edit it to change the settings)" >&2
 fi
 python - <<'PY'

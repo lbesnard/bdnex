@@ -37,7 +37,7 @@ def library(settings, tmp_path):
 
 
 def client(settings, **kw):
-    return TestClient(create_app(settings, **kw))
+    return TestClient(create_app(settings, **kw), base_url="http://localhost")
 
 
 def test_home_is_the_web_page(library):

@@ -30,6 +30,7 @@ STATIC = Path(__file__).resolve().parent / "static"
 MAX_LIMIT = 1000
 MAX_BULK = 2000  # albums one edit may change
 MAX_BODY = 1_000_000  # bytes of a request body: the page sends a few lines of JSON
+LOOPBACK_NAMES = {"localhost", "127.0.0.1", "::1"}  # what `Host` says when the server is reached on this machine
 
 
 class JobRequest(BaseModel):
@@ -125,7 +126,7 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
     history = History(Path(str(settings.library_path) + ".changes.jsonl"))
     watcher = Watcher(settings, jobs)
     app = FastAPI(
-        title="bdnex", version=__version__,
+        title="bdnex", version=__version__, docs_url=None, redoc_url=None, openapi_url=None,  # served below, behind the login
         description="Read-only view of your bdnex library. The `q` parameter takes the same terms as "
                     "`bdnex ls` (`series:nains year:2010..2015 ^genre:humour`).")
     app.router.on_startup.append(watcher.start)  # looks at the import sources when `watch.enabled` (not for a test client)
@@ -134,13 +135,27 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
     throttle, sessions = auth.Throttle(), auth.Sessions(settings.api.session_hours)
 
     def client(request: Request) -> str:
-        """Who is asking, for the limit on wrong guesses. Behind a proxy that is the first address it forwarded
-        (`api.behind_proxy`); else every visitor would look like the proxy and one bad guesser would lock everybody out."""
+        """Who is asking, for the limit on wrong guesses. Behind a proxy that is the LAST address it forwarded (`api.behind_proxy`): a
+        proxy appends the address it saw, so the first entries are whatever the client chose to send (a guess counted against a new
+        address each time would never lock anybody); else every visitor would look like the proxy and one bad guesser would lock everybody out."""
         if settings.api.behind_proxy:
-            forwarded = request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+            forwarded = request.headers.get("x-forwarded-for", "").split(",")[-1].strip()
             if forwarded:
                 return forwarded
         return request.client.host if request.client else "?"
+
+    loopback_server = settings.api.host in ("127.0.0.1", "localhost", "::1")
+    host_names = {name.lower() for name in settings.api.allowed_hosts} | (LOOPBACK_NAMES if loopback_server else set())
+
+    def host_ok(request: Request) -> bool:
+        """DNS rebinding: a page of another site whose name points at this machine sends `Host: its-name` and passes every same-origin
+        check. A server listening only on this machine answers to its own names (and `api.allowed_hosts`); one reachable from elsewhere
+        answers to any name unless `api.allowed_hosts` lists them."""
+        if not host_names:
+            return True
+        host = request.headers.get("host", "").strip().lower()
+        name = host[1:host.index("]")] if host.startswith("[") and "]" in host else host.rsplit(":", 1)[0] if host.count(":") == 1 else host
+        return name in host_names
 
     def secure(request: Request) -> bool:
         scheme = request.headers.get("x-forwarded-proto", "") if settings.api.behind_proxy else ""
@@ -218,6 +233,22 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
     def healthz():  # for a container's health check: no login, nothing of the library
         return {"status": "ok"}
 
+    @app.get("/openapi.json", include_in_schema=False, dependencies=guarded)
+    def openapi_json():  # the whole schema, every writing route included: behind the login like the rest
+        return app.openapi()
+
+    @app.get("/docs", response_class=HTMLResponse, include_in_schema=False, dependencies=guarded)
+    def swagger_page():
+        from fastapi.openapi.docs import get_swagger_ui_html
+
+        return get_swagger_ui_html(openapi_url="/openapi.json", title="bdnex API")
+
+    @app.get("/redoc", response_class=HTMLResponse, include_in_schema=False, dependencies=guarded)
+    def redoc_page():
+        from fastapi.openapi.docs import get_redoc_html
+
+        return get_redoc_html(openapi_url="/openapi.json", title="bdnex API")
+
     @app.get("/", response_class=HTMLResponse, include_in_schema=False)
     def home(request: Request):
         """The page. With a password and no valid login a browser gets the login form (status 401, so nothing caches it
@@ -260,8 +291,15 @@ def create_app(settings: Settings, token: Optional[str] = None, allow_changes: O
     @app.middleware("http")
     async def protect(request: Request, call_next):
         """Small bodies only, and headers that keep the page from being framed, sniffed or fed from elsewhere."""
-        if int(request.headers.get("content-length") or 0) > MAX_BODY:
+        if not host_ok(request):
+            return Response("this name is not one the server answers to (`api.allowed_hosts`)", status_code=400)
+        length = request.headers.get("content-length") or "0"
+        if not length.isdigit():
+            return Response("a bad Content-Length", status_code=400)
+        if int(length) > MAX_BODY:
             return Response("the request is too big", status_code=413)
+        if "chunked" in request.headers.get("transfer-encoding", "").lower():  # no length to check: the body could be any size
+            return Response("send the body with a Content-Length", status_code=411)
         response = await call_next(request)
         if getattr(request.state, "change", False) and response.status_code < 400:
             who = (username if password else "token" if token else "local") + "@" + client(request)

@@ -166,7 +166,7 @@ def _two_folders(options: dict) -> list[str]:
 
 def _batch(options: dict) -> list[str]:
     batch = str(options.get("batch") or "last")
-    if not all(c.isalnum() or c in "-_" for c in batch):
+    if not batch[:1].isalnum() or not all(c.isalnum() or c in "-_" for c in batch):  # not a flag: `--yes`, `-n`...
         raise JobError("`batch` is a run name from `bdnex undo`, or `last`")
     return [batch]
 
@@ -217,7 +217,9 @@ def _komga_command(action: str):
 
 SPECS: dict[str, Spec] = {
     "check": Spec("Check the library", False, _simple("check_cmd", lambda o, s: [])),
-    "check-fix": Spec("Check the library and settle what is safe", True, _simple("check_cmd", lambda o, s: ["--fix"])),
+    # `check` alone changes nothing: it is the preview of `check --fix` (the command has no -n)
+    "check-fix": Spec("Check the library and settle what is safe", True,
+                      _simple("check_cmd", lambda o, s: [] if o.get("preview", True) else ["--fix"])),
     "duplicates": Spec("Find duplicates", False, _simple("duplicates_cmd", lambda o, s: [])),
     "init": Spec("Download the album list (init)", True, _simple("init_cmd", lambda o, s: []), preview=False),
     "record": Spec("Record files as they are", True,
@@ -273,6 +275,7 @@ class Job:
     lines: list[str] = field(default_factory=list)
     dropped: int = 0                 # lines forgotten once MAX_LINES were kept
     thread_id: Optional[int] = None
+    finishing: bool = False          # the run is over and its thread is putting things away: a cancel can no longer be let in
     interactive: bool = False        # questions are asked on the page (else the run never asks)
     question: Optional[dict] = None  # the question waiting for an answer: {id, kind, message, choices...}
     question_image: Optional[bytes] = field(default=None, repr=False)  # the picture shown with it (a PNG)
@@ -451,13 +454,30 @@ class JobManager:
         except Exception as err:  # the job failed; the page shows why
             log.write(f"error: {err}\n")
         finally:
-            log.flush()
-            job.finished = time.time()
-            # The slot is freed *before* the status says the job is over: whoever sees "done" can start the next job at
-            # once (the other order made that request fail with "another job is running" on a slow machine).
-            self._running.release()
-            job.status = status
-            self._save()
+            self._finish(job, log, status)
+
+    def _finish(self, job: Job, log, status: str) -> None:
+        """Put away a run that is over. A cancel injects ``KeyboardInterrupt`` into the job's thread at any moment: one sent just as the
+        run ended could land in here and leave the slot taken (every later job "busy") or the status at "running" for ever. So no
+        cancel is let in from now on, and one already on its way is swallowed and the work redone (each step can be done twice)."""
+        with self._lock:
+            job.finishing = True
+        released = False
+        for _ in range(3):
+            try:
+                log.flush()
+                job.finished = job.finished or time.time()
+                if not released:
+                    released = True
+                    # The slot is freed *before* the status says the job is over: whoever sees "done" can start the next job at
+                    # once (the other order made that request fail with "another job is running" on a slow machine).
+                    with contextlib.suppress(RuntimeError):  # already released by a first try that was cut short
+                        self._running.release()
+                job.status = status
+                self._save()
+                return
+            except KeyboardInterrupt:
+                continue
 
     def get(self, job_id: int) -> Optional[Job]:
         return self.jobs.get(job_id)
@@ -474,7 +494,10 @@ class JobManager:
         job = self.jobs.get(job_id)
         if job is None or job.status != "running" or job.thread_id is None:
             return False
-        ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(job.thread_id), ctypes.py_object(KeyboardInterrupt))
+        with self._lock:  # not once the run is over: the exception would land in its clean-up
+            if job.finishing:
+                return False
+            ctypes.pythonapi.PyThreadState_SetAsyncExc(ctypes.c_ulong(job.thread_id), ctypes.py_object(KeyboardInterrupt))
         return True
 
     def busy(self) -> bool:
