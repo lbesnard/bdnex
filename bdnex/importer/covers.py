@@ -351,11 +351,60 @@ def opencv_installed() -> bool:
 MIN_COVER_SIDE = 100  # pixels: smaller is a placeholder, not a cover
 
 
+MAX_PIXELS = 100_000_000  # a cover is a few hundred thousand pixels; a 30000 x 30000 PNG of a few KB would take gigabytes to decode
+
+
+def image_size(data: bytes) -> Optional[tuple[int, int]]:
+    """``(width, height)`` read from the HEADER of a PNG, JPEG, GIF or WebP (nothing is decoded), ``None`` when it is not one of those or
+    the header is cut: used to refuse a decompression bomb before the picture is opened."""
+    import struct
+
+    try:
+        if data.startswith(b"\x89PNG\r\n\x1a\n") and data[12:16] == b"IHDR":
+            return struct.unpack(">II", data[16:24])
+        if data[:6] in (b"GIF87a", b"GIF89a"):
+            return struct.unpack("<HH", data[6:10])
+        if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            kind = data[12:16]
+            if kind == b"VP8X":
+                return 1 + int.from_bytes(data[24:27], "little"), 1 + int.from_bytes(data[27:30], "little")
+            if kind == b"VP8 ":
+                return struct.unpack("<HH", data[26:30])[0] & 0x3FFF, struct.unpack("<HH", data[26:30])[1] & 0x3FFF
+            if kind == b"VP8L":
+                bits = int.from_bytes(data[21:25], "little")
+                return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+        if data.startswith(b"\xff\xd8"):
+            i = 2
+            while i + 9 < len(data):
+                if data[i] != 0xFF:
+                    i += 1
+                    continue
+                marker = data[i + 1]
+                if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                    height, width = struct.unpack(">HH", data[i + 5:i + 9])
+                    return width, height
+                if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7:
+                    i += 2
+                    continue
+                i += 2 + struct.unpack(">H", data[i + 2:i + 4])[0]
+    except (struct.error, IndexError):
+        return None
+    return None
+
+
+def refuse_bomb(data: bytes) -> None:
+    """Raise :class:`CoverError` for a picture whose header says it has more than :data:`MAX_PIXELS` pixels."""
+    size = image_size(data)
+    if size and size[0] * size[1] > MAX_PIXELS:
+        raise CoverError(f"the picture says it is {size[0]}x{size[1]} pixels: not a cover, and not opened")
+
+
 def check_cover_image(data: bytes) -> None:
     """Raise :class:`CoverError` saying what ``data`` is when it is not a usable cover image (an error page, the
     HTML that wraps an image, a 1-pixel placeholder...)."""
     if not data:
         raise CoverError("nothing was received")
+    refuse_bomb(data)
     try:
         import pymupdf
 

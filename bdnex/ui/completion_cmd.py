@@ -16,15 +16,42 @@ FLAG = re.compile(r"(?<![\w-])(--[a-z][a-z0-9-]+|-[a-zA-Z])(?=[\s,=\[]|$)")
 
 
 # commands whose first word is a choice, not a file (read from their usage line, `{show,push}`, so they cannot drift)
-def actions(command: str) -> list[str]:
-    from bdnex import ui
+def help_of(command: str) -> str:
+    """What `bdnex COMMAND --help` prints, from the command itself: not through `ui.main`, which checks the configuration first (and
+    creates it on a first run, or stops with an error: every command would then have no flags and the script would still be printed)."""
+    from bdnex.ui import commands
 
     out = io.StringIO()
     try:
         with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-            ui.main([command, "--help"])
+            commands.runner(commands.COMMANDS[command])(["--help"])
     except SystemExit:
         pass
+    except Exception:  # a command that can not even show its help: no flags for it, the others are not affected
+        pass
+    return out.getvalue()
+
+
+def option_flags(text: str) -> list[str]:
+    """The flags of the options list of a help text: the lines that start an option (`  -n, --pretend  what it does`), never a flag
+    that the description or the examples under it mention (`trash --help` shows `bdnex import --match --force` in its examples)."""
+    flags: set[str] = set()
+    inside = False
+    for line in text.split("\n"):
+        if re.match(r"^(options|optional arguments):\s*$", line):
+            inside = True
+            continue
+        if inside and line and not line.startswith(" "):
+            inside = False  # the epilog and the examples start in column 0
+        if inside:
+            head = re.match(r"^\s{1,4}(-.*?)(?:\s{2,}|$)", line)
+            if head:
+                flags.update(FLAG.findall(head.group(1)))
+    return sorted(flags - {"-h"})
+
+
+def actions(command: str) -> list[str]:
+    out = io.StringIO(help_of(command))
     _, _, positionals = out.getvalue().partition("positional arguments:")  # not an option's `--only {a,b}`
     found = re.search(r"^\s+\{([a-z][a-z,-]*)\}", positionals, re.M)
     return found.group(1).split(",") if found else []
@@ -38,15 +65,7 @@ def commands() -> list[str]:
 
 def options(command: str) -> list[str]:
     """The flags a command accepts, read from its ``--help``."""
-    from bdnex import ui
-
-    out = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
-            ui.main([command, "--help"])
-    except SystemExit:
-        pass
-    return sorted(set(FLAG.findall(out.getvalue())) - {"-h"})
+    return option_flags(help_of(command))
 
 
 def script(shell: str) -> str:
@@ -85,13 +104,15 @@ def script(shell: str) -> str:
   if [[ "$cur" == -* || "${{COMP_WORDS[1]}}" == completion ]]; then
     COMPREPLY=($(compgen -W "$opts" -- "$cur"))
   else
+    local IFS=$'\\n'  # file names are split at newlines only: `Asterix - T01 - Le Gaulois.cbz` stays one name (and no `mapfile`: bash 3 and zsh)
     COMPREPLY=($(compgen -f -- "$cur"))
   fi
 }}
 complete -o filenames -o bashdefault -F _bdnex bdnex
 """
     if shell == "zsh":
-        return "autoload -U +X bashcompinit && bashcompinit\n" + body
+        # compinit first (a `.zshrc` that evals this before its own compinit would find no `complete`), then the bash layer
+        return "autoload -U +X compinit && compinit -u\nautoload -U +X bashcompinit && bashcompinit\n" + body
     return body
 
 

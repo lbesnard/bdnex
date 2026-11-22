@@ -16,6 +16,9 @@ def half_blocks(image: bytes, columns: int = 36, max_rows: int = 22) -> Optional
     except ImportError:  # an older PyMuPDF
         import fitz
     try:
+        from bdnex.importer import covers
+
+        covers.refuse_bomb(image)  # a header that promises gigabytes is not decoded
         source = fitz.Pixmap(image)
         if source.alpha or source.colorspace is None or source.colorspace.n != 3:
             source = fitz.Pixmap(fitz.csRGB, fitz.Pixmap(source, 0) if source.alpha else source)
