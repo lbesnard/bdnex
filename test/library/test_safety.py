@@ -191,3 +191,26 @@ def test_reset_and_relocate_previews_do_not_open_the_library_for_writing(tmp_pat
         except Exception:  # a read-only open of an older file says so: it does not upgrade it
             pass
     assert (tmp_path / "lib.sqlite").read_bytes() == before and not (tmp_path / "lib.sqlite.bak-v12").exists()
+
+
+def test_relocating_a_folder_also_follows_the_trash_the_undo_list_and_the_staged_files(tmp_path):
+    library, settings = _library_with_settings(tmp_path)
+    old, new = tmp_path / "inbox", tmp_path / "moved"
+    for folder in (old, new):
+        folder.mkdir()
+    path = old / "a.cbz"
+    path.write_bytes(b"x" * 10)
+    library.add_file(str(path))
+    library.add_trash(str(old / "gone.cbr"), str(tmp_path / "trash" / "gone.cbr"), "converted")
+    library.record_move("run1", str(old / "a.cbz"), str(old / "b.cbz"))
+    library.conn.execute("INSERT INTO origins(file_id, origin) SELECT id, ? FROM files", (library._store(str(old / "src.cbz")),))
+    library.stage_file(str(path), origin=str(old / "elsewhere.cbz"))
+    shutil_path = str(new / "a.cbz")
+    os.replace(path, shutil_path)
+    result = library.relocate(str(old), str(new))
+    assert result["files"] == 1 and result["other"] == 5  # trash.path, the two operations paths, the origin, the staged origin
+    assert library.trash_entries()[0]["path"] == str(new / "gone.cbr")  # `trash --restore` puts it back in the folder that is there
+    move = library.moves_of("run1")[0]
+    assert (move["old_path"], move["new_path"]) == (str(new / "a.cbz"), str(new / "b.cbz"))  # and so does `undo`
+    assert library.conn.execute("SELECT origin FROM staged_files").fetchone()[0] == str(new / "elsewhere.cbz")
+    library.close()

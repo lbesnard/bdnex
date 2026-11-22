@@ -67,7 +67,8 @@ def run(argv: list[str], out=sys.stdout) -> int:
 
     on = color.enabled(out)
     print(f"{color.role(verb, 'good', on)} {result['files']} file path(s) and {result['log']} import log "
-          f"entr{'y' if result['log'] == 1 else 'ies'}.", file=out)
+          f"entr{'y' if result['log'] == 1 else 'ies'}"
+          + (f", and {result['other']} path(s) in the trash, `undo` and staged lists" if result.get("other") else "") + ".", file=out)
     everything = present == result["files"]
     print(color.role(f"{present} of {result['files']} file(s) exist at the new location.", "good" if everything else "warn", on),
           file=out)

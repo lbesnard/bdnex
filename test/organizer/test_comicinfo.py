@@ -104,3 +104,15 @@ def test_a_huge_summary_no_longer_floods_the_output():
     new = {"Summary": ("Un texte. " * 200) + "fin B"}
     [change] = comicinfo.diff_fields(old, new)
     assert len(change) < 400 and "characters, first difference at" in change
+
+
+def test_a_rewrite_keeps_the_pages_element_an_existing_file_had():
+    existing = (b'<ComicInfo><Title>Old</Title><Pages><Page Image="0" Type="FrontCover"/><Page Image="1" Type="Story"/></Pages></ComicInfo>')
+    new = comicinfo.build_xml({"Title": "New", "Series": "Nains"}, keep=existing)
+    from xml.etree import ElementTree as ET
+
+    root = ET.fromstring(new)
+    assert root.find("Title").text == "New" and root.find("Series").text == "Nains"
+    assert [p.get("Type") for p in root.find("Pages")] == ["FrontCover", "Story"]  # the page types ComicTagger or Komga wrote
+    assert ET.fromstring(comicinfo.build_xml({"Title": "x"})).find("Pages") is None  # nothing to keep: nothing added
+    assert ET.fromstring(comicinfo.build_xml({"Title": "x"}, keep=b"not xml")).find("Title").text == "x"  # unreadable: ignored

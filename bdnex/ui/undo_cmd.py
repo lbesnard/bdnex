@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import shutil
 import sys
@@ -51,7 +52,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
         for move in library.moves_of(name):
             old, new = move["old_path"], move["new_path"]
             problem = (f"{new} is gone" if not os.path.exists(new) else
-                       f"{old} is taken by another file" if os.path.exists(old) else None)
+                       f"{old} is taken by another file" if os.path.exists(old) else
+                       f"the library no longer has {new} (it was removed or moved again since)" if library.get_file(new) is None else
+                       f"the library already has a file at {old}" if library.get_file(old) is not None else None)
             if problem:
                 counts["skipped"] += 1
                 print(results.block("skipped", os.path.basename(new), [problem], on), file=out)
@@ -61,10 +64,25 @@ def run(argv: list[str], out=sys.stdout) -> int:
                                 [f"from  {color.paint(new, 'red', on)}", f"to    {color.paint(old, 'green', on)}"], on), file=out)
             if args.pretend:
                 continue
-            os.makedirs(os.path.dirname(old), exist_ok=True)
-            shutil.move(new, old)
-            library.move_file(new, old)
-            library.mark_undone(move["id"])
+            try:
+                os.makedirs(os.path.dirname(old), exist_ok=True)
+                shutil.move(new, old)
+            except OSError as err:  # nothing moved: the library is as it was
+                counts["back"] -= 1
+                counts["skipped"] += 1
+                print(results.block("skipped", os.path.basename(new), [f"could not move it back: {err}"], on), file=out)
+                continue
+            try:
+                library.move_file(new, old)
+                library.mark_undone(move["id"])
+            except Exception as err:  # the disk moved and the library did not: put the file back, so that the two agree again
+                with contextlib.suppress(OSError):
+                    shutil.move(old, new)
+                counts["back"] -= 1
+                counts["skipped"] += 1
+                print(results.block("skipped", os.path.basename(new), [f"the library could not follow ({err}): the file stays where it was"], on),
+                      file=out)
+                continue
             organizer._prune_empty_dirs(new)
         verb = "would be moved back" if args.pretend else "moved back"
         print(f"\n{counts['back']} file(s) {verb}, {counts['skipped']} skipped.", file=out)

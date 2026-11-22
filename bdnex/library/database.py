@@ -1160,14 +1160,28 @@ class Library:
         collisions = [target for _, target in moved if self._store(target) in taken]
         logged = [(r["id"], rewrite(self._resolve(r["path"]))) for r in self.conn.execute("SELECT id, path FROM import_log")
                   if rewrite(self._resolve(r["path"]))]
+        # the other places that remember a path: the trash (where a file was, and where its copy is), the runs `undo` can take back,
+        # the files waiting to be moved in, and where copies came from. Without them `trash --restore` and `undo` recreate the old folders.
+        others = []
+        for table, column, stored in (("trash", "path", True), ("trash", "trash_path", True), ("operations", "old_path", True),
+                                      ("operations", "new_path", True), ("origins", "origin", True), ("staged_files", "origin", False)):
+            for row in self.conn.execute(f"SELECT rowid AS rid, {column} AS value FROM {table}").fetchall():
+                try:
+                    target = rewrite(self._resolve(row["value"]) if stored else row["value"])
+                except LibraryRootError:
+                    continue
+                if target:
+                    others.append((table, column, row["rid"], self._store(target) if stored else target))
         shown = [(self._resolve(stored), target) for stored, target in moved]
-        result = {"files": len(moved), "log": len(logged), "collisions": collisions, "moved": shown}
+        result = {"files": len(moved), "log": len(logged), "collisions": collisions, "moved": shown, "other": len(others)}
         if apply and not collisions:
             with self.conn:
                 for stored, target in moved:
                     self.conn.execute("UPDATE files SET path = ? WHERE path = ?", (self._store(target), stored))
                 for log_id, target in logged:
                     self.conn.execute("UPDATE import_log SET path = ? WHERE id = ?", (self._store(target), log_id))
+                for table, column, rid, value in others:
+                    self.conn.execute(f"UPDATE {table} SET {column} = ? WHERE rowid = ?", (value, rid))
         return result
 
     # ---------------------------------------------------- spare versions, staging

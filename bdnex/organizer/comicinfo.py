@@ -57,11 +57,21 @@ def album_to_fields(album: dict[str, Any], page_count: Optional[int] = None) -> 
     return fields
 
 
-def build_xml(fields: dict[str, str]) -> bytes:
-    """Serialise and validate against the packaged ComicInfo schema."""
+def build_xml(fields: dict[str, str], keep: Optional[bytes] = None) -> bytes:
+    """Serialise and validate against the packaged ComicInfo schema.
+
+    ``keep``: the ComicInfo.xml this one replaces. Its nested elements (``Pages``: the type of each page, written by ComicTagger or
+    Komga) are not in ``fields`` (it holds the simple text ones) and are carried over, so a rewrite does not erase them."""
     root = ET.Element("ComicInfo")
     for name, value in fields.items():
         ET.SubElement(root, name).text = value
+    if keep:
+        try:
+            for child in ET.fromstring(keep):
+                if len(child) > 0 and root.find(child.tag) is None:
+                    root.append(child)
+        except ET.ParseError:
+            pass  # unreadable: nothing to carry over
     ET.indent(root)
     data = ET.tostring(root, encoding="utf-8", xml_declaration=True)
     xmlschema.XMLSchema(str(SCHEMA_PATH)).validate(data.decode("utf-8"))
