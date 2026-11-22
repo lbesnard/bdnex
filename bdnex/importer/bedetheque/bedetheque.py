@@ -32,6 +32,10 @@ class BlockedError(RuntimeError):
     """The site answered with an anti-bot challenge instead of the page."""
 
 
+class IncompletePage(OSError):
+    """A page that says it lists N entries and holds far fewer: cut short on the way. It is not stored, and what the library has is kept."""
+
+
 # `/cdn-cgi/challenge-platform/h/` is what a challenge page loads; the `/scripts/jsd/` snippet Cloudflare injects into ORDINARY pages is not one
 CHALLENGE_MARKERS = (b"<title>Just a moment", b"window._cf_chl_opt", b"/cdn-cgi/challenge-platform/h/")
 
@@ -173,7 +177,7 @@ class Bedetheque:
     """
 
     name = SOURCE
-    fetch_errors = (BlockedError, FileNotFoundError, OSError)
+    fetch_errors = (BlockedError, FileNotFoundError, OSError)  # (IncompletePage is an OSError)
 
     def __init__(self, library: Library, fetch: Callable[[str], bytes] = http_fetch,
                  delay: tuple[float, float] = (3, 10), sleep: Callable[[float], None] = time.sleep,
@@ -361,7 +365,9 @@ class Bedetheque:
             entries = letters.parse_letter_page(content, letter)
             announced = letters.announced_count(content)
             if announced and len(entries) < announced * 0.9:
-                logger.warning(f"{url}: the page says {announced} series, {len(entries)} were read")
+                self.library.cache_delete(SOURCE, "letter", url)  # a cut page stored would be read again as it is, and replace the letter's series
+                raise IncompletePage(f"{url}: the page says {announced} series, only {len(entries)} were read (a page cut short): "
+                                     "not stored, the series of that letter are as they were; run it again")
             self.library.series_index_replace(SOURCE, [(e.series_id, e.name, e.folded, e.url, e.country, e.letter) for e in entries])
         self._series_catalogue = None
         return self.library.series_index_count(SOURCE)

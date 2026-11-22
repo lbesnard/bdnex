@@ -35,9 +35,23 @@ CREDIT_LABELS = {
 }
 
 
+def _fold_label(text: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)).casefold().strip(" \t\n:()")
+
+
+def canonical_label(label: str) -> str:
+    """A credit label as bdnex knows it, whatever the case, the accents, a trailing colon or the parentheses the site put around it
+    (``scenario``, ``SCÉNARIO :``, ``(Scénario)`` are all ``Scénario``): the matching used to be exact, and a role the site wrote a little
+    differently became an unknown one. A label bdnex does not know is returned as written."""
+    return _KNOWN_LABELS.get(_fold_label(label), label.strip())
+
+
 # Desktop-layout role labels -> the legacy field names used by build_album_info
 V2_ROLE_FIELDS = {"Scénario": "Scénario", "Dessin": "Dessin", "Couleurs": "Couleurs",
                   "Lettrage": "Lettrage", "Couverture": "Couverture"}
+
+
+_KNOWN_LABELS = {_fold_label(name): name for name in (*CREDIT_LABELS, *OTHER_CREDIT_ROLES, *("Scénario", "Dessin", "Couleurs", "Lettrage", "Couverture"))}
 
 
 def parse_album_page(html: str, album_url: str) -> tuple[dict[str, Any], Optional[str]]:
@@ -170,7 +184,7 @@ def _parse_album_page_desktop(html: str, album_url: str) -> tuple[dict[str, Any]
         role = span.find("small")
         if not name or not role:
             continue
-        label = role.get_text(strip=True).strip("()")
+        label = canonical_label(role.get_text(strip=True).strip("()"))
         credits.setdefault(label, []).append(name.get_text(strip=True))
     for label, names in credits.items():
         if label in V2_ROLE_FIELDS:
@@ -187,8 +201,9 @@ def _parse_album_page_desktop(html: str, album_url: str) -> tuple[dict[str, Any]
         fields["edition_fields"] = edition  # everything the edition table says, as written
         if edition.get("Format"):
             fields["Format"] = edition["Format"]
+        by_label = {canonical_label(key): value for key, value in edition.items()}  # (the table as written is kept in `edition_fields`)
         for label in ("Traduction", "Autres"):
-            names = _split_names(edition.get(label, ""))
+            names = _split_names(by_label.get(label, ""))
             if names:
                 fields.setdefault("autres_credits", {}).setdefault(label, names)
     note = soup.select_one("div.bdt-note > div")
@@ -255,12 +270,15 @@ def _parse_album_page_mobile(html: str, album_url: str) -> tuple[dict[str, Any],
             continue
 
     imgs = soup.find_all("img", alt=True)
-    if len(imgs) > 1:
-        fields["cover_url"] = imgs[1].attrs["src"]
+    if len(imgs) > 1 and imgs[1].get("src"):
+        fields["cover_url"] = imgs[1]["src"]
 
     for span in soup.find_all("span", attrs={"class": "infoedition"}):
-        if "Résumé" in span.contents[0].contents[0]:
-            fields["description"] = span.contents[1]
+        try:
+            if "Résumé" in span.contents[0].contents[0]:
+                fields["description"] = span.contents[1]
+        except (IndexError, AttributeError):  # a block laid out a little differently: its summary is lost, not the whole album
+            logger.debug("an infoedition block of the former layout could not be read")
 
     for key, val in list(fields.items()):
         if isinstance(val, bs4.element.Tag):
@@ -529,7 +547,7 @@ def build_album_info(fields: dict[str, Any], series_url: Optional[str] = None,
             credits.setdefault(role, []).extend(_split_names(fields[label]))
 
     for label, names in (fields.get("autres_credits") or {}).items():
-        role = OTHER_CREDIT_ROLES.get(label, label)
+        role = OTHER_CREDIT_ROLES.get(canonical_label(label), label)
         for name in names:
             if name not in credits.setdefault(role, []):
                 credits[role].append(name)
