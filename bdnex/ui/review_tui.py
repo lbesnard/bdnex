@@ -32,7 +32,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
+from textual.widgets import Button, Checkbox, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
 from bdnex.library import review_batch as batch
@@ -151,21 +151,23 @@ def is_series_address(text: str) -> bool:
     return bool(SERIES_ADDRESS.search(text or ""))
 
 
-def fuzzy_search(hub: SourceHub, text: str, limit: int = SEARCH_LIMIT, series: bool = False) -> tuple[list, int]:
+def fuzzy_search(hub: SourceHub, text: str, limit: int = SEARCH_LIMIT, series: bool = False, albums: bool = True) -> tuple[list, int]:
     """The albums of the whole list that look like ``text``, best first, as ``([(candidate, score)], matches)``.
 
     Every word has to be in the name (case and accents do not matter); when that finds few, a fuzzy match over the whole
     list (letters missing, a typo) takes over: what ``fzf`` does, in the screen. Runs in the thread of the album list.
-    ``series``: the series of the letter index are searched too and listed with the albums (their address is a series page)."""
+    ``series``: the series of the letter index are searched too and listed with the albums (their address is a series page).
+    ``albums=False`` (with ``series``): the series only. Each kind is searched on its own, so one that has many hits cannot push the other
+    out of the best ``limit`` (a name with many series would show no album at all)."""
     from bdnex.importer import album_search
 
     if series and hasattr(hub.source, "series_catalogue"):
-        albums, total = fuzzy_search(hub, text, limit)
+        found_albums, total = fuzzy_search(hub, text, limit) if albums else ([], 0)
         if hub.series is None:
             hub.series = list(hub.source.series_catalogue())
             hub.series_folded = album_search.folded_names(hub.series)
         found, more = album_search.search_folded(hub.series, hub.series_folded, text, limit, hub.series_cache)
-        merged = sorted([*found, *albums], key=lambda pair: -pair[1])  # a series ahead of an album with the same score (stable sort)
+        merged = sorted([*found, *found_albums], key=lambda pair: -pair[1])  # a series ahead of an album with the same score (stable sort)
         return merged[:limit], total + more
 
     if not hasattr(hub.source, "catalogue"):  # a source that cannot list its albums: its own search
@@ -289,27 +291,45 @@ class CandidatesScreen(ModalScreen):
         self.dismiss(None)
 
 
+class Tick(Checkbox):
+    """A tick box that the keyboard leaves alone (the text field keeps the focus: F2 / F3 or a click toggle it)."""
+
+    can_focus = False
+
+
 class FuzzyScreen(ModalScreen):
     """Search the whole album list as you type (like ``fzf``): Enter picks, Ctrl-O opens the page, Esc goes back."""
 
     BINDINGS = [Binding("escape", "back", "Back"), Binding("ctrl+o", "open", "Open the page"),
+                Binding("f2", "tick('series')", "Series on/off", show=False), Binding("f3", "tick('albums')", "Albums on/off", show=False),
                 Binding("down", "move(1)", show=False, priority=True), Binding("up", "move(-1)", show=False, priority=True)]
     CSS = """
     FuzzyScreen { align: center middle; }
     #search { width: 90%; height: 85%; border: round $accent; padding: 1 2; background: $surface; }
     #hits { height: 1fr; }
+    #kinds { height: 3; }
+    #kinds Checkbox { width: auto; margin-right: 3; border: none; padding: 0 1; }
     """
 
-    def __init__(self, hub: SourceHub, start: str, title: str, series_ok: bool = False):
+    def __init__(self, hub: SourceHub, start: str, title: str, series_ok: bool = False, about: Optional[list[str]] = None):
         super().__init__()
         self.hub, self.start, self.heading, self.series_ok = hub, start, title, series_ok
+        self.about = about or []  # the folder and name of the file(s) this is for: they help to find the album, and are not on this screen otherwise
         self.hits: list = []
+        self.show_series = self.show_albums = True  # the two tick boxes (only when series can be picked)
+        self.text = start
 
     def compose(self) -> ComposeResult:
         with Vertical(id="search"):
             yield Label(Text(self.heading, style="bold"))
+            if self.about:
+                yield Label(Text("\n".join(self.about), style="cyan"), id="about")
             yield Input(value=self.start, id="words", placeholder=(
                 "words of the album, in any order, or the address of the series page" if self.series_ok else "type to find the album: words, in any order"))
+            if self.series_ok:
+                with Horizontal(id="kinds"):  # what is searched (not only what is shown): many series cannot push every album out of the list
+                    yield Tick("SERIES  (F2)", True, id="show-series")
+                    yield Tick("Albums  (F3)", True, id="show-albums")
             yield Label("", id="count")
             if self.series_ok:
                 yield Label(Text("score  type    name   (a SERIES gives each file its volume; an album is just that one book)", style="dim"))
@@ -339,7 +359,9 @@ class FuzzyScreen(ModalScreen):
         def look(hub):
             if mine and mine != self.latest:
                 return [], 0  # typed over meanwhile: the list's thread does not spend its time on it
-            return fuzzy_search(hub, text, series=self.series_ok)
+            if self.series_ok and not (self.show_series or self.show_albums):
+                return [], 0  # both ticks off: nothing is asked for
+            return fuzzy_search(hub, text, series=self.series_ok and self.show_series, albums=self.show_albums or not self.series_ok)
 
         try:
             hits, total = await asyncio.wrap_future(self.hub.run(look))
@@ -375,7 +397,20 @@ class FuzzyScreen(ModalScreen):
         return line
 
     def on_input_changed(self, event: Input.Changed) -> None:
+        self.text = event.value
         self.search(event.value)
+
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        if event.checkbox.id == "show-series":
+            self.show_series = event.value
+        elif event.checkbox.id == "show-albums":
+            self.show_albums = event.value
+        self.search(self.text, at_once=True)  # asked again: the other kind may have been cut off the list
+
+    def action_tick(self, kind: str) -> None:
+        if self.series_ok:
+            box = self.query_one("#show-series" if kind == "series" else "#show-albums", Checkbox)
+            box.value = not box.value  # its change searches again
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if self.series_ok and is_series_address(event.value):
@@ -1199,15 +1234,26 @@ class ReviewApp(App):
             self.refresh_row(row)
         self.notify("no file marked", timeout=3)
 
+    @staticmethod
+    def about_files(rows: list, shown: int = 4) -> list[str]:
+        """``folder/file name`` of each file (the first few): what the search is for, on the search screen."""
+        lines = [f"{row.folder}/{os.path.basename(row.path)}" if row.folder else os.path.basename(row.path) for row in rows[:shown]]
+        if len(rows) > shown:
+            lines.append(f"... and {len(rows) - shown} more")
+        return lines
+
     def action_attach(self) -> None:
         """Pick an album of a series: each marked file (without a mark: the file under the cursor) gets the album of that series with
         the volume number in its name. `m` marks every file not decided yet, for a whole folder of one series."""
         chosen = self.files_to_attach()
         if not chosen:
             return
-        what = f"this file ({os.path.basename(chosen[0].path)})" if len(chosen) == 1 else f"these {len(chosen)} marked files"
-        self.push_screen(FuzzyScreen(self.hub, self.search_start(chosen[0]),
-                                     f"An album of the series, or the address of the series page, for {what}", series_ok=True),
+        if len(chosen) == 1:
+            heading = ("Pick this file's album, or a SERIES to give it its volume by the number in its name "
+                       "(or paste the address of the series page)")
+        else:
+            heading = f"These {len(chosen)} marked files: pick a SERIES (or an album of it, or the address of the series page): each gets its volume"
+        self.push_screen(FuzzyScreen(self.hub, self.search_start(chosen[0]), heading, series_ok=True, about=self.about_files(chosen)),
                          lambda candidate: self.run_worker(self.propose(chosen, candidate)) if candidate is not None else None)
 
     def files_to_attach(self) -> list:
@@ -1224,6 +1270,11 @@ class ReviewApp(App):
     async def propose(self, chosen: list, candidate) -> None:
         """``candidate``: an album of the series, or the address (text) of the series page."""
         paths = [r.path for r in chosen]
+        if len(chosen) == 1 and not isinstance(candidate, str) and not chosen[0].busy:
+            # one file and one album picked: that album is the answer. Looking up "the volume of the file in the album's series" would
+            # second-guess the pick with a number read from the name (`CYCLE 2 - Tome 01` reads as 2): a SERIES pick is what does that.
+            self.link(chosen[0], candidate.url, candidate)
+            return
         if isinstance(candidate, str):
             self.notify("Reading the series page (from the library, or fetched once)...", timeout=6)
             try:
@@ -1305,14 +1356,14 @@ class ReviewApp(App):
             elif answer is not None:
                 self.link(row, answer.url, answer)
 
-        self.push_screen(CandidatesScreen(self.hub, row.path, row.album_id, f"Which album is {row.path.rsplit('/', 1)[-1]}?"), picked)
+        self.push_screen(CandidatesScreen(self.hub, row.path, row.album_id, f"Which album is {row.folder}/{os.path.basename(row.path)}?"), picked)
 
     def action_other(self) -> None:
         """Another album: a search box over the whole album list, filtered as you type (the fuzzy search of ``fzf``)."""
         row = self.idle()
         if row is None:
             return
-        self.push_screen(FuzzyScreen(self.hub, self.search_start(row), f"Which album is {row.path.rsplit('/', 1)[-1]}?"),
+        self.push_screen(FuzzyScreen(self.hub, self.search_start(row), "Which album is this file?", about=self.about_files([row])),
                          lambda candidate: self.link(row, candidate.url, candidate) if candidate is not None else None)
 
     def action_other_fzf(self) -> None:

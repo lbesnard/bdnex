@@ -15,7 +15,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Optional
 
-from bdnex.importer.matching import Match, numeric_title, query_from_filename, small_number
+from bdnex.importer.matching import Match, explicit_volume, numeric_title, query_from_filename, small_number
 from bdnex.importer.source import Candidate
 from bdnex.library.query import fold
 
@@ -42,6 +42,9 @@ def title_and_volume(path: str) -> tuple[list[str], Optional[int]]:
             volume = numbers[1][1] if numbers[0][0] == 0 and len(numbers) > 1 else numbers[0][1]
     words = [token for position, token in enumerate(tokens)
              if position < title_numbers or (not token.isdigit() and small_number(token) is None)]
+    said = explicit_volume(path)
+    if said is not None:  # the name says "Tome 01": that is the volume, whatever bare number comes before it (`CYCLE 2 - Tome 01`)
+        volume = said
     if volume is None:  # last resort: the number glued to the title (``SOA1``, ``SonOfAnarchy6``)
         for position in range(len(words) - 1, -1, -1):
             glued = re.fullmatch(r"([^\W\d_]+)0*(\d{1,3})", words[position])

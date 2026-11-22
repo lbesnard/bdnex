@@ -54,7 +54,7 @@ them. A file you **skipped** is remembered and not asked about again, until you 
 3. **Identical file?** Same checksum as a file already in the library: handled by the
    duplicate action (below).
 4. **Match.** The file name, and the folder name, are fuzzy-matched against the album list
-   (no network). `T01`, `Tome 1`, `v3`… in the name are understood, a matching volume number
+   (no network). `T01`, `Tome 1`, `v3`… in the name are understood (and when a name says its volume that way, it wins over a bare number before it: `Apocalypse Mania - CYCLE 2 - Tome 01` is volume 1, `CYCLE 2` is part of the title), a matching volume number
    raises the score and a different one caps it below *strong*. A second try uses the series and
    volume alone (`Loup Noir 5`): authors, years or a collection in the file name are not in the
    album's name. Those matches never count as strong.
