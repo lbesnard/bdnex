@@ -225,7 +225,11 @@ script.
 
 `--fix` only does what cannot lose anything, and marks it `[fixable]` in the report: remove empty series, forget cover
 files that are gone (the next `bdnex import --fetch` downloads them), remove dead trash records, and delete the
-temporary files. Files, albums and covers that exist are never touched.
+temporary files (bdnex's own `.bdnex-tmp` in your collection, and the `.part` and `.bdnex-tmp` files of the covers folder: a `.part`
+file of yours in the collection, a download that is still going on, is left alone). Files, albums and covers that exist are never
+touched. It also **refuses to forget records when most of them are gone** (half or more of at least ten), or when the collection
+folder is not there: that is a disk that is not mounted, not lost files, and the records are what lets `bdnex trash --restore` work
+when it is back; the report says it kept them.
 
 ## The same book twice: `bdnex duplicates`
 
@@ -247,7 +251,10 @@ the hashes are stored, so the next run only reads new files. Deciding is done by
 When a new bdnex has to change the structure of your library (the schema version), it first copies the database to
 `<library>.bak-v<old version>` (for example `bdnex.sqlite.bak-v6`) and says so. An older bdnex cannot open the
 upgraded file; to go back, put the copy in place of `bdnex.sqlite`. There is one copy per version, never overwritten,
-and nothing is copied when the library is already current. Delete the copies when you no longer need them.
+and nothing is copied when the library is already current. The copy is written under a temporary name and renamed only when it is
+whole; if it cannot be made (not enough room: it needs about the size of the library, or a write error) **the upgrade is not done**
+and bdnex says so. A copy left by an earlier bdnex that does not open, or says another schema, is set aside as `.bak-vN.unusable` and
+made again. Delete the copies when you no longer need them.
 
 ## Reading the files again: `bdnex update`
 

@@ -35,10 +35,11 @@ def check_config():
 def main(argv=None):
     """Run a command; problems with the library folder are explained, not dumped as a traceback."""
     from bdnex.library import LibraryRootError
+    from bdnex.library.database import BackupError
 
     try:
         _main(sys.argv[1:] if argv is None else list(argv))
-    except LibraryRootError as err:
+    except (LibraryRootError, BackupError) as err:
         print(err, file=sys.stderr)
         sys.exit(1)
 
