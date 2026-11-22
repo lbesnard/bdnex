@@ -1,5 +1,7 @@
 name: Release
 
+# Run by hand from the Actions tab, on main. It tests the exact commit it releases, builds the wheel and the Docker image first, and only then
+# pushes the version bump and its tag (together: both or neither), so a failed build leaves no tag and no bumped main behind.
 on:
   workflow_dispatch:
     inputs:
@@ -14,23 +16,29 @@ on:
           - major
 
 permissions:
-  contents: write
-  packages: write   # the Docker image goes to ghcr.io/<owner>/bdnex
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 jobs:
-  release:
+  test:
+    # Read-only token: the tests run third-party code (the dependencies).
     runs-on: ubuntu-latest
-
+    if: github.ref == 'refs/heads/main'
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.13"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          fetch-depth: 0
-
+          ref: ${{ github.sha }}
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       - name: Install package and dev dependencies
         run: uv sync --extra dev
@@ -38,70 +46,66 @@ jobs:
       - name: Run tests
         run: uv run pytest
 
-      - name: Bump version in pyproject.toml
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    permissions:
+      contents: write   # the bump commit, the tag and the release
+      packages: write   # the Docker image goes to ghcr.io/<owner>/bdnex
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}   # the commit that was tested, not whatever main is now (a newer main makes the final push fail: run it again)
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Bump the version in pyproject.toml
         id: bump
+        env:
+          BUMP: ${{ github.event.inputs.bump_type }}   # through the environment: never pasted into a script
         run: |
           python - <<'EOF'
-          import re, sys
+          import os, re, sys
 
-          bump = "${{ github.event.inputs.bump_type }}"
+          bump = os.environ["BUMP"]
           path = "pyproject.toml"
           content = open(path).read()
-          match = re.search(r'^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"', content, re.MULTILINE)
+          match = re.search(r'^version\s*=\s*"(\d+)\.(\d+)\.(\d+)"\s*$', content, re.MULTILINE)
           if not match:
-              sys.exit("Could not find version in pyproject.toml")
-
-          major, minor, patch = int(match.group(1)), int(match.group(2)), int(match.group(3))
+              sys.exit("Could not find a plain X.Y.Z version in pyproject.toml")
+          major, minor, patch = (int(n) for n in match.groups())
           if bump == "major":
-              major += 1; minor = 0; patch = 0
+              major, minor, patch = major + 1, 0, 0
           elif bump == "minor":
-              minor += 1; patch = 0
-          else:
+              minor, patch = minor + 1, 0
+          elif bump == "patch":
               patch += 1
-
+          else:
+              sys.exit(f"unknown bump type {bump!r}")
           new_version = f"{major}.{minor}.{patch}"
-          new_content = re.sub(
-              r'^(version\s*=\s*)"[\d.]+"',
-              f'\\1"{new_version}"',
-              content,
-              flags=re.MULTILINE,
-          )
-          open(path, "w").write(new_content)
-          print(f"new_version={new_version}")
+          # only the first match: the project's own version line
+          content = content[:match.start()] + f'version = "{new_version}"' + content[match.end():]
+          open(path, "w").write(content)
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"new_version={new_version}\n")
           EOF
-          NEW_VERSION=$(python -c "
-          import re
-          content = open('pyproject.toml').read()
-          m = re.search(r'^version\s*=\s*\"([\d.]+)\"', content, re.MULTILINE)
-          print(m.group(1))
-          ")
-          echo "new_version=$NEW_VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: Commit version bump and create tag
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pyproject.toml
-          git commit -m "chore: bump version to v${{ steps.bump.outputs.new_version }}"
-          git tag "v${{ steps.bump.outputs.new_version }}"
-          git push origin HEAD
-          git push origin "v${{ steps.bump.outputs.new_version }}"
+      - name: Build the wheel
+        run: uv build --wheel
 
-      - name: Build wheel
-        run: |
-          uv build --wheel
-
-      # The image of this release (the tag was pushed above, the working tree holds the bumped version). `latest` moves with it.
       - name: Set up QEMU (for the arm64 image)
-        uses: docker/setup-qemu-action@v3
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
 
       - name: Log in to the GitHub Container Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -111,8 +115,10 @@ jobs:
         id: image
         run: echo "name=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
+      # The image is pushed before the tag: a failure here (QEMU, the registry) stops the release with nothing in git to undo. A tag that
+      # then fails to push leaves an image under a version number that the next run (the same number) simply replaces.
       - name: Build and push the Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -121,11 +127,23 @@ jobs:
             ${{ steps.image.outputs.name }}:${{ steps.bump.outputs.new_version }}
             ${{ steps.image.outputs.name }}:latest
 
-      - name: Create GitHub Release and upload wheel
+      - name: Commit the bump and push it with its tag (both or neither)
+        env:
+          VERSION: ${{ steps.bump.outputs.new_version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add pyproject.toml
+          git commit -m "chore: bump version to v${VERSION}"
+          git tag "v${VERSION}"
+          git push --atomic origin HEAD:main "v${VERSION}"
+
+      - name: Create the GitHub Release and upload the wheel
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.bump.outputs.new_version }}
         run: |
-          gh release create "v${{ steps.bump.outputs.new_version }}" \
-            --title "v${{ steps.bump.outputs.new_version }}" \
+          gh release create "v${VERSION}" \
+            --title "v${VERSION}" \
             --generate-notes \
             dist/*.whl
