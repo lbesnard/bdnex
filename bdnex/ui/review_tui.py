@@ -616,7 +616,7 @@ class ReviewApp(App):
         self.verbose = verbose
         self.ui_thread = None
         self.ui_loop = None
-        self.fetcher: Optional[ThreadPoolExecutor] = None  # the background import of pages and covers (one thread)
+        self.fetcher = None  # the background fetching of pages and covers (`review_fetch.DetailsQueue`: downloads in parallel, one writer)
         self.first_total: Optional[int] = None
         self.unfetched = 0  # linked files whose page and cover have not come yet
         self.remaining = 0  # the same, counted by the fetching thread itself (the screen may be gone): `finish_pending_fetches` waits on it
@@ -1422,35 +1422,40 @@ class ReviewApp(App):
         self.advance()
 
     def queue_details(self, row: batch.Row, url: str, mine: int) -> None:
+        """Queue the fetching of a linked file's page and cover. With several endpoints the downloads of several files run at once
+        (as many as `bedetheque.parallel`, or one per endpoint, like `bdnex import`); the library is written by one thread, a file at a time."""
+        from bdnex.importer.registry import create_source
+        from bdnex.ui.review_fetch import DetailsQueue, Job
+
         if self.fetcher is None:
-            self.fetcher = ThreadPoolExecutor(max_workers=1, thread_name_prefix="bdnex-details")  # one import at a time: one writer
+            self.fetcher = DetailsQueue(self.settings, lambda library: create_source(self.settings.source, library, self.settings))
         self.unfetched += 1
         with self.remaining_lock:
             self.remaining += 1
-        self.fetcher.submit(self.fetch_details, row, url, mine)
+        self.fetcher.submit(Job(url=url, path=row.path, wanted=lambda: row.link_id == mine,  # not unlinked or decided again meanwhile
+                                started=lambda: self.details_started(row),
+                                finished=lambda error: self.details_finished(row, mine, error),
+                                run_import=lambda: self.import_details(row, url)))
 
-    def fetch_details(self, row: batch.Row, url: str, mine: int) -> None:
-        """In the background thread: the import of the album's page and cover for a file already linked."""
+    def details_started(self, row: batch.Row) -> None:
+        """Its downloads begin: the state column says "fetching" and counts (several rows can be fetching at once)."""
+        row.started_at = time.monotonic()
+        logger.info("%s: fetching the page and cover now", os.path.basename(row.path))
+
+    def import_details(self, row: batch.Row, url: str) -> bool:
+        """In the queue's thread: the import of the album's page and cover for a file already linked (it finds what was downloaded)."""
         from bdnex.ui import verdicts
 
-        error = ""
-        try:
-            if row.link_id == mine:  # not unlinked or decided again while it waited
-                row.started_at = time.monotonic()
-                logger.info("%s: fetching the page and cover now (the ones queued after it wait)", os.path.basename(row.path))
-                captured = LineSink(self)
-                try:
-                    with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
-                        done = verdicts.rematch(row.path, url, True, max(1, self.verbose))
-                    if done is False:  # the import said no (a corrupt file, a page that could not be read): the others go on
-                        error = "the import failed, see the log"
-                except BaseException as err:
-                    error = str(err) or err.__class__.__name__
-            with contextlib.suppress(Exception):
-                self.call_from_thread(self.details_done, row, mine, error)
-        finally:
-            with self.remaining_lock:
-                self.remaining -= 1
+        captured = LineSink(self)
+        with contextlib.redirect_stdout(captured), contextlib.redirect_stderr(captured):
+            return verdicts.rematch(row.path, url, True, max(1, self.verbose))
+
+    def details_finished(self, row: batch.Row, mine: int, error: str) -> None:
+        """From the queue's thread: it is over, with an error in words or not (the others go on)."""
+        with self.remaining_lock:
+            self.remaining -= 1
+        with contextlib.suppress(Exception):  # never `call_from_thread`: this thread may hold the library's write lock the screen waits for
+            self.ui_loop.call_soon_threadsafe(self.details_done, row, mine, error)
 
     def details_done(self, row: batch.Row, mine: int, error: str) -> None:
         self.unfetched = max(0, self.unfetched - 1)

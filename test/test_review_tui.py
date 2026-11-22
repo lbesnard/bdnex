@@ -6,6 +6,7 @@ import os
 import sys
 import asyncio
 import threading
+import time
 
 import pytest
 import yaml
@@ -1452,3 +1453,40 @@ def test_the_candidates_of_a_file_are_the_matchers_ranked_list_with_its_evidence
     entry = found[0][1]
     assert entry["score"] > 60 and entry["why_score"] and entry["verdict"] and entry["url"] == found[0][0].url
     library.close()
+
+
+def test_with_several_endpoints_several_rows_show_fetching_at_the_same_time(env, monkeypatch):
+    from bdnex.importer.bedetheque import Bedetheque
+    from bdnex.ui.review_fetch import DetailsQueue
+
+    db, files = env
+    release = threading.Event()  # the imports wait for it: both rows are still being fetched when they are looked at
+    _linking(monkeypatch, db, release, outcome="keep")
+    barrier = threading.Barrier(2, timeout=10)  # a request goes on only when two are being made at the same time
+    web = lambda url: (barrier.wait(), b"<html>page</html>")[1]  # noqa: E731
+    seen = {}
+
+    async def script(app, pilot):
+        app.fetcher = DetailsQueue(app.settings, lambda library: Bedetheque(library, fetch=web, delay=(0, 0), sleep=lambda s: None, parallel=2),
+                                   workers=2)
+        first, second = app.rows[0], app.rows[1]
+        for number, row in enumerate((first, second), start=1):
+            row.pending, row.queued_at = True, time.monotonic()
+            app.queue_details(row, f"https://www.bedetheque.com/BD-Serie-Tome-{number}-Titre-{1000 + number}.html", row.link_id)
+        for _ in range(200):
+            if first.started_at and second.started_at:
+                break
+            await asyncio.sleep(0.05)
+        app.tick_pending()
+        seen["both"] = [str(app.query_one("DataTable").get_row_at(i)[7]) for i in (0, 1)]
+        release.set()
+        for _ in range(200):
+            await asyncio.sleep(0.05)
+            await pilot.pause()
+            if app.remaining == 0:
+                break
+        seen["left"] = app.remaining
+
+    drive(db, script)
+    assert all("fetching" in text for text in seen["both"]), seen["both"]  # both spin: two downloads are going on at once
+    assert seen["left"] == 0
