@@ -70,6 +70,13 @@ bdnex review --batch 50 series:batman --all   # every Batman file, the doubtful 
 bdnex review --batch 50 --again       # the files you already checked too (the State column says what you decided)
 ```
 
+The last column, **Would go to**, is where `bdnex move` would put the file, relative to your collection: the `paths` template of the album's kind
+(or the first rule that matches it) and the extension it would have (`Series/Nains/Nains - T01 - Redwin de la Forge.cbz`). It is worked out
+offline for the album each file has now, so you can see whether a match would send a file to the right place; it is empty for a file with no
+album, `?` when the template needs an answer only a question could give (a missing field), and a reason in brackets when it refuses the file (or
+when no `collection_path` is set). It is cleared when you decide the row again (the album, so the place, may change). The detail panel shows it in
+full, and the number key `9` sorts by it.
+
 By default the table holds **the doubtful files only**: a match something contradicts or nothing confirms, the same set
 `bdnex review --auto` weighs (so there is no `--low`: it is what you get). `--unmatched` adds the files without album,
 `--all` every file of the query (to look through a series), `--again` the ones already checked. They all go with `--batch`.

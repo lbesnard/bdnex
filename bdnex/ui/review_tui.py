@@ -44,7 +44,9 @@ KIND_WORD = {"wrong": "contradicted", "unconfirmed": "unconfirmed", "unmatched":
 EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 SEARCH_LIMIT = 60
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # braille dots turning: a state that is waiting for the site
-COLUMNS = (("#", 3), ("File", 40), ("Folder", 22), ("Album now", 40), ("Page", 8), ("Match", 8), ("Cover", 8), ("State", 14))
+COLUMNS = (("#", 3), ("File", 40), ("Folder", 22), ("Album now", 40), ("Page", 8), ("Match", 8), ("Cover", 8), ("State", 14),
+           ("Would go to", 44))  # (last: the numbers of the columns before it, which the keys and the tests know, stay as they were)
+STATE_COLUMN = 7
 STATE_ORDER = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # the state column sorts by how doubtful, then by decision
 DECIDED_ORDER = {"keep": 10, "linked": 11, "unlinked": 12, "left": 13, "skipped": 14}
 
@@ -809,7 +811,7 @@ class ReviewApp(App):
         with contextlib.suppress(Exception):
             table = self.query_one(DataTable)  # once, and the index from the loop: not a search of the list per row
             for index, row in waiting:
-                table.update_cell_at((index, len(COLUMNS) - 1), self.cells(index + 1, row)[-1])
+                table.update_cell_at((index, STATE_COLUMN), self.cells(index + 1, row)[STATE_COLUMN])
 
     def log_from_anywhere(self, text: str) -> None:
         import threading
@@ -1037,6 +1039,8 @@ class ReviewApp(App):
             return row.score
         if index == 6:
             return row.cover
+        if index == 8:
+            return row.dest.casefold() if row.dest else None
         return DECIDED_ORDER.get(row.status) if row.status else STATE_ORDER.get(row.kind, 5)
 
     def action_sort(self, index: int) -> None:
@@ -1085,7 +1089,8 @@ class ReviewApp(App):
                          style=KIND_STYLE.get(row.kind, ""))
         match = Text("you", style="cyan") if row.status == "linked" else score_text(row.score)
         return [Text(str(number), style="bold reverse magenta" if id(row) in self.marked else "cyan"), Text(os.path.basename(row.path), style="bold"),
-                Text(row.folder, style="dim"), album_text(row), page_text(row.album_url), match, score_text(row.cover), state]
+                Text(row.folder, style="dim"), album_text(row), page_text(row.album_url), match, score_text(row.cover), state,
+                Text(row.dest or "-", style="dim" if row.dest != "?" and not row.dest.startswith("(") else "yellow")]
 
     def show_detail(self, index: int) -> None:
         if not (0 <= index < len(self.rows)):
@@ -1093,6 +1098,8 @@ class ReviewApp(App):
         row = self.rows[index]
         text = Text()
         text.append(row.path + "\n", style="dim")
+        if row.dest and row.dest != "?":
+            text.append("would go to  ", style="dim").append(row.dest + "\n")  # where `bdnex move` would put it (the template of your config)
         text.append(KIND_WORD.get(row.kind, row.kind), style=KIND_STYLE.get(row.kind, "")).append("   now: ").append(album_text(row))
         text.append("\n")
         if row.album_url:  # a link: ctrl/cmd-click in most terminals, or `p`
@@ -1162,6 +1169,7 @@ class ReviewApp(App):
         and the row is no longer waiting for them (it would stay 'fetching' for ever: that job ends without telling it)."""
         row.link_id += 1
         row.pending = False
+        row.dest = ""  # the album (so the place) is about to change: no destination is better than the old one
 
     def record(self, action: str) -> None:
         row = self.idle()

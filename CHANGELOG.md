@@ -78,6 +78,7 @@ command runs, never while an import is fetching).
 - `bdnex --help` groups the commands by task.
 
 ### Added
+- Review screen: a last column, **Would go to**, shows where `bdnex move` would put each file (relative to the collection, from the `paths` templates and the album the file has now), so a match can be judged by the place it would send the file to; it is also in the detail panel, sorts with `9`, and is cleared when the row is decided again.
 - **Docker image on the GitHub Container Registry**: each release (the Release workflow) builds and pushes `ghcr.io/lbesnard/bdnex` for amd64 and arm64, tagged with the version and `latest`. `compose.yaml` now pulls it (`BDNEX_VERSION` pins a release; `docker compose pull` updates); `compose.build.yaml` builds from the checkout instead. CI builds the image on every change and starts it for real (healthz, the login, the config and library on the volumes).
 
 ### Fixed

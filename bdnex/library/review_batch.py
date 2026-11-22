@@ -41,6 +41,30 @@ class Row:
     started_at: float = 0.0  # when its page and cover started to be fetched (0: still waiting for the ones before)
     facts: str = ""  # what the album says (year, credits, pages) next to what the file is: to judge a match by eye
     previous: str = ""  # an earlier decision (the ``checked`` mark), shown when files already checked are asked for again
+    dest: str = ""  # where `bdnex move` would put the file, relative to the collection (``""``: no album, or not worked out)
+
+
+def destination_of(library: Library, settings, file: dict, album_id: Optional[int]) -> str:
+    """Where ``bdnex move`` would put the file, relative to the collection: the template of the album's kind (or the first matching
+    rule), the extension it would have. Offline and read-only; ``""`` when there is no album or no collection, ``"?"`` when the template
+    needs an answer only a question could give (a missing field), and the reason in brackets when the path template refuses the file."""
+    if album_id is None or not file:
+        return ""
+    from bdnex.config import ConfigError
+
+    try:
+        from bdnex.organizer.organizer import FileResult, Organizer, _Deferring
+
+        organizer = Organizer(library, settings, prompter=_Deferring(), pretend=True)
+        dest = organizer._destination(file["path"], file.get("format") or "cbz", album_id, "move", bool(file.get("spare")))
+        if isinstance(dest, FileResult):
+            return f"({dest.note})"
+        root = str(settings.require_collection())
+        return os.path.relpath(dest, root) if dest.startswith(root.rstrip("/") + "/") else dest
+    except ConfigError:
+        return "(no collection_path set)"
+    except Exception:  # a question (Deferred): a column is a help, never the reason a batch fails
+        return "?"
 
 
 def facts_of(album: Optional[dict], file: Optional[dict]) -> str:
@@ -106,7 +130,7 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
             why.insert(0, f"flagged: {file['review']}")
         rows.append(Row(verdict.path, folder_of(verdict.path), label(album) if album else verdict.album, verdict.album_id,
                         album.get("url"), verdict.score, cover, verdict.kind, why, file.get("id"),
-                        facts=facts_of(album, file),
+                        facts=facts_of(album, file), dest=destination_of(library, settings, file, verdict.album_id),
                         previous=marks.get(verdict.path, "")))
     if (unmatched or everything) and len(rows) < size:
         for found in sorted(library.unmatched(list(terms)), key=lambda r: r["path"]):
@@ -129,7 +153,8 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
             last = library.last_import(found["path"])
             rows.append(Row(found["path"], folder_of(found["path"]), label(album) if album else None, found["id"],
                             album.get("url"), last["score"] if last else None, file.get("cover_score"), "ok", [],
-                            file.get("id"), facts=facts_of(album, file), previous=marks.get(found["path"], "")))
+                            file.get("id"), facts=facts_of(album, file), previous=marks.get(found["path"], ""),
+                            dest=destination_of(library, settings, file, found["id"])))
             if len(rows) >= size:
                 break
     rank = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # in one folder, the files in most doubt first
