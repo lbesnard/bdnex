@@ -91,6 +91,8 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         self._undone: list = []  # the undone results themselves: while they are alive no new result can have their id
         self._completed_early = 0
         self._journal: Optional[Journal] = None  # what the file being matched has recorded so far
+        self._stopped = False  # Ctrl-C was pressed during the fetch: nothing more is started afterwards
+        self._stream = None  # the background matching of this run (closed by `run` however it ends)
         self._identical_to_trash: list[str] = []  # identical files the person chose to replace: trashed only once the new file is linked
         self._asked = False  # the user was asked about the file being matched
         self.series_mode = settings.import_.series if series is None else series  # ask | always | never
@@ -113,6 +115,20 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
 
     # ------------------------------------------------------------------ run
     def run(self, paths: list[str]) -> ImportReport:
+        """Import ``paths``. Whatever ends the run (a failure outside a file's own work, Ctrl-C, a stop), the background pieces are closed:
+        the page queue, the cover threads (they wait out a polite delay and would keep the program from exiting) and the matching."""
+        self._stopped = False
+        try:
+            return self._run(paths)
+        except BaseException:
+            stream = getattr(self, "_stream", None)
+            if stream is not None:
+                stream.close()
+            self._drop_covers()
+            self._close_early()
+            raise
+
+    def _run(self, paths: list[str]) -> ImportReport:
         report = ImportReport()
         files = []
         for path in paths:
@@ -138,6 +154,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         self._analysed = {}  # file -> (FileInfo, md5) read by the matching workers, or the exception they met
         stream = match_ahead(self.source, todo, workers=self.workers, lookahead=self.settings.import_.lookahead,
                              side=analyse_file, side_results=self._analysed)
+        self._stream = stream
         ready: dict[str, object] = {}  # matches read from the stream, waiting for their file
         chosen: dict[str, tuple] = {}  # file -> (album, score, why) decided for a whole folder
         groups: dict[str, list[str]] = {}
@@ -202,6 +219,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
             except (NeedsTerminal, KeyboardInterrupt):
                 stream.close()  # stop the background matching before leaving
                 self._finish_stored()
+                self._drop_covers()  # finishing the stored pages queued covers: leaving means leaving, not waiting for them
                 raise  # not this file's fault: the decisions made so far are saved, the run stops
             except Exception as err:  # one bad file must not stop the batch
                 logger.exception(f"{path} failed")
@@ -228,11 +246,13 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         stream.close()  # stops the background matching
         if report.aborted_at:
             self._finish_stored()
+            self._drop_covers()  # the covers it queued would wait out their polite delays before the program could exit
             self._pending = []  # the pages are fetched by the next run (the albums are "matched")
             self._remember_abort(report, paths)
             return report
         self._fetch_pending()
-        self._cover_votes(report)
+        if not self._stopped:  # Ctrl-C during the fetch means stop: no cover vote (it downloads covers and links files) afterwards
+            self._cover_votes(report)
         return report
 
     def _skip_file(self, path: str, note: str) -> ImportResult:
@@ -485,6 +505,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         try:
             self._drain_early()  # the albums whose pages were asked for during the matching complete as they arrive
         except KeyboardInterrupt:
+            self._stopped = True
             self._drop_covers()
             self._pending = []
             self._close_early()
@@ -552,6 +573,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
                 if not partial and (self.cover_check or self.settings.cover.download):
                     self._check_cover(result)
         except KeyboardInterrupt:
+            self._stopped = True
             self._drop_covers()  # stop means stop: no cover pass afterwards (the next `--fetch` gets them)
             self.progress("Interrupted: the files stay linked; `bdnex import --fetch` reads the rest of the pages "
                           "and downloads the covers that are missing.")
