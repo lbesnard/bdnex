@@ -33,7 +33,9 @@ def test_the_progress_bar_honours_no_color(monkeypatch):
 
 
 def test_a_line_is_cut_by_terminal_columns_not_characters(monkeypatch):
-    monkeypatch.setattr("shutil.get_terminal_size", lambda fallback=None: type("S", (), {"columns": 21})())
+    import os
+
+    monkeypatch.setattr("shutil.get_terminal_size", lambda fallback=None: os.terminal_size((21, 20)))  # (a real one: pytest's own `-v` output asks too)
     bar = output.Bar(10, "", stream=io.StringIO(), tty=True)
     fitted = bar._fit("漢字" * 20)  # every character takes two columns
     assert output._cells(fitted) <= 20 and fitted.endswith("…")

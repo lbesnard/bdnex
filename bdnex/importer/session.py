@@ -254,6 +254,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         self._fetch_pending()
         if not self._stopped:  # Ctrl-C during the fetch means stop: no cover vote (it downloads covers and links files) afterwards
             self._cover_votes(report)
+        report.stopped = self._stopped
         return report
 
     def _skip_file(self, path: str, note: str) -> ImportResult:
@@ -680,19 +681,22 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         self._journal.new_file = before is None
         if before is not None:  # imported again (--force, --album): taking it back means going back to what it was linked to
             self._journal.previous_album, self._journal.previous_review = before["album_id"], before.get("review")
+            self._journal.previous_spare = int(bool(before.get("spare")))
         self.library.add_analysed(info, md5, album_id)
         self._journal.linked = True
         if album_action == "keep_both" and any(
                 f["path"] != os.path.abspath(path) and not f["spare"] for f in self.library.files_for_album(album_id)):
             self.library.set_file_fields(path, spare=1)  # another file is the main one: this is a spare version
             note = "; ".join(n for n in (note, "kept as a spare version") if n)
+        elif before is not None and before.get("spare"):
+            self.library.set_file_fields(path, spare=0)  # linked again to an album where it is the only file: not a spare of anything
         outcome = PARTIAL if partial else TAGGED
         self._log(path, outcome, score, album_id)
         if partial and "fetch" not in self.steps:
             note = "; ".join(n for n in (note, "details not fetched: `bdnex import --fetch` gets them") if n)
         result = ImportResult(path, outcome, score=score, album_id=album_id, note=note)
-        if not partial and not defer_fetch:
-            self._confirm(result)
+        if not partial:
+            self._confirm(result)  # (offline: the album is complete, in the library already or just fetched)
         if not partial and not defer_fetch and (self.cover_check or self.settings.cover.download):
             self._check_cover(result)  # the page was read just now: keep (and compare) the cover too
         if defer_fetch and partial and "fetch" in self.steps:
@@ -724,6 +728,8 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
     def _undo(self, result: ImportResult) -> None:
         """Take back what matching this file recorded (nothing for files that were only fetched or skipped over)."""
         self._pending = [item for item in self._pending if item[0] is not result]
+        self._covers = [item for item in self._covers if item is not result]  # its cover check would run against the album chosen next
+        self._cover_jobs = [job for job in self._cover_jobs if job[0] is not result]
         self._undone.append(result)  # kept: a freed result's id could be reused by the next one, which `_done` would then skip
         self._done.add(id(result))  # a page still on its way must not complete the album for a file taken back
         self._undo_journal(result.journal, result.path)
@@ -740,6 +746,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
                 self.library.remove_file(path)
             else:
                 self.library.set_file_album(path, journal.previous_album)  # what it was linked to before, not nothing
+                self.library.set_file_fields(path, spare=journal.previous_spare)  # and as a spare version, or not, as it was
                 if journal.previous_review:
                     self.library.flag_review(path, journal.previous_review)
         if journal.logged:
@@ -772,6 +779,10 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
 
     def _trash_others(self, others, new_path) -> None:
         for other in others:
+            source = self.settings.source_for(other)
+            if source is not None and source.mode == "copy":  # a source that is only ever copied is never changed: the file stays
+                self.detail(f"    {os.path.basename(other)} is in the read-only source {source.alias!r}: it is not replaced")
+                continue
             if os.path.exists(other):
                 entry = trash.move_to_trash(self.library, self.settings, other, f"replaced by {new_path}")
                 if self._journal is not None:
@@ -790,7 +801,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
     def _duplicate_file(self, path, md5: Optional[str] = None) -> Optional[ImportResult]:
         """Same bytes already registered under another path."""
         same = [f["path"] for f in self.library.files_with_md5(md5 or file_md5(path))
-                if f["path"] != os.path.abspath(path)]
+                if f["path"] != os.path.abspath(path) and os.path.exists(f["path"])]  # a file moved or deleted outside bdnex is no duplicate
         if not same:
             return None
         action = self._resolve_duplicate(path, same, "identical file")
@@ -814,7 +825,8 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         if not info.series:
             keys = {k: v for k, v in keys.items() if k == "title"}
         others = [f["path"] for f in self.library.files_matching_album(
-            self.source.name, candidate.source_id, keys, path) if f["path"] not in self._identical_to_trash]  # already chosen to be replaced
+            self.source.name, candidate.source_id, keys, path)
+            if f["path"] not in self._identical_to_trash and os.path.exists(f["path"])]  # already chosen to be replaced; gone from the disk
         if not others:
             return "none", []
         return self._resolve_duplicate(path, others, "album already linked"), others
