@@ -264,6 +264,7 @@ class Paths(_Section):
 
     missing_field: Literal["ask", "placeholder", "skip"]
     placeholder: str
+    series_year: Literal["keep", "strip"] = "keep"  # `strip`: the year the site adds to some series names is left out of $series in paths
 
 
 class Bedetheque(_Section):

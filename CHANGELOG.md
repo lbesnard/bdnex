@@ -79,6 +79,7 @@ command runs, never while an import is fetching).
 - `bdnex --help` groups the commands by task.
 
 ### Added
+- Path templates: `paths.series_year: strip` leaves the year the site adds to some series names (`Batman: Dark Victory (1999)`) out of `$series` in paths (`keep`, the default, changes nothing). Two series of one name that the site tells apart only by their year then share a folder: leave it on `keep` if you have such series.
 - Review screen: after `a` (a series page for the marked files) the files say `⠹ reading the series 3s` in their state column, with the turning dots and the seconds, until the series page is read (it is fetched once: a few seconds), instead of nothing happening; they can not be decided again meanwhile, and the state is cleared when the answer is here or the read failed.
 - **Docker image on the GitHub Container Registry**: each release (the Release workflow) builds and pushes `ghcr.io/lbesnard/bdnex` for amd64 and arm64, tagged with the version and `latest`. `compose.yaml` now pulls it (`BDNEX_VERSION` pins a release; `docker compose pull` updates); `compose.build.yaml` builds from the checkout instead. CI builds the image on every change and starts it for real (healthz, the login, the config and library on the volumes).
 

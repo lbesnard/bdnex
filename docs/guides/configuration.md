@@ -161,6 +161,7 @@ paths:
   rules: []                              # other templates for some albums, first match wins (see below)
   missing_field: ask                     # an empty value in a template: ask | placeholder | skip
   placeholder: Unknown                   # what `placeholder` writes
+  series_year: keep                      # keep | strip: leave the year the site adds to some series names (`Batman: Dark Victory (1999)`) out of $series
 
 fetch:                                   # how web pages are fetched, for every source
   endpoint: null                         # your FlareSolverr (http://localhost:8191/v1), or a list of them; empty: saved pages

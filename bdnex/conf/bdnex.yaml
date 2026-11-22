@@ -94,6 +94,7 @@ paths:
   rules: []                             # other templates for some albums, first match wins (see the docs)
   missing_field: ask                    # ask | placeholder | skip
   placeholder: Unknown
+  series_year: keep                     # keep | strip: the site names some series with their year (`Batman: Dark Victory (1999)`); strip leaves it out of $series
 
 source: bedetheque                      # metadata source: a built-in name, an installed plugin, or 'package.module:factory'
 aliases:                                # `bdnex settle-doubtful-matches` runs `bdnex review --auto`: "NAME = COMMAND  # WHY". bdnex's own; yours are added (same NAME: replaces; `NAME =`: removes)
