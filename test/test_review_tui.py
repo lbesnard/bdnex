@@ -548,8 +548,8 @@ def test_marked_files_get_the_album_of_a_series_by_their_volume_after_one_questi
 
     async def script(app, pilot):
         await pilot.press("space")  # marks the first row (the contradicted file); the cursor moves on
+        await pilot.press("space")  # and the second: several files, so the volume of each is looked up
         seen["marked"] = len(app.marked)
-        await pilot.press("up")
         await pilot.press("a")
         await settle(app, pilot)
         assert app.screen.__class__.__name__ == "FuzzyScreen"
@@ -560,9 +560,9 @@ def test_marked_files_get_the_album_of_a_series_by_their_volume_after_one_questi
         await settle(app, pilot)
 
     result, _ = drive(db, script)
-    assert seen["marked"] == 1 and asked["paths"] == [files["wrong"]] and seen["question"] == "AskScreen"
+    assert seen["marked"] == 2 and len(asked["paths"]) == 2 and seen["question"] == "AskScreen"
     assert result["cells"][0][7] == "linked" and seen_calls == [True]
-    assert not result["app"].marked  # the mark goes with the link
+    assert len(result["app"].marked) == 1  # the mark of the linked file went with the link; the other file found no volume and stays marked
 
 
 def _series_address_run(env, monkeypatch, keys):
@@ -1494,30 +1494,24 @@ def test_with_several_endpoints_several_rows_show_fetching_at_the_same_time(env,
 
 def test_a_without_a_mark_is_for_the_file_under_the_cursor_not_for_the_rest_of_its_folder(env, monkeypatch):
     """One-shots (Batman - Killing Joke, ...) share a folder and have no volume: `a` used to take every undecided file of the folder."""
-    from bdnex.importer.folders import SeriesProposal
-
     db, files = env
     release = threading.Event()
     release.set()
     _linking(monkeypatch, db, release)
-    asked, seen = {}, {}
-
-    def propose(source, candidate, paths):
-        asked["paths"] = paths
-        return SeriesProposal("Nains", "s1", {paths[0]: FORGE}, with_volume=1, total=len(paths))
-
-    monkeypatch.setattr(batch, "propose_for_series", propose)
+    seen = {}
 
     async def script(app, pilot):
         assert len({r.folder for r in app.rows}) == 1 and len(app.rows) == 3  # all three files share a folder, none is marked
         await pilot.press("a")
         await settle(app, pilot)
-        seen["heading"] = app.screen.heading
-        await pilot.press("enter")
+        seen["heading"], seen["about"] = app.screen.heading, app.screen.about
+        await pilot.press("enter")  # one file and one album picked: that album is linked
         await settle(app, pilot)
 
-    drive(db, script)
-    assert len(asked["paths"]) == 1 and os.path.basename(asked["paths"][0]) in seen["heading"] and "this file" in seen["heading"]
+    result, _ = drive(db, script)
+    assert "Pick this file's album, or a SERIES" in seen["heading"]
+    assert len(seen["about"]) == 1 and seen["about"][0].endswith("/" + os.path.basename(files["wrong"]))  # the folder and the name, to search with
+    assert [row[7] for row in result["cells"]].count("linked") == 1  # only the file under the cursor
 
 
 def test_a_works_on_a_file_already_decided_so_a_wrong_keep_can_be_matched_again(env, monkeypatch):
@@ -1546,3 +1540,54 @@ def test_m_then_a_is_for_the_marked_files_and_the_heading_says_how_many(env):
 
     drive(db, script)
     assert "3 marked files" in seen["heading"]
+
+
+def test_the_search_screens_show_the_folder_and_name_of_the_file_they_are_for(env):
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("m")
+        await pilot.press("a")
+        await settle(app, pilot)
+        seen["several"] = app.screen.about
+        await pilot.press("escape")
+        await pilot.press("x")  # no marks
+        await pilot.press("o")
+        await settle(app, pilot)
+        seen["one"] = (app.screen.about, bool(app.screen.query("#about")))  # and the label is on the screen
+        await pilot.press("escape")
+
+    drive(db, script)
+    assert len(seen["several"]) == 3 and all("/" in line for line in seen["several"])
+    assert len(seen["one"][0]) == 1 and seen["one"][1] is True
+
+
+def test_the_series_and_album_ticks_each_search_their_own_kind(env, monkeypatch):
+    """Many series with the name must not push every album out of the list: each kind is searched on its own."""
+    db, files = env
+    asked = []
+
+    def fake(hub, text, limit=60, series=False, albums=True):
+        asked.append((series, albums))
+        return [], 0
+
+    monkeypatch.setattr(review_tui, "fuzzy_search", fake)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("a")
+        await settle(app, pilot)
+        await pilot.press("f2")  # series off: albums only
+        await settle(app, pilot)
+        await pilot.press("f2")  # series back on
+        await pilot.press("f3")  # albums off: series only
+        await settle(app, pilot)
+        await pilot.press("f2")  # both off: nothing is asked for
+        await settle(app, pilot)
+        seen["ticks"] = (app.screen.show_series, app.screen.show_albums)
+        await pilot.press("escape")
+
+    drive(db, script)
+    assert (True, True) in asked and (False, True) in asked and (True, False) in asked
+    assert seen["ticks"] == (False, False) and asked[-1] != (False, False)  # both off: no search was made for that state

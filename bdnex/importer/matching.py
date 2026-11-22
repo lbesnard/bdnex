@@ -72,6 +72,17 @@ def query_from_filename(path: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+VOLUME_MARKER = re.compile(r"\b(?:tome|vol|t)\s*0*(\d{1,3})\b", re.I)
+
+
+def explicit_volume(path: str) -> Optional[int]:
+    """The volume a file name SAYS it is: ``T01``, ``Tome 1``, ``Vol. 3``. A bare number may be part of the title (``CYCLE 2 - Tome 01``
+    is volume 1 of a series whose second cycle this is), so when the name says it, that number wins. ``None``: it does not say."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    found = VOLUME_MARKER.search(re.sub(r"[_\-.]+", " ", _drop_groups(stem)))
+    return int(found.group(1)) if found else None
+
+
 def queries_for(path: str) -> list[str]:
     """Queries to try for a file, from the most to the least specific.
 
@@ -143,6 +154,9 @@ def numeric_title(tokens: list[str]) -> tuple[list[str], Optional[int]]:
 def volumes_for(path: str) -> list[int]:
     """The volume number(s) a file name asks for: the one after a numeric title (``14-18 - T02``: 2, not 14, 18 and 2),
     else every number that looks like a volume."""
+    said = explicit_volume(path)
+    if said is not None:
+        return [said]
     title, volume = numeric_title(query_from_filename(path).lower().split())
     return [volume] if title and volume is not None else volumes_in(query_from_filename(path))
 
