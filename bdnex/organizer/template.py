@@ -17,9 +17,16 @@ class MissingField(Exception):
         self.field = field
 
 
+SUBTITLE_COLON = re.compile(r"\s*:\s+")
+
+
 def sanitize(value: str) -> str:
-    """Make one path component safe on every platform."""
-    value = ILLEGAL.sub("_", str(value))
+    """Make one path component safe on every platform.
+
+    A colon that opens a subtitle (``Batman: Dark Victory``) becomes `` - `` (``Batman - Dark Victory``), as a person would write it; any other
+    character a file system refuses (a colon in ``12:30``, ``?``, ``*``...) becomes ``_``."""
+    value = SUBTITLE_COLON.sub(" - ", str(value))
+    value = ILLEGAL.sub("_", value)
     value = re.sub(r"\s+", " ", value).strip().rstrip(". ")
     return value[:MAX_COMPONENT].rstrip(". ") or "_"
 
