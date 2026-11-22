@@ -16,7 +16,7 @@ def test_a_file_gets_an_album_written_by_hand_and_it_can_be_edited(make_cbz):
     assert sorted(got["credits"]["Writer"]) == ["Ben Templesmith", "Warren Ellis"] and sorted(got["genres"]) == ["Horreur", "Policier"]
     assert lib.get_file(path)["album_id"] == album and manual.is_manual(lib, album)
     form = manual.form_of(lib, album)
-    assert form["publisher"] == "Image" and sorted(form["writer"].split(", ")) == ["Ben Templesmith", "Warren Ellis"]
+    assert form["publisher"] == "Image" and sorted(form["writer"].split("; ")) == ["Ben Templesmith", "Warren Ellis"]
     manual.update(lib, album, {**form, "title": "Feral City", "year": "2006"})
     assert lib.get_album(album)["title"] == "Feral City" and lib.get_album(album)["year"] == 2006
 
@@ -51,3 +51,26 @@ def test_a_file_the_import_skipped_is_registered_with_its_hand_written_album(mak
     path = make_cbz("Skipped.cbz")
     album = manual.create(lib, path, {"series": "S", "volume": "1"})
     assert lib.get_file(path)["album_id"] == album
+
+
+def test_two_series_names_that_fold_alike_stay_two_series_and_one_name_stays_one(make_cbz):
+    from bdnex.library import manual
+
+    assert manual.series_key("C++") != manual.series_key("C#") and manual.series_key("!!") != manual.series_key("??")
+    assert manual.series_key("Les Nains") == manual.series_key("Les Nains ")
+    with Library(":memory:") as lib:
+        a = manual.create(lib, make_cbz("a.cbz"), {"series": "C++"}, 1)
+        b = manual.create(lib, make_cbz("b.cbz"), {"series": "C#"}, 1)
+        c = manual.create(lib, make_cbz("c.cbz"), {"series": "C++"}, 2)
+        assert lib.get_album(a)["series"] == "C++" and lib.get_album(b)["series"] == "C#"  # the second did not rename the first
+        assert lib.get_album(c)["series"] == "C++" and lib.series_albums(a) == [a, c]
+
+
+def test_a_name_with_a_comma_is_not_split_when_the_form_is_saved_again(make_cbz):
+    from bdnex.library import manual
+
+    with Library(":memory:") as lib:
+        album_id = manual.create(lib, make_cbz("a.cbz"), {"series": "S", "writer": "Dupuy, Philippe; Berberian"}, 1)
+        form = manual.form_of(lib, album_id)
+        manual.update(lib, album_id, form)
+        assert sorted(lib.get_album(album_id)["credits"]["Writer"]) == ["Berberian", "Dupuy, Philippe"]

@@ -18,10 +18,12 @@ from typing import Any, Callable
 import yaml
 
 from bdnex.library import Library
+from bdnex.library.models import CREDIT_ROLES
 from bdnex.library.query import QueryError
 from bdnex.ui import context, describe
 from bdnex.ui.output import add_pretend
 
+MAX_BULK = 2000  # albums one edit may change (the web page has the same limit)
 INT_FIELDS = {"volume": (0, 9999), "year": (0, 9999), "month": (1, 12), "day": (1, 31), "pages": (0, 99999)}
 TEXT_FIELDS = ("title", "alternate_number", "publisher", "language", "format", "isbn", "summary")
 ORDER = ("series", "volume", "title", "alternate_number", "publisher", "year", "month", "day", "pages",
@@ -72,9 +74,22 @@ def render(albums: list[dict[str, Any]]) -> str:
     return text
 
 
+LONGEST = {"summary": 20000}  # characters; every other text field
+LONGEST_OTHER = 1000
+QUOTE_IT = ("isbn", "alternate_number")  # YAML reads 0123456 as octal and 1.10 as 1.1: text that looks like a number must be quoted
+
+
 def _scalar(key: str, value: Any, errors: list[str], where: str) -> Any:
     if value is None or (isinstance(value, str) and not value.strip()):
         return None
+    if key in QUOTE_IT and isinstance(value, (int, float)) and not isinstance(value, bool):
+        errors.append(f"{where}: {key} {value!r} would lose its digits as a number: put it in quotes (\"{value}\")")
+        return None
+    if isinstance(value, str) and key not in INT_FIELDS:
+        problem = text_problem(key, value)
+        if problem:
+            errors.append(f"{where}: {problem}")
+            return None
     if key in INT_FIELDS:
         lo, hi = INT_FIELDS[key]
         if isinstance(value, bool) or not isinstance(value, int) or not lo <= value <= hi:
@@ -87,10 +102,29 @@ def _scalar(key: str, value: Any, errors: list[str], where: str) -> Any:
     return str(value).strip()
 
 
+def text_problem(key: str, value: str) -> str:
+    """Why a text value can not be stored ("" when it can): a name or title is one line without control characters."""
+    limit = LONGEST.get(key, LONGEST_OTHER)
+    if len(value) > limit:
+        return f"{key} is {len(value)} characters long (at most {limit})"
+    if any(ord(c) < 32 and not (c == "\n" and key == "summary") or ord(c) == 127 for c in value):
+        return f"{key} must be on one line, without control characters"
+    return ""
+
+
+def canonical_role(role: str) -> str:
+    """``writer`` -> ``Writer``: the ComicInfo roles, whatever the case. ``""`` when it is not one (an existing odd role is only
+    ever refused when it is being changed, so a library that already has one can still be edited)."""
+    known = {name.casefold(): name for name in (*CREDIT_ROLES, "Translator")}  # (the site's "Traduction")
+    return known.get(role.strip().casefold(), "")
+
+
 def _names(value: Any, errors: list[str], where: str) -> list[str]:
     if value is None:
         return []
-    items = [value] if isinstance(value, str) else value
+    if isinstance(value, str):
+        value = [part for part in value.split(";")]  # one string is a list too, as with --set: "A; B" is two people
+    items = value
     if not isinstance(items, list) or not all(isinstance(i, (str, int, float)) for i in items):
         errors.append(f"{where}: expected a list of names, not {value!r}")
         return []
@@ -135,7 +169,16 @@ def doc_changes(album: dict[str, Any], doc: dict[str, Any], errors: list[str]) -
             if not isinstance(value, dict):
                 errors.append(f"{where}: credits must be `Role: [names]` lines")
                 continue
-            new = {str(role): _names(names, errors, f"{where}: {role}") for role, names in value.items()}
+            new = {}
+            for role, names in value.items():
+                listed = _names(names, errors, f"{where}: {role}")
+                if str(role) not in album["credits"]:  # a role being added must be one of the known ones
+                    fixed = canonical_role(str(role))
+                    if not fixed:
+                        errors.append(f"{where}: {str(role)!r} is not a credit role (one of {', '.join(CREDIT_ROLES)})")
+                        continue
+                    role = fixed
+                new[str(role)] = listed
             diff = {role: names for role, names in new.items() if names != album["credits"].get(role, [])}
             if diff:
                 change["credits"] = diff
@@ -230,7 +273,8 @@ def parse_assignments(items: list[str]) -> dict[str, Any]:
         if not sep or not key:
             raise ValueError(f"{item!r}: use KEY=VALUE")
         if key.startswith("credits."):
-            changes.setdefault("credits", {})[key.split(".", 1)[1]] = [n.strip() for n in value.split(";") if n.strip()]
+            role = key.split(".", 1)[1].strip()
+            changes.setdefault("credits", {})[role] = [n.strip() for n in value.split(";") if n.strip()]  # (the role is checked per album)
         elif key == "genres":
             changes["genres"] = [g.strip() for g in value.split(";") if g.strip()]
         elif key in INT_FIELDS:
@@ -238,6 +282,9 @@ def parse_assignments(items: list[str]) -> dict[str, Any]:
                 raise ValueError(f"{key} must be a whole number, not {value!r}")
             changes[key] = int(value) if value else None
         elif key == "series" or key in TEXT_FIELDS:
+            problem = text_problem(key, value)
+            if problem:
+                raise ValueError(problem)
             changes[key] = value or None
         else:
             raise ValueError(f"unknown field {key!r} (fields: {', '.join(ORDER)}; credits.ROLE)")
@@ -318,6 +365,10 @@ def run(argv: list[str], out=sys.stdout, editor: Callable[[str], str] = open_edi
             return 0
         from bdnex.ui import color
 
+        if len(changes) > MAX_BULK and not args.pretend:  # as on the web page: a query that is too broad is the usual mistake
+            print(f"{len(changes)} albums would change (at most {MAX_BULK} at once): narrow the query, or run it in parts.", file=sys.stderr)
+            return 2
+
         print("\n".join(tint_changes(describe_changes(by_id, changes), color.enabled(out))), file=out)
         if args.pretend:
             return 0
@@ -328,9 +379,16 @@ def run(argv: list[str], out=sys.stdout, editor: Callable[[str], str] = open_edi
             if not prompter.confirm(f"Apply these changes to {len(changes)} album(s)?"):
                 print("Nothing changed.", file=out)
                 return 1
-        for album_id, change in changes.items():
-            library.edit_album(album_id, change)
+        failed = []
+        for album_id, change in changes.items():  # one album at a time: a failure leaves the others done, and says which
+            try:
+                library.edit_album(album_id, change)
+            except Exception as err:
+                failed.append(f"{describe.label(by_id[album_id])}: {err}")
         library.prune_orphan_series()
-        print(color.hints(f"\n{len(changes)} album(s) updated. `bdnex write` puts the new values into the files.",
-                          color.enabled(out)), file=out)
+        done = len(changes) - len(failed)
+        print(color.hints(f"\n{done} album(s) updated. `bdnex write` puts the new values into the files.", color.enabled(out)), file=out)
+        if failed:
+            print(f"{len(failed)} album(s) could not be changed:\n  " + "\n  ".join(failed), file=sys.stderr)
+            return 1
     return 0

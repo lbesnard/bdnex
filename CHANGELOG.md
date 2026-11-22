@@ -7,6 +7,12 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- A series you renamed keeps its name when another album of it is imported later (the site's name used to come back, and the rename flipped back and forth).
+- `bdnex edit`, the editor and the web page agree on a value: a string for `genres` or a credit role is a list split on `;` (as with `--set`); a credit role must be a known one (`writer` becomes `Writer`, `Auteur` is refused); text is one line without control characters and not longer than 1000 characters (20000 for the summary); `isbn` and `alternate_number` written as a bare number that YAML would change (`0123456`, `1.10`) must be quoted.
+- `bdnex edit` refuses a query that would change more than 2000 albums (as the web page does) and, when one album fails, says which and finishes the others.
+- An album with a hand edit or a mark is no longer deleted when its last file is unlinked (the edits and marks went with it).
+- Series written by hand: two names that fold alike (`C++`, `C#`) are two series, one name is always one series, and a name with a comma (`Dupuy, Philippe`) is not split when the form is saved again.
+- Mark names reject a trailing newline, and values with control characters.
 - Config: a typo inside a list entry (`import.sources[].mod`, a `paths.rules` entry) is named in the error instead of crashing every command with a traceback.
 - Config: `config --update`, `aliases --add/--rm`, the first-run file and the settings page write the file the same safe way: beside it, flushed, then moved over it (a crash never leaves a half file), the `.bak` copy keeps the file's 0600 mode, and a config that is a symbolic link (dotfiles) stays a link.
 - Config: a comment of your own like `# Note: ...` no longer ends a section for `set_value` / `config --update` (which wrote an option twice), an active section wins over a commented one of the same name, a `#` inside a quoted value is not taken for a comment, `config --update` does not rename `directory` when `collection_path` is there, and Unicode line separators inside a value are kept.

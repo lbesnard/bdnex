@@ -6,6 +6,7 @@ the album is an ordinary library album, so ``bdnex write`` / ``ls`` / ``check`` 
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import re
 import uuid
@@ -36,7 +37,9 @@ class FormError(ValueError):
 
 
 def _names(text: str) -> list[str]:
-    return [name.strip() for name in re.split(r"[;,]", text or "") if name.strip()]
+    """Names typed in a form: separated by `;` when there is one (so "Dupuy, Philippe" stays one person), else by `,`."""
+    text = text or ""
+    return [name.strip() for name in re.split(r"[;]" if ";" in text else r"[,]", text) if name.strip()]
 
 
 def _number(text: str, what: str, low: int, high: int) -> Optional[int]:
@@ -64,12 +67,21 @@ def form_of(library: Library, album_id: int) -> dict[str, str]:
     return {"series": album.get("series") or "", "volume": "" if album.get("volume") is None else str(album["volume"]),
             "title": album.get("title") or "", "publisher": album.get("publisher") or "",
             "year": "" if album.get("year") is None else str(album["year"]),
-            "writer": ", ".join(credits.get("Writer", [])), "artist": ", ".join(credits.get("Penciller", [])),
-            "genres": ", ".join(album.get("genres") or []), "summary": album.get("summary") or ""}
+            "writer": "; ".join(credits.get("Writer", [])), "artist": "; ".join(credits.get("Penciller", [])),
+            "genres": "; ".join(album.get("genres") or []), "summary": album.get("summary") or ""}
 
 
 def is_manual(library: Library, album_id: Optional[int]) -> bool:
     return album_id is not None and (library.get_album(album_id) or {}).get("source") == MANUAL
+
+
+def series_key(name: str) -> str:
+    """The source id of a series written by hand: a readable slug and a short hash of the exact name, so that "C++" and "C#"
+    (or two names made only of symbols) are two series, and one name is always one series."""
+    import hashlib
+
+    slug = re.sub(r"[^a-z0-9]+", "-", fold(name)).strip("-")
+    return f"manual-{slug}-{hashlib.sha1(name.strip().casefold().encode()).hexdigest()[:6]}"
 
 
 def _info(values: dict[str, str], path: str, volume: Optional[int]) -> AlbumInfo:
@@ -82,7 +94,7 @@ def _info(values: dict[str, str], path: str, volume: Optional[int]) -> AlbumInfo
                                                ("Penciller", _names(values.get("artist", "")))) if names}
     return AlbumInfo(
         MANUAL, uuid.uuid4().hex[:12], title,
-        series=SeriesInfo(MANUAL, "manual-" + re.sub(r"[^a-z0-9]+", "-", fold(series)).strip("-"), series) if series else None,
+        series=SeriesInfo(MANUAL, series_key(series), series) if series else None,
         volume=volume, publisher=(values.get("publisher") or "").strip() or None,
         year=_number(values.get("year", ""), "the year", 1000, 9999), summary=(values.get("summary") or "").strip() or None,
         credits=credits, genres=_names(values.get("genres", "")))
@@ -92,7 +104,13 @@ def create(library: Library, path: str, values: dict[str, str], volume: Optional
     """A new album from the form, linked to the file (the file keeps no other album). Returns the album id."""
     if volume is None:
         volume = _number(values.get("volume", ""), "the volume", 0, 9999)
-    album_id = library.add_album(_info(values, path, volume))
+    info = _info(values, path, volume)
+    if info.series is not None:  # a series already written by hand under this name (an older id, or one renamed to it) is the one
+        row = library.conn.execute("SELECT source_id FROM series WHERE source = ? AND name = ? COLLATE NOCASE",
+                                   (MANUAL, info.series.name)).fetchone()
+        if row:
+            info = dataclasses.replace(info, series=dataclasses.replace(info.series, source_id=row["source_id"]))
+    album_id = library.add_album(info)
     if library.get_file(path) is None:  # a file the import skipped has no record yet: register it (read once) with the link
         library.add_file(path, album_id)
     library.set_file_album(path, album_id)

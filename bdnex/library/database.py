@@ -368,6 +368,8 @@ class Library:
             row = self.conn.execute("SELECT extra, summary, url FROM series WHERE source = ? AND source_id = ?",
                                     (info.source, info.source_id)).fetchone()
             extra = {**json.loads(row["extra"]), **info.extra} if row else dict(info.extra)
+            if extra.get("renamed"):  # renamed by hand: the site's name does not come back with the next album of the series
+                info = dataclasses.replace(info, name=extra["renamed"])
             self.conn.execute(
                 """INSERT INTO series(source, source_id, name, summary, url, extra)
                    VALUES (?, ?, ?, ?, ?, ?)
@@ -534,7 +536,9 @@ class Library:
 
     def _rename_series(self, album: dict[str, Any], name: str) -> None:
         series_id = self.conn.execute("SELECT series_id FROM albums WHERE id = ?", (album["id"],)).fetchone()[0]
-        self.conn.execute("UPDATE series SET name = ? WHERE id = ?", (name, series_id))
+        row = self.conn.execute("SELECT extra FROM series WHERE id = ?", (series_id,)).fetchone()
+        extra = {**json.loads(row["extra"]), "renamed": name}  # remembered on the series itself: see add_series
+        self.conn.execute("UPDATE series SET name = ?, extra = ? WHERE id = ?", (name, json.dumps(extra, ensure_ascii=False), series_id))
         for row in self.conn.execute("SELECT id FROM albums WHERE series_id = ?", (series_id,)).fetchall():
             self._store_edits(row["id"], {**self._edits_of(row["id"]), "series": name})
 
@@ -730,7 +734,7 @@ class Library:
         return album
 
     # ------------------------------------------------------------------ your own marks (`bdnex mark`)
-    ATTR_NAME = re.compile(r"^[a-z][a-z0-9_]{0,31}$")
+    ATTR_NAME = re.compile(r"[a-z][a-z0-9_]{0,31}\Z")  # (`$` would also let a trailing newline through)
 
     def _attr_table(self, kind: str) -> tuple[str, str]:
         if kind not in ("file", "album"):
@@ -739,8 +743,9 @@ class Library:
 
     def set_attr(self, kind: str, target_id: int, name: str, value: str = "") -> None:
         """Mark a file or an album: ``name`` (lower case letters, digits, ``_``) with a text ``value`` (up to 200 characters)."""
-        if not self.ATTR_NAME.match(name):
-            raise ValueError(f"{name!r} is not a mark name: lower case letters, digits and _, starting with a letter, up to 32")
+        if not self.ATTR_NAME.match(name) or not value.isprintable():
+            raise ValueError(f"{name!r} is not a mark name (lower case letters, digits and _, starting with a letter, up to 32), "
+                             "or its value has a control character")
         if len(value) > 200:
             raise ValueError("a mark's value is at most 200 characters")
         table, column = self._attr_table(kind)
@@ -1034,10 +1039,12 @@ class Library:
                               (self._store(path),))
 
     def delete_album_if_unused(self, album_id: int) -> bool:
-        """Delete an album no file is linked to. Returns whether it was deleted."""
+        """Delete an album no file is linked to, and that holds nothing of yours (a hand edit, a mark). Returns whether it was deleted."""
         with self.conn:
             if self.conn.execute("SELECT 1 FROM files WHERE album_id = ?", (album_id,)).fetchone():
                 return False
+            if self._edits_of(album_id) or self.conn.execute("SELECT 1 FROM album_attrs WHERE album_id = ?", (album_id,)).fetchone():
+                return False  # the cascade would erase them for good
             return self.conn.execute("DELETE FROM albums WHERE id = ?", (album_id,)).rowcount > 0
 
     def last_import(self, path) -> Optional[dict[str, Any]]:
