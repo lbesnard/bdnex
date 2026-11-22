@@ -38,7 +38,7 @@ MOVED_KEYS = {"bedetheque.fetcher": "fetch.fetcher", "bedetheque.fetcher_endpoin
 REMOVED_KEYS = {"bdnex": 2}
 
 # Sections whose content is free-form and never checked for unknown keys.
-FREE_FORM: set[tuple[str, ...]] = {("plugins",)}
+FREE_FORM: set[tuple[str, ...]] = {("plugins",), ("paths", "replace"), ("paths", "rewrite"), ("paths", "collections")}  # (their keys are the rules)
 
 USER_TEMPLATE = """\
 # bdnex configuration. Only the options you change need to be active: every other option takes its default.
@@ -265,6 +265,33 @@ class Paths(_Section):
     missing_field: Literal["ask", "placeholder", "skip"]
     placeholder: str
     series_year: Literal["keep", "strip"] = "keep"  # `strip`: the year the site adds to some series names is left out of $series in paths
+    replace: dict[str, str] = Field(default_factory=dict)  # beets' `replace`: REGEX -> replacement, in every folder and file name
+    rewrite: dict[str, str] = Field(default_factory=dict)  # beets' `rewrite`: "FIELD REGEX" -> new value of that field, in the paths
+    collections: dict[str, str] = Field(default_factory=dict)  # "FIELD REGEX" -> the collection (`$collection`) of the albums that match
+
+    @field_validator("replace", mode="before")
+    @classmethod
+    def _replace_is_regexes(cls, value):
+        from bdnex.organizer import template
+
+        template.parse_replacements(value or {})
+        return value or {}
+
+    @field_validator("rewrite", "collections", mode="before")
+    @classmethod
+    def _rules_name_a_field_and_a_regex(cls, value, info):
+        from bdnex.organizer import template
+
+        value = value or {}
+        rules = template.parse_rules(value)
+        allowed = set(template.FIELD_NAMES) - ({"collection"} if info.field_name == "rewrite" else set())
+        if info.field_name == "collections":
+            allowed |= {"path", "filename"}
+            allowed -= {"collection"}
+        for name, _, _ in rules:
+            if name not in allowed:
+                raise ValueError(f"{name!r} is not a field you can match here (one of {', '.join(sorted(allowed))})")
+        return value
 
 
 class Bedetheque(_Section):

@@ -800,8 +800,11 @@ class Organizer:
         fields = template.fields_for(album)
         if self.settings.paths.series_year == "strip":
             fields["series"] = template.strip_year(fields["series"])  # (two series of one name told apart by their year share a folder then)
-        rendered = template.render(tpl, fields,
-                                   lambda name: self._missing(name, album_id, album))
+        paths = self.settings.paths
+        fields["collection"] = template.collection_of(fields, path, template.parse_rules(paths.collections))  # (before the rewrites: it matches what the album is)
+        fields = template.apply_rewrites(fields, template.parse_rules(paths.rewrite))
+        rendered = template.render(tpl, fields, lambda name: self._missing(name, album_id, album),
+                                   template.parse_replacements(paths.replace))
         if rendered.skipped_field:
             return FileResult(path, SKIPPED, note=f"no value for `{rendered.skipped_field}` in the path template")
         if not rendered.parts:

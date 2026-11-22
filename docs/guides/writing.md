@@ -257,6 +257,23 @@ paths:
   `alternate_number`). To put it in the name: `Series/$series/$series - %if{$special,$special,T$volume:02} - $title`.
   A function can not contain a `/` (a folder separator), and a typo in a function name is refused when the configuration is read.
 - The site names some series with the year of their first album, to tell them from another series of the same name (`Batman: Dark Victory (1999)`): `$series` has it too. `paths.series_year: strip` leaves a trailing `(year)` out of `$series` in paths (two series told apart only by their year then share a folder).
+- **`$collection`**: a family of albums the site does not group (Tintin, Astérix and their special issues, spread over several series, or none): the
+  first rule of `paths.collections` that matches gives the name. A rule is `"FIELD REGEX": NAME` (beets' syntax; the regex is found anywhere in the
+  value, case ignored); FIELD is a template field or `path` / `filename`, the file's own location (your folders already group them):
+
+  ```yaml
+  paths:
+    series: 'Series/%ifdef{collection,$collection}/$series/$series - T$volume:02 - $title'
+    collections:
+      'path .*/Astérix/.*': Astérix et Obélix
+      'series .*Antarès.*': Les cycles d'Aldébaran
+  ```
+
+  `%ifdef{collection,$collection}` leaves the folder out when no rule matched (a bare `$collection` would be asked about, like any empty field).
+- **`paths.rewrite`** (beets' `rewrite`) changes the value of a field *in the paths only* (the library keeps what it has): `'series .*Hors Série.*': Hors Série`.
+  The first rule of a field whose regex is found in its value wins; the collection is worked out before the rewrites.
+- **`paths.replace`** (beets' `replace`) applies `REGEX: replacement` in order to every folder and file name, before bdnex's own safety rules (which stay):
+  `'[\u2010]': '-'`, `'’': "'"`.
 - Every value is made safe for file names (`/ \ : * ? " < > |` become `_`, except a colon that opens a subtitle, `Batman: Dark Victory`, which becomes ` - `: `Batman - Dark Victory`), so a value can never
   create a folder. The extension `.cbz` is added for you.
 - If a name already exists, bdnex shows both files and asks which to keep: the existing one, the new one (the existing goes to the [trash](versions.md#the-trash)), or both (the new one becomes a spare version in `_versions/`, numbered if there are several). `--force` keeps both.
