@@ -61,8 +61,10 @@ def bracket(label: str, key: str) -> str:
     return f"{label[:spot]}[{label[spot].upper()}]{label[spot + 1:]}"
 
 
-def _pieces(name: str, tone: str, shortcut) -> list:
-    found = re.search(r"\[(\w)\]", name)
+def _pieces(name: str, tone: str, shortcut, key: str) -> list:
+    found = re.search(rf"\[({re.escape(key)})\]", name, re.I)  # the marker of THIS key: a `[2]` in an album's title is only text
+    if not found:
+        return [(tone, name)]
     return [(tone, name[:found.start()])] + shortcut(found.group(1), name[found.end():], tone)
 
 
@@ -79,23 +81,23 @@ def build(entries: list, on: bool, shortcut):
         action = ACTIONS.get(entry.get("action", ""))
         label = entry.get("label") or (action.label if action else "")
         key = (entry.get("key") or (action.key if action else "")).lower()
-        found = re.search(r"\[(\w)\]", label)
+        found = None if key else re.search(r"\[(\w)\]", label)  # a label with a given key is data (a title can hold `[2]`)
         if found:
             key = found.group(1).lower()
         if key:
             if key in taken:
                 raise ValueError(f"the key {key!r} is used twice in one question ({label!r})")
             taken.add(key)
-        keyed.append((entry, action, label, key))
+        keyed.append((entry, action, label, key, bool(found), bool(entry.get("key") or action)))
     choices, fragments, keys = [], [], {}
-    for entry, action, label, key in keyed:
+    for entry, action, label, key, marked, given in keyed:
         if not key:  # no key given: the first letter of the label nobody uses
             key = next((c for c in label.lower() if c.isalpha() and c not in taken), "")
             taken.add(key)
-        name = label if re.search(r"\[(\w)\]", label) or not key else bracket(label, key)
+        name = label if (marked and not given) or not key else bracket(label, key)
         choices.append({"name": name, "value": entry["value"]})
         tone = TONES[entry.get("tone") or (action.tone if action else "cyan")]
-        fragments.append(_pieces(name, tone, shortcut) if on and key else None)
+        fragments.append(_pieces(name, tone, shortcut, key) if on and key else None)
         if key:
             keys[key] = entry["value"]
     return choices, fragments, keys

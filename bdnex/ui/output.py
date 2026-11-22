@@ -108,13 +108,27 @@ def setup_logging(verbosity: int) -> None:
             to_file.setLevel(logging.DEBUG)
             to_file.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s [%(threadName)s] %(name)s: %(message)s"))
             handlers.append(to_file)
-    logging.basicConfig(level=logging.DEBUG if verbosity >= 3 else logging.WARNING, handlers=handlers, force=True)
+    root = logging.getLogger()
+    for old in [h for h in root.handlers if getattr(h, "_bdnex", False)]:  # ours from an earlier call (a job of `serve`, a test): not
+        root.removeHandler(old)                                              # other code's handlers, and not twice
+        old.close()
+    for handler in handlers:
+        handler._bdnex = True
+        root.addHandler(handler)
+    root.setLevel(logging.DEBUG if verbosity >= 3 else logging.WARNING)
     logging.getLogger("bdnex").setLevel(logging.DEBUG if len(handlers) > 1 or verbosity >= 2 else own)
     # every SQL statement is a lot: only from -vvv (the file gets them too when it is asked for with -vvv)
     logging.getLogger(SQL_LOGGER).setLevel(logging.DEBUG if verbosity >= 3 else logging.INFO)
 
 
 SQL_LOGGER = "bdnex.sql"
+
+
+def _cells(text: str) -> int:
+    """How many terminal columns ``text`` takes (wide characters count two, combining marks none)."""
+    import unicodedata
+
+    return sum(0 if unicodedata.combining(c) else 2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in text)
 
 
 class Bar:
@@ -148,9 +162,9 @@ class Bar:
             left = (self._clock() - self._start) / self.done * max(0, self.total - self.done)
             eta = f"  about {human_duration(left)} left" if left >= 1 else ""
         bar = "█" * filled + "░" * (self.width - filled)
-        if self.tty:
-            from bdnex.ui import color
+        from bdnex.ui import color
 
+        if self.tty and color.enabled(self.stream):  # NO_COLOR and TERM=dumb are honoured here too
             bar = color.paint("█" * filled, "green", True) + color.paint("░" * (self.width - filled), "dim", True)
             return f"{color.paint(self.label, 'bold', True)} [{bar}] {pct:>3}%  {self.done}/{self.total}{eta}  {detail}".rstrip()
         return f"{self.label} [{bar}] {pct:>3}%  {self.done}/{self.total}{eta}  {detail}".rstrip()
@@ -161,10 +175,15 @@ class Bar:
 
         width = shutil.get_terminal_size((100, 20)).columns - 1
         visible = re.sub(r"\x1b\[[0-9;]*m", "", text)
-        if len(visible) <= width:
+        if _cells(visible) <= width:
             return text
-        plain = visible[:max(1, width - 1)] + "…"
-        return plain  # the colours of a line that long are not worth keeping
+        kept, used = [], 0
+        for char in visible:  # by columns, not characters: a wide (CJK, emoji) one takes two
+            used += _cells(char)
+            if used > max(1, width - 1):
+                break
+            kept.append(char)
+        return "".join(kept) + "…"  # the colours of a line that long are not worth keeping
 
     def update(self, detail: str = "", step: int = 1) -> None:
         self.done += step
@@ -197,7 +216,7 @@ class Bar:
     def finish(self, message: str = "") -> None:
         """End the bar (clearing the line on a terminal) and print ``message``."""
         if self.tty and self._shown:
-            print("\r\x1b[K", end="", file=self.stream)
+            print("\r\x1b[K", end="", file=self.stream, flush=True)
         if message:
             print(message, file=self.stream, flush=True)
         self._shown = False
