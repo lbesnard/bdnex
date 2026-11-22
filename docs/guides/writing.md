@@ -265,13 +265,15 @@ paths:
 
   ```yaml
   paths:
-    series: 'Series/%ifdef{collection,$collection/}%ifdef{cycle,Cycle $cycle:02 - }$series/$series - T$volume:02 - $title'
+    series: 'Series/%ifdef{collection,$collection}/%ifdef{cycle,Cycle $cycle:02}/$series/$series - T$volume:02 - $title'
     collections:
       'path .*/Astérix/.*': Astérix et Obélix
   ```
 
-  `%ifdef{collection,$collection/}` leaves the folder out when there is neither a rule match nor a site value (a bare `$collection` would be
-  asked about, like any empty field). `$cycle` has no rule of its own: it is only ever the site's value.
+  Each `%ifdef{...}` is its own path component (a function can not contain a `/`, so the slash that separates folders always stays
+  outside the braces): when `$collection` or `$cycle` is empty (neither a rule nor a site value), that whole component renders to
+  nothing and its folder level drops out on its own, independently of the other. A bare `$collection` or `$cycle` would be asked
+  about instead, like any empty field. `$cycle` has no rule of its own: it is only ever the site's value.
 - **`paths.rewrite`** (beets' `rewrite`) changes the value of a field *in the paths only* (the library keeps what it has): `'series .*Hors Série.*': Hors Série`.
   The first rule of a field whose regex is found in its value wins; the collection is worked out before the rewrites.
 - **`paths.replace`** (beets' `replace`) applies `REGEX: replacement` in order to every folder and file name, before bdnex's own safety rules (which stay):
