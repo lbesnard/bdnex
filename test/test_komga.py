@@ -455,3 +455,45 @@ def test_a_komga_folder_that_holds_several_series_gets_no_series_data():
     out = io.StringIO()
     komga_cmd._show(plan, {"no_book": [], "ambiguous": []}, type("A", (), {"verbose": 0, "pretend": True})(), out, False)
     assert "2 different series" in out.getvalue()  # and it is said, not counted as "already up to date"
+
+
+# ------------------------------------------------------------------- a field locked in Komga, and a push that stops
+def test_a_field_locked_in_komga_that_differs_is_left_alone_unless_told_otherwise():
+    current = {"title": "Chosen in Komga", "titleLock": True, "summary": "old", "summaryLock": False}
+    fields = {"title": "Redwin", "summary": "Un nain."}
+    locked: list[str] = []
+    payload, differing = komga.changes(fields, current, komga.BOOK_LOCKS, True, True, locked)
+    assert "title" not in payload and locked == ["title"]  # someone locked it there: not overwritten
+    assert payload["summary"] == "Un nain." and payload["summaryLock"] is True and differing == ["summary"]
+    payload, differing = komga.changes(fields, current, komga.BOOK_LOCKS, True, False)  # --overwrite-locked
+    assert payload["title"] == "Redwin" and "title" in differing
+    same = {"title": "Redwin", "titleLock": True}
+    assert komga.changes({"title": "Redwin"}, same, komga.BOOK_LOCKS, True, True, locked)[0] == {}  # the same value: nothing, locked or not
+
+
+def test_the_plan_counts_the_locked_fields_it_left_alone_and_the_flag_changes_them():
+    meta = {"title": "Chosen in Komga", "titleLock": True}
+    session = FakeSession([], series_meta={"title": "Nains"})
+    client = komga.Client(Komga(url="http://k", api_key="K", username=None, password=None, lock=True, timeout=5), session)
+    pair = [(file("/c/a.pdf", 1), book("b1", "/k/a.pdf", 1, metadata=meta), "name and size")]
+    args = type("A", (), {"only": "books", "wanted": (None, None), "overwrite_locked": False})()
+    plan = komga_cmd._plan(client, pair, {1: ALBUM}, args, True)
+    assert plan[0]["locked"] == ["title"] and "title" not in plan[0]["payload"]
+    args.overwrite_locked = True
+    plan = komga_cmd._plan(client, pair, {1: ALBUM}, args, True)
+    assert plan[0]["locked"] == [] and plan[0]["payload"]["title"] == "Redwin"
+
+
+def test_a_push_stops_after_five_failures_in_a_row_and_says_how_to_finish_it():
+    class Down:
+        def patch_book(self, id_, payload):
+            raise komga.KomgaError("the server is down")
+
+        patch_series = patch_book
+
+    todo = [{"kind": "book", "id": f"b{n}", "label": f"book {n}", "payload": {"title": "x"}} for n in range(40)]
+    out = io.StringIO()
+    assert komga_cmd._send(Down(), todo, out, False) == 1
+    text = out.getvalue()
+    assert text.count("the server is down") == komga_cmd.GIVE_UP_AFTER and "35 more not tried" in text  # not forty requests that all fail
+    assert "again" in text  # it only sends what differs, so a second run finishes it
