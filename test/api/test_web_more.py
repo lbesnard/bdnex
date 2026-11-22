@@ -41,7 +41,7 @@ def env(tmp_path, monkeypatch, make_cbz):
 
 
 def client(settings, **kw):
-    return TestClient(create_app(settings, **kw))
+    return TestClient(create_app(settings, **kw), base_url="http://localhost")
 
 
 def wait(web, job_id):

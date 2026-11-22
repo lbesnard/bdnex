@@ -84,9 +84,15 @@ sets a session cookie (HttpOnly, SameSite=Strict, Secure over HTTPS) that lasts 
 ends at once when you log out; restarting the server logs everybody out. Scripts send the same login as HTTP Basic
 (`curl -u name:password`), or the **token** (`Authorization: Bearer ...`); any of them is accepted when several are set.
 Five wrong guesses from one place lock it out for five minutes (`429`, with `Retry-After`). Behind a reverse proxy set
-`api.behind_proxy: true` so that the place is the client the proxy forwards (`X-Forwarded-For`); otherwise every visitor
-looks like the proxy and one bad guesser would lock everybody out. Do not set it when the server is reachable directly: a
-visitor could then choose its own address. Every answer carries `X-Frame-Options: DENY`, `nosniff` and a content security
+`api.behind_proxy: true` so that the place is the client the proxy forwards: the **last** `X-Forwarded-For` address, the one
+your proxy appended (the first ones are whatever the client chose to send); otherwise every visitor looks like the proxy and
+one bad guesser would lock everybody out. Do not set it when the server is reachable directly: a visitor could then choose
+its own address. The server also answers only to the **names it expects** in the `Host` header (a page of another site whose
+name points at your machine, "DNS rebinding", would otherwise pass the same-site check): while it listens on `127.0.0.1` those
+are `localhost`, `127.0.0.1` and `::1`; add the names you use with `api.allowed_hosts` (a list, for example your reverse
+proxy's name); a server that listens on other addresses answers to any name unless `api.allowed_hosts` lists them. The
+schema and the interactive docs (`/openapi.json`, `/docs`, `/redoc`) need the same login as the rest. A body without a
+`Content-Length` (chunked) is refused. Every answer carries `X-Frame-Options: DENY`, `nosniff` and a content security
 policy (the page loads nothing from elsewhere), and a request body over 1 MB is refused.
 `/healthz` needs no login and shows nothing of the library, for a container's health check. There is no encryption
 (HTTP Basic sends the password as it is): put a reverse proxy with HTTPS in front of it if it leaves your home network.

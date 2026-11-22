@@ -178,7 +178,8 @@ class Api(_Section):
     username: str = Field(min_length=1)  # with `password`: the login a browser asks for (HTTP Basic)
     password: Optional[str] = None
     session_hours: float = Field(gt=0, le=24 * 365)  # how long a browser stays logged in
-    behind_proxy: bool  # true: the client address is the first `X-Forwarded-For` (set it only behind your own proxy)
+    behind_proxy: bool  # true: the client address is the last `X-Forwarded-For` entry, the one your own proxy added (set it only behind your own proxy)
+    allowed_hosts: list[str] = Field(default_factory=list)  # the names the server may be reached by (the `Host` header); empty: this machine's names while it listens on 127.0.0.1
     allow_changes: bool  # the web page (and the API) may start jobs and change the library; read-only otherwise
 
 

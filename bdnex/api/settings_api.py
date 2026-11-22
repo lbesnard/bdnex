@@ -151,9 +151,14 @@ def change(settings: Settings, path: Path, changes: dict[str, Any], apply: bool)
         raise ValueError(str(err)) from err
     restart = sorted({key for key in changes if key.startswith("api.")})
     if apply:
-        shutil.copyfile(path, path.with_name(path.name + ".bak"))
+        backup = path.with_name(path.name + ".bak")
+        shutil.copyfile(path, backup)
+        shutil.copymode(path, backup)  # the file holds passwords and tokens: a chmod 600 file stays 600, and so does its copy
         tmp = path.with_name(path.name + ".tmp")
-        tmp.write_text(text, encoding="utf-8")
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # never readable by others, not even for a moment
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        shutil.copymode(path, tmp)
         os.replace(tmp, path)
         for name in type(settings).model_fields:  # the running server follows at once (its closures hold this object)
             setattr(settings, name, getattr(new_settings, name))
