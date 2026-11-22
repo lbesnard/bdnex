@@ -134,7 +134,7 @@ them. A file you **skipped** is remembered and not asked about again, until you 
    the moment you make it.
 8. **Fetch.** The album page of a linked file is requested **at once, in the background**, while the next
    files are still being matched and asked about, and so is its series page (once per series). Every request
-   waits `bedetheque.delay`, and no more than `bedetheque.parallel` run at a time. As soon as an album's pages are
+   waits `fetch.delay`, and no more than `fetch.parallel` run at a time. As soon as an album's pages are
    here, **the album's record is built in the library** (authors, summary, date, series): `bdnex ls complete:true -c`
    grows while the import runs, and the progress line says how many albums are complete. Nothing waits for the
    network: the building reads the stored pages. The covers are downloaded in the background too, as each album becomes complete. When the last file is
@@ -408,7 +408,7 @@ for a review.
 An import only reads the pages of the albums your files match, so the library holds a part of the site. `bdnex init --mirror` fills the rest: after downloading the album list it
 compares it with the library and fetches every album that is missing (or only matched), with its series
 page and its cover (saved in `cover.dir`). It uses the same endpoints and the same polite delay as an import, several pages at once
-(`bedetheque.fetcher_endpoint`, `bedetheque.parallel`, `--workers`). It is a long run (tens of GB of requests), so it asks before it
+(`fetch.endpoint`, `fetch.parallel`, `--workers`). It is a long run (tens of GB of requests), so it asks before it
 fetches: `--yes` answers for a script, and without a terminal it refuses to start without it. `bdnex mirror` still works, as `init --mirror --skip-list --skip-series --yes`.
 
 ```bash
@@ -442,7 +442,7 @@ in the list marked `SERIES`) and `bdnex ls --sitemap WORDS` search besides the a
 
 When Bédéthèque has no page for a file, give the address of its **series page on bdtheque.com**
 (`https://www.bdtheque.com/series/14922/le-pere-des-etoiles-pere-ou-impairs`): in the review screen with `i`,
-or `bdnex import --album ADDRESS FILE`. The page is fetched once with your `bedetheque.fetcher` (FlareSolverr and all its endpoints; there
+or `bdnex import --album ADDRESS FILE`. The page is fetched once with your `fetch.fetcher` (FlareSolverr and all its endpoints; there
 is nothing to configure), kept compressed in its own table, and read into an ordinary album with `source: bdtheque`: title, summary,
 credits (`Scénario`, `Dessin`, `Couleurs`...), publisher, genre, date, rating and cover address. `bdnex write` then puts it in the file.
 The site's album list is loaded by its JavaScript, so a series page gives the **series' own data**: a series of one tome is a one-shot,
@@ -601,7 +601,7 @@ bdnex import --reparse --select series:nains  # only some albums (same terms as 
 ```
 
 - It works **offline by construction**: the source is built with a fetcher that cannot reach the network
-  (whatever `bedetheque.fetcher` says), and without the politeness delays.
+  (whatever `fetch.fetcher` says), and without the politeness delays.
 - It never erases. Values the page gives override the library's; values it does not give stay, and so
   does a credit you typed at a prompt for a role the page does not list.
 - Albums that are only matched (their page was never fetched) have no stored page: they are reported, and

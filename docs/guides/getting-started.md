@@ -82,7 +82,7 @@ To complete them, either:
   `~/.local/share/bdnex/pages/` (`bedetheque.pages_dir`) under any name that ends with the album id
   (`BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html`, or just `245127.html`), then run
   `bdnex import --fetch`;
-- or supply pages with your own function (`bedetheque.fetcher`); see *Page fetching* in
+- or supply pages with your own function (`fetch.fetcher`); see *Page fetching* in
   [Configuration](configuration.md).
 
 Pages are stored in the library: each is read once, and `bdnex import --reparse` can rebuild the albums

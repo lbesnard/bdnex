@@ -2,7 +2,7 @@
 
 
 def fake_fetch(url):
-    """A plain `url -> bytes` function, as named by `bedetheque.fetcher`."""
+    """A plain `url -> bytes` function, as named by `fetch.fetcher`."""
     return f"<html>{url}</html>".encode()
 
 

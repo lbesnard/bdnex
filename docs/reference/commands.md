@@ -32,7 +32,7 @@ options:
   --covers-only    with --mirror: only the covers of the albums the library already
                    holds without one (no page is fetched)
   --workers N      album pages fetched with --mirror at once (0: the cores less one;
-                   1: one by one); default: `bedetheque.parallel`
+                   1: one by one); default: `fetch.parallel`
   -n, --pretend    show what would be fetched by --mirror: how many albums and covers
                    are missing, and about how much room they take; change nothing
   --yes            with --mirror: do not ask before fetching (a script, or the old

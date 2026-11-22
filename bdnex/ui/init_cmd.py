@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
-from bdnex.importer.bedetheque.fetchers import FetcherError
+from bdnex.fetchers import FetcherError
 from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.library import Library
 from bdnex.ui import context, mirror_cmd

@@ -27,7 +27,7 @@ def env(tmp_path, monkeypatch, make_cbz):
     conf = tmp_path / "bdnex.yaml"
     conf.write_text(yaml.safe_dump({"config_version": 2, "collection_path": str(comics), "library": str(tmp_path / "lib.sqlite"),
                                     "cover": {"dir": str(tmp_path / "covers"), "check": False},
-                                    "bedetheque": {"delay": [0, 0]}}))
+                                    "fetch": {"delay": [0, 0]}}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     settings = load_config().settings
     path = make_cbz(FILE, pages=3, directory=str(comics))

@@ -162,12 +162,19 @@ paths:
   missing_field: ask                     # an empty value in a template: ask | placeholder | skip
   placeholder: Unknown                   # what `placeholder` writes
 
+fetch:                                   # how web pages are fetched, for every source
+  endpoint: null                         # your FlareSolverr (http://localhost:8191/v1), or a list of them; empty: saved pages
+  delay: [3, 10]                         # seconds waited before each page request
+  parallel: null                         # pages fetched at once; empty: one per endpoint
+  fetcher: null                          # your own "package.module:function" (url -> page bytes); empty: FlareSolverr
+
 bedetheque:
-  delay: [3, 10]                         # seconds waited before each album / series page request
   sitemap_delay: [0.5, 1.5]              # seconds waited between sitemap files
   pages_dir: ~/.local/share/bdnex/pages  # where album pages saved from your browser are looked up
-  parallel: null                         # album pages fetched at once; empty: one per fetcher_endpoint
 ```
+
+(`bedetheque.fetcher`, `fetcher_endpoint`, `parallel` and `delay` moved to `fetch:` because the fetcher is not Bédéthèque's: any source
+uses it. The old keys still work, with a warning; `bdnex config --update` moves them in your file, with their comments.)
 
 ## Other templates for some albums: `paths.rules`
 
@@ -245,22 +252,22 @@ plugins: {}                 # free-form options of third-party sources, by name
 
 See [Metadata source plugins](../dev/plugins.md).
 
-## Page fetching (Bédéthèque)
+## Page fetching (the `fetch` section)
 
 bdnex needs the album pages of Bédéthèque, which sit behind an anti-bot protection. A **fetcher** is a function that
-takes a URL and returns the page as bytes; `bedetheque.fetcher` names it as `package.module:function`. The default is
-`bdnex.importer.bedetheque:flaresolverr_fetch`, which asks a [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr)
-server whose address you give:
+takes a URL and returns the page as bytes. The default is `bdnex.fetchers:flaresolverr_fetch`, which asks a
+[FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) server whose address you give; setting `fetch.endpoint` is
+all it takes (`fetch.fetcher` is only for a function of your own):
 
 ```yaml
-bedetheque:
-  fetcher_endpoint: "http://localhost:8191/v1"   # your FlareSolverr
+fetch:
+  endpoint: "http://localhost:8191/v1"   # your FlareSolverr
 ```
 
-- **Several endpoints:** `fetcher_endpoint` may be a list (it was a single string before; a single string still works).
+- **Several endpoints:** `fetch.endpoint` may be a list (it was a single string before; a single string still works).
   They are used **round-robin**, and when one fails the next is tried; one that failed is left alone for a minute as long
   as another works. With more than one, album pages are also fetched **in parallel**, as many at a time as there are
-  endpoints (or `bedetheque.parallel`, 1 to 16). Each request still waits `bedetheque.delay` first, so several endpoints
+  endpoints (or `fetch.parallel`, 1 to 16). Each request still waits `fetch.delay` first, so several endpoints
   mean the album pages come faster, not more politely: use that only with servers that can take it. The progress bar lists
   the titles being fetched at that moment (`Abaddon-Shadmi-Tome-1-Abaddon · Ada-Baldi-Ada · …  (3 of 6 fetched)`, cut to the
   width of your terminal); it advances page by page, in order, because each page is handled as soon as it is the next one. To see which endpoint
@@ -268,34 +275,35 @@ bedetheque:
   failing endpoint is reported (even without `-v`) as `… failed (…): trying the next endpoint`.
 
   ```yaml
-  bedetheque:
-    fetcher_endpoint:
+  fetch:
+    endpoint:
       - "http://flare1:8191/v1"
       - "http://flare2:8191/v1"
     parallel: 2            # optional: defaults to the number of endpoints
   ```
 
-- **No `fetcher_endpoint`:** the default fetcher has nothing to talk to, so album pages are read from the pages you
+- **No `endpoint`:** the default fetcher has nothing to talk to, so album pages are read from the pages you
   saved from your browser into `bedetheque.pages_dir` (under any name ending with the album id, e.g. `245127.html`).
   `bdnex import` says so once, at the start.
 - **Your own fetcher:** write a function `def fetch(url: str) -> bytes` and name it, with whatever it needs in
-  `fetcher_endpoint` (free strings, kept as a list; a fetcher reads them with `load_config().settings.bedetheque.fetcher_endpoint`, a
+  `endpoint` (free strings, kept as a list; a fetcher reads them with `load_config().settings.fetch.endpoint`, a
   list even when you wrote one address):
 
   ```yaml
-  bedetheque:
+  fetch:
     fetcher: "my_package.my_module:fetch"
-    fetcher_endpoint: "http://localhost:8191"
+    endpoint: "http://localhost:8191"
   ```
 
-- **`fetcher: null`** always reads the saved pages.
+- **No `fetcher` and no `endpoint`** read the saved pages. (`bdnex.importer.bedetheque:flaresolverr_fetch`, the old name of the
+  default, still works if an older file names it.)
 
 The setting is **checked when the configuration is read**: a module that can not be imported, a name that is not in it
-or that is not a function is reported by key (`bedetheque.fetcher: module 'x' has no function 'y'`, with a hint when the
+or that is not a function is reported by key (`fetch.fetcher: module 'x' has no function 'y'`, with a hint when the
 `:` is in the wrong place), before anything runs. Covers are never fetched by it: they are plain image downloads.
 
 Sitemap files wait `bedetheque.sitemap_delay` (default 0.5 to 1.5 s) between downloads; album pages wait
-`bedetheque.delay` (3 to 10 s). How a fetcher obtains a page, and respecting the site's terms of use, is up to you.
+`fetch.delay` (3 to 10 s). How a fetcher obtains a page, and respecting the site's terms of use, is up to you.
 
 ## Import sources
 
@@ -328,11 +336,11 @@ configuration before it does anything, so a mistake is reported by key, not half
   $colorist`). `$autor` is refused with the list of the right ones.
 - **Rules:** every term of `paths.rules[].match` must be valid [query](queries.md) syntax (a regular expression that
   does not compile, a number that is not one).
-- **The fetcher:** `bedetheque.fetcher` must import and be callable.
+- **The fetcher:** `fetch.fetcher` must import and be callable.
 - **Sources:** the collection and the sources must be separate folders (a source can not be the collection, contain it or
   sit inside it, and sources can not be nested in each other). `mode` is `copy` or `move`, a `name` is letters, digits, `_` and `-`, and no two sources share a name or a folder.
-- **Warnings** (the command goes on): a `collection_path` that is not an existing folder (a disk that is not mounted?), a
-  `fetcher_endpoint` set with no fetcher, an out-of-date `config_version`.
+- **Warnings** (the command goes on): a `collection_path` that is not an existing folder (a disk that is not mounted?), an old
+  `bedetheque.fetcher` / `fetcher_endpoint` / `parallel` / `delay` (now in `fetch`), an out-of-date `config_version`.
 
 `bdnex config --edit` checks the file again as soon as you leave the editor and tells you what is wrong, so you do not
 find out at the next command. Values changed by the program after loading are checked too.

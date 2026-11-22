@@ -75,7 +75,7 @@ def test_unknown_key_is_an_error_naming_the_key(conf_path):
     ({"match": {"strong_threshold": 150}}, "match.strong_threshold"),
     ({"import": {"mode": "teleport"}}, "import.mode"),
     ({"duplicates": {"keys": []}}, "duplicates.keys"),
-    ({"bedetheque": {"delay": [1]}}, "bedetheque.delay"),
+    ({"fetch": {"delay": [1]}}, "fetch.delay"),
     ({"write": {"format": "cbr"}}, "write.format"),
 ])
 def test_invalid_values_report_key(conf_path, data, key):
@@ -144,21 +144,21 @@ def test_default_fetcher_is_directory_of_saved_pages(conf_path):
 
 
 def test_fetcher_spec_resolves_to_the_function(conf_path):
-    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher": "helpers:fake_fetch"}})
+    write(conf_path, {"config_version": 2, "fetch": {"fetcher": "helpers:fake_fetch"}})
     fetch = build_fetcher(load_config().settings)
     assert fetch is helpers.fake_fetch
     assert fetch("https://x/BD-a-1.html") == b"<html>https://x/BD-a-1.html</html>"
 
 
 def test_fetcher_endpoint_is_optional_and_readable(conf_path):
-    assert load_config().settings.bedetheque.fetcher_endpoint == []
-    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher_endpoint": "http://localhost:8191"}})
-    assert load_config().settings.bedetheque.fetcher_endpoint == ["http://localhost:8191"]
+    assert load_config().settings.fetch.endpoint == []
+    write(conf_path, {"config_version": 2, "fetch": {"endpoint": "http://localhost:8191"}})
+    assert load_config().settings.fetch.endpoint == ["http://localhost:8191"]
 
 
 def test_fetcher_endpoint_must_be_a_string(conf_path):
-    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher_endpoint": 8191}})
-    with pytest.raises(ConfigError, match="fetcher_endpoint"):
+    write(conf_path, {"config_version": 2, "fetch": {"endpoint": 8191}})
+    with pytest.raises(ConfigError, match="fetch.endpoint"):
         load_config()
 
 
@@ -166,8 +166,8 @@ def test_fetcher_spec_must_be_callable(conf_path, monkeypatch):
     module = types.ModuleType("not_callable_mod")
     module.value = 3
     monkeypatch.setitem(sys.modules, "not_callable_mod", module)
-    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher": "not_callable_mod:value"}})
-    with pytest.raises(ConfigError, match="bedetheque.fetcher: .*not callable"):  # caught when the config is read
+    write(conf_path, {"config_version": 2, "fetch": {"fetcher": "not_callable_mod:value"}})
+    with pytest.raises(ConfigError, match="fetch.fetcher: .*not callable"):  # caught when the config is read
         load_config()
 
 
@@ -277,14 +277,16 @@ def test_stale_warning_tells_you_to_delete_the_ignored_keys_first(conf_path, tmp
     assert second == "ignored keys no longer used: bdnex"
 
 
-def test_endpoint_without_a_fetcher_is_called_out(conf_path):
-    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher": None, "fetcher_endpoint": "http://localhost:1"}})
-    warnings = load_config().warnings
-    assert len(warnings) == 1 and "fetcher_endpoint is set but bedetheque.fetcher is not" in warnings[0]
+def test_an_endpoint_alone_means_flaresolverr_no_warning(conf_path):
+    write(conf_path, {"config_version": 2, "fetch": {"endpoint": "http://localhost:1"}})
+    loaded = load_config()
+    from bdnex.fetchers import uses_saved_pages
+
+    assert loaded.warnings == [] and not uses_saved_pages(loaded.settings)
 
 
 def test_no_warning_when_the_fetcher_is_set_or_nothing_is(conf_path):
-    write(conf_path, {"config_version": 2, "bedetheque": {"fetcher": "helpers:fake_fetch", "fetcher_endpoint": "x"}})
+    write(conf_path, {"config_version": 2, "fetch": {"fetcher": "helpers:fake_fetch", "endpoint": "x"}})
     assert load_config().warnings == []
     write(conf_path, {"config_version": 2})
     assert load_config().warnings == []
@@ -310,19 +312,19 @@ def test_the_fetcher_must_exist():
     for bad, message in (("no_colon", "package.module:function"), ("no.such.module:fn", "can not import"),
                          ("bdnex.importer.bedetheque:nothing_here", "no function"), ("os:sep", "not callable")):
         with pytest.raises(ConfigError, match=message):
-            build_settings({"config_version": 2, "bedetheque": {"fetcher": bad}})
-    settings, warnings, _ = build_settings({"config_version": 2, "bedetheque": {"fetcher": "os.path:exists"}})
-    assert settings.bedetheque.fetcher == "os.path:exists" and warnings == []
-    assert build_settings({"config_version": 2, "bedetheque": {"fetcher": None}})[0].bedetheque.fetcher is None
+            build_settings({"config_version": 2, "fetch": {"fetcher": bad}})
+    settings, warnings, _ = build_settings({"config_version": 2, "fetch": {"fetcher": "os.path:exists"}})
+    assert settings.fetch.fetcher == "os.path:exists" and warnings == []
+    assert build_settings({"config_version": 2, "fetch": {"fetcher": None}})[0].fetch.fetcher is None
 
 
 def test_flaresolverr_is_the_default_fetcher_and_needs_an_endpoint_to_be_used():
-    from bdnex.importer.bedetheque.fetchers import DEFAULT_FETCHER, uses_saved_pages
+    from bdnex.fetchers import uses_saved_pages
     settings = build_settings({"config_version": 2})[0]
-    assert settings.bedetheque.fetcher == DEFAULT_FETCHER and uses_saved_pages(settings)  # no address: saved pages
-    with_endpoint = build_settings({"config_version": 2, "bedetheque": {"fetcher_endpoint": "http://localhost:8191/v1"}})[0]
+    assert settings.fetch.fetcher is None and uses_saved_pages(settings)  # no address: saved pages
+    with_endpoint = build_settings({"config_version": 2, "fetch": {"endpoint": "http://localhost:8191/v1"}})[0]
     assert not uses_saved_pages(with_endpoint)
-    own = build_settings({"config_version": 2, "bedetheque": {"fetcher": "os.path:exists"}})[0]
+    own = build_settings({"config_version": 2, "fetch": {"fetcher": "os.path:exists"}})[0]
     assert not uses_saved_pages(own)  # a fetcher of your own is used as it is
 
 
@@ -391,13 +393,13 @@ def test_config_update_renames_the_old_option_in_the_file(conf_path, capsys, tmp
 
 
 def test_fetcher_endpoint_is_one_address_or_a_list():
-    one = build_settings({"config_version": 2, "bedetheque": {"fetcher_endpoint": "http://a/v1"}})[0].bedetheque
-    assert one.fetcher_endpoint == ["http://a/v1"] and one.parallel is None
-    many = build_settings({"config_version": 2, "bedetheque": {"fetcher_endpoint": ["http://a/v1", "http://b/v1"],
-                                                               "parallel": 4}})[0].bedetheque
-    assert many.fetcher_endpoint == ["http://a/v1", "http://b/v1"] and many.parallel == 4
+    one = build_settings({"config_version": 2, "fetch": {"endpoint": "http://a/v1"}})[0].fetch
+    assert one.endpoint == ["http://a/v1"] and one.parallel is None
+    many = build_settings({"config_version": 2, "fetch": {"endpoint": ["http://a/v1", "http://b/v1"],
+                                                               "parallel": 4}})[0].fetch
+    assert many.endpoint == ["http://a/v1", "http://b/v1"] and many.parallel == 4
     with pytest.raises(ConfigError, match="listed twice"):
-        build_settings({"config_version": 2, "bedetheque": {"fetcher_endpoint": ["http://a/v1", "http://a/v1"]}})
+        build_settings({"config_version": 2, "fetch": {"endpoint": ["http://a/v1", "http://a/v1"]}})
     with pytest.raises(ConfigError, match="parallel"):
         build_settings({"config_version": 2, "bedetheque": {"parallel": 0}})
 
@@ -405,7 +407,7 @@ def test_fetcher_endpoint_is_one_address_or_a_list():
 def test_bdnex_config_hides_the_secrets_unless_asked(conf_path, capsys):
     write(conf_path, {"config_version": 2, "collection_path": str(conf_path.parent),
                       "komga": {"url": "http://k", "api_key": "s3cret"},
-                      "bedetheque": {"fetcher_endpoint": ["http://private:8191"]}})
+                      "fetch": {"endpoint": ["http://private:8191"]}})
     assert config_cmd.run([]) == 0
     shown = capsys.readouterr().out
     assert "s3cret" not in shown and "private" not in shown and "<hidden>" in shown and "http://k" in shown
@@ -489,3 +491,32 @@ def test_a_relative_collection_path_is_refused_where_it_is_used():
     settings, _, _ = build_settings({"collection_path": "comics"})
     with pytest.raises(ConfigError, match="absolute"):
         settings.require_collection()
+
+
+def test_config_update_moves_the_fetch_options_out_of_the_bedetheque_section(conf_path, capsys, tmp_path):
+    from bdnex.ui import config_cmd
+    conf_path.parent.mkdir(parents=True, exist_ok=True)
+    conf_path.write_text(
+        f"config_version: 2\ncollection_path: {tmp_path}\nbedetheque:\n  fetcher: bdnex.importer.bedetheque:flaresolverr_fetch   # default\n"
+        "  fetcher_endpoint:\n    - http://a:8191/v1\n    - http://b:8191/v1\n  parallel: 2   # two at once\n  pages_dir: ~/pages\n", encoding="utf-8")
+    assert load_config(conf_path).warnings  # before: it works, with warnings
+    assert config_cmd._update(conf_path) == 0
+    out = capsys.readouterr().out
+    assert "Moved bedetheque.fetcher_endpoint -> fetch.endpoint" in out and "Dropped bedetheque.fetcher" in out
+    text = conf_path.read_text(encoding="utf-8")
+    loaded = load_config(conf_path)
+    assert loaded.warnings == [] and loaded.settings.fetch.endpoint == ["http://a:8191/v1", "http://b:8191/v1"]
+    assert loaded.settings.fetch.parallel == 2 and "  parallel: 2   # two at once" in text and "pages_dir: ~/pages" in text
+    assert "flaresolverr_fetch" not in text and (conf_path.parent / (conf_path.name + ".bak")).exists()
+    assert config_cmd._update(conf_path) == 0 and "already lists every option" in capsys.readouterr().out  # and it is stable
+
+
+def test_the_offline_settings_have_no_network_fetcher_and_no_waiting():
+    from bdnex.importer.registry import offline_settings
+
+    settings = build_settings({"config_version": 2, "fetch": {"endpoint": "http://a/v1", "delay": [3, 10]}})[0]
+    offline = offline_settings(settings)
+    from bdnex.fetchers import uses_saved_pages
+
+    assert offline.fetch.fetcher.endswith("offline_fetch") and offline.fetch.delay == (0, 0) and not uses_saved_pages(offline)
+    assert offline.bedetheque.sitemap_delay == (0, 0) and settings.fetch.delay == (3, 10)  # the real settings are untouched

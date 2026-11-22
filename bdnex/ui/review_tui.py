@@ -1490,7 +1490,7 @@ class ReviewApp(App):
 
     def queue_details(self, row: batch.Row, url: str, mine: int) -> None:
         """Queue the fetching of a linked file's page and cover. With several endpoints the downloads of several files run at once
-        (as many as `bedetheque.parallel`, or one per endpoint, like `bdnex import`); the library is written by one thread, a file at a time."""
+        (as many as `fetch.parallel`, or one per endpoint, like `bdnex import`); the library is written by one thread, a file at a time."""
         from bdnex.importer.registry import create_source
         from bdnex.ui.review_fetch import DetailsQueue, Job
 

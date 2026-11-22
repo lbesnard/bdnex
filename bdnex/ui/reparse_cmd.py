@@ -12,7 +12,7 @@ from bdnex.library.query import QueryError
 from bdnex.ui import color, context, describe, results
 from bdnex.ui.output import Bar, add_pretend, add_verbosity, add_workers, banner, setup_logging
 
-OFFLINE = "bdnex.importer.registry:offline_fetch"
+from bdnex.importer.registry import offline_settings
 DETAIL_STYLE = {"new details": "green", "updated details": "yellow", "dropped details": "red"}
 
 
@@ -97,8 +97,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
         return 1
     # the source is built with a fetcher that can not reach the network, whatever the configuration says,
     # and without the politeness delays (nothing is requested, so there is nothing to be polite about)
-    offline = settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
-        update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
+    offline = offline_settings(settings)
 
     on = color.enabled(out)
     updated = unchanged = missing = failed = 0

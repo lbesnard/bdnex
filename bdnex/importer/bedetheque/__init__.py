@@ -1,17 +1,17 @@
 """Bédéthèque metadata source plugin."""
 
 from bdnex.importer.bedetheque.bedetheque import image_fetch, Bedetheque, BlockedError, http_fetch
-from bdnex.importer.bedetheque.fetchers import (uses_saved_pages, DirectoryFetcher, FetcherError, build_fetcher, flaresolverr_fetch,
+from bdnex.fetchers import (uses_saved_pages, DirectoryFetcher, FetcherError, build_fetcher, flaresolverr_fetch,
                                                 load_fetcher)
 from bdnex.importer.source import Candidate
 
 
 def page_workers(settings) -> int:
-    """Pages fetched at once: ``bedetheque.parallel``, else one per fetcher endpoint; 1 when pages are read from a folder of saved ones."""
+    """Pages fetched at once: ``fetch.parallel``, else one per fetcher endpoint; 1 when pages are read from a folder of saved ones."""
     if uses_saved_pages(settings):
         return 1
-    section = settings.bedetheque
-    return section.parallel or max(1, len(section.fetcher_endpoint))
+    section = settings.fetch
+    return section.parallel or max(1, len(section.endpoint))
 
 
 def create_source(library, settings):
@@ -19,7 +19,7 @@ def create_source(library, settings):
     section = settings.bedetheque
     source = Bedetheque(library, fetch=build_fetcher(settings), sitemap_fetch=http_fetch,
                         image_fetch=image_fetch,
-                        delay=tuple(section.delay), sitemap_delay=tuple(section.sitemap_delay))
+                        delay=tuple(settings.fetch.delay), sitemap_delay=tuple(section.sitemap_delay))
     source.use_embedded = settings.match.use_embedded
     source.min_margin = settings.match.min_margin
     from bdnex.config import MATCH_WEIGHTS

@@ -135,8 +135,8 @@ After `pip install`, `source: mysource` works. A built-in source with the same n
 - The sitemap files (55 or so, growing) are downloaded until the site serves an empty one, then matched
   locally with `rapidfuzz`. The URL slug already tells series from one-shot (`-Tome-N-`).
 - Album pages come from a *page fetcher*: any callable `url -> bytes`, selected by
-  `bedetheque.fetcher`. The default reads pages you saved from your browser into `bedetheque.pages_dir`.
-- Sitemaps wait `bedetheque.sitemap_delay` between files; pages wait `bedetheque.delay`.
+  `fetch.fetcher` (see `bdnex/fetchers.py`; every source can use it). The default reads pages you saved from your browser into `bedetheque.pages_dir`.
+- Sitemaps wait `bedetheque.sitemap_delay` between files; pages wait `fetch.delay`.
 - Both the current desktop page layout (schema.org microdata) and the former mobile layout are parsed.
 
 bedetheque.com answers scripted page requests with an anti-bot challenge. `http_fetch` raises

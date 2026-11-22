@@ -1,7 +1,7 @@
 """The background fetching of the review screen: pages and covers downloaded several at a time, the library written one file at a time.
 
-A file linked in the screen has its album page, its series page and its cover to fetch. With several endpoints (``bedetheque.parallel``,
-or one per ``fetcher_endpoint``, as ``bdnex import`` uses them) the downloads of several files run at once, each waiting its own polite
+A file linked in the screen has its album page, its series page and its cover to fetch. With several endpoints (``fetch.parallel``,
+or one per ``fetch.endpoint``, as ``bdnex import`` uses them) the downloads of several files run at once, each waiting its own polite
 delay. Only the downloading is parallel: ONE thread, this queue's, stores the pages and then runs each file's import (``rematch``), which
 finds everything stored and makes no request. So two files of one series never write the same series or album row at the same time.
 

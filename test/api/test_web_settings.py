@@ -40,7 +40,7 @@ def test_the_page_lists_every_option_with_its_kind_default_and_help_and_no_secre
     assert listed["path"] == str(conf)
     keys = {o["key"] for s in listed["sections"] for o in s["options"]}
     assert {"write.pdf", "import.workers", "cover.check", "match.strong_threshold", "api.allow_changes"} <= keys
-    assert not keys & {"api.token", "api.password", "bedetheque.fetcher_endpoint"}
+    assert not keys & {"api.token", "api.password", "fetch.endpoint"}
     pdf = option(web, "write.pdf")
     assert pdf["kind"] == "choice" and pdf["choices"] == ["convert", "tag", "skip"] and pdf["default"] == "convert"
     assert pdf["yours"] is True and "keep the PDF" in pdf["help"] and pdf["editable"] is True
@@ -77,7 +77,7 @@ def test_bad_changes_are_refused_with_the_reason_and_the_file_is_untouched(env, 
     web = client(settings, allow_changes=True)
     before = conf.read_text()
     for bad in ({"write.pdf": "zip"}, {"write.workers": -1}, {"write.workers": "many"}, {"write.workers": 99}, {"write.use_trash": "maybe"},
-                {"nonsense": 1}, {"collection_path": "/x"}, {"api.token": "x"}, {"bedetheque.fetcher_endpoint": "http://x"},
+                {"nonsense": 1}, {"collection_path": "/x"}, {"api.token": "x"}, {"fetch.endpoint": "http://x"},
                 {"match.strong_threshold": 500}):
         refused = change(web, preview=False, **bad)
         assert refused.status_code == 400, bad
