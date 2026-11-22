@@ -80,7 +80,7 @@ async def fetched(app, pilot, timeout=15.0):
     await settle(app, pilot)
 
 
-def drive(db, script, unmatched=True, size=50, source=None):
+def drive(db, script, unmatched=True, size=50, source=None, columns=170):
     """Run the app, call ``script(app, pilot)`` once the batch is shown, and return the cells of the table."""
     settings = load_config().settings
     source = source or FakeSource()
@@ -89,7 +89,7 @@ def drive(db, script, unmatched=True, size=50, source=None):
     async def go():
         with Library(db) as lib:
             app = review_tui.ReviewApp(lib, settings, source, size, (), unmatched)
-            async with app.run_test(size=(170, 45)) as pilot:
+            async with app.run_test(size=(columns, 45)) as pilot:
                 await settle(app, pilot)
                 await script(app, pilot)
                 await settle(app, pilot)

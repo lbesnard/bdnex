@@ -10,7 +10,7 @@ pytest.importorskip("textual")
 from bdnex.library import review_batch as batch  # noqa: E402
 from bdnex.ui import review_tui  # noqa: E402
 
-from test_review_tui import FORGE, drive, env  # noqa: E402,F401  (the fixture and the driver of the screen's tests)
+from test_review_tui import FORGE, drive, env, fetched  # noqa: E402,F401  (the fixture and the driver of the screen's tests)
 
 
 def test_a_decision_that_cannot_be_saved_is_said_and_the_row_stays_as_it_was(env, monkeypatch):
@@ -183,13 +183,13 @@ def test_the_table_has_a_column_with_where_a_move_would_put_each_file_and_it_goe
         seen["cell"] = str(app.query_one("DataTable").get_row_at(0)[8])
         seen["loose"] = [r.dest for r in app.rows if r.album_id is None]  # no album: nothing to say
         app.record("keep")
-        seen["after_keep"] = first.dest  # a new decision: the old place may not be the new one
+        seen["after_keep"] = first.dest  # the same album, so the same place: it is worked out again, not left blank
         app.action_sort(8)
         seen["sorted"] = True
 
     drive(db, script)
     assert seen["dest"].endswith(".cbz") and "Nains" in seen["dest"] and not seen["dest"].startswith("/")  # relative to the collection
-    assert seen["cell"] == seen["dest"] and seen["loose"] == [""] and seen["after_keep"] == ""
+    assert seen["cell"] == seen["dest"] and seen["loose"] == [""] and seen["after_keep"] == seen["dest"]
 
 
 def test_questions_that_come_by_themselves_wait_in_a_queue_and_never_open_over_a_window(env):
@@ -256,3 +256,39 @@ def test_the_marked_files_say_they_are_reading_the_series_page_until_the_answer_
     drive(db, script)
     assert seen["during"] == [(True, "reading the series")] * 2 and "reading the series" in seen["cell"]  # with the dots and the seconds
     assert seen["after"] == [(False, "")] * 2  # cleared even though the read gave nothing and the rest failed
+
+
+def test_after_a_link_the_column_says_where_the_file_would_go_and_it_is_not_cut(env, monkeypatch):
+    import threading
+
+    import yaml
+
+    from test_review_tui import _linking
+
+    db, files = env
+    conf = os.environ["BDNEX_CONFIG"]
+    settings = yaml.safe_load(open(conf))
+    settings["collection_path"] = str(db.parent / "collection")
+    os.makedirs(settings["collection_path"], exist_ok=True)
+    open(conf, "w").write(yaml.safe_dump(settings))
+    release = threading.Event()
+    release.set()
+    _linking(monkeypatch, db, release)  # the import of the page ends at once and switches the file to the album 2 ("Forge")
+    seen = {}
+
+    async def script(app, pilot):
+        row = app.rows[2]  # the loose file: no album, so nothing to say
+        seen["before"] = row.dest
+        app.query_one("DataTable").move_cursor(row=2)
+        await pilot.press("o")
+        await pilot.pause()
+        await pilot.press("enter")  # link it to the first hit (the album 2)
+        await fetched(app, pilot)
+        seen["after"] = row.dest
+        seen["cell"] = str(app.query_one("DataTable").get_row_at(2)[8])
+        column = app.query_one("DataTable").columns[list(app.query_one("DataTable").columns)[8]]
+        seen["width"] = column.width  # fixed, but as wide as the screen allows (this one is 300 columns wide)
+
+    drive(db, script, columns=300)
+    assert seen["before"] == "" and seen["after"].endswith(".cbz") and "Forge" in seen["after"]  # it stayed '-' after the link
+    assert seen["cell"] == seen["after"] and seen["width"] > 44 and seen["width"] >= len(seen["after"])  # more than 44 characters when the screen can show them
