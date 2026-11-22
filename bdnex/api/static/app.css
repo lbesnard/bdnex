@@ -27,6 +27,8 @@ a { color: var(--accent); }
 .mode { margin-top: auto; font-size: 12px; color: var(--muted); }
 .mode b { display: inline-block; padding: 1px 8px; border-radius: 99px; border: 1px solid var(--line); }
 .mode b.on { color: var(--warn); border-color: var(--warn); }
+.source { font-size: 12px; color: var(--muted); text-decoration: none; }
+.source:hover { color: var(--text); text-decoration: underline; }
 main { padding: 22px 26px 60px; max-width: 1240px; width: 100%; min-width: 0; }
 h1 { font-size: 24px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 24px 0 10px; } h3 { font-size: 15px; margin: 14px 0 6px; }
 .lead { color: var(--muted); margin: 0 0 18px; }
@@ -110,7 +112,7 @@ dl { display: grid; grid-template-columns: 110px 1fr; gap: 3px 12px; margin: 10p
 @media (max-width: 800px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .side { position: static; height: auto; flex-direction: row; align-items: center; overflow-x: auto; padding: 10px; }
-  .brand img { width: 110px; } #nav { flex-direction: row; } .mode { display: none; }
+  .brand img { width: 110px; } #nav { flex-direction: row; } .mode { display: none; } .source { display: none; }
   main { padding: 16px 14px 50px; } .d-body { grid-template-columns: 1fr; } .meter { width: 90px; }
 }
 code { background: var(--tile); border-radius: 5px; padding: 1px 5px; font: 12.5px ui-monospace, "SF Mono", Menlo, monospace; }
