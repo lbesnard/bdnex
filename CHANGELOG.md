@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Import: a file whose match the check flagged as wrong (it looks contradicted, `bdnex review` will ask) is no longer written with that album's tags, nor moved or copied under that album's series by `--write`, `--move`, `--copy`, `import.mode` or a source's mode (the watch included). The import says how many were left; place them with `bdnex write` / `bdnex move` after `bdnex review`.
 - Import with `duplicates.action: replace` (or "replace" chosen when asked): the identical file already in the library is now moved to the trash only when the new file is actually linked. Before, a preview (`import -n`) and a file left unmatched (you chose none of the candidates) still trashed the old file, leaving the album with no file. The report says how many replaced files are in the trash.
 - `bdnex duplicates --covers`: a spare version is no longer listed as a "similar cover" of its own album (it has that cover by design), and blank or uniform first pages are no longer grouped together as one big "same book" group.
 - Review screen: a series with one album and no volume (a one-shot such as Scalp), given by its address or picked as a SERIES, links that album to the one file you chose when the file's name has no number; before it said "none with a volume number" and changed nothing.
