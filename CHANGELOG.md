@@ -6,10 +6,11 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
-### Added
-- **Docker image on the GitHub Container Registry**: each release (the Release workflow) builds and pushes `ghcr.io/lbesnard/bdnex` for amd64 and arm64, tagged with the version and `latest`. `compose.yaml` now pulls it (`BDNEX_VERSION` pins a release; `docker compose pull` updates); `compose.build.yaml` builds from the checkout instead. CI builds the image on every change and starts it for real (healthz, the login, the config and library on the volumes).
-
 ### Fixed
+- Review screen: a decision (`k`, `u`, `l`, a link) that cannot be saved (a locked library) is said and the row stays as it was, instead of crashing the screen or showing a decision that was never saved; `s` on a row already decided no longer rewrites what the table says; `l` on a file the library has no record of is remembered (it was shown again in the next batch).
+- Review screen: a newer decision (a page address of another site, a hand-written album, a series of marked files) supersedes the page and cover still queued for the older link, and the row stops waiting for them (it stayed "fetching" for ever); the fetch queue tells a job whose start fails and goes on with the others (a failure inside it used to end its thread silently), and after `q` / Ctrl-C a one-by-one queue starts no further import.
+- Review screen: Enter in the album search no longer picks a hit of what was typed *before* (it linked the file at once); the hand-written album form says "year ..." or "a series needs its name" before it closes, so nothing typed is lost, and a trailing newline in the volumes is not a file; a worker that fails (an address lookup, the series page, the cover screen closed while it reads) is said instead of ending the whole program; `b` after a batch that could not be weighed no longer replaces that batch with an empty one; Ctrl-O (like `p`) starts no browser over SSH or where there is no display, and copies the address instead.
+- `bdnex review --batch 0` is refused instead of being read as no batch.
 - Docker: the saved pages (`bedetheque.pages_dir`) were under the container's temporary home and lost at each restart: they are in `/data/pages`. A missing or not-writable `/config`, `/data` or `/covers` (Docker creates missing ones as root) is named at start, with the way out, instead of a traceback.
 - Matching: a year or an author found on an album's page no longer lifts a match above the cap of a wrong or missing volume (a wrong-volume album could reach 90, "strong"); the series-only cap holds too. Measured with `tools/eval_matching.py` on 1500 linked files: wrong first choices among those scoring 85 or more went from 6 to 4, none among the strong ones before or after, and 2 files fewer are applied unasked (266 to 264).
 - Matching: `Intégrale 2` (no `T`/`Tome`) asks for the second collected edition, so tome 2 no longer gets the volume bonus; `T`/`Vol` followed by a three-digit number only count as a volume when glued (`T105`: `Le Vol 714 pour Sydney` is a title); `Cœur` and `Œil` are searched as `Coeur` and `Oeil` (the ligature was dropped, leaving `c ur`).
@@ -214,6 +215,9 @@ command runs, never while an import is fetching).
 - Ctrl-C during an import stops at once: the requests waiting for their polite delay give up (they kept the
   program alive for up to ten seconds each, so it took several Ctrl-C), and `import --database-only` no longer goes
   through the file-placement step, which looked up every imported file again for nothing.
+
+### Added
+- **Docker image on the GitHub Container Registry**: each release (the Release workflow) builds and pushes `ghcr.io/lbesnard/bdnex` for amd64 and arm64, tagged with the version and `latest`. `compose.yaml` now pulls it (`BDNEX_VERSION` pins a release; `docker compose pull` updates); `compose.build.yaml` builds from the checkout instead. CI builds the image on every change and starts it for real (healthz, the login, the config and library on the volumes).
 
 ### Changed
 - **The page fetcher is not Bédéthèque's.** Its options moved to a new `fetch:` section: `fetch.endpoint` (was `bedetheque.fetcher_endpoint`), `fetch.parallel`, `fetch.delay` and `fetch.fetcher` (was `bedetheque.fetcher`, only for a function of your own). **Setting `fetch.endpoint` is now enough to use FlareSolverr**; without it (and without your own fetcher) the saved pages are read, as before. The old `bedetheque.*` keys still work, with a warning, for now: **`bdnex config --update` moves them in your file** (a list over several lines, trailing comments and all; the default `fetcher` line is dropped). The code is `bdnex/fetchers.py`; `bdnex.importer.bedetheque:flaresolverr_fetch` and `bdnex.importer.bedetheque.fetchers` keep working as the same module. `bdnex mirror`'s `--workers` follows `fetch.parallel`. Back up your configuration before `config --update` (it keeps a `.bak` too).

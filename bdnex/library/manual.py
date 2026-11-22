@@ -100,6 +100,14 @@ def _info(values: dict[str, str], path: str, volume: Optional[int]) -> AlbumInfo
         credits=credits, genres=_names(values.get("genres", "")))
 
 
+def check(values: dict[str, str], series: bool = False) -> None:
+    """Raise :class:`FormError` for what :func:`create` / :func:`update` would refuse, without touching the library: a form can say so
+    before it closes (a bad year used to be found after the form was gone, and everything typed was lost)."""
+    if series and not (values.get("series") or "").strip():
+        raise FormError("a series needs its name")
+    _info(values, "", _number(values.get("volume", ""), "the volume", 0, 9999))
+
+
 def create(library: Library, path: str, values: dict[str, str], volume: Optional[int] = None) -> int:
     """A new album from the form, linked to the file (the file keeps no other album). Returns the album id."""
     if volume is None:

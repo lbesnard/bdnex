@@ -144,6 +144,12 @@ def decide(library: Library, row: Row, action: str, album_id: Optional[int] = No
 
     if row.file_id is None:
         row.file_id = (library.get_file(row.path) or {}).get("id")
+    if row.file_id is None and action == "leave" and os.path.exists(row.path):
+        try:  # a file the import skipped has no record: without one the decision could not be remembered, and the next batch shows it again
+            library.add_file(row.path)
+            row.file_id = (library.get_file(row.path) or {}).get("id")
+        except OSError:
+            pass
     if action == "keep":
         settle(library, {"path": row.path}, "keep")
         value, row.status = "keep", "keep"

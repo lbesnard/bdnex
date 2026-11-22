@@ -140,3 +140,8 @@ def test_list_as_json_gives_the_reason_for_a_script(matched):
     assert review_cmd.run(["--list", "--json"], out=out) == 0
     data = json.loads(out.getvalue())
     assert [d["path"] for d in data] == [bad] and "looks doubtful" in data[0]["why"]
+
+
+def test_a_batch_of_zero_is_refused_not_read_as_no_batch(flagged):
+    out = io.StringIO()
+    assert review_cmd.run(["--batch", "0"], out=out) == 2  # it used to fall through to `--auto`-less single review
