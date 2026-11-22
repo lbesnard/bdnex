@@ -171,6 +171,13 @@ The documentation is at <https://bdnex.readthedocs.io/en/latest/> (how to get st
 
 To build it locally: `uv sync --extra docs && uv run sphinx-build -b html docs docs/_build/html`, then open `docs/_build/html/index.html`.
 
+## License
+
+bdnex is free software under the **GNU Affero General Public License, version 3 or later** (see [LICENSE](LICENSE)). You may use, study, change
+and share it, and sell copies, on one condition: whoever distributes it, changed or not, or lets others use it over a network (a hosted
+`bdnex serve`), must give them the complete source, changes included, under the same license. It is the license of PyMuPDF, which bdnex
+builds on. Versions before the one that changed the license (up to 0.13.0) were released as MIT / CC0 and stay available under those terms.
+
 ## Examples
 
 ```bash
