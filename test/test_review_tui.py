@@ -1490,3 +1490,59 @@ def test_with_several_endpoints_several_rows_show_fetching_at_the_same_time(env,
     drive(db, script)
     assert all("fetching" in text for text in seen["both"]), seen["both"]  # both spin: two downloads are going on at once
     assert seen["left"] == 0
+
+
+def test_a_without_a_mark_is_for_the_file_under_the_cursor_not_for_the_rest_of_its_folder(env, monkeypatch):
+    """One-shots (Batman - Killing Joke, ...) share a folder and have no volume: `a` used to take every undecided file of the folder."""
+    from bdnex.importer.folders import SeriesProposal
+
+    db, files = env
+    release = threading.Event()
+    release.set()
+    _linking(monkeypatch, db, release)
+    asked, seen = {}, {}
+
+    def propose(source, candidate, paths):
+        asked["paths"] = paths
+        return SeriesProposal("Nains", "s1", {paths[0]: FORGE}, with_volume=1, total=len(paths))
+
+    monkeypatch.setattr(batch, "propose_for_series", propose)
+
+    async def script(app, pilot):
+        assert len({r.folder for r in app.rows}) == 1 and len(app.rows) == 3  # all three files share a folder, none is marked
+        await pilot.press("a")
+        await settle(app, pilot)
+        seen["heading"] = app.screen.heading
+        await pilot.press("enter")
+        await settle(app, pilot)
+
+    drive(db, script)
+    assert len(asked["paths"]) == 1 and os.path.basename(asked["paths"][0]) in seen["heading"] and "this file" in seen["heading"]
+
+
+def test_a_works_on_a_file_already_decided_so_a_wrong_keep_can_be_matched_again(env, monkeypatch):
+    db, files = env
+
+    async def script(app, pilot):
+        await pilot.press("k")  # decided: kept
+        await pilot.press("up")
+        row = app.current()
+        assert row.status == "keep"
+        assert app.files_to_attach() == [row]  # still the file under the cursor: it can be given another album
+
+    drive(db, script, size=50)
+
+
+def test_m_then_a_is_for_the_marked_files_and_the_heading_says_how_many(env):
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("m")
+        await pilot.press("a")
+        await settle(app, pilot)
+        seen["heading"] = app.screen.heading
+        await pilot.press("escape")
+
+    drive(db, script)
+    assert "3 marked files" in seen["heading"]
