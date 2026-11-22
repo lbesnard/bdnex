@@ -498,3 +498,45 @@ def test_the_albums_are_built_from_the_pages_as_they_arrive_not_by_the_slow_fetc
     assert env.session._completed_early == 1  # by the queue's arrivals (in the loop, or waiting for the last ones)
     assert not any(m.startswith("Fetching") for m in messages)  # the sequential fetch had nothing left to do
     env.lib.close()
+
+
+def _replace_env(web, make_cbz):
+    """`duplicates.action: replace`, one file already imported, and a copy of it (the same bytes) under another name."""
+    env = Env(web, make_settings(duplicates={"action": "replace"}, **{"import": {"auto": False}}), FakePrompter())  # asks about each match
+    env.source.update_sitemaps()
+    env.source.album_info = lambda url, recache=False: Bedetheque.album_info(env.source, ALBUM_URL, recache)
+    original = make_cbz("Nains - T01 - Redwin de la forge.cbz")
+    assert env.session.import_file(original).outcome == TAGGED
+    return env, original
+
+
+def _copy(make_cbz, original, name):
+    other = os.path.join(os.path.dirname(original), name)
+    with open(original, "rb") as src, open(other, "wb") as dst:
+        dst.write(src.read())
+    return other
+
+
+def test_a_preview_does_not_trash_the_file_an_identical_one_would_replace(web, make_cbz):
+    env, original = _replace_env(web, make_cbz)
+    copy = _copy(make_cbz, original, "Nains - T01 - Redwin de la forge (copy).cbz")
+    env.session.pretend = True
+    env.session.import_file(copy)
+    assert os.path.exists(original) and env.lib.get_file(original) is not None and env.lib.trash_entries() == []
+
+
+def test_a_file_the_person_matches_to_nothing_does_not_trash_the_identical_one_it_would_have_replaced(web, make_cbz):
+    env, original = _replace_env(web, make_cbz)
+    copy = _copy(make_cbz, original, "Nains - T01 - Redwin de la forge (copy).cbz")
+    env.session.prompter.choice = None  # "none of these": the copy stays unlinked
+    result = env.session.import_file(copy)
+    assert result.outcome == SKIPPED
+    assert os.path.exists(original) and env.lib.get_file(original)["album_id"] is not None and env.lib.trash_entries() == []
+
+
+def test_an_identical_file_that_is_linked_still_replaces_the_old_one(web, make_cbz):
+    env, original = _replace_env(web, make_cbz)
+    copy = _copy(make_cbz, original, "Nains - T01 - Redwin de la forge (copy).cbz")
+    result = env.session.import_file(copy)
+    assert result.outcome == TAGGED and "trash" in result.note
+    assert env.lib.get_file(original) is None and not os.path.exists(original) and len(env.lib.trash_entries()) == 1

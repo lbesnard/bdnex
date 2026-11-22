@@ -91,6 +91,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         self._undone: list = []  # the undone results themselves: while they are alive no new result can have their id
         self._completed_early = 0
         self._journal: Optional[Journal] = None  # what the file being matched has recorded so far
+        self._identical_to_trash: list[str] = []  # identical files the person chose to replace: trashed only once the new file is linked
         self._asked = False  # the user was asked about the file being matched
         self.series_mode = settings.import_.series if series is None else series  # ask | always | never
         self._covers: list[ImportResult] = []  # complete albums whose file's cover was never compared
@@ -605,6 +606,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
 
     def _import_matched(self, path: str, matches: Optional[list[Match]], defer_fetch: bool,
                         chosen: Optional[tuple]) -> ImportResult:
+        self._identical_to_trash = []  # what the file before it wanted replaced is not this file's
         info, md5 = self._analysis(path)
         logger.debug("%s: %s, %s page(s), %s", os.path.basename(path), info.format, info.page_count,
                      "read ahead" if path in self._analysed else "read here")
@@ -646,9 +648,11 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         if not existed and not self.pretend:
             self._journal.created_album = album_id
         note = "; ".join(n for n in (note, damaged) if n)
-        if album_action == "replace" and others:
-            self._trash_others(others, path)
-            note = "; ".join(n for n in (note, f"{len(others)} replaced file(s) are in the trash (`bdnex trash`)") if n)
+        replaced = list(dict.fromkeys([*(others if album_action == "replace" else []), *self._identical_to_trash]))
+        self._identical_to_trash = []
+        if replaced:
+            self._trash_others(replaced, path)
+            note = "; ".join(n for n in (note, f"{len(replaced)} replaced file(s) are in the trash (`bdnex trash`)") if n)
         self._journal.new_file = self.library.get_file(path) is None
         self.library.add_analysed(info, md5, album_id)
         self._journal.linked = True
@@ -758,7 +762,8 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         if action == "keep_both":
             return None
         if action == "replace":
-            self._trash_others(same, path)
+            if not self.pretend:  # a preview trashes nothing, and nothing is trashed for a file that ends up unlinked or skipped:
+                self._identical_to_trash = same  # it is done when the new file is linked (`_import_matched`)
             return None
         self._log(path, DUPLICATE)
         return ImportResult(path, DUPLICATE, note=f"identical to {same[0]}")
@@ -774,7 +779,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         if not info.series:
             keys = {k: v for k, v in keys.items() if k == "title"}
         others = [f["path"] for f in self.library.files_matching_album(
-            self.source.name, candidate.source_id, keys, path)]
+            self.source.name, candidate.source_id, keys, path) if f["path"] not in self._identical_to_trash]  # already chosen to be replaced
         if not others:
             return "none", []
         return self._resolve_duplicate(path, others, "album already linked"), others

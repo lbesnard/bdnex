@@ -6,6 +6,17 @@ command runs, never while an import is fetching).
 
 ## Unreleased
 
+### Fixed
+- Import with `duplicates.action: replace` (or "replace" chosen when asked): the identical file already in the library is now moved to the trash only when the new file is actually linked. Before, a preview (`import -n`) and a file left unmatched (you chose none of the candidates) still trashed the old file, leaving the album with no file. The report says how many replaced files are in the trash.
+- `bdnex duplicates --covers`: a spare version is no longer listed as a "similar cover" of its own album (it has that cover by design), and blank or uniform first pages are no longer grouped together as one big "same book" group.
+- Review screen: a series with one album and no volume (a one-shot such as Scalp), given by its address or picked as a SERIES, links that album to the one file you chose when the file's name has no number; before it said "none with a volume number" and changed nothing.
+- Review screen: in the `a` search each hit says in its own column whether it is a **SERIES** (each file gets its volume) or one **album**, with a header line above the list.
+- Review screen: a link that fails (a file that moved, a locked library) is shown on its row and in the log; it no longer closes the screen. A series link no longer overwrites a file you decided while the question was open. The volumes box refuses digits like `²` instead of crashing.
+- `bdnex review --batch`: the "about how many files" total no longer counts files already checked or passed over, so the "Check the next batch?" question is not asked when nothing is left.
+- Review screen: `a` on one file whose album has no volume (a one-shot such as `OS`) links that file to the album you picked instead of refusing; a refusal is now in the log, and says to use `o` for one file.
+- Import: a failure after a file was linked (an unexpected error, Ctrl-C) now takes the link and the album created for it back, as Back does; before the report said FAILED while the library kept the link. Going Back could also make the next file be taken for one already completed (its album page was then never filled); fixed.
+- Review screen: a fetch no longer reconfigures the logging from its thread (log lines could appear twice in the panel, and later warnings went to a closed one), and the "Fetching ... (Ctrl-C leaves them)" line after quitting is written to the terminal, not to a redirected stream, so it is no longer lost.
+
 ### Changed
 - `bdnex import` opens the library once for the whole result list instead of once per line (thousands of opens on a big run), and the review screen no longer keeps everything its background imports print in memory for the whole session.
 - Starting a command that needs the album list (`import`, `candidates`, the review screen's album search, `ls --sitemap`) is about 3.4 s faster on a list of 372,000 albums (4.1 s to 0.65 s): the parsed list is kept in the library (a `source_cache` row of kind `index`, about 14 MB, no schema change) and read back while the stored sitemaps are the same ones; `bdnex init` rebuilds it when they change. A read-only library just parses as before.
@@ -71,16 +82,6 @@ command runs, never while an import is fetching).
 - **Breaking:** the import options `--no-fetch`, `--retry-partial` and `--recache` are gone (`--match`, `--fetch`,
   `--fetch --force`); the config option `match.use_facts` is gone (`bdnex config --update`).
 - `bdnex --help` groups the commands by task.
-
-### Fixed
-- `bdnex duplicates --covers`: a spare version is no longer listed as a "similar cover" of its own album (it has that cover by design), and blank or uniform first pages are no longer grouped together as one big "same book" group.
-- Review screen: a series with one album and no volume (a one-shot such as Scalp), given by its address or picked as a SERIES, links that album to the one file you chose when the file's name has no number; before it said "none with a volume number" and changed nothing.
-- Review screen: in the `a` search each hit says in its own column whether it is a **SERIES** (each file gets its volume) or one **album**, with a header line above the list.
-- Review screen: a link that fails (a file that moved, a locked library) is shown on its row and in the log; it no longer closes the screen. A series link no longer overwrites a file you decided while the question was open. The volumes box refuses digits like `²` instead of crashing.
-- `bdnex review --batch`: the "about how many files" total no longer counts files already checked or passed over, so the "Check the next batch?" question is not asked when nothing is left.
-- Review screen: `a` on one file whose album has no volume (a one-shot such as `OS`) links that file to the album you picked instead of refusing; a refusal is now in the log, and says to use `o` for one file.
-- Import: a failure after a file was linked (an unexpected error, Ctrl-C) now takes the link and the album created for it back, as Back does; before the report said FAILED while the library kept the link. Going Back could also make the next file be taken for one already completed (its album page was then never filled); fixed.
-- Review screen: a fetch no longer reconfigures the logging from its thread (log lines could appear twice in the panel, and later warnings went to a closed one), and the "Fetching ... (Ctrl-C leaves them)" line after quitting is written to the terminal, not to a redirected stream, so it is no longer lost.
 
 ### Added
 - API: `GET /api/review/batch` returns the next files to check as `bdnex review --batch` shows them (doubtful, `unmatched`, `all`, `again`, a query, a size), and `POST /api/review/{file_id}/decide` keeps, unlinks or leaves any file of a batch, flagged or not, and marks it checked.
