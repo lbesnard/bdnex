@@ -36,6 +36,8 @@ guides/docker
 guides/configuration
 ```
 
+bdnex is free software under the GNU Affero General Public License, version 3 or later (see `LICENSE` in the repository).
+
 ```{toctree}
 :maxdepth: 2
 :caption: Reference

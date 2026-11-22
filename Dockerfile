@@ -3,7 +3,8 @@ FROM python:3.12-slim
 
 # Links the image (ghcr.io) to this repository: it shows under the repo's Packages and takes its visibility.
 LABEL org.opencontainers.image.source="https://github.com/lbesnard/bdnex" \
-      org.opencontainers.image.description="bdnex: a library manager for French comics, with its web page"
+      org.opencontainers.image.description="bdnex: a library manager for French comics, with its web page" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later"
 
 # bsdtar reads CBR (RAR) files; build tools are not needed, every dependency has a wheel.
 RUN apt-get update \
