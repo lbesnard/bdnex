@@ -282,7 +282,26 @@ def read_covers(path: str, fmt: str, saved) -> tuple[Optional[bytes], Optional[b
 
 
 class NoVolumeFound(Exception):
-    """A series page was read, but none of the files finds its volume in it: the message says what each side has."""
+    """A series page was read, but none of the files finds its volume in it: the message says what each side has.
+
+    ``none_matched``: no file found its volume at all (not the chapter guard: some did): these files are probably another series than the
+    page's, or one the site does not have, and ``name`` is the page's series name."""
+
+    def __init__(self, message: str, name: str = "", none_matched: bool = False):
+        super().__init__(message)
+        self.name, self.none_matched = name, none_matched
+
+
+def span(numbers) -> str:
+    """Volume numbers in words: ``1 to 4``, ``5 and 6``, ``1, 3 and 7 to 9``."""
+    ordered = sorted(set(numbers))
+    runs, start = [], 0
+    for index in range(1, len(ordered) + 1):
+        if index == len(ordered) or ordered[index] != ordered[index - 1] + 1:
+            runs.append(ordered[start:index])
+            start = index
+    parts = [str(run[0]) if len(run) == 1 else f"{run[0]} and {run[1]}" if len(run) == 2 else f"{run[0]} to {run[-1]}" for run in runs]
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1]
 
 
 def read_series_address(settings, address: str):
@@ -326,10 +345,16 @@ def propose_for_series_address(source, address: str, paths: list[str], found=Non
         proposal.mapping[paths[0]] = albums[0]  # a one-shot series (one album, no volume) and one file without a number: that album
     if not proposal.mapping:
         listed = sorted(by_volume)
+        asked = sorted({v for v in volumes.values() if v is not None})
+        if listed and asked:  # the page has numbered albums and the files ask for others: another series, or one the site does not have
+            raise NoVolumeFound(
+                f"{name}: the page lists volume(s) {span(listed)}; these {len(paths)} file(s) ask for {span(asked)}. They look like "
+                "another series than this page's, or one the site does not have.", name=name, none_matched=True)
         raise NoVolumeFound(
-            f"{name}: its page lists {len(albums)} album(s), " + (f"with the volumes {', '.join(map(str, listed[:12]))}" if listed else
+            f"{name}: its page lists {len(albums)} album(s), " + (f"with the volumes {span(listed)}" if listed else
             "none with a volume number (collected editions, `INT`, or one-shots?)")
-            + "; the files ask for " + (", ".join(str(v) for v in sorted({v for v in volumes.values() if v is not None})[:12]) or "no volume") + ".")
+            + "; the files ask for " + (span(asked) if asked else "no volume") + ".", name=name,
+            none_matched=bool(asked) and not listed and len(paths) > 1)
     return proposal
 
 
