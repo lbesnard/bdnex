@@ -292,3 +292,54 @@ def test_after_a_link_the_column_says_where_the_file_would_go_and_it_is_not_cut(
     drive(db, script, columns=300)
     assert seen["before"] == "" and seen["after"].endswith(".cbz") and "Forge" in seen["after"]  # it stayed '-' after the link
     assert seen["cell"] == seen["after"] and seen["width"] > 44 and seen["width"] >= len(seen["after"])  # more than 44 characters when the screen can show them
+
+
+def test_d_shows_the_metadata_of_the_album_beside_the_detail_and_e_changes_it(env):
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        panel = app.query_one("#meta")
+        seen["closed"] = panel.display
+        app.query_one("DataTable").move_cursor(row=0)  # linked to the album "Redwin" (series Nains, T1, 2015, Soleil)
+        await pilot.press("d")
+        await pilot.pause()
+        seen["open"] = panel.display
+        seen["text"] = str(panel.render())
+        await pilot.press("e")  # an album of the site: its fields, not a refusal
+        await pilot.pause()
+        screen = app.screen
+        seen["form"] = screen.__class__.__name__
+        seen["fields"] = [key for key, _, _ in screen.fields]
+        screen.query_one("#f-title").value = "Redwin de la Forge"
+        screen.query_one("#f-year").value = "2016"
+        screen.action_accept()
+        await pilot.pause()
+        row = app.rows[0]
+        seen["row"] = (row.album, str(panel.render()))
+
+    drive(db, script)
+    assert seen["closed"] is False and seen["open"] is True
+    assert "Redwin" in seen["text"] and "Nains" in seen["text"] and "2015" in seen["text"] and "e edits these" in seen["text"]
+    assert seen["form"] == "EditScreen" and "series" not in seen["fields"] and "title" in seen["fields"]  # a series is renamed for all its albums
+    assert "Redwin de la Forge" in seen["row"][0] and "2016" in seen["row"][1] and "changed by you" in seen["row"][1]  # the table and the panel follow
+    from bdnex.library import Library
+
+    with Library(db) as lib:
+        album = lib.get_album(lib.get_file(files["wrong"])["album_id"])
+        assert album["title"] == "Redwin de la Forge" and album["year"] == 2016 and album["series"] == "Nains"
+        assert (album["extra"].get("edits") or {}).get("title") == "Redwin de la Forge"  # kept as the person's own edit: a re-import keeps it
+
+
+def test_the_panel_says_when_the_file_has_no_album(env):
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        app.query_one("DataTable").move_cursor(row=2)  # the loose file
+        await pilot.press("d")
+        await pilot.pause()
+        seen["text"] = str(app.query_one("#meta").render())
+
+    drive(db, script)
+    assert "No album" in seen["text"]

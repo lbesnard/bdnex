@@ -677,7 +677,9 @@ class ReviewApp(App):
     #queue-badge { dock: right; width: auto; height: 1; padding: 0 1; background: red; color: white; text-style: bold; display: none; }
     #loading { height: 2fr; min-height: 8; content-align: center middle; text-align: left; }
     #table { height: 2fr; min-height: 8; }
-    #detail { height: 1fr; min-height: 8; border-top: solid $accent; padding: 0 1; overflow-y: auto; }
+    #detailrow { height: 1fr; min-height: 8; border-top: solid $accent; }
+    #detail { width: 1fr; height: 100%; padding: 0 1; overflow-y: auto; }
+    #meta { width: 45%; height: 100%; border-left: solid $accent; padding: 0 1; overflow-y: auto; display: none; }
     #log { height: 7; border-top: solid $accent; padding: 0 1; color: $text-muted; }
     """
     BINDINGS = [
@@ -697,6 +699,7 @@ class ReviewApp(App):
         Binding("v", "toggle_log", "Log"),
         Binding("y", "copy_log", "Copy the log"),
         Binding("a", "attach", "Attach marked to a series"),
+        Binding("d", "metadata", "Album metadata panel"),
         Binding("w", "waiting", "Waiting questions"),
         Binding("e", "edit", "Edit by hand"),
         Binding("b", "previous_batch", "Previous batch"),
@@ -749,7 +752,9 @@ class ReviewApp(App):
         yield Static("", id="queue-badge")
         yield Static("", id="loading")
         yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
-        yield Static("", id="detail")
+        with Horizontal(id="detailrow"):
+            yield Static("", id="detail")
+            yield Static("", id="meta")
         yield RichLog(id="log", max_lines=500, wrap=True, markup=False, highlight=False)
         yield Footer()
 
@@ -1127,6 +1132,55 @@ class ReviewApp(App):
         if row.message:
             text.append(f"  {row.message}\n", style="bold yellow" if row.busy else "yellow")
         self.query_one("#detail", Static).update(text)
+        self.show_meta(row)
+
+    # -- the metadata the library holds for the album of the file under the cursor (`d`), which `e` can change
+    def action_metadata(self) -> None:
+        panel = self.query_one("#meta", Static)
+        panel.display = not panel.display
+        row = self.current()
+        if panel.display and row is not None:
+            self.show_meta(row)
+
+    def show_meta(self, row: batch.Row) -> None:
+        panel = self.query_one("#meta", Static)
+        if not panel.display:
+            return
+        file = self.library.get_file(row.path) or {}
+        album = self.library.get_album(file["album_id"]) if file.get("album_id") is not None else None
+        text = Text()
+        if album is None:
+            text.append("No album: the file has no metadata of its own to show.\n`o` searches one, `e` writes one by hand.", style="dim")
+            panel.update(text)
+            return
+        edits = (album.get("extra") or {}).get("edits") or {}
+
+        def line(name: str, value) -> None:
+            if value in (None, "", [], {}):
+                return
+            text.append(f"{name:<11}", style="dim")
+            text.append(f"{value}", style="bold yellow" if name.strip().lower() in {k.lower() for k in edits} else "")
+            text.append("\n")
+
+        text.append(album["title"] + "\n", style="bold")
+        line("series", album.get("series"))
+        line("volume", album.get("volume") if album.get("volume") is not None else album.get("alternate_number"))
+        date = "-".join(f"{album[k]:02d}" if k != "year" else str(album[k]) for k in ("year", "month", "day") if album.get(k))
+        line("date", date)
+        line("publisher", album.get("publisher"))
+        line("language", album.get("language"))
+        line("pages", album.get("pages"))
+        line("isbn", album.get("isbn"))
+        for role, names in (album.get("credits") or {}).items():
+            line(role.lower(), "; ".join(names))
+        line("genres", "; ".join(album.get("genres") or []))
+        line("source", f"{album.get('source')} {album.get('source_id')}")
+        if album.get("summary"):
+            text.append("\n" + album["summary"] + "\n", style="italic")
+        if edits:
+            text.append("\nchanged by you (kept when the album is read again): " + ", ".join(sorted(edits)) + "\n", style="yellow")
+        text.append("\ne edits these · d closes", style="dim")
+        panel.update(text)
 
     def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
         self.show_detail(event.cursor_row)
@@ -1263,11 +1317,46 @@ class ReviewApp(App):
         file = self.library.get_file(row.path) or {}
         album_id = file.get("album_id")
         if album_id is not None and not manual.is_manual(self.library, album_id):
-            self.notify("This file has an album of the site: `u` unlinks it first, or `bdnex edit` changes its fields.", severity="warning")
+            self.edit_metadata(row, album_id)  # an album of the site: its fields can be changed (kept when it is read again), not rebuilt
             return
         values = manual.form_of(self.library, album_id) if album_id is not None else {**manual.guess(row.path), "title": ""}
         self.push_screen(EditScreen(f"Metadata of {os.path.basename(row.path)}", values, manual.FIELDS),
                          lambda got: self.save_one(row, album_id, got) if got else None)
+
+    def edit_metadata(self, row: batch.Row, album_id: int) -> None:
+        """The metadata the library holds for the album of the file, in the form of a hand-written album (the series name is left out: it
+        would rename the series of every album of it). What changes is saved as the person's own edits (`bdnex edit`): a later import or
+        `--fetch --force` does not undo them."""
+        from bdnex.library import manual
+
+        values = manual.form_of(self.library, album_id)
+        fields = [f for f in manual.FIELDS if f[0] != "series"]
+        self.push_screen(EditScreen(f"Metadata of {values.get('title') or 'the album'} (saved as your own edits)", values, fields),
+                         lambda got: self.save_metadata(row, album_id, got) if got else None)
+
+    def save_metadata(self, row: batch.Row, album_id: int, values: dict) -> None:
+        from bdnex.library import manual
+
+        album = self.library.get_album(album_id) or {}
+        values = {**values, "series": album.get("series") or ""}  # unchanged: a series is renamed with `bdnex edit`, for all its albums
+        try:
+            manual.update(self.library, album_id, values)
+        except manual.FormError as err:
+            self.notify(str(err), severity="error")
+            return
+        except Exception as err:  # a locked library: said, nothing was half written (one transaction)
+            self.notify(f"Not saved ({err}): try again", severity="error", timeout=8)
+            return
+        album = self.library.get_album(album_id) or {}
+        file = self.library.get_file(row.path) or {}
+        from bdnex.ui.describe import label
+
+        row.album, row.facts = label(album), batch.facts_of(album, file)
+        self.refresh_dest(row)  # a title or a volume changes the name a move would give
+        self.refresh_row(row)
+        self.show_meta(row)
+        logger.info("%s: metadata of the album %s changed by hand", os.path.basename(row.path), album_id)
+        self.notify("Saved: kept when the album is read again. `bdnex write` puts it in the file.", timeout=6)
 
     def edit_series(self, rows: list, series: str = "") -> None:
         """The form that writes one series by hand for these files: the volume of each is read from its name, the series name is the folder's
