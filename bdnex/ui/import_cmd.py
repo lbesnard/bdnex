@@ -460,7 +460,12 @@ def _place(args, settings, library, report, prompter=None):
     from bdnex.organizer.organizer import COPY, MOVE, WRITE, Organizer
 
     rows = [row for row in (library.get_file(r.path) for r in report.results if r.outcome in ("tagged", "partial")) if row]
+    flagged = [row for row in rows if row.get("review")]  # the match check says it looks wrong: its album's tags must not be written into it
+    rows = [row for row in rows if not row.get("review")]  # and it must not be filed under that album's series
     plan, leave, notes = [], [], []
+    if flagged:
+        notes.append(f"{len(flagged)} file(s) whose match looks wrong were not written or moved: `bdnex review` decides them, then "
+                     "`bdnex write` / `bdnex move` place them.")
     from_sources = []  # rows under a configured source: that source's mode decides, unless a flag does
     if not (args.move or args.copy):
         from_sources = [row for row in rows if settings.source_for(row["path"])]
