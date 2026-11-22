@@ -220,3 +220,74 @@ def test_which_endpoint_served_each_page_is_logged_and_a_fallback_is_not_silent(
     assert "http://down/v1 failed (refused): trying the next endpoint" in text  # shown by default (a warning)
     assert "fetched through http://up/v1 in" in text  # which one did the work (shown with -v)
     assert any(r.levelno == logging.WARNING for r in caplog.records) and any(r.levelno == logging.INFO for r in caplog.records)
+
+
+# ---- how flaresolverr_fetch treats failures (a fake `requests.post`: nothing touches the network)
+class _Answers:
+    """The answers of fake FlareSolverr endpoints, by address, in the order they are asked; every request is recorded."""
+
+    def __init__(self, **by_endpoint):
+        self.by_endpoint, self.asked = {k.replace("_", "."): list(v) for k, v in by_endpoint.items()}, []
+
+    def __call__(self, endpoint, **kwargs):
+        self.asked.append(endpoint)
+        answer = self.by_endpoint[endpoint].pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+
+        class Resp:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return answer
+
+        return Resp()
+
+
+def _two_endpoints(monkeypatch, answers):
+    from bdnex.importer.bedetheque import fetchers
+
+    import itertools
+
+    fetchers._down.clear()
+    fetchers._turn = itertools.count()  # the round-robin starts at the first endpoint: the order does not depend on the tests before
+    _config_with_endpoint(monkeypatch, list(answers.by_endpoint))
+    monkeypatch.setattr("requests.post", answers)
+    return fetchers
+
+
+def ok(page="<html>page</html>", status=200):
+    return {"status": "ok", "solution": {"response": page, "status": status}}
+
+
+def test_a_page_the_site_says_is_not_there_is_reported_at_once_and_no_endpoint_is_marked_down(monkeypatch):
+    answers = _Answers(**{"http://a.invalid/v1": [ok("<html>Page not found</html>", 404)], "http://b.invalid/v1": [ok()]})
+    fetchers = _two_endpoints(monkeypatch, answers)
+    with pytest.raises(fetchers.PageUnavailable, match="HTTP 404"):  # an OSError: the callers' `fetch_errors` catch it
+        flaresolverr_fetch(ONESHOT_URL)
+    assert len(answers.asked) == 1 and fetchers._down == {}  # the other endpoint was not asked, and nothing was marked down
+    assert issubclass(fetchers.PageUnavailable, OSError)
+
+
+def test_a_rate_limit_or_server_error_page_is_not_returned_as_a_page_and_the_next_endpoint_is_tried(monkeypatch):
+    answers = _Answers(**{"http://a.invalid/v1": [ok("<html>Access denied</html>", 429)], "http://b.invalid/v1": [ok("<html>real</html>")]})
+    fetchers = _two_endpoints(monkeypatch, answers)
+    assert flaresolverr_fetch(ONESHOT_URL) == b"<html>real</html>"  # not the 429 body, which used to be returned and cached
+    assert len(answers.asked) == 2 and list(fetchers._down) == ["http://a.invalid/v1"]  # the endpoint that was refused is left alone for a while
+
+
+def test_a_malformed_answer_falls_through_to_the_next_endpoint(monkeypatch):
+    answers = _Answers(**{"http://a.invalid/v1": [{"status": "ok", "solution": {"response": None}}],
+                          "http://b.invalid/v1": [ok("<html>real</html>")]})
+    _two_endpoints(monkeypatch, answers)
+    assert flaresolverr_fetch(ONESHOT_URL) == b"<html>real</html>"  # it used to raise AttributeError and never try the second one
+    answers = _Answers(**{"http://a.invalid/v1": [{"status": "ok", "solution": "nope"}], "http://b.invalid/v1": [ok("<html>real</html>")]})
+    _two_endpoints(monkeypatch, answers)
+    assert flaresolverr_fetch(ONESHOT_URL) == b"<html>real</html>"
+
+
+def test_an_answer_without_a_status_is_still_a_page_as_before(monkeypatch):
+    answers = _Answers(**{"http://a.invalid/v1": [{"status": "ok", "solution": {"response": "<html>old</html>"}}]})
+    _two_endpoints(monkeypatch, answers)
+    assert flaresolverr_fetch(ONESHOT_URL) == b"<html>old</html>"
