@@ -164,11 +164,12 @@ def test_komga_and_update_are_tasks_with_checked_options(env):
     assert {"update", "komga-show", "komga-push"} <= listed
     shown = web.post("/api/jobs", json={"command": "komga-show", "query": ["series:nains"], "only": "books"}).json()
     assert shown["arguments"] == ["show", "series:nains", "--only", "books"]
+    wait(web, shown["id"])  # one job at a time: the next one is refused (409) while this one still runs, which a slow machine shows
     bad = web.post("/api/jobs", json={"command": "komga-show", "only": "everything"})
     assert bad.status_code == 400
     push = web.post("/api/jobs", json={"command": "komga-push", "fields": ["title", "summary"], "with_review": True})
     assert push.json()["arguments"] == ["push", "-n", "--with-review", "--fields", "title,summary"]
-    wait(web, shown["id"])
+    wait(web, push.json()["id"])
 
 
 # ---------------------------------------------------------------- history
