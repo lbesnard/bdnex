@@ -214,3 +214,58 @@ def test_relocating_a_folder_also_follows_the_trash_the_undo_list_and_the_staged
     assert (move["old_path"], move["new_path"]) == (str(new / "a.cbz"), str(new / "b.cbz"))  # and so does `undo`
     assert library.conn.execute("SELECT origin FROM staged_files").fetchone()[0] == str(new / "elsewhere.cbz")
     library.close()
+
+
+# ------------------------------------------------------------------ two processes opening an old library at once
+def test_two_processes_opening_an_old_library_at_once_both_end_up_with_the_current_schema(tmp_path):
+    import multiprocessing
+
+    from bdnex.library import Library
+    from bdnex.library.database import SCHEMA_VERSION
+    from bdnex.library.schema import MIGRATIONS
+
+    path = tmp_path / "old.sqlite"
+    import sqlite3
+
+    conn = sqlite3.connect(path)  # a library as an older bdnex left it: schema v10
+    for statement in MIGRATIONS[:10]:
+        conn.executescript(statement)
+    conn.execute("PRAGMA user_version = 10")
+    conn.commit()
+    conn.close()
+
+    def open_it(queue):
+        try:
+            with Library(path) as library:
+                queue.put(("ok", library.schema_version))
+        except Exception as err:
+            queue.put(("error", repr(err)))
+
+    context = multiprocessing.get_context("fork")
+    queue = context.Queue()
+    workers = [context.Process(target=open_it, args=(queue,)) for _ in range(4)]
+    for worker in workers:
+        worker.start()
+    results = [queue.get(timeout=60) for _ in workers]
+    for worker in workers:
+        worker.join(10)
+    assert results == [("ok", SCHEMA_VERSION)] * 4, results  # the second one used to fail on a column that was already there
+
+
+# ------------------------------------------------------------------ `::regex`
+def test_a_regex_that_can_take_for_ever_is_refused_and_a_plain_one_is_not():
+    import pytest
+
+    from bdnex.library.query import QueryError, check_regex, regexp
+
+    for bad in (r"(a+)+$", r"(.*)*x", r"(\w+\s?)+$", "x" * 301):
+        with pytest.raises(QueryError):
+            check_regex(bad)
+    for good in (r"^(a|b)+$", r"t\d+", r"^nains?\b", r"(?i)redwin|forge", r"[a-z]+"):
+        check_regex(good)
+    long_value = "a" * 100000 + "!"
+    import time
+
+    started = time.monotonic()
+    regexp(r"^(a|aa)+$", long_value)  # a value is cut at 2000 characters: it can not run for ever on a summary of pages
+    assert time.monotonic() - started < 5

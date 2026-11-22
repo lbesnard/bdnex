@@ -114,7 +114,35 @@ class Library:
         self._adopt_root()
 
     # ------------------------------------------------------------------ setup
+    @contextlib.contextmanager
+    def _migration_lock(self):
+        """Only one process migrates a library at a time: a second one (the web page and a command, two commands) waits here, then finds nothing
+        left to do. Without it both read the old version, both ran the step, and the second failed on a column that was already there."""
+        if self.path == ":memory:":
+            yield
+            return
+        try:
+            import fcntl
+        except ImportError:  # not a platform with flock: as before
+            yield
+            return
+        try:
+            handle = open(self.path, "rb")  # the library file itself: a lock file beside it would be one more thing left on the disk
+        except OSError:  # not there yet (a new library): nothing to race for
+            yield
+            return
+        with handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)  # (a BSD lock: SQLite's own locks on the same file are another kind and do not clash)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+
     def _migrate(self):
+        with self._migration_lock():
+            self._migrate_locked()
+
+    def _migrate_locked(self):
         current = self.conn.execute("PRAGMA user_version").fetchone()[0]
         if current > SCHEMA_VERSION:
             raise SchemaTooNewError(
