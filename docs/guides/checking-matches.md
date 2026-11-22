@@ -91,6 +91,7 @@ When you link a file to an album that **already has another file**, it is linked
 | a click on a **column header**, or `1`–`8` | sort by that column (`1` is `#`, the order of the batch; `2` File, `3` Folder, `4` Album now, `5` Page, `6` Match, `7` Cover, `8` State); the same column again reverses it, and the title says `by cover ▼`. Rows without a value (no album, no score) stay last. The cursor stays on the same file |
 | `k` | keep the match (the flag goes, the file is marked `checked=keep`) |
 | `u` | unlink the file (remembered as skipped, so `bdnex import --skipped --auto=all` decides it again) |
+| `t` | **this file's candidates**: the few albums the matcher thinks it could be (the list `bdnex candidates` prints), best first, each with its score, year, publisher and what the evidence says, and below it where the highlighted score comes from. Quick, because it is not a search of the whole list: Enter links the highlighted one, Ctrl-O opens its page, `o` goes on to the big search, Esc goes back. Use it when two editions of a book score alike |
 | `o` | **another album**: a search box in the screen over the whole album list (the sitemaps), starting from the file's name. It filters as you type like `fzf`: words in any order, accents ignored, and a fuzzy match when a letter is missing. Enter picks, Ctrl-O opens the page, Ctrl-U clears, Esc goes back |
 | `O` | the real `fzf`, when it is installed (the screen steps aside for it and comes back) |
 | `i` | an album's page address or number |

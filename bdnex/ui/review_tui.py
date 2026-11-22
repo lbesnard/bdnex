@@ -176,6 +176,119 @@ def fuzzy_search(hub: SourceHub, text: str, limit: int = SEARCH_LIMIT, series: b
     return album_search.search_folded(hub.catalogue, hub.folded, text, limit, hub.cache)
 
 
+CANDIDATES_SHOWN = 8
+VERDICT_STYLE = {"confirmed": "green", "contradicted": "red", "doubtful": "yellow", "unverified": "dim"}
+
+
+def candidates_of(hub: SourceHub, path: str, album_id: Optional[int], limit: int = CANDIDATES_SHOWN) -> list:
+    """The few albums this file could be, best first, as ``[(candidate, entry)]``: what ``bdnex candidates`` lists (the matcher's own
+    ranking, with the evidence of each score), not a search of the whole album list. Runs in the thread of the album list."""
+    source = hub.source
+    if hasattr(source, "library") and hasattr(source, "explain"):
+        from bdnex.importer.candidates import describe_candidate
+        from bdnex.importer.matching import find_matches
+
+        warm = getattr(source, "warm", None)
+        if warm:
+            warm()
+        file = source.library.get_file(path) or {"path": path}
+        return [(m.candidate, describe_candidate(source.library, source, m, file, album_id)) for m in find_matches(source, path, limit=limit)]
+    from bdnex.importer.matching import query_from_filename  # a source that only searches by text: its best guesses, without evidence
+
+    return [(c, {"score": round(s), "album": c.name, "url": c.url, "year": None, "publisher": None, "complete": False, "current": False,
+                 "why_score": [], "verdict": "unverified", "for": [], "against": []})
+            for c, s in source.candidates(query_from_filename(path), limit=limit)]
+
+
+class CandidatesScreen(ModalScreen):
+    """The albums this one file could be, best first, with where each score comes from: Enter links the highlighted one.
+    Few and quick (the matcher's own list); `o` goes on to the search of the whole album list."""
+
+    BINDINGS = [Binding("escape", "back", "Back"), Binding("o", "search", "Search all albums"), Binding("ctrl+o", "open", "Open the page"),
+                Binding("down", "move(1)", show=False, priority=True), Binding("up", "move(-1)", show=False, priority=True)]
+    CSS = """
+    CandidatesScreen { align: center middle; }
+    #cands { width: 90%; height: 85%; border: round $accent; padding: 1 2; background: $surface; }
+    #choices { height: auto; max-height: 12; }
+    #evidence { height: 1fr; margin-top: 1; }
+    """
+
+    def __init__(self, hub: SourceHub, path: str, album_id: Optional[int], title: str):
+        super().__init__()
+        self.hub, self.path, self.album_id, self.heading = hub, path, album_id, title
+        self.found: list = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="cands"):
+            yield Label(Text(self.heading, style="bold"))
+            yield Label("looking...", id="state")
+            yield OptionList(id="choices")
+            yield Static("", id="evidence")
+            yield Label(Text("Enter links it · ↑↓ move · Ctrl-O opens its page · o searches every album · Esc goes back", style="dim"))
+
+    def on_mount(self) -> None:
+        self.query_one(OptionList).focus()
+        self.run_worker(self.find())
+
+    async def find(self) -> None:
+        try:
+            found = await asyncio.wrap_future(self.hub.run(lambda hub: candidates_of(hub, self.path, self.album_id)))
+        except Exception as err:  # the album list could not be loaded
+            if self.is_attached:
+                self.query_one("#state", Label).update(Text(f"the album list is not available: {err}", style="red"))
+            return
+        if not self.is_attached or not self.query("#choices"):
+            return
+        self.found = found
+        options = self.query_one(OptionList)
+        options.add_options([Option(self.line(entry)) for _, entry in found])
+        self.query_one("#state", Label).update(Text(f"{len(found)} candidate(s)" if found else "nothing in the album list looks like this file: try `o`",
+                                                    style="dim" if found else "yellow"))
+        if found:
+            options.highlighted = 0
+
+    @staticmethod
+    def line(entry: dict) -> Text:
+        text = Text(f"{entry['score']:>3}  ")
+        text.append("* " if entry["current"] else "  ")
+        text.append(entry["album"], style="bold")
+        extra = " ".join(str(part) for part in (entry["year"], entry["publisher"]) if part)
+        if extra:
+            text.append(f"  {extra}", style="dim")
+        verdict = entry["verdict"] + ("" if entry["complete"] else ", page not read")
+        text.append(f"  [{verdict}]", style=VERDICT_STYLE.get(entry["verdict"], "dim"))
+        return text
+
+    def on_option_list_option_highlighted(self, event: OptionList.OptionHighlighted) -> None:
+        if event.option_index is None or not 0 <= event.option_index < len(self.found):
+            return
+        candidate, entry = self.found[event.option_index]
+        lines = [Text("where the score comes from", style="dim"), *[Text(f"  = {why}") for why in entry["why_score"]]]
+        lines += [Text(f"  + {text}", style="green") for text in entry["for"]] + [Text(f"  - {text}", style="red") for text in entry["against"]]
+        lines.append(Text(candidate.url, style="dim"))
+        self.query_one("#evidence", Static).update(Text("\n").join(lines))
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        if 0 <= event.option_index < len(self.found):
+            self.dismiss(self.found[event.option_index][0])
+
+    def action_move(self, step: int) -> None:
+        options = self.query_one(OptionList)
+        if self.found:
+            options.highlighted = max(0, min(len(self.found) - 1, (options.highlighted or 0) + step))
+
+    def action_open(self) -> None:
+        index = self.query_one(OptionList).highlighted
+        if index is not None and 0 <= index < len(self.found):
+            webbrowser.open(self.found[index][0].url)
+
+    def action_search(self) -> None:
+        self.dismiss("search")
+
+    def action_back(self) -> None:
+        self.dismiss(None)
+
+
 class FuzzyScreen(ModalScreen):
     """Search the whole album list as you type (like ``fzf``): Enter picks, Ctrl-O opens the page, Esc goes back."""
 
@@ -476,6 +589,7 @@ class ReviewApp(App):
     BINDINGS = [
         Binding("k", "keep", "Keep"),
         Binding("u", "unlink", "Unlink"),
+        Binding("t", "top", "This file's candidates"),
         Binding("o", "other", "Other album (search)"),
         Binding("O", "other_fzf", "Search with fzf", show=False),
         Binding("i", "ident", "Id / address"),
@@ -1177,6 +1291,20 @@ class ReviewApp(App):
         from bdnex.importer.matching import query_from_filename
 
         return query_from_filename(row.path)
+
+    def action_top(self) -> None:
+        """The few albums this file could be, with the evidence (the list of `bdnex candidates`): quick, and one Enter links the right one."""
+        row = self.idle()
+        if row is None:
+            return
+
+        def picked(answer) -> None:
+            if answer == "search":
+                self.action_other()
+            elif answer is not None:
+                self.link(row, answer.url, answer)
+
+        self.push_screen(CandidatesScreen(self.hub, row.path, row.album_id, f"Which album is {row.path.rsplit('/', 1)[-1]}?"), picked)
 
     def action_other(self) -> None:
         """Another album: a search box over the whole album list, filtered as you type (the fuzzy search of ``fzf``)."""

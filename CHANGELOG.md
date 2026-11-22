@@ -84,6 +84,7 @@ command runs, never while an import is fetching).
 - `bdnex --help` groups the commands by task.
 
 ### Added
+- Review screen: `t` shows the few albums the current file could be (the list `bdnex candidates` prints: score, year, publisher, what the evidence says, and where the score comes from), and Enter links the highlighted one. It is quick, unlike `o`'s search of the whole album list, which is one `o` away from there.
 - API: `GET /api/review/batch` returns the next files to check as `bdnex review --batch` shows them (doubtful, `unmatched`, `all`, `again`, a query, a size), and `POST /api/review/{file_id}/decide` keeps, unlinks or leaves any file of a batch, flagged or not, and marks it checked.
 - Review screen: `b` goes back to the previous batch (with its decisions), and `n` comes forward again.
 - **bdtheque.com as a second place to take an album from** (schema v13, **back up the database first**): give the address of a series page (`https://www.bdtheque.com/series/14922/...`) in the review screen (`i`) or with `bdnex import --album ADDRESS FILE`; the page is fetched with the same fetcher as Bédéthèque's (all its endpoints), kept compressed in its own `bdtheque_pages` table and read into an album with `source: bdtheque`. Only for addresses you give: nothing searches the site.

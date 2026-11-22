@@ -1387,3 +1387,68 @@ def test_what_an_import_prints_in_the_fetch_thread_goes_to_the_panel_and_is_not_
     sink.write(" line\r")
     assert lines[0] == "line 0" and lines[-1] == "partial line" and len(lines) == 1001
     assert sink.getvalue() == ""  # nothing accumulates for the whole session
+
+
+def test_t_lists_the_candidates_of_the_file_and_enter_links_the_highlighted_one(env, monkeypatch):
+    db, files = env
+    release = threading.Event()
+    release.set()
+    _linking(monkeypatch, db, release)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("t")
+        await settle(app, pilot)
+        screen = app.screen
+        seen["screen"] = screen.__class__.__name__
+        seen["found"] = [(c.source_id, entry["score"]) for c, entry in screen.found]
+        await pilot.press("enter")
+        await pilot.pause()
+        seen["status"] = app.rows[0].status
+
+    result, source = drive(db, script)
+    assert seen["screen"] == "CandidatesScreen" and seen["found"] == [("2", 91)]  # the source's own best guesses for this file
+    assert seen["status"] == "linked"
+    with Library(db) as lib:
+        assert lib.get_album(lib.get_file(files["wrong"])["album_id"])["source_id"] == "2"
+
+
+def test_o_from_the_candidates_goes_on_to_the_search_of_every_album(env):
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("t")
+        await settle(app, pilot)
+        await pilot.press("o")
+        await settle(app, pilot)
+        seen["screen"] = app.screen.__class__.__name__
+        await pilot.press("escape")
+
+    drive(db, script)
+    assert seen["screen"] == "FuzzyScreen"
+
+
+def test_a_candidate_line_says_the_score_the_current_album_the_year_and_what_the_evidence_says():
+    entry = {"score": 96, "album": "Bob Morane 04 (Lefrancq) - T01 - L Oiseau de Feu", "year": 1989, "publisher": "Lefrancq",
+             "complete": False, "current": True, "verdict": "unverified", "why_score": [], "for": [], "against": []}
+    text = review_tui.CandidatesScreen.line(entry).plain
+    assert text.startswith(" 96  * Bob Morane 04") and "1989 Lefrancq" in text and text.endswith("[unverified, page not read]")
+    assert "* " not in review_tui.CandidatesScreen.line({**entry, "current": False}).plain[:6]
+
+
+def test_the_candidates_of_a_file_are_the_matchers_ranked_list_with_its_evidence(tmp_path, make_cbz):
+    import types
+
+    from bdnex.importer.bedetheque import Bedetheque
+    from helpers import FakeWeb
+
+    library = Library(":memory:")
+    source = Bedetheque(library, fetch=FakeWeb(), sleep=lambda s: None)
+    source.update_sitemaps()
+    path = make_cbz("Nains - T01 - Redwin de la forge (Smith) [1950].cbz", directory=str(tmp_path))
+    found = review_tui.candidates_of(types.SimpleNamespace(source=source), path, None)
+    assert found and found[0][0].source_id == "245127"
+    entry = found[0][1]
+    assert entry["score"] > 60 and entry["why_score"] and entry["verdict"] and entry["url"] == found[0][0].url
+    library.close()
