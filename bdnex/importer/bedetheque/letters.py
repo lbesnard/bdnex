@@ -76,6 +76,13 @@ def parse_letter_page(content: bytes | str, letter: str = "") -> list[SeriesEntr
     return entries
 
 
+def is_cut(content: bytes | str) -> bool:
+    """Was the page cut short on the way? A whole page ends with ``</html>``: one that stops before it was not received in full. (The number
+    of series it announces is no test of that: it can differ from what is listed for reasons of the site's own.)"""
+    page = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else content
+    return "</html>" not in page[-4000:].lower()
+
+
 def announced_count(content: bytes | str) -> Optional[int]:
     """The number of series the page says it has (``<small>5 514 séries</small>``), to tell a cut page from a whole one."""
     page = content.decode("utf-8", errors="replace") if isinstance(content, bytes) else content

@@ -54,7 +54,7 @@ class FakeWeb:
             self.pages[letters.letter_url(letter)] = (
                 _read(os.path.join(_TEST_ROOT, "bandes_dessinees_a.html")) if letter == "a" else
                 (f'<h1>Séries BD : {letter} <small>1 série</small></h1><ul class="bdt-liste"><li><a href="https://www.bedetheque.com/serie-'
-                 f'{900 + ord(letter)}-BD-Serie-{letter}.html"><span class="bdt-liste-libelle"><b>Serie {letter}</b></span></a></li></ul>').encode())
+                 f'{900 + ord(letter)}-BD-Serie-{letter}.html"><span class="bdt-liste-libelle"><b>Serie {letter}</b></span></a></li></ul></body></html>').encode())
         for name in os.listdir(os.path.join(_BDGEST, 'sitemaps')):  # real fixtures replace files 25 and 26
             self.pages["https://www.bedetheque.com/" + name] = _read(os.path.join(os.path.join(_BDGEST, 'sitemaps'), name))
 
