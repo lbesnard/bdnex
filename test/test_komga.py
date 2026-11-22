@@ -21,9 +21,23 @@ def test_match_by_name_and_size_ignores_the_folders():
         ("/home/me/Comics/A/Nains T01.pdf", "b1", "name and size")]
 
 
-def test_a_changed_size_still_matches_a_name_that_is_unique():
-    out = komga.match([file("/c/a.pdf", 10)], [book("b1", "/k/a.pdf", 99)])
+def test_a_changed_size_still_matches_a_name_that_is_unique_in_a_folder_of_the_same_name():
+    out = komga.match([file("/c/Nains/a.pdf", 10)], [book("b1", "/k/Nains/a.pdf", 99)])
     assert out["pairs"][0][2] == "name"
+
+
+def test_a_generic_name_in_another_folder_is_not_taken_for_the_file_when_the_size_differs():
+    """`01.cbz` of one series is not `01.cbz` of another: pairing them would push one series' title, authors and locks onto the other's book."""
+    out = komga.match([file("/c/Nains/01.cbz", 10)], [book("b1", "/k/Elfes/01.cbz", 99)])
+    assert not out["pairs"] and [f["path"] for f in out["no_book"]] == ["/c/Nains/01.cbz"]
+    same_size = komga.match([file("/c/Nains/01.cbz", 10)], [book("b1", "/k/Elfes/01.cbz", 10)])
+    assert same_size["pairs"][0][2] == "name and size"  # name AND size is still enough
+
+
+def test_names_are_compared_composed_and_without_case():
+    composed, decomposed = "Astérix.cbz", "Aste\u0301rix.CBZ"  # the same name, written two ways on two systems
+    out = komga.match([file("/c/Gaulois/" + composed, 10)], [book("b1", "/k/Gaulois/" + decomposed, 10)])
+    assert out["pairs"] and out["pairs"][0][2] == "name and size"
 
 
 def test_a_name_twice_is_resolved_by_folders_or_left_alone():
@@ -329,3 +343,115 @@ def test_push_leaves_out_the_files_whose_match_waits_for_a_review(cmd_env, tmp_p
     assert [p for m, p, _ in session.calls if m == "PATCH"] == ["api/v1/books/b1/metadata", "api/v1/series/s1/metadata"]
     _, text, _, _ = send(["show"], cmd_env)
     assert "Nains T01.cbz" in text  # `show` is read-only: it still lists it
+
+
+# ---- from the review of the Komga integration
+CONFIG = Komga(url="http://k", api_key="K", username=None, password=None, lock=True, timeout=5)
+
+
+class Redirecting(FakeSession):
+    """A Komga behind a proxy that answers every call with a redirect to another host."""
+
+    def request(self, method, url, **kwargs):
+        self.calls.append((method, url, kwargs.get("allow_redirects")))
+        response = FakeResponse(None, 301)
+        response.headers = {"Location": "https://elsewhere.example/api/v1/books/list"}
+        return response
+
+
+def test_a_redirect_is_not_followed_so_the_key_never_goes_to_another_host():
+    import pytest
+
+    session = Redirecting([])
+    with pytest.raises(komga.KomgaError, match="redirected.*elsewhere.example"):
+        list(komga.Client(CONFIG, session).books())
+    assert all(call[2] is False for call in session.calls)  # `allow_redirects=False` on every request
+
+
+def test_the_address_must_be_a_web_address():
+    import pytest
+
+    with pytest.raises(komga.KomgaError, match="http://"):
+        komga.Client(Komga(url="ftp://k", api_key="K", username=None, password=None, lock=True, timeout=5), FakeSession([]))
+
+
+def test_the_komga_address_cannot_be_changed_from_the_settings_page():
+    from bdnex.api import settings_api
+
+    assert "komga.url" in settings_api.FIXED  # a new address would receive the stored key on the next push
+
+
+class Paged(FakeSession):
+    """Komga pages of two books each, optionally without the `last` flag, with a book shifted onto the next page mid-listing."""
+
+    def __init__(self, pages, last_flag=True):
+        super().__init__([])
+        self.pages, self.last_flag = pages, last_flag
+
+    def request(self, method, url, **kwargs):
+        page = kwargs["params"]["page"]
+        data = {"content": self.pages[page] if page < len(self.pages) else [], "totalPages": len(self.pages)}
+        if self.last_flag:
+            data["last"] = page >= len(self.pages) - 1
+        return FakeResponse(data)
+
+
+def test_pages_are_read_to_the_end_without_a_last_flag_and_a_shifted_book_is_not_listed_twice():
+    pages = [[book("b1", "/k/1.cbz", 1), book("b2", "/k/2.cbz", 1)], [book("b2", "/k/2.cbz", 1), book("b3", "/k/3.cbz", 1)]]
+    assert [b["id"] for b in komga.Client(CONFIG, Paged(pages, last_flag=False)).books()] == ["b1", "b2", "b3"]  # a missing `last` is not "stop"
+    assert [b["id"] for b in komga.Client(CONFIG, Paged(pages)).books()] == ["b1", "b2", "b3"]  # b2 was on both pages
+
+
+def test_the_deprecated_call_is_only_the_fallback_for_a_server_that_does_not_take_the_list_call():
+    import pytest
+
+    class Failing(FakeSession):
+        def request(self, method, url, **kwargs):
+            self.calls.append((method, url))
+            return FakeResponse("boom", 500)  # a passing server error: not "this call does not exist"
+
+    session = Failing([])
+    with pytest.raises(komga.KomgaError, match="500"):
+        list(komga.Client(CONFIG, session).books())
+    assert len(session.calls) == 1  # no second, different call on a 500
+
+
+def test_status_words_with_a_negation_are_not_read_as_the_word_they_contain():
+    assert komga.status_of("Terminée") == "ENDED" and komga.status_of("En cours") == "ONGOING"
+    assert komga.status_of("Non terminée") == "ONGOING"  # not "ended"
+    assert komga.status_of("Série non terminée") == "ONGOING"
+    assert komga.status_of("Discontinuée") == "ABANDONED"  # not "ongoing"
+    assert komga.status_of("Interrompue") == "ABANDONED" and komga.status_of("") is None
+
+
+def test_a_volume_stored_as_a_float_is_the_number_komga_holds():
+    base = {"title": "T", "credits": {}, "genres": []}
+    assert komga.book_fields({**base, "volume": 1.0})["number"] == "1" and komga.book_fields({**base, "volume": 1})["number"] == "1"
+    fields = komga.book_fields({**base, "volume": 1.5})
+    assert fields["number"] == "1.5" and fields["numberSort"] == 1.5
+    same, _ = komga.changes({"number": "1"}, {"number": "1", "numberLock": True}, komga.BOOK_LOCKS, True)
+    assert same == {}  # and it is the same as Komga's `1`: nothing is pushed on every run
+
+
+def test_the_authors_the_library_has_no_names_for_stay_in_komga_and_series_genres_are_added_not_replaced():
+    album = {"title": "T", "credits": {"Writer": ["Jarry"]}, "genres": ["Fantasy"]}
+    current = {"authors": [{"name": "Old Writer", "role": "writer"}, {"name": "Someone", "role": "colorist"}], "tags": []}
+    authors = komga.book_fields(album, current)["authors"]
+    assert {"name": "Jarry", "role": "writer"} in authors and {"name": "Someone", "role": "colorist"} in authors  # a role added in Komga stays
+    assert {"name": "Old Writer", "role": "writer"} not in authors  # the library's writers replace Komga's writers
+    fields = komga.series_fields([{"series": "Nains", "title": "T", "genres": ["Fantasy"]}], {"genres": ["Humour", "fantasy"]})
+    assert fields["genres"] == ["fantasy", "Humour"]  # Komga's spelling wins, and its own genre is not erased
+
+
+def test_a_komga_folder_that_holds_several_series_gets_no_series_data():
+    session = FakeSession([], series_meta={"title": "Folder"})
+    client = komga.Client(CONFIG, session)
+    args = type("A", (), {"only": None, "wanted": (None, None)})()
+    one, two = {**ALBUM, "series": "Nains"}, {**ALBUM, "series": "Elfes", "title": "Other"}
+    plan = komga_cmd._plan(client, [(file("/c/a.pdf", 1, 1), book("b1", "/k/a.pdf", 1), "name and size"),
+                                    (file("/c/b.pdf", 1, 2), book("b2", "/k/b.pdf", 1), "name and size")], {1: one, 2: two}, args, True)
+    series = [step for step in plan if step["kind"] == "series"]
+    assert len(series) == 1 and series[0]["payload"] == {} and "2 different series" in series[0]["skipped"]
+    out = io.StringIO()
+    komga_cmd._show(plan, {"no_book": [], "ambiguous": []}, type("A", (), {"verbose": 0, "pretend": True})(), out, False)
+    assert "2 different series" in out.getvalue()  # and it is said, not counted as "already up to date"
