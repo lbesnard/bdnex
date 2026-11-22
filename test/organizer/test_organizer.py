@@ -1242,3 +1242,16 @@ def test_the_copy_is_dropped_when_the_new_archive_fails_its_check(lib, make_dama
     result = Organizer(lib, settings_for(tmp_path)).run([damaged_row(lib, path)], WRITE, repair=True)[0]
     assert result.outcome == FAILED and file_md5(path) == before  # the original is untouched
     assert lib.trash_entries() == []  # and no stale copy is left in the trash
+
+
+def test_a_damaged_file_chosen_by_a_query_is_repaired_in_place_and_its_copy_is_kept(lib, make_damaged_cbz, tmp_path):
+    """`bdnex write QUERY` hands the organizer a row of `ls --files` (no `album_id` key): the copy kept in the trash must not need one."""
+    path, _ = make_damaged_cbz()
+    damaged_row(lib, path)  # registers the file
+    row = next(r for r in lib.query([], files=True) if r["path"] == path)
+    assert "album_id" not in row  # what a query row looks like
+    result = Organizer(lib, settings_for(tmp_path)).process(row, WRITE)
+    assert result.outcome == WRITTEN and "repair 1 page(s)" in result.note, result.note
+    (entry,) = lib.trash_entries()
+    assert entry["path"] == path and "repaired in place" in entry["reason"] and os.path.exists(entry["trash_path"])
+    assert entry["md5"]  # the record says what the damaged original was

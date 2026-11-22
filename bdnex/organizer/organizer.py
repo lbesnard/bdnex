@@ -586,7 +586,8 @@ class Organizer:
             return None
         try:
             self._stage("keeping a copy of the damaged original in the trash")
-            return trash.keep_copy(self.library, self.settings, path, "damaged original, repaired in place", row=row)
+            # the record is read from the library by path, not taken from `row`: a row of `ls --files` has no `album_id` (its `id` is the album's)
+            return trash.keep_copy(self.library, self.settings, path, "damaged original, repaired in place")
         except OSError as err:  # no room for the copy: say so and do not touch the original
             raise archive.ArchiveError(f"could not keep a copy of the damaged original in the trash ({err}); nothing was changed") from err
 
