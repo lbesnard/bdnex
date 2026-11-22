@@ -7,6 +7,12 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Questions: a `[2]` or `[x]` inside an album's title or a file name is text, never a key (it could replace the real key of an answer, or stop a write run with "the key is used twice").
+- No question is asked without a terminal any more without saying so (`NeedsTerminal`, as for the match question), for every kind of question, not only some.
+- Ticking the files of a series and pressing Ctrl-C skips the folder instead of meaning "none of them belong"; an album Id the source can not look up is said and asked again (and a number with spaces never reaches the source); `fzf` vanishing after it was found no longer crashes the search.
+- The page's search of the album list never starts `fzf` on the server.
+- Where to put imported files from outside the collection offers Copy first (Enter no longer moves files out of your sources).
+- Progress bar: honours `NO_COLOR` and `TERM=dumb`, cuts the line by terminal columns (wide characters, accents), flushes when it clears. `FORCE_COLOR=0` means no colour. A log line has the same text with and without colour (the level was padded only with colour). Setting up the logging again (each job of `serve`) replaces only bdnex's own handlers instead of every handler of the process.
 - A series you renamed keeps its name when another album of it is imported later (the site's name used to come back, and the rename flipped back and forth).
 - `bdnex edit`, the editor and the web page agree on a value: a string for `genres` or a credit role is a list split on `;` (as with `--set`); a credit role must be a known one (`writer` becomes `Writer`, `Auteur` is refused); text is one line without control characters and not longer than 1000 characters (20000 for the summary); `isbn` and `alternate_number` written as a bare number that YAML would change (`0123456`, `1.10`) must be quoted.
 - `bdnex edit` refuses a query that would change more than 2000 albums (as the web page does) and, when one album fails, says which and finishes the others.
