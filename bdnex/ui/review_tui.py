@@ -1162,12 +1162,7 @@ class ReviewApp(App):
             return
         marked = [r for r in self.rows if id(r) in self.marked and not r.busy]
         if len(marked) >= 2:
-            files = [(r.path, manual.guess(r.path)["volume"]) for r in marked]
-            values = {**manual.guess(marked[0].path), "volume": ""}
-            fields = [f for f in manual.FIELDS if f[0] in manual.SHARED]
-            heading = f"A series for these {len(marked)} files (one album each, with the volume in its name)"
-            self.push_screen(EditScreen(heading, values, fields, [(p, int(v) if v else None) for p, v in files]),
-                             lambda got: self.save_series(marked, got) if got else None)
+            self.edit_series(marked)
             return
         file = self.library.get_file(row.path) or {}
         album_id = file.get("album_id")
@@ -1177,6 +1172,20 @@ class ReviewApp(App):
         values = manual.form_of(self.library, album_id) if album_id is not None else {**manual.guess(row.path), "title": ""}
         self.push_screen(EditScreen(f"Metadata of {os.path.basename(row.path)}", values, manual.FIELDS),
                          lambda got: self.save_one(row, album_id, got) if got else None)
+
+    def edit_series(self, rows: list, series: str = "") -> None:
+        """The form that writes one series by hand for these files: the volume of each is read from its name, the series name is the folder's
+        (or ``series``, when the person was offered this after a series page that did not fit)."""
+        from bdnex.library import manual
+
+        files = [(r.path, manual.guess(r.path)["volume"]) for r in rows]
+        values = {**manual.guess(rows[0].path), "volume": ""}
+        if series:
+            values["series"] = series
+        fields = [f for f in manual.FIELDS if f[0] in manual.SHARED]
+        heading = f"A series for these {len(rows)} files (one album each, with the volume in its name)"
+        self.push_screen(EditScreen(heading, values, fields, [(p, int(v) if v else None) for p, v in files]),
+                         lambda got: self.save_series(rows, got) if got else None)
 
     def save_one(self, row: batch.Row, album_id, values: dict) -> None:
         from bdnex.library import manual
@@ -1282,8 +1291,14 @@ class ReviewApp(App):
                 found = await asyncio.wrap_future(self.hub.run(
                     lambda hub: batch.propose_for_series_address(hub.source, candidate, paths, found=page)))
             except batch.NoVolumeFound as err:
-                self.notify(str(err), severity="warning", timeout=12)
                 logger.info("%s", err)
+                series_name = err.name  # `err` does not outlive this block: the answer below is given later
+                if err.none_matched and len(chosen) >= 2:  # not this series: say so, and offer the way out (a series written by hand)
+                    self.push_screen(AskScreen(f"{err}\n\nWrite these {len(chosen)} files by hand as the series {series_name!r}? "
+                                               "(the form opens with each volume read from its file name)", None),
+                                     lambda yes: self.edit_series(chosen, series_name) if yes else None)
+                else:
+                    self.notify(str(err), severity="warning", timeout=12)
                 return
             except Exception as err:
                 self.notify(f"Could not read that series page: {err}", severity="error")

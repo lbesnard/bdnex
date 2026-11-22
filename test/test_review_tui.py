@@ -846,7 +846,7 @@ def test_a_series_page_without_the_files_volumes_says_what_each_side_has():
     source._series_details = {"https://www.bedetheque.com/serie-9-BD-Fell.html": parser.parse_series_details(html)}
     with pytest.raises(batch.NoVolumeFound) as err:
         batch.propose_for_series_address(source, "https://www.bedetheque.com/serie-9-BD-Fell.html", ["/x/Fell 02 (2005).cbz", "/x/Fell 03 (2005).cbz"])
-    assert "none with a volume number" in str(err.value) and "ask for 2, 3" in str(err.value)
+    assert "none with a volume number" in str(err.value) and "ask for 2 and 3" in str(err.value)
 
 
 def test_a_series_page_of_collected_editions_still_lists_its_albums():
@@ -1591,3 +1591,82 @@ def test_the_series_and_album_ticks_each_search_their_own_kind(env, monkeypatch)
     drive(db, script)
     assert (True, True) in asked and (False, True) in asked and (True, False) in asked
     assert seen["ticks"] == (False, False) and asked[-1] != (False, False)  # both off: no search was made for that state
+
+
+def test_volume_numbers_are_said_in_words():
+    assert batch.span([1, 2, 3, 4]) == "1 to 4" and batch.span([5, 6]) == "5 and 6" and batch.span([5]) == "5"
+    assert batch.span([1, 3, 7, 8, 9]) == "1, 3 and 7 to 9" and batch.span([9, 3, 1, 3]) == "1, 3 and 9"
+
+
+def _bill_baroud_page():
+    from bdnex.importer.bedetheque import Bedetheque, parser
+
+    html = "".join(f'<a href="https://www.bedetheque.com/BD-Bill-Baroud-Tome-{n}-Titre-{n}-{6000 + n}.html">x</a>' for n in range(1, 5))
+    html += '<a href="https://www.bedetheque.com/BD-Bill-Baroud-INT-L-edition-integrale-110371.html">x</a>'
+    address = "https://www.bedetheque.com/serie-1-BD-Bill-Baroud.html"
+    source = Bedetheque.__new__(Bedetheque)
+    source._series_details = {address: parser.parse_series_details(html, "Bill-Baroud")}
+    return source, address
+
+
+def test_a_series_page_whose_volumes_none_of_the_files_ask_for_says_so_in_words_and_marks_it():
+    source, address = _bill_baroud_page()
+    paths = [f"/x/Bill Baroud #{n:03d} - Titre.cbr" for n in range(5, 10)]
+    with pytest.raises(batch.NoVolumeFound) as err:
+        batch.propose_for_series_address(source, address, paths)
+    assert "the page lists volume(s) 1 to 4; these 5 file(s) ask for 5 to 9" in str(err.value) and "does not have" in str(err.value)
+    assert err.value.none_matched and err.value.name == "Bill Baroud"  # the screen offers to write them by hand
+    with pytest.raises(batch.NoVolumeFound) as chapters:  # some files do find their volume: the chapter guard, no such offer
+        batch.propose_for_series_address(source, address, ["/x/Bill Baroud #001.cbr", *paths])
+    assert not chapters.value.none_matched
+
+
+def _no_volume_fits(paths, **kw):
+    raise batch.NoVolumeFound(f"Bill Baroud: the page lists volume(s) 1 to 4; these {len(paths)} file(s) ask for 5 to 7. They look like "
+                              "another series than this page's, or one the site does not have.", name="Bill Baroud", none_matched=True)
+
+
+def test_when_the_series_page_does_not_fit_the_screen_says_so_and_offers_to_write_the_files_by_hand(env, monkeypatch):
+    db, files = env
+    monkeypatch.setattr(batch, "read_series_address", lambda settings, text: None)
+    monkeypatch.setattr(batch, "propose_for_series_address", lambda source, text, paths, found=None: _no_volume_fits(paths))
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("m")
+        await pilot.press("a")
+        await settle(app, pilot)
+        app.screen.query_one("#words").value = SERIES_PAGE
+        await pilot.press("enter")
+        await settle(app, pilot)
+        seen["screen"], seen["question"] = app.screen.__class__.__name__, app.screen.question
+        await pilot.press("y")
+        await settle(app, pilot)
+        seen["form"], seen["series"] = app.screen.__class__.__name__, app.screen.query_one("#f-series").value
+        await pilot.press("escape")
+
+    drive(db, script)
+    assert seen["screen"] == "AskScreen" and "the page lists volume(s) 1 to 4" in seen["question"]  # what is going on, in the popup
+    assert "Write these 3 files by hand as the series 'Bill Baroud'" in seen["question"]
+    assert seen["form"] == "EditScreen" and seen["series"] == "Bill Baroud"  # the form opens with the page's series name
+
+
+def test_declining_the_offer_changes_nothing(env, monkeypatch):
+    db, files = env
+    monkeypatch.setattr(batch, "read_series_address", lambda settings, text: None)
+    monkeypatch.setattr(batch, "propose_for_series_address", lambda source, text, paths, found=None: _no_volume_fits(paths))
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("m")
+        await pilot.press("a")
+        await settle(app, pilot)
+        app.screen.query_one("#words").value = SERIES_PAGE
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await pilot.press("n")
+        await settle(app, pilot)
+        seen["still_asking"] = app.screen.__class__.__name__ in ("AskScreen", "EditScreen")
+
+    result, _ = drive(db, script)
+    assert seen["still_asking"] is False and all(cell[7] != "linked" for cell in result["cells"])
