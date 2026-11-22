@@ -1018,7 +1018,9 @@ class ReviewApp(App):
         table = self.query_one(DataTable)
         for index, (name, width) in enumerate(COLUMNS):
             arrow = (" ▼" if self.sort_reverse else " ▲") if index == self.sort_column else ""
-            table.add_column(f"{name}{arrow}", width=width, key=str(index))
+            if index == len(COLUMNS) - 1:  # where a move would put the file: a path is long, so it takes what the screen has left (at least `width`)
+                width = max(width, self.size.width - sum(w for _, w in COLUMNS[:-1]) - 2 * len(COLUMNS) - 2)
+            table.add_column(f"{name}{arrow}", width=width, key=str(index))  # (a fixed width: the table never has to measure its cells)
 
     def render_table(self) -> None:
         table = self.query_one(DataTable)
@@ -1186,6 +1188,13 @@ class ReviewApp(App):
         row.pending = False
         row.dest = ""  # the album (so the place) is about to change: no destination is better than the old one
 
+    def refresh_dest(self, row: batch.Row) -> None:
+        """Where a move would put the file NOW: the album it has in the library (a decision, a link, an import that ended). `supersede` clears it
+        when a decision starts; this puts the new one back. Offline, a few template lookups: never the reason a decision fails."""
+        with contextlib.suppress(Exception):
+            file = self.library.get_file(row.path) or {}
+            row.dest = batch.destination_of(self.library, self.settings, file, file.get("album_id"))
+
     def record(self, action: str) -> None:
         row = self.idle()
         if row is None:
@@ -1197,6 +1206,7 @@ class ReviewApp(App):
             logger.warning("%s: decision not saved: %s", os.path.basename(row.path), err, exc_info=True)
             self.notify(f"Not saved ({err}): try again", severity="error", timeout=8)
             return
+        self.refresh_dest(row)
         self.decided[row.status] = self.decided.get(row.status, 0) + 1
         self.refresh_row(row)
         self.advance()
@@ -1290,6 +1300,7 @@ class ReviewApp(App):
         except Exception as err:
             self.link_failed(row, err)
             return
+        self.refresh_dest(row)
         self.decided["linked"] = self.decided.get("linked", 0) + 1
         logger.info("%s: %s", os.path.basename(row.path), row.message)
         self.notify(row.message, timeout=5)
@@ -1313,6 +1324,7 @@ class ReviewApp(App):
             except Exception as err:
                 self.link_failed(row, err)
                 continue
+            self.refresh_dest(row)
             self.marked.discard(id(row))
             self.refresh_row(row)
         self.decided["linked"] = self.decided.get("linked", 0) + len(rows)
@@ -1605,6 +1617,7 @@ class ReviewApp(App):
             return
         took = time.monotonic() - started
         row.pending, row.queued_at, row.started_at = True, time.monotonic(), 0.0
+        self.refresh_dest(row)  # the file is linked now (written at once): where a move would put it is known, the page is not needed
         self.marked.discard(id(row))
         self.decided["linked"] = self.decided.get("linked", 0) + 1
         logger.info("%s: %s (written in %.2f s); page and cover queued", os.path.basename(row.path), row.message, took)
@@ -1631,6 +1644,7 @@ class ReviewApp(App):
         except Exception as err:
             self.link_failed(row, err)
             return
+        self.refresh_dest(row)
         self.marked.discard(id(row))
         self.decided["linked"] = self.decided.get("linked", 0) + 1
         logger.info("%s: %s", os.path.basename(row.path), row.message)
@@ -1682,6 +1696,7 @@ class ReviewApp(App):
                 batch.decide(self.library, row, "unlink")
             return
         row.pending = False
+        self.refresh_dest(row)  # the import may have chosen another album than the one first linked (a spare, a switch): its place is the one that counts
         if row.started_at:
             logger.info("%s: page and cover done in %.1f s", os.path.basename(row.path), time.monotonic() - row.started_at)
         if error:

@@ -74,7 +74,8 @@ The last column, **Would go to**, is where `bdnex move` would put the file, rela
 (or the first rule that matches it) and the extension it would have (`Series/Nains/Nains - T01 - Redwin de la Forge.cbz`). It is worked out
 offline for the album each file has now, so you can see whether a match would send a file to the right place; it is empty for a file with no
 album, `?` when the template needs an answer only a question could give (a missing field), and a reason in brackets when it refuses the file (or
-when no `collection_path` is set). It is cleared when you decide the row again (the album, so the place, may change). The detail panel shows it in
+when no `collection_path` is set). It is worked out again the moment the row is linked or decided (the album, so the place, may change: a link written at once shows its new
+place at once, before the page is fetched). The column is as wide as the screen allows (at least 44 characters), the detail panel shows the path in
 full, and the number key `9` sorts by it.
 
 By default the table holds **the doubtful files only**: a match something contradicts or nothing confirms, the same set
