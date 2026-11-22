@@ -59,11 +59,26 @@ def strip_accents(text: str) -> str:
     return "".join(c for c in text if not unicodedata.combining(c))
 
 
+MAX_REGEX = 300        # characters of a `::regex` pattern
+MAX_SUBJECT = 2000     # characters of a value a pattern is tried on (a summary can be pages long)
+NESTED_QUANTIFIER = re.compile(r"\((?:[^()\\]|\\.)*[+*}](?:[^()\\]|\\.)*\)[+*{]")  # `(a+)+`, `(.*)*`, `(\w+\s?)+`: time that doubles with each character
+
+
+def check_regex(pattern: str) -> None:
+    """Refuse a pattern that can make a search run for ever (catastrophic backtracking: a quantifier inside a group that is itself repeated)
+    or that is absurdly long. Raises :class:`QueryError`; a plain pattern is untouched."""
+    if len(pattern) > MAX_REGEX:
+        raise QueryError(f"a regular expression is at most {MAX_REGEX} characters ({len(pattern)})")
+    if NESTED_QUANTIFIER.search(pattern):
+        raise QueryError(f"regular expression {pattern!r}: a repeated group that repeats inside itself can take for ever on a long value; "
+                         "write it without the nesting (`(a|b)+` is fine, `(a+)+` is not)")
+
+
 def regexp(pattern: str, value: Any) -> bool:
     """Case- and accent-insensitive search. The pattern keeps its escapes (``\\D`` stays ``\\D``)."""
     if value is None:
         return False
-    return re.search(strip_accents(pattern), strip_accents(str(value)), re.IGNORECASE) is not None
+    return re.search(strip_accents(pattern), strip_accents(str(value))[:MAX_SUBJECT], re.IGNORECASE) is not None
 
 
 def register_functions(conn) -> None:
@@ -142,6 +157,7 @@ def _text(expr: str, mode: str, value: str) -> tuple[str, list[Any]]:
             re.compile(value)
         except re.error as err:
             raise QueryError(f"bad regular expression {value!r}: {err}") from None
+        check_regex(value)
         return f"regexp(?, {expr})", [value]
     if mode == "exact":
         return f"fold({expr}) = ?", [fold(value)]
