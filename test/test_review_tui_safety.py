@@ -321,7 +321,7 @@ def test_d_shows_the_metadata_of_the_album_beside_the_detail_and_e_changes_it(en
     drive(db, script)
     assert seen["closed"] is False and seen["open"] is True
     assert "Redwin" in seen["text"] and "Nains" in seen["text"] and "2015" in seen["text"] and "e edits these" in seen["text"]
-    assert seen["form"] == "EditScreen" and "series" not in seen["fields"] and "title" in seen["fields"]  # a series is renamed for all its albums
+    assert seen["form"] == "EditScreen" and "series" in seen["fields"] and "title" in seen["fields"]  # the series can be renamed too (it asks first)
     assert "Redwin de la Forge" in seen["row"][0] and "2016" in seen["row"][1] and "changed by you" in seen["row"][1]  # the table and the panel follow
     from bdnex.library import Library
 
@@ -343,3 +343,58 @@ def test_the_panel_says_when_the_file_has_no_album(env):
 
     drive(db, script)
     assert "No album" in seen["text"]
+
+
+def test_the_series_can_be_renamed_from_the_form_after_being_told_how_many_albums_it_changes(env):
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        app.query_one("DataTable").move_cursor(row=0)
+        await pilot.press("e")
+        await pilot.pause()
+        app.screen.query_one("#f-series").value = "Les Nains"
+        app.screen.action_accept()
+        await pilot.pause()
+        seen["asked"] = (app.screen.__class__.__name__, app.screen.question)
+        await pilot.press("y")
+        await pilot.pause()
+        seen["labels"] = [r.album for r in app.rows[:2]]  # both albums of the series, not only the one under the cursor
+
+    drive(db, script)
+    assert seen["asked"][0] == "AskScreen" and "all 2 albums" in seen["asked"][1] and "'Les Nains'" in seen["asked"][1]
+    assert all("Les Nains" in label for label in seen["labels"]), seen["labels"]
+    from bdnex.library import Library
+
+    with Library(db) as lib:
+        assert {lib.get_album(lib.get_file(files[name])["album_id"])["series"] for name in ("wrong", "unconfirmed")} == {"Les Nains"}
+
+
+def test_declining_the_rename_still_saves_the_other_fields_and_an_empty_name_is_refused(env):
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        app.query_one("DataTable").move_cursor(row=0)
+        await pilot.press("e")
+        await pilot.pause()
+        app.screen.query_one("#f-series").value = ""
+        app.screen.action_accept()
+        await pilot.pause()
+        seen["empty"] = app.screen.__class__.__name__  # the form closed, and the library was not touched
+        await pilot.press("e")
+        await pilot.pause()
+        app.screen.query_one("#f-series").value = "Les Nains"
+        app.screen.query_one("#f-publisher").value = "Delcourt"
+        app.screen.action_accept()
+        await pilot.pause()
+        await pilot.press("n")  # not the rename...
+        await pilot.pause()
+
+    drive(db, script)
+    assert seen["empty"] != "EditScreen"  # refused with a message (the form closed, nothing was written)
+    from bdnex.library import Library
+
+    with Library(db) as lib:
+        album = lib.get_album(lib.get_file(files["wrong"])["album_id"])
+        assert album["series"] == "Nains" and album["publisher"] == "Delcourt"  # ...but what else was changed is kept
