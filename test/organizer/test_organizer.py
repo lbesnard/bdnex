@@ -1,3 +1,4 @@
+import errno
 import os
 import shutil
 import zipfile
@@ -1255,3 +1256,91 @@ def test_a_damaged_file_chosen_by_a_query_is_repaired_in_place_and_its_copy_is_k
     (entry,) = lib.trash_entries()
     assert entry["path"] == path and "repaired in place" in entry["reason"] and os.path.exists(entry["trash_path"])
     assert entry["md5"]  # the record says what the damaged original was
+
+
+def _two_files_one_name(lib, make_cbz, tmp_path, answer="replace"):
+    org = Organizer(lib, settings_for(tmp_path), FakePrompter(collision=answer))
+    a = registered(lib, make_cbz("a.cbz", pages=3), add_series_album(lib))
+    first = org.process(a, MOVE)
+    b = registered(lib, make_cbz("b.cbz", pages=5), add_series_album(lib, source_id="2"))
+    return org, first, b
+
+
+def test_replacing_a_file_whose_replacement_cannot_be_built_leaves_the_existing_one_alone(lib, make_cbz, tmp_path, monkeypatch):
+    """The `replace` answer used to move the existing album to the trash BEFORE the new archive was built: a failure left a hole."""
+    org, first, b = _two_files_one_name(lib, make_cbz, tmp_path)
+    before = file_md5(first.dest)
+
+    def broken(self, *args, **kwargs):
+        raise OSError(errno.ENOSPC, "No space left on device")
+
+    monkeypatch.setattr(Organizer, "_build", broken)
+    result = org.process(b, MOVE)
+    assert result.outcome == FAILED
+    assert os.path.exists(first.dest) and file_md5(first.dest) == before  # the album that was there is still there, untouched
+    assert lib.get_file(first.dest) is not None and lib.trash_entries() == []  # still in the library, nothing left in the trash
+    assert os.path.exists(b["path"])  # and the file that was to replace it is untouched too
+
+
+def test_a_replacement_interrupted_by_ctrl_c_leaves_the_existing_file_and_no_trash_copy(lib, make_cbz, tmp_path, monkeypatch):
+    org, first, b = _two_files_one_name(lib, make_cbz, tmp_path)
+    before = file_md5(first.dest)
+    monkeypatch.setattr(Organizer, "_build", lambda self, *a, **k: (_ for _ in ()).throw(KeyboardInterrupt()))
+    with pytest.raises(KeyboardInterrupt):
+        org.process(b, MOVE)
+    assert file_md5(first.dest) == before and lib.get_file(first.dest) is not None and lib.trash_entries() == []
+
+
+def test_a_successful_replacement_keeps_the_old_file_in_the_trash_and_says_so(lib, make_cbz, tmp_path):
+    org, first, b = _two_files_one_name(lib, make_cbz, tmp_path)
+    old = file_md5(first.dest)
+    second = org.process(b, MOVE)
+    assert second.outcome == MOVED and "replaced is in the trash" in second.note
+    (entry,) = lib.trash_entries()
+    assert file_md5(entry["trash_path"]) == old and file_md5(second.dest) != old  # the old content is in the trash, the new one in place
+    assert lib.get_file(second.dest)["id"] == b["id"] and lib.stats()["files"] == 1
+
+
+def test_a_file_moved_as_it_is_over_a_taken_name_goes_through_a_temporary_file_and_keeps_the_old_one_in_the_trash(
+        lib, make_cbz, make_damaged_cbz, tmp_path):
+    settings = settings_for(tmp_path)
+    first = Organizer(lib, settings).process(registered(lib, make_cbz("a.cbz", pages=3), add_series_album(lib)), MOVE)
+    old = file_md5(first.dest)
+    path, _ = make_damaged_cbz(damage="junk")  # can not be repaired: it is moved as it is, into the name the first file has
+    junk = file_md5(path)
+    prompter = FakePrompter(collision="replace")
+    prompter.corrupted_answer = "move"
+    result = Organizer(lib, settings, prompter).process(damaged_row(lib, path), MOVE)
+    assert result.outcome == MOVED and result.dest == first.dest and not os.path.exists(path)
+    assert file_md5(result.dest) == junk  # the new bytes are in place, whole
+    (entry,) = lib.trash_entries()
+    assert file_md5(entry["trash_path"]) == old  # and the album that was there is in the trash
+    assert not [p for p in os.listdir(os.path.dirname(result.dest)) if p.endswith(".bdnex-tmp")]
+
+
+def test_a_copy_that_comes_out_short_is_never_left_under_the_final_name(tmp_path, monkeypatch):
+    source = tmp_path / "a.cbz"
+    source.write_bytes(b"x" * 5000)
+    dest = tmp_path / "out" / "a.cbz"
+    dest.parent.mkdir()
+    dest.write_bytes(b"the album that was there")
+
+    def short_copy(src, dst, **kw):
+        open(dst, "wb").write(b"x" * 100)  # a full disk, or a dying one: only part of it was written
+        return dst
+
+    monkeypatch.setattr(shutil, "copy2", short_copy)
+    with pytest.raises(OSError, match="not the size"):
+        Organizer._place_bytes(str(source), str(dest), move=False)
+    assert dest.read_bytes() == b"the album that was there" and source.exists()  # nothing was replaced
+    assert os.listdir(dest.parent) == ["a.cbz"]  # and no temporary file is left
+
+
+def test_a_move_across_file_systems_removes_the_original_only_after_the_copy_is_in_place(tmp_path, monkeypatch):
+    source = tmp_path / "a.cbz"
+    source.write_bytes(b"y" * 3000)
+    dest = tmp_path / "out" / "a.cbz"
+    dest.parent.mkdir()
+    monkeypatch.setattr(Organizer, "_same_device", staticmethod(lambda a, b: False))  # as if the library were on another disk
+    Organizer._place_bytes(str(source), str(dest), move=True)
+    assert dest.read_bytes() == b"y" * 3000 and not source.exists()
