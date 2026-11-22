@@ -221,7 +221,13 @@ def _plan(client, pairs, albums, args, lock) -> list[dict]:
     if args.only != "books" and not (args.wanted[1] is not None and not args.wanted[1]):
         for series_id, group in by_series.items():
             current = client.series(series_id).get("metadata") or {}
-            fields = komga.series_fields(group)
+            named = sorted({a.get("series") or a["title"] for a in group})
+            if len(named) > 1:  # Komga's series is a folder: a folder of several series (or of one-shots) has no one title, summary or status
+                plan.append({"kind": "series", "id": series_id, "label": ", ".join(named[:3]) + ("..." if len(named) > 3 else ""), "how": "",
+                             "payload": {}, "differing": [], "current": current,
+                             "skipped": f"its Komga folder holds {len(named)} different series or albums: no series data is sent"})
+                continue
+            fields = komga.series_fields(group, current)
             payload, differing = komga.changes(_only(fields, args.wanted[1]), current, komga.SERIES_LOCKS, lock)
             plan.append({"kind": "series", "id": series_id, "label": fields["title"], "how": "", "payload": payload,
                          "differing": differing, "current": current})
@@ -236,6 +242,9 @@ def _label(album: dict) -> str:
 
 def _show(plan, found, args, out, on) -> None:
     for step in plan:
+        if step.get("skipped"):
+            print(results.block("skipped", f"series  {step['label']}", [step["skipped"]], on), file=out)
+            continue
         if not step["differing"] and not step["payload"]:
             continue
         lines = [f"{key}: {_short(step['current'].get(key))} -> {_short(step['payload'][key])}"
@@ -244,7 +253,7 @@ def _show(plan, found, args, out, on) -> None:
         print(results.block("would update", title, lines, on), file=out)
     n_books = sum(1 for s in plan if s["kind"] == "book" and s["payload"])
     n_series = sum(1 for s in plan if s["kind"] == "series" and s["payload"])
-    same = sum(1 for s in plan if not s["payload"])
+    same = sum(1 for s in plan if not s["payload"] and not s.get("skipped"))
     parts = [(f"{n_books} book(s) and {n_series} series to update", "would update"),
              (f"{same} already up to date", "unchanged")]
     if found["no_book"]:
