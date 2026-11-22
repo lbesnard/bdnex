@@ -193,3 +193,24 @@ def test_a_series_shows_each_volume_owned_or_missing(env):
     detail = client(settings).get(f"/api/series/{series_id}").json()
     assert detail["list_known"] and [(v["volume"], v["owned"]) for v in detail["volumes"]] == [(1, True), (2, False)]
     assert client(settings).get("/api/series/999").status_code == 404
+
+
+def test_a_link_inside_the_collection_that_leads_outside_is_refused_and_so_is_a_foreign_album_address(env, tmp_path):
+    import os
+
+    settings, book, album = env
+    web = client(settings, allow_changes=True)
+    link = os.path.join(str(settings.collection_path), "link")
+    os.symlink("/etc", link)  # `collection/link -> /etc` passed the prefix test
+    try:
+        refused = web.post("/api/jobs", json={"command": "record", "paths": [link + "/passwd"]})
+        assert refused.status_code == 400 and "outside your collection" in refused.json()["detail"]
+    finally:
+        os.unlink(link)
+    path = book
+    for address in ("http://169.254.169.254/latest/meta-data", "https://evil.example/BD-x-1.html", "https://bedetheque.com.evil.example/x"):
+        bad = web.post("/api/jobs", json={"command": "apply-album", "paths": [path], "album": address, "preview": True})
+        assert bad.status_code == 400 and "album" in bad.json()["detail"], address  # the server would have fetched it, for whoever is logged in
+    ok = web.post("/api/jobs", json={"command": "apply-album", "paths": [path], "album": "https://www.bedetheque.com/BD-Nains-Tome-1-X-245127.html",
+                                     "preview": True})
+    assert ok.status_code == 200

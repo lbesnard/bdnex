@@ -13,6 +13,7 @@ import io
 import itertools
 import json
 import os
+import re
 import threading
 import time
 from dataclasses import dataclass, field
@@ -52,12 +53,14 @@ def _paths(options: dict, settings) -> list[str]:
     """Folders and files given by the page: only inside the collection or a source."""
     allowed = [str(settings.collection_path and os.path.abspath(os.path.expanduser(settings.collection_path)))]
     allowed += [source.folder for source in settings.import_.sources]
+    allowed = [os.path.realpath(root) for root in allowed if root]  # through symbolic links: `collection/link -> /` leads nowhere allowed
     chosen = []
     for path in options.get("paths") or []:
         if not isinstance(path, str):
             raise JobError("`paths` must be a list of paths")
         absolute = os.path.abspath(os.path.expanduser(path))
-        if not any(root and (absolute == root or absolute.startswith(root.rstrip("/") + os.sep)) for root in allowed):
+        real = os.path.realpath(absolute)
+        if not any(real == root or real.startswith(root.rstrip("/") + os.sep) for root in allowed):
             raise JobError(f"{path} is outside your collection and your import sources")
         chosen.append(absolute)
     return chosen
@@ -175,12 +178,15 @@ def _preview(options: dict) -> list[str]:
     return ["-n"] if options.get("preview", True) else []
 
 
+SITE_ADDRESS = re.compile(r"^https?://(?:www\.|m\.)?(?:bedetheque|bdtheque)\.com/", re.I)
+
+
 def _album_ref(options: dict) -> str:
     """The album an `apply-album` task uses: its number at the source, or its page address."""
     album = str(options.get("album") or "").strip()
-    if not album or album.startswith("-") or "\n" in album or not (album.isdigit() or album.startswith(("http://", "https://"))):
-        raise JobError("`album` is the album's number or the address of its page")
-    return album
+    if not album or album.startswith("-") or "\n" in album or not (album.isdigit() or SITE_ADDRESS.match(album)):
+        raise JobError("`album` is the album's number or the address of its page on bedetheque.com or bdtheque.com")
+    return album  # (any other address would make the server fetch it for whoever is logged in)
 
 
 def _one_path(options: dict, settings) -> str:

@@ -126,3 +126,50 @@ def test_unattended_import_asks_nothing_and_leaves_the_unsure_files_for_you(tmp_
         with pytest.raises(SystemExit):
             import_cmd.run([*flags, str(tmp_path / "comics")], out=io.StringIO())
         assert (captured["prompter"] is None) == (expected is None)
+
+
+def test_a_look_that_raises_does_not_end_the_watch_and_failures_lengthen_the_wait(env, tmp_path):
+    settings, book, album = env
+    on = watching(settings, tmp_path, interval=2)
+    waits, looks = [], []
+
+    def wait(seconds):
+        waits.append(seconds)
+        return len(waits) > 14  # stop after a few rounds
+
+    class Broken(Watcher):
+        def look(self):
+            looks.append(1)
+            raise RuntimeError("the settings page is being written")
+
+    watcher = Broken(on, jobs.JobManager(on, store=tmp_path / "h.json"), wait=wait)
+    watcher.run()  # used to die at the first look, silently
+    assert len(looks) >= 2 and watcher.failures >= 2
+    assert max(waits) <= POLL  # (it waits in short steps whatever the delay)
+
+
+def test_a_run_that_failed_doubles_the_wait_and_a_success_resets_it(env, tmp_path):
+    settings, book, album = env
+    on = watching(settings, tmp_path)
+    manager = jobs.JobManager(on, store=tmp_path / "h.json")
+    watcher = Watcher(on, manager)
+    ended = type("Job", (), {"status": "failed"})()
+    manager.get = lambda job_id: ended
+    watcher.last_job = 1
+    watcher._learn_from_last_run()
+    watcher._learn_from_last_run()
+    assert watcher.failures == 2
+    ended.status = "done"
+    watcher._learn_from_last_run()
+    assert watcher.failures == 0
+
+
+def test_no_run_is_started_while_none_of_the_sources_is_there(env, tmp_path):
+    settings, book, album = env
+    on = watching(settings, tmp_path)
+    import shutil
+
+    shutil.rmtree(tmp_path / "inbox")  # the disk is not mounted
+    manager = jobs.JobManager(on, store=tmp_path / "h.json")
+    watcher = Watcher(on, manager)
+    assert watcher.look() is False and watcher.last_job is None and manager.get(1) is None
