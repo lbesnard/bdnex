@@ -364,10 +364,12 @@ class Bedetheque:
             content = self._get("letter", url, recache=recache)
             entries = letters.parse_letter_page(content, letter)
             announced = letters.announced_count(content)
-            if announced and len(entries) < announced * 0.9:
+            if letters.is_cut(content):
                 self.library.cache_delete(SOURCE, "letter", url)  # a cut page stored would be read again as it is, and replace the letter's series
-                raise IncompletePage(f"{url}: the page says {announced} series, only {len(entries)} were read (a page cut short): "
+                raise IncompletePage(f"{url}: the page stops before its end (it says {announced or '?'} series, {len(entries)} were read): "
                                      "not stored, the series of that letter are as they were; run it again")
+            if announced and len(entries) < announced * 0.9:
+                logger.warning(f"{url}: the page says {announced} series, {len(entries)} were read")
             self.library.series_index_replace(SOURCE, [(e.series_id, e.name, e.folded, e.url, e.country, e.letter) for e in entries])
         self._series_catalogue = None
         return self.library.series_index_count(SOURCE)

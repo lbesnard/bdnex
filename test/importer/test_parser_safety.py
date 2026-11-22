@@ -27,6 +27,12 @@ def test_the_former_layout_with_an_infoedition_block_that_has_nothing_in_it_stil
     assert fields["album_url"] == "https://m.bedetheque.com/BD-X-1.html" and "cover_url" not in fields  # it raised, and the album was lost
 
 
+def test_a_page_that_announces_more_than_it_lists_is_only_a_warning_while_one_cut_short_is_refused():
+    whole = "<html><h1>Séries BD : a <small>5 séries</small></h1><ul></ul></body></html>"
+    assert letters.announced_count(whole) == 5 and not letters.is_cut(whole)  # the numbers differing is not a cut page
+    assert letters.is_cut(whole.replace("</body></html>", "")) and letters.is_cut(b"<html><body><ul><li>")
+
+
 def test_a_letter_page_cut_short_is_not_stored_and_the_series_of_that_letter_stay(monkeypatch):
     library = Library(":memory:")
     source = Bedetheque(library, fetch=lambda url: b"", sleep=lambda s: None)
@@ -40,8 +46,7 @@ def test_a_letter_page_cut_short_is_not_stored_and_the_series_of_that_letter_sta
 
     monkeypatch.setattr(source, "_get", get)
     monkeypatch.setattr(letters, "parse_letter_page", lambda content, letter="": [])
-    monkeypatch.setattr(letters, "announced_count", lambda content: 120)
-    with pytest.raises(IncompletePage, match="cut short"):
+    with pytest.raises(IncompletePage, match="stops before its end"):
         source.update_series_index()
     assert library.series_index_count("bedetheque") == 1  # the letter was not replaced by an empty list
     assert not library.cache_has("bedetheque", "letter", pages[0])  # and the cut page is not kept: it would be read again as it is
