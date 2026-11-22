@@ -471,6 +471,16 @@ def test_a_library_that_stored_encrage_reads_it_back_as_inker(lib):
     assert lib.get_album(album)["credits"].get("Inker") == ["Martin"] and "Encrage" not in lib.get_album(album)["credits"]
 
 
+def test_a_stored_page_is_found_without_reading_it(lib, monkeypatch):
+    url = _album_urls(1)[0]
+    lib.cache_put("bedetheque", "album", url, b"<html>stored</html>")
+    source = Bedetheque(lib, fetch=FakeWeb(), delay=(0, 0), sleep=lambda s: None, parallel=1)
+    monkeypatch.setattr(lib, "cache_get", lambda *a: (_ for _ in ()).throw(AssertionError("the page was read (decompressed) to test it")))
+    queue = source.page_queue(1)
+    assert queue.submit(url) == "cached"
+    queue.close()
+
+
 def test_a_series_page_that_failed_makes_the_album_partial_so_that_fetch_tries_again(lib, web):
     del web.pages[SERIES_URL]
     info = Bedetheque(lib, fetch=web, sleep=lambda s: None).album_info(ALBUM_URL)

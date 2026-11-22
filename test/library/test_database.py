@@ -186,3 +186,17 @@ def test_a_read_only_library_can_be_closed_by_another_thread(tmp_path):
     stay.set()
     opener.join()
     assert failures == []
+
+
+def test_one_series_is_deleted_only_when_no_album_refers_to_it(lib):
+    from bdnex.library import AlbumInfo, SeriesInfo
+
+    used = lib.add_album(AlbumInfo("bedetheque", "1", "Un", series=SeriesInfo("bedetheque", "s1", "Nains"), volume=1))
+    other = lib.add_album(AlbumInfo("bedetheque", "2", "Deux", series=SeriesInfo("bedetheque", "s2", "Elfes"), volume=1))
+    first, second = lib.series_id_of(used), lib.series_id_of(other)
+    assert first and second and first != second and lib.series_id_of(None) is None and lib.series_id_of(9999) is None
+    assert lib.delete_series_if_unused(first) is False  # an album still refers to it
+    lib.delete_album_if_unused(used)
+    assert lib.delete_series_if_unused(first) is True and lib.delete_series_if_unused(first) is False  # gone, nothing to do twice
+    assert lib.delete_series_if_unused(None) is False
+    assert lib.series_id_of(other) == second and lib.stats()["series"] == 1  # the other series is left alone
