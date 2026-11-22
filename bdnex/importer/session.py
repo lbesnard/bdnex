@@ -757,7 +757,7 @@ class ImportSession(EarlyFetch, CoverPass, CoverVote):
         if journal.created_album is not None and self.library.delete_album_if_unused(journal.created_album):
             self.library.prune_orphan_series()
         for entry in reversed(journal.trashed):  # files this one replaced come back
-            trash.restore(self.library, entry)
+            trash.restore(self.library, entry, self.settings)
 
     def _resolve_duplicate(self, path, others, what) -> str:
         """``skip`` (keep the existing files), ``keep_both`` or ``replace`` (the existing files go to the trash)."""

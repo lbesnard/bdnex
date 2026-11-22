@@ -106,35 +106,50 @@ class DetailsQueue:
         capacity = self.workers if pages is not None else 1
         while not (stop and not pending and not active):
             try:
-                item = self._jobs.get(timeout=None if not (pending or active) else 0.05)
-                while True:
-                    if item is None:
-                        stop = True
-                    else:
-                        pending.append(item)
-                    item = self._jobs.get_nowait()
-            except queue.Empty:
-                pass
-            if self._cancel.is_set():
-                return
-            while pending and len(active) < capacity:  # start the downloads of as many files as there are endpoints
-                job = pending.popleft()
-                if not job.wanted():
-                    self._finish(job, "")
-                    continue
-                job.started()
-                if pages is None:
-                    self._import(job)
-                    continue
-                active.append(job)
-                self._ask_album(job)
-            if pages is not None and active:
-                for kind, address, err in pages.wait(0.3):
-                    self._arrived(kind, address, err)
-                for job in list(active):
-                    if job.pages_ready and (job.cover is None or job.cover.done()):
-                        active.remove(job)
-                        self._import(job)
+                try:
+                    item = self._jobs.get(timeout=None if not (pending or active) else 0.05)
+                    while True:
+                        if item is None:
+                            stop = True
+                        else:
+                            pending.append(item)
+                        item = self._jobs.get_nowait()
+                except queue.Empty:
+                    pass
+                if self._cancel.is_set():
+                    return
+                while pending and len(active) < capacity:  # start the downloads of as many files as there are endpoints
+                    if self._cancel.is_set():
+                        return  # (one file at a time: after Ctrl-C / q the next import must not start, it writes to the library)
+                    job = pending.popleft()
+                    if not job.wanted():
+                        self._finish(job, "")
+                        continue
+                    try:
+                        job.started()
+                        if pages is None:
+                            self._import(job)
+                            continue
+                        active.append(job)
+                        self._ask_album(job)
+                    except Exception as err:  # this job only: it is told, the others go on
+                        logger.exception("%s: the fetching could not start", job.path)
+                        if job in active:
+                            active.remove(job)
+                        self._finish(job, f"the fetching stopped: {err}")
+                if pages is not None and active:
+                    for kind, address, err in pages.wait(0.3):
+                        self._arrived(kind, address, err)
+                    for job in list(active):
+                        if job.pages_ready and (job.cover is None or job.cover.done()):
+                            active.remove(job)
+                            self._import(job)
+            except Exception as err:  # a failure here used to end the thread silently: the rows stayed "fetching" for ever
+                logger.exception("the fetching of pages and covers failed")
+                for job in [*active, *pending]:
+                    self._finish(job, f"the fetching stopped: {err}")
+                active.clear()
+                pending.clear()
 
     def _ask_album(self, job: Job) -> None:
         state = self._pages.submit(job.url)
