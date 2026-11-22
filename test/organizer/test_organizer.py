@@ -1394,3 +1394,13 @@ def test_destinations_that_differ_only_by_case_are_not_worked_on_at_once(lib, ma
     assert organizer._independent(rows, WRITE, repair=True) == {0, 1}
     rows[1] = {"path": make_cbz("X.cbz", pages=1), "format": "cbr"}  # the repair of `x.cbz` and of `X.cbz.cbr` both end as one file name
     assert organizer._independent(rows, WRITE, repair=True) == set()
+
+
+def test_the_series_year_option_leaves_the_sites_year_out_of_the_path(lib, make_cbz, tmp_path):
+    album = lib.add_album(AlbumInfo("b", "7", "War", series=SeriesInfo("b", "s7", "Batman: Dark Victory (1999)"), volume=1, language="fr"))
+    path = make_cbz("a.cbz")
+    row = registered(lib, path, album)
+    kept = Organizer(lib, settings_for(tmp_path), force=True)._destination(path, "cbz", album, MOVE)
+    assert kept.count("(1999)") == 2  # as before: the year is in $series, in the folder and in the name
+    stripped = Organizer(lib, settings_for(tmp_path, paths={"series_year": "strip"}), force=True)._destination(path, "cbz", album, MOVE)
+    assert "(1999)" not in stripped and stripped.count("Dark Victory") == 2 and stripped.endswith("- T01 - War.cbz")

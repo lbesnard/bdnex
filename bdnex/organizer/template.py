@@ -24,6 +24,15 @@ def sanitize(value: str) -> str:
     return value[:MAX_COMPONENT].rstrip(". ") or "_"
 
 
+TRAILING_YEAR = re.compile(r"\s*\((?:1[5-9]|20)\d{2}\)\s*$")
+
+
+def strip_year(series: str) -> str:
+    """``Batman: Dark Victory (1999)`` -> ``Batman: Dark Victory``: the site adds the year of its first album to a series name that another series
+    has too. Never leaves nothing (a series called ``(1999)`` keeps it)."""
+    return TRAILING_YEAR.sub("", series) or series
+
+
 def fields_for(album: dict[str, Any]) -> dict[str, Any]:
     """Template variables for an album (``Library.get_album``)."""
     credits = album["credits"]

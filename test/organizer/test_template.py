@@ -99,3 +99,9 @@ def test_functions_nest_and_a_typo_is_found_when_the_configuration_is_read():
         with pytest.raises(ValueError):
             _check_template(bad)
     assert _check_template("%upper{$series}/%if{$volume,T$volume:02}$title") 
+
+
+def test_a_year_the_site_added_to_a_series_name_can_be_left_out():
+    assert template.strip_year("Batman: Dark Victory (1999)") == "Batman: Dark Victory"
+    assert template.strip_year("Les Nains") == "Les Nains" and template.strip_year("Spirou (1938) Hors-série") == "Spirou (1938) Hors-série"  # only a trailing one
+    assert template.strip_year("(1999)") == "(1999)"  # never nothing
