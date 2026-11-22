@@ -1200,13 +1200,14 @@ class ReviewApp(App):
         self.notify("no file marked", timeout=3)
 
     def action_attach(self) -> None:
-        """Pick an album of a series: each marked file (without a mark: the files of this folder not decided yet) gets the
-        album of that series with the volume number in its name."""
+        """Pick an album of a series: each marked file (without a mark: the file under the cursor) gets the album of that series with
+        the volume number in its name. `m` marks every file not decided yet, for a whole folder of one series."""
         chosen = self.files_to_attach()
         if not chosen:
             return
+        what = f"this file ({os.path.basename(chosen[0].path)})" if len(chosen) == 1 else f"these {len(chosen)} marked files"
         self.push_screen(FuzzyScreen(self.hub, self.search_start(chosen[0]),
-                                     f"An album of the series, or the address of the series page, for these {len(chosen)} file(s)", series_ok=True),
+                                     f"An album of the series, or the address of the series page, for {what}", series_ok=True),
                          lambda candidate: self.run_worker(self.propose(chosen, candidate)) if candidate is not None else None)
 
     def files_to_attach(self) -> list:
@@ -1214,10 +1215,10 @@ class ReviewApp(App):
         if row is None:
             return []
         chosen = [r for r in self.rows if id(r) in self.marked and not r.busy]
+        if not chosen and not row.busy:
+            chosen = [row]  # nothing marked: the file under the cursor, never "the rest of its folder" (one-shots share a folder)
         if not chosen:
-            chosen = [r for r in self.rows if r.folder == row.folder and not r.status and not r.busy]
-        if not chosen:
-            self.notify("Nothing to attach: mark files with space.", severity="warning")
+            self.notify("Still linking this file: wait for it to finish.", severity="warning")
         return chosen
 
     async def propose(self, chosen: list, candidate) -> None:
