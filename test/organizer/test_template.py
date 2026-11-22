@@ -128,6 +128,13 @@ def test_replace_rewrite_and_collections_use_the_beets_syntax():
     assert template.sanitize("a‐b’c: d", replace) == "a-b'c - d"  # the user's rules first, bdnex's own safety after (the colon rule too)
 
 
+def test_fields_for_reads_the_site_s_own_collection_and_cycle():
+    album = {**ALBUM, "extra": {"edition_fields": {"Collection": "Les mondes d'Aldébaran", "Cycle": "3"}}}
+    fields = template.fields_for(album)
+    assert fields["collection"] == "Les mondes d'Aldébaran" and fields["cycle"] == "3"
+    assert template.fields_for(ALBUM)["collection"] == "" and template.fields_for(ALBUM)["cycle"] == ""  # no edition table: empty, not asked
+
+
 def test_a_missing_collection_drops_out_of_the_path_with_ifdef():
     values = {"series": "Astérix", "title": "T", "volume": 1, "collection": ""}
     tpl = "Series/%ifdef{collection,$collection}/$series/$series - T$volume:02"

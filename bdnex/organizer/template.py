@@ -47,7 +47,7 @@ def apply_rewrites(fields: dict[str, Any], rules: list) -> dict[str, Any]:
 def collection_of(fields: dict[str, Any], path: str, rules: list) -> str:
     """The collection an album belongs to (``paths.collections``): the first rule whose regex is found in the field it names (any template
     field, or ``path`` / ``filename`` of the file), else ``""``. A family of albums the site does not group (Tintin, Astérix and their special
-    issues), put together in the paths."""
+    issues), put together in the paths. The caller falls back to the site's own ``$collection`` (``fields_for``) when no rule matches."""
     import os
 
     seen = {**fields, "path": path, "filename": os.path.basename(path)}
@@ -104,6 +104,7 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
             if name not in authors:
                 authors.append(name)
     volume = album.get("volume")
+    edition = (album.get("extra") or {}).get("edition_fields") or {}  # the site's own edition table, scraped as written
     return {
         "kind": album["kind"],
         "series": album.get("series") or "",
@@ -119,12 +120,14 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
         "writer": ", ".join(credits.get("Writer", [])),
         "penciller": ", ".join(credits.get("Penciller", [])),
         "colorist": ", ".join(credits.get("Colorist", [])),
-        "collection": "",  # from `paths.collections` (the organizer fills it: it needs the file's path)
+        # the site's own "Collection"; a `paths.collections` rule (the organizer applies it: it needs the file's path) wins when one matches
+        "collection": edition.get("Collection") or "",
+        "cycle": edition.get("Cycle") or "",  # the site's own "Cycle" within a collection, e.g. "3"
     }
 
 
 FIELD_NAMES = ("kind", "series", "title", "volume", "special", "language", "year", "publisher", "isbn", "genre", "authors",
-               "writer", "penciller", "colorist", "collection")  # what `fields_for` provides (a test keeps the two together)
+               "writer", "penciller", "colorist", "collection", "cycle")  # what `fields_for` provides (a test keeps the two together)
 
 
 FUNCTION = re.compile(r"%(\w+)\{")
