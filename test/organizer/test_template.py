@@ -29,11 +29,13 @@ def test_braces_and_unpadded_numbers():
 
 def test_value_with_slash_cannot_create_directories():
     parts = render("$series/$title", {**ALBUM, "title": "AC/DC: Live? <1>"}).parts
-    assert parts == ["Nains", "AC_DC_ Live_ _1_"]
+    assert parts == ["Nains", "AC_DC - Live_ _1_"]  # (`: ` opens a subtitle: ` - `; the others are `_`)
 
 
 def test_illegal_characters_and_trailing_dots_removed():
     assert template.sanitize('a:b*c?"d".. ') == "a_b_c__d_"
+    assert template.sanitize("Batman: Dark Victory (1999)") == "Batman - Dark Victory (1999)"  # a subtitle, as a person writes it
+    assert template.sanitize("Astérix : Le Gaulois") == "Astérix - Le Gaulois" and template.sanitize("12:30 train?") == "12_30 train_"
     assert template.sanitize("") == "_" and len(template.sanitize("x" * 500)) == template.MAX_COMPONENT
 
 
