@@ -256,7 +256,7 @@ paths:
   `$special` is what the site calls the tome when it is no number: `INT` (an intégrale), `HS`, `16B6`; empty otherwise (`bdnex edit` changes it:
   `alternate_number`). To put it in the name: `Series/$series/$series - %if{$special,$special,T$volume:02} - $title`.
   A function can not contain a `/` (a folder separator), and a typo in a function name is refused when the configuration is read.
-- Every value is made safe for file names (`/ \ : * ? " < > |` become `_`), so a value can never
+- Every value is made safe for file names (`/ \ : * ? " < > |` become `_`, except a colon that opens a subtitle, `Batman: Dark Victory`, which becomes ` - `: `Batman - Dark Victory`), so a value can never
   create a folder. The extension `.cbz` is added for you.
 - If a name already exists, bdnex shows both files and asks which to keep: the existing one, the new one (the existing goes to the [trash](versions.md#the-trash)), or both (the new one becomes a spare version in `_versions/`, numbered if there are several). `--force` keeps both.
 
