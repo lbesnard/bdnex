@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Import: aborting a question, Ctrl-C or an unexpected failure now closes what runs in the background (the cover threads, the page queue, the matching) however the run ends; before, finishing the stored pages on the way out queued covers whose threads waited out their polite delay, so the program could hang for minutes before exiting. Ctrl-C during the page fetch also means no cover vote afterwards (it used to go on downloading covers and linking files), and a failure while the cover vote applies a choice is taken back and the pass goes on with the next file instead of stopping the run.
 - Import with `duplicates.action: replace` (or "replace" chosen when asked): the identical file already in the library is now moved to the trash only when the new file is actually linked. Before, a preview (`import -n`) and a file left unmatched (you chose none of the candidates) still trashed the old file, leaving the album with no file. The report says how many replaced files are in the trash.
 - `bdnex duplicates --covers`: a spare version is no longer listed as a "similar cover" of its own album (it has that cover by design), and blank or uniform first pages are no longer grouped together as one big "same book" group.
 - Review screen: a series with one album and no volume (a one-shot such as Scalp), given by its address or picked as a SERIES, links that album to the one file you chose when the file's name has no number; before it said "none with a volume number" and changed nothing.
