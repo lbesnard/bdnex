@@ -24,7 +24,8 @@ import threading
 import time
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor
-from typing import Optional
+from dataclasses import dataclass
+from typing import Callable, Optional
 
 from rich.style import Style
 from rich.text import Text
@@ -221,6 +222,15 @@ def show_address(app, url: str) -> None:
     """The address where a browser can not be opened: copied (the terminal's clipboard) and said."""
     app.copy_to_clipboard(url)
     app.notify(f"{url}\n(copied; or ctrl/cmd-click the link in the detail or the Page column)", timeout=10)
+
+
+@dataclass
+class Waiting:
+    """A question in the queue: what to say about it, how to build its window, and what to do with the answer."""
+
+    title: str
+    make: Callable
+    callback: Callable
 
 
 class CandidatesScreen(ModalScreen):
@@ -664,6 +674,7 @@ class ReviewApp(App):
 
     TITLE = "bdnex review"
     CSS = """
+    #queue-badge { dock: right; width: auto; height: 1; padding: 0 1; background: red; color: white; text-style: bold; display: none; }
     #loading { height: 2fr; min-height: 8; content-align: center middle; text-align: left; }
     #table { height: 2fr; min-height: 8; }
     #detail { height: 1fr; min-height: 8; border-top: solid $accent; padding: 0 1; overflow-y: auto; }
@@ -686,6 +697,7 @@ class ReviewApp(App):
         Binding("v", "toggle_log", "Log"),
         Binding("y", "copy_log", "Copy the log"),
         Binding("a", "attach", "Attach marked to a series"),
+        Binding("w", "waiting", "Waiting questions"),
         Binding("e", "edit", "Edit by hand"),
         Binding("b", "previous_batch", "Previous batch"),
         Binding("n", "next_batch", "Next batch"),
@@ -705,6 +717,7 @@ class ReviewApp(App):
         self.remaining = 0  # the same, counted by the fetching thread itself (the screen may be gone): `finish_pending_fetches` waits on it
         self.remaining_lock = threading.Lock()
         self.finish_fetches = False  # `run` sets it: closing the screen then lets the queued fetches go on (see `finish_pending_fetches`)
+        self.waiting: list[Waiting] = []  # questions that came from background work: they wait here for the person (`w`), never over what is open
         self.library, self.settings = library, settings
         self.hub = SourceHub(source)
         self.batch_size, self.terms, self.unmatched = size, list(terms), unmatched
@@ -733,6 +746,7 @@ class ReviewApp(App):
     # -- layout
     def compose(self) -> ComposeResult:
         yield Header()
+        yield Static("", id="queue-badge")
         yield Static("", id="loading")
         yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
         yield Static("", id="detail")
@@ -1155,7 +1169,8 @@ class ReviewApp(App):
                 self.say("Everything is checked. Press q to quit: the pages still being fetched are finished first.", "green")
                 self.notify("Everything is checked: q quits", timeout=6)
                 return
-            self.push_screen(AskScreen(f"Batch {self.number} is done. Check the next batch?", None), self.continue_with)
+            self.ask_later(f"batch {self.number} is done: check the next one?",
+                           lambda: AskScreen(f"Batch {self.number} is done. Check the next batch?", None), self.continue_with)
 
     def continue_with(self, answer) -> None:
         if answer:
@@ -1357,6 +1372,33 @@ class ReviewApp(App):
             self.notify("Still linking this file: wait for it to finish.", severity="warning")
         return chosen
 
+    # -- questions that come by themselves: queued, never put over what the person is doing
+    def ask_later(self, title: str, make, callback) -> None:
+        """A question that arrives from background work (an answer to `a`, a finished batch): it waits in a queue, with a red mark at the top right
+        and a note, until the person presses `w`. Popping it up would cover the form they are filling (two windows over each other, one of
+        them answered by a key meant for the other)."""
+        self.waiting.append(Waiting(title, make, callback))
+        self.show_waiting()
+        self.notify(f"A question is waiting: {title}  (w opens it)", timeout=6)
+
+    def show_waiting(self) -> None:
+        with contextlib.suppress(Exception):
+            badge = self.query_one("#queue-badge", Static)
+            count = len(self.waiting)
+            badge.update(f"● {count} question{'s' if count != 1 else ''} waiting · w" if count else "")
+            badge.display = bool(count)
+
+    def action_waiting(self) -> None:
+        if not self.waiting:
+            self.notify("No question is waiting.", timeout=3)
+            return
+        if len(self.screen_stack) > 1:  # a window is open: it is finished first, the question stays where it is
+            self.notify("Finish the open window first: the question waits.", severity="warning", timeout=4)
+            return
+        item = self.waiting.pop(0)
+        self.show_waiting()
+        self.push_screen(item.make(), item.callback)
+
     async def guarded(self, work, what: str = "that") -> None:
         """Run a worker's coroutine so that its failure is said and logged: Textual ends the whole program for a worker that raises
         (the screen, the pending fetches and what was typed would be gone)."""
@@ -1368,8 +1410,29 @@ class ReviewApp(App):
             logger.exception("%s failed", what)
             self.notify(f"Could not do {what}: {err}", severity="error", timeout=10)
 
+    READING = "reading the series"
+
     async def propose(self, chosen: list, candidate) -> None:
-        """``candidate``: an album of the series, or the address (text) of the series page."""
+        """``candidate``: an album of the series, or the address (text) of the series page.
+
+        Reading a series page can take seconds (it is fetched once): the marked files say so in their state column, with the turning dots and
+        the seconds, until the answer is here (or it failed), and meanwhile they can not be decided again."""
+        quick = len(chosen) == 1 and not isinstance(candidate, str)  # one file, one album: linked at once, nothing to wait for
+        waiting = [] if quick else [r for r in chosen if not r.busy]
+        now = time.monotonic()
+        for row in waiting:
+            row.busy, row.busy_what, row.started_at = True, self.READING, now
+            self.refresh_row(row)
+        try:
+            await self.propose_for(chosen, candidate)
+        finally:
+            for row in waiting:
+                if row.busy_what == self.READING:  # (not a state somebody else gave it meanwhile)
+                    row.busy, row.busy_what, row.started_at = False, "", 0.0
+                    if row in self.rows:
+                        self.refresh_row(row)
+
+    async def propose_for(self, chosen: list, candidate) -> None:
         paths = [r.path for r in chosen]
         if len(chosen) == 1 and not isinstance(candidate, str) and not chosen[0].busy:
             # one file and one album picked: that album is the answer. Looking up "the volume of the file in the album's series" would
@@ -1386,9 +1449,10 @@ class ReviewApp(App):
                 logger.info("%s", err)
                 series_name = err.name  # `err` does not outlive this block: the answer below is given later
                 if err.none_matched and len(chosen) >= 2:  # not this series: say so, and offer the way out (a series written by hand)
-                    self.push_screen(AskScreen(f"{err}\n\nWrite these {len(chosen)} files by hand as the series {series_name!r}? "
-                                               "(the form opens with each volume read from its file name)", None),
-                                     lambda yes: self.edit_series(chosen, series_name) if yes else None)
+                    text = (f"{err}\n\nWrite these {len(chosen)} files by hand as the series {series_name!r}? "
+                            "(the form opens with each volume read from its file name)")
+                    self.ask_later(f"write {len(chosen)} files by hand as {series_name!r}?", lambda: AskScreen(text, None),
+                                   lambda yes: self.edit_series(chosen, series_name) if yes else None)
                 else:
                     self.notify(str(err), severity="warning", timeout=12)
                 return
@@ -1413,7 +1477,8 @@ class ReviewApp(App):
         left = len(chosen) - len(pairs)
         question = (f"{found.name}: {len(pairs)} of {len(chosen)} file(s) find their volume"
                     + (f" ({left} left as they are)" if left else "") + ". Link them?\n" + "\n".join(lines) + more)
-        self.push_screen(AskScreen(question, None), lambda yes: self.link_many(pairs) if yes else None)
+        self.ask_later(f"link {len(pairs)} file(s) to {found.name}?", lambda: AskScreen(question, None),
+                       lambda yes: self.link_many(pairs) if yes else None)
 
     def link_many(self, pairs: list) -> None:
         """Link each file to its album at once (a write in the library); the pages and covers come in the background, one by one."""

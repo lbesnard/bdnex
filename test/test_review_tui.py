@@ -445,6 +445,9 @@ def test_the_next_batch_is_offered_when_the_batch_is_done(env):
     async def script(app, pilot):
         await pilot.press("k")  # a batch of one file, two to check: there is another batch
         await pilot.pause()
+        assert len(app.waiting) == 1 and app.query_one("#queue-badge").display  # queued, with its red mark: not put over the table
+        await pilot.press("w")
+        await pilot.pause()
         assert app.screen.__class__.__name__ == "AskScreen"
         await pilot.press("y")
         await settle(app, pilot)
@@ -568,6 +571,8 @@ def test_marked_files_get_the_album_of_a_series_by_their_volume_after_one_questi
         assert app.screen.__class__.__name__ == "FuzzyScreen"
         await pilot.press("enter")
         await settle(app, pilot)
+        await pilot.press("w")  # the question waits in the queue (red mark, top right): `w` opens it
+        await pilot.pause()
         seen["question"] = app.screen.__class__.__name__
         await pilot.press("y")
         await settle(app, pilot)
@@ -601,6 +606,8 @@ def _series_address_run(env, monkeypatch, keys):
         await pilot.press("up")
         await keys(app, pilot)
         await settle(app, pilot)
+        await pilot.press("w")  # the question waits in the queue (red mark, top right): `w` opens it
+        await pilot.pause()
         seen["question"] = app.screen.__class__.__name__
         await pilot.press("y")
         await settle(app, pilot)
@@ -1313,6 +1320,8 @@ def test_b_goes_back_to_the_batch_before_with_its_decisions_and_n_forward_again(
         first = app.rows[0]
         await pilot.press("k")  # decided in batch 1; batch 2 is asked for
         await pilot.pause()
+        await pilot.press("w")  # (the question waits in the queue)
+        await pilot.pause()
         await pilot.press("y")
         await settle(app, pilot)
         seen["second"] = app.number
@@ -1652,6 +1661,8 @@ def test_when_the_series_page_does_not_fit_the_screen_says_so_and_offers_to_writ
         app.screen.query_one("#words").value = SERIES_PAGE
         await pilot.press("enter")
         await settle(app, pilot)
+        await pilot.press("w")  # the offer waits in the queue: `w` opens it
+        await pilot.pause()
         seen["screen"], seen["question"] = app.screen.__class__.__name__, app.screen.question
         await pilot.press("y")
         await settle(app, pilot)
@@ -1677,7 +1688,9 @@ def test_declining_the_offer_changes_nothing(env, monkeypatch):
         app.screen.query_one("#words").value = SERIES_PAGE
         await pilot.press("enter")
         await settle(app, pilot)
-        await pilot.press("n")
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("n")  # no
         await settle(app, pilot)
         seen["still_asking"] = app.screen.__class__.__name__ in ("AskScreen", "EditScreen")
 
