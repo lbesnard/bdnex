@@ -540,3 +540,21 @@ def test_an_identical_file_that_is_linked_still_replaces_the_old_one(web, make_c
     result = env.session.import_file(copy)
     assert result.outcome == TAGGED and "trash" in result.note
     assert env.lib.get_file(original) is None and not os.path.exists(original) and len(env.lib.trash_entries()) == 1
+
+
+def test_a_missing_series_page_leaves_the_album_partial_and_a_later_fetch_completes_it(web, make_cbz):
+    from helpers import SERIES_URL
+
+    env = Env(web, make_settings(), FakePrompter())
+    env.source.update_sitemaps()
+    path = make_cbz(FILE)
+    saved = web.pages.pop(SERIES_URL)  # the site refuses the series page
+    result = env.session.import_file(path)
+    assert result.outcome == PARTIAL and "series page could not be read" in result.note
+    assert env.lib.get_album(result.album_id)["extra"].get("partial")  # not stored as complete
+    web.pages[SERIES_URL] = saved  # the page is back
+    env.session.steps = frozenset(["fetch"])
+    again = env.session.run([path])
+    assert again.results[0].outcome == TAGGED
+    album = env.lib.get_album(env.lib.get_file(path)["album_id"])
+    assert not album["extra"].get("partial") and album["series"] == "Nains"
