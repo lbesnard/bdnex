@@ -655,7 +655,7 @@ class Bedetheque:
         html = self._get("album", url, recache and not album_fresh).decode("utf-8", errors="replace")
         fields, series_href = parser.parse_album_page(html, url)
 
-        abstract, series_extra = None, {}
+        abstract, series_extra, series_failed = None, {}, False
         if series_href and fields.get("Tome") is not None:
             try:
                 details = None if recache else self._series_details.get(series_href)
@@ -670,7 +670,11 @@ class Bedetheque:
 
                 # working offline (`import --reparse`) the series pages never fetched are expected to be missing: not a warning
                 (logger.debug if isinstance(err, OfflineError) else logger.warning)(f"Series page {series_href} unavailable: {err}")
-        return parser.build_album_info(fields, series_href, abstract, series_extra)
+                series_failed = not isinstance(err, OfflineError)
+        info = parser.build_album_info(fields, series_href, abstract, series_extra)
+        if series_failed:  # the album is kept, but it is not complete: without this mark `import --fetch` would never ask for the page again
+            info.extra = {**(info.extra or {}), "partial": True, "series_page_missing": True}
+        return info
 
     def album_info_from_html(self, html: str, url: str) -> AlbumInfo:
         """Use a page saved from a browser (the site blocks scripted page requests).
