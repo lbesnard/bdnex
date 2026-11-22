@@ -54,9 +54,9 @@ function askToken() {
 // Pictures cannot send the token header, so with a token they are fetched and shown from memory.
 function picture(img, path) {
   if (!token) { img.src = path; return; }
-  fetch(path, { headers: { Authorization: "Bearer " + token } })
+  fetch(path, { headers: { Authorization: "Bearer " + token, "X-Bdnex-Page": "1" } })
     .then(r => r.ok ? r.blob() : Promise.reject(new Error(r.statusText)))
-    .then(b => { img.src = URL.createObjectURL(b); })
+    .then(b => { const url = URL.createObjectURL(b); img.addEventListener("load", () => URL.revokeObjectURL(url), { once: true }); img.src = url; })
     .catch(() => img.dispatchEvent(new Event("error")));
 }
 
@@ -80,6 +80,9 @@ const canChange = () => !!(app.overview && app.overview.allow_changes);
 // `text in backticks` becomes code
 const rich = text => String(text ?? "").split("`").map((part, i) => i % 2 ? el("code", {}, part) : part);
 const header = (title, lead) => [el("h1", {}, title), lead ? el("p", { class: "lead" }, rich(lead)) : null];
+// The latest draw wins: every view's draw takes a number when it starts and gives up if a newer one started while it waited for the server
+// (a slow answer for what was typed before, a click on another view, a double click on "Show more").
+let drawToken = 0;
 const render = (...kids) => view.replaceChildren(...kids.flat(Infinity).filter(k => k != null && k !== false));
 const loading = () => render(el("p", { class: "hint" }, "Loading…"));
 const failure = e => render(el("div", { class: "panel err" }, e.message));
@@ -102,7 +105,9 @@ function filterLink(field, value, text, hint) {
 
 const VIEWS = {
   overview: { name: "Overview", icon: "◧", async draw() {
+    const mine = ++drawToken;
     const o = app.overview = await api("/api/overview");
+    if (mine !== drawToken) return;
     const tile = (n, text, href, alert) => el("a", { class: "tile" + (alert && n ? " alert" : ""), href: href || "#/overview" }, el("b", {}, n), el("span", {}, text));
     const bars = (data, unit) => {
       const entries = Object.entries(data), max = Math.max(1, ...entries.map(e => e[1]));
@@ -124,7 +129,9 @@ const VIEWS = {
   } },
 
   albums: { name: "Albums", icon: "▦", async draw(q = "", offset = 0, previous = []) {
+    const mine = ++drawToken;
     const data = await api("/api/albums", { params: { q, limit: 60, offset } });
+    if (mine !== drawToken) return;
     const items = [...previous, ...data.items];
     const cards = items.map(a => el("div", { class: "card", tabindex: 0, onclick: () => albumDialog(a.id), onkeydown: e => { if (e.key === "Enter") albumDialog(a.id); } },
       el("div", { class: "cover" }, a.partial ? el("span", { class: "badge" }, "not fetched") : null, cover(`/api/albums/${a.id}/cover`, a.title)),
@@ -140,7 +147,9 @@ const VIEWS = {
   } },
 
   people: { name: "People", icon: "☺", async draw(q = "", offset = 0) {
+    const mine = ++drawToken;
     const data = await api("/api/people", { params: { q, limit: 100, offset } });
+    if (mine !== drawToken) return;
     const rows = data.items.map(p => el("tr", {}, el("td", {}, el("a", { href: albumsWith("author", p.name) }, p.name)), el("td", {}, String(p.albums)),
       el("td", {}, Object.entries(p.roles).flatMap(([role, n], i) => [i ? " · " : "", filterLink(role.toLowerCase() in { writer: 1, penciller: 1, inker: 1, colorist: 1, letterer: 1, coverartist: 1 } ? role.toLowerCase() : "author", p.name, `${role} ${n}`, `${p.name} as ${role}`)]))));
     const to = offset + data.items.length;
@@ -152,7 +161,9 @@ const VIEWS = {
   } },
 
   series: { name: "Series", icon: "☰", async draw(name = "", onlyMissing = false) {
+    const mine = ++drawToken;
     const data = await api("/api/series", { params: { name, missing: onlyMissing } });
+    if (mine !== drawToken) return;
     const only = el("input", { type: "checkbox", id: "only" }); only.checked = onlyMissing;
     const form = el("form", { class: "row", onsubmit: e => { e.preventDefault(); VIEWS.series.draw($("input[type=search]", form).value.trim(), only.checked); } },
       el("input", { type: "search", placeholder: "words of the series name", value: name, "aria-label": "series name" }),
@@ -177,7 +188,9 @@ const VIEWS = {
   } },
 
   review: { name: "Review", icon: "✓", async draw() {
+    const mine = ++drawToken;
     const data = await api("/api/review");
+    if (mine !== drawToken) return;
     const out = [...header("Review matches", "Files whose cover does not look like their album's. Is the match right?")];
     if (!canChange()) out.push(el("p", { class: "hint warn" }, rich("This server is read-only: start it with `api.allow_changes: true` (or `--allow-changes`) to answer here. Meanwhile `bdnex review` does the same in the terminal.")));
     if (!data.items.length) out.push(el("div", { class: "panel" }, "Nothing waits for a review."));
@@ -203,8 +216,10 @@ const VIEWS = {
   } },
 
   health: { name: "Health", icon: "✚", async draw() {
+    const mine = ++drawToken;
     const data = await api("/api/check");
     const dups = await api("/api/duplicates");
+    if (mine !== drawToken) return;
     const out = [...header("Library health", "Is the library consistent with itself and with the disk?")];
     if (!data.items.length) out.push(el("div", { class: "panel ok" }, "Everything is consistent."));
     const list = el("div", { class: "findings" });
@@ -222,8 +237,10 @@ const VIEWS = {
   } },
 
   tasks: { name: "Tasks", icon: "▶", async draw(jobId) {
+    const mine = ++drawToken;
     const available = await api("/api/jobs/available");
     const history = await api("/api/jobs");
+    if (mine !== drawToken) return;
     app.overview = app.overview || await api("/api/overview");
     const logBox = el("div", {});
     const query = el("input", { type: "text", placeholder: "only these files (same terms as bdnex ls --files), e.g. series:nains" });
@@ -268,7 +285,9 @@ const VIEWS = {
   } },
 
   files: { name: "Files", icon: "▤", async draw(q = "", offset = 0) {
+    const mine = ++drawToken;
     const data = await api("/api/files", { params: { q, limit: 100, offset } });
+    if (mine !== drawToken) return;
     const again = () => VIEWS.files.draw(q, offset);
     const post = async (f, what, body) => { try { const r = await api(`/api/files/${f.file_id}/${what}`, { method: "POST", body: body || {} }); if (r.note) alert(r.note); again(); } catch (e) { alert(e.message); } };
     const run = (command, f, extra) => startJob(command, { query: [`fileid:${f.file_id}`], preview: false, interactive: true, ...extra });
@@ -292,7 +311,9 @@ const VIEWS = {
   } },
 
   trash: { name: "Trash", icon: "✕", async draw() {
+    const mine = ++drawToken;
     const data = await api("/api/trash");
+    if (mine !== drawToken) return;
     const restore = (t, place) => confirm(`Put ${t.path} back${place ? " and move it where its album belongs" : ""}?`) &&
       startJob("trash-restore", { id: t.id, place, preview: false, interactive: true });
     render(...header("Trash", "Files that were replaced wait here. Empty them from the Tasks page."),
@@ -302,7 +323,9 @@ const VIEWS = {
   } },
 
   settings: { name: "Settings", icon: "⚙", async draw() {
+    const mine = ++drawToken;
     const data = await api("/api/settings");
+    if (mine !== drawToken) return;
     const edit = canChange();
     // one control per option; `value()` is what it holds now, in the type the server wants
     const control = o => {
@@ -510,6 +533,8 @@ function questionCard(jobId, q) {
 }
 
 let polling = null;
+let following = 0;           // the job being followed now: a follower of an older view (or job) ends itself
+let stopFollowKeys = null;   // takes its keyboard listener off the page
 async function startJob(command, options, box) {
   try {
     const job = await api("/api/jobs", { method: "POST", body: { command, ...options } });
@@ -521,16 +546,29 @@ async function startJob(command, options, box) {
 async function followJob(id, box) {
   box = box || view;
   if (polling) clearTimeout(polling);
+  if (stopFollowKeys) stopFollowKeys();
+  const me = ++following;
   const status = el("span", { class: "tag warn" }, "running"), log = el("pre", { class: "log" }), cancel = el("button", { disabled: !canChange() }, "Cancel");
   const asking = el("div", {});
   box.replaceChildren(el("div", { class: "row", style: "margin-top:14px" }, el("b", {}, `Job #${id}`), status, cancel), asking, log);
   let shown = 0, onkey = null;
   const stopKeys = () => { if (onkey) document.removeEventListener("keydown", onkey); onkey = null; };
+  stopFollowKeys = stopKeys;
+  let failures = 0;
   cancel.addEventListener("click", async () => { try { await api(`/api/jobs/${id}/cancel`, { method: "POST" }); } catch (e) { alert(e.message); } });
   let after = 0;
   const tick = async () => {
+    if (me !== following) { stopKeys(); return; }
     let job;
-    try { job = await api(`/api/jobs/${id}`, { params: { after } }); } catch (e) { log.append(e.message); return; }
+    try { job = await api(`/api/jobs/${id}`, { params: { after } }); } catch (e) {
+      // a proxy hiccup or a server restart: say it once and ask again (the job goes on whether or not this page watches it)
+      if (!failures) log.append(`(${e.message}: trying again)\n`);
+      failures += 1;
+      if (me === following && failures <= 60) polling = setTimeout(tick, Math.min(10000, 700 * failures));
+      return;
+    }
+    failures = 0;
+    if (me !== following) { stopKeys(); return; }
     if (job.lines.length) { log.append(job.lines.join("\n") + "\n"); log.scrollTop = log.scrollHeight; }
     after = job.next;
     const waitingFor = job.status === "running" && job.question ? job.question : null;
@@ -598,6 +636,7 @@ async function route() {
   const id = (path || "overview").split("/")[0];
   const params = new URLSearchParams(query || "");
   const entry = VIEWS[id] || VIEWS.overview;
+  following += 1; if (stopFollowKeys) stopFollowKeys(); drawToken += 1;  // leaving a job's page: its polling and its keys end with it
   drawNav(); loading();
   try {  // a link such as #/albums?q=series:nains or #/series?name=nains opens the view already filtered
     if (id === "albums") await entry.draw(params.get("q") || "");

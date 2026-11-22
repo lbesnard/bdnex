@@ -3,6 +3,7 @@
 Usage: uv run python tools/demo_library.py /some/scratch/folder
 Then: BDNEX_CONFIG=/some/scratch/folder/bdnex.yaml uv run bdnex serve --port 8791 --allow-changes
 """
+import zlib
 import json, os, sys, zipfile
 import pymupdf, yaml
 from bdnex.library import AlbumInfo, Library, SeriesInfo
@@ -38,7 +39,7 @@ with Library.for_settings(settings) as lib:
         info = SeriesInfo("bedetheque", name.lower().replace(" ", "-"), name)
         known = []
         for v in range(1, count + 1):
-            sid = f"{abs(hash(name)) % 9999}{v}"
+            sid = f"{zlib.crc32(name.encode()) % 9999}{v}"  # (the same on every run: `hash()` is not, and a second run added every album again)
             title = f"{name.split()[0]} tome {v}"
             known.append({"source_id": sid, "title": title, "volume": v, "url": f"https://www.bedetheque.com/BD-{v}.html"})
             if v % 4 == 0:  # not owned
