@@ -104,7 +104,9 @@ _VOLUME_WORDS = frozenset(["t", "v", "tome", "vol", "volume", "no", "n", "#"])
 
 def fold(text: str) -> str:
     """Lowercase and strip accents."""
-    return "".join(c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)).lower()
+    from bdnex.library.query import LIGATURES  # œ, æ: not decomposed by NFKD, and `Cœur` is `Coeur` in an address
+
+    return "".join(c for c in unicodedata.normalize("NFKD", text.translate(LIGATURES)) if not unicodedata.combining(c)).lower()
 
 
 def query_tokens(text: str) -> tuple[list[str], list[int]]:

@@ -16,12 +16,15 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 from bdnex.importer.matching import Match, explicit_volume, numeric_title, query_from_filename, small_number
+from bdnex.importer.bedetheque.sitemap import NOISE_WORDS, STOPWORDS as _STOP
 from bdnex.importer.source import Candidate
 from bdnex.library.query import fold
 
 SERIES, VERSIONS, UNCLEAR = "series", "versions", "unclear"
+STOPWORDS = _STOP | NOISE_WORDS | {"tome", "tomes", "volume", "integrale", "the", "and", "pour", "dans", "sur", "une"}
 MIN_SHARED_LETTERS = 4  # the files of a series start with the same title: at least this many letters
 SAME_BOOK_OVERLAP = 0.6  # share of words two file names have in common for them to be one book
+VOTE_MIN_SCORE = 50.0  # a candidate scoring less than this is not evidence that a file belongs to its series
 MIN_SUPPORT = 0.5  # share of the files with a volume that must agree on a series
 
 
@@ -125,7 +128,7 @@ def propose_series(source, paths: list[str], matches: dict[str, list[Match]]) ->
         seen = set()
         for match in matches.get(path, []):
             series = _series_of(source, match.candidate)
-            if series is None or match.candidate.volume != volumes[path] or series.source_id in seen:
+            if series is None or match.candidate.volume != volumes[path] or series.source_id in seen or match.score < VOTE_MIN_SCORE:
                 continue
             seen.add(series.source_id)
             votes[series.source_id] += 1
@@ -150,7 +153,8 @@ def _plausible(series_name: str, paths: list[str]) -> bool:
     """A series must share a word of three letters or more with the folder name or the file names
     (``14-18`` is not ``X``, ``666`` is not ``N6``)."""
     def words(text: str) -> set[str]:
-        return {word for word in fold(text).replace("-", " ").replace(".", " ").split() if len(word) >= 3 and word.isalpha()}
+        return {word for word in fold(text).replace("-", " ").replace(".", " ").split()
+                if len(word) >= 3 and word.isalpha() and word not in STOPWORDS}  # `les`, `des`, `the`, `tome`: shared by any two series
 
     known = words(os.path.basename(os.path.dirname(paths[0])))
     for path in paths:

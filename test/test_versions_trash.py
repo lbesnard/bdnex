@@ -17,8 +17,11 @@ from bdnex.versions import (DIFFERENT, IDENTICAL, KEEP_EXISTING, KEEP_NEW, PROBA
 PREFER = ["cbz", "cbr", "pdf"]
 
 
+PAGE = 0x5A5A5A5A5A5A5A5A  # a hash of a real page: 32 bits set (a flat one would prove nothing)
+
+
 def facts(**kw):
-    base = dict(path="/c/a.cbz", format="cbz", size=100 * 1048576, pages=20, corrupted=False, md5="aa", cover=0b1010)
+    base = dict(path="/c/a.cbz", format="cbz", size=100 * 1048576, pages=20, corrupted=False, md5="aa", cover=PAGE)
     return FileFacts(**{**base, **kw})
 
 
@@ -28,15 +31,22 @@ def test_identical_bytes_are_recognised_whatever_the_name():
 
 
 def test_same_pages_and_same_cover_is_the_same_book_in_another_container():
-    assert relation(facts(), facts(format="cbr", md5="bb", cover=0b1011)) == SAME_BOOK
+    assert relation(facts(), facts(format="cbr", md5="bb", cover=PAGE ^ 0b11)) == SAME_BOOK
 
 
 def test_same_pages_without_a_cover_to_compare_is_only_probably_the_same():
     assert relation(facts(), facts(md5="bb", cover=None)) == PROBABLY_SAME
 
 
+def test_a_blank_or_uniform_first_page_proves_nothing_either_way():
+    """Two different books with a black cover hash alike (distance 0), and two scans of one book may differ: neither says anything."""
+    assert relation(facts(cover=0), facts(md5="bb", cover=0)) == PROBABLY_SAME
+    assert relation(facts(), facts(md5="bb", cover=(1 << 64) - 1)) == PROBABLY_SAME
+    assert relation(facts(cover=0), facts(md5="bb", cover=0, pages=21)) == DIFFERENT  # the page count still tells
+
+
 def test_another_cover_or_page_count_is_a_different_version():
-    far = (1 << 40) - 1
+    far = PAGE ^ ((1 << 40) - 1)
     assert relation(facts(), facts(md5="bb", cover=far)) == DIFFERENT
     assert relation(facts(), facts(md5="bb", pages=21)) == DIFFERENT
 

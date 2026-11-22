@@ -153,7 +153,11 @@ def test_comparison_is_symmetric_enough_and_bounded():
 
 
 def test_a_flat_image_has_nothing_to_compare():
-    assert covers.sift_similarity(jpeg(art(1)), jpeg(numpy.full((900, 600, 3), 128, numpy.uint8))) == 0.0
+    """Not 0 ("different": a false alarm on a right match) but an answer of "unknown", which every caller reads as not compared."""
+    with pytest.raises(covers.TooLittleDetail):
+        covers.sift_similarity(jpeg(art(1)), jpeg(numpy.full((900, 600, 3), 128, numpy.uint8)))
+    with pytest.raises(covers.CoverError):  # (a CoverError: nothing had to be taught to the callers)
+        covers.sift_similarity(jpeg(numpy.full((900, 600, 3), 30, numpy.uint8)), jpeg(art(1)))
 
 
 def test_an_unreadable_image_is_an_error_not_a_crash():

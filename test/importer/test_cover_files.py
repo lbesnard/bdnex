@@ -243,3 +243,18 @@ def test_saving_a_cover_from_several_threads_at_once_leaves_one_clean_file(tmp_p
     folder = tmp_path / "bedetheque" / "55"
     assert [p.name for p in folder.iterdir()] == ["cover.png"]  # no temporary file left behind
     assert (folder / "cover.png").read_bytes() in pictures  # one of them, whole
+
+
+def test_a_vote_where_a_competitor_has_no_cover_or_the_winner_is_another_volume_decides_nothing(tmp_path):
+    from types import SimpleNamespace
+
+    env, web, path = _vote_env(tmp_path, file_seed=1, album_seed=1)
+    env.session.run([path])
+    found = [c for c, _ in env.source.candidates("Nains Redwin", limit=2)]
+    assert len(found) == 2, "the fixture must offer two candidates for this test to mean anything"
+    first, second = found
+    matches = [SimpleNamespace(candidate=first, score=80.0), SimpleNamespace(candidate=second, score=80.0)]
+    env.session.settings.match.cover_vote_min = 1
+    env.session._cover_urls = lambda pool: {}
+    env.session._candidate_cover = lambda candidate, fetched: jpeg(art(1)) if candidate is first else None  # the other cover did not come
+    assert env.session._vote(path, matches) is None  # one cover compared: it did not beat anything

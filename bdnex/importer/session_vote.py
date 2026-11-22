@@ -115,10 +115,16 @@ class CoverVote:
                 return None
             except covers.CoverError as err:
                 logger.debug(f"{path}: cover not compared ({err})")
-        if not scored:
-            return None
+        if not scored or (len(pool) > 1 and len(scored) < len(pool)):
+            return None  # a competitor whose cover did not come (or had too little detail) can not be said to have lost
         scored.sort(key=lambda pair: -pair[0])
         best, winner = scored[0]
+        from bdnex.importer.matching import volumes_for
+
+        wanted = volumes_for(path)
+        if wanted and winner.candidate.volume is not None and winner.candidate.volume not in wanted:
+            self.detail(f"    cover vote: the best cover is of tome {winner.candidate.volume}, the file says {wanted[0]}: left undecided")
+            return None  # covers of one series look alike (logo, layout): the cover does not outweigh a wrong volume
         second = scored[1][0] if len(scored) > 1 else 0.0
         if best < settings.cover_vote_min or best - second < LEAD:
             self.detail(f"    cover vote: no clear winner for {os.path.basename(path)} (best cover {best:.0f}%, next {second:.0f}%)")

@@ -31,6 +31,11 @@ from bdnex.organizer.archive import IMAGE_EXTS, PDF_EXTRACTABLE
 
 logger = logging.getLogger(__name__)
 
+def flat_hash(value: int) -> bool:
+    """A difference hash with (almost) no bit set, or all set: a blank or uniform page, which says nothing about the book."""
+    return not 4 < value.bit_count() < 60
+
+
 SAME_COVER_DISTANCE = 10  # bits of 64 that may differ between two copies of the same cover
 SIFT_HEIGHT = 600  # both images are scaled to this height before the comparison
 SIFT_RATIO = 0.6  # Lowe's ratio test: a match counts if it is clearly better than the second best
@@ -43,6 +48,14 @@ class CoverUnavailable(RuntimeError):
 
 class CoverError(ValueError):
     """An image could not be read."""
+
+
+class TooLittleDetail(CoverError):
+    """A picture with too few distinctive points to be compared (a flat or dark cover, a tiny placeholder): the answer is "unknown",
+    never "different" (a false alarm on a right match) and never "alike" (a lucky pair of points)."""
+
+
+MIN_KEYPOINTS = 12  # distinctive points an image needs for its comparison to mean anything
 
 
 # ------------------------------------------------------------------ taking a cover out
@@ -220,16 +233,16 @@ def sift_similarity(original: bytes, other: bytes, height: int = SIFT_HEIGHT, ra
     """How alike two covers are, 0-100: the share of the distinctive SIFT features of the image with
     fewer of them that also appear in the other one.
 
-    Raises :class:`CoverUnavailable` without OpenCV and :class:`CoverError` for an unreadable image.
-    Images with too little detail to describe (a flat colour) compare as 0.
+    Raises :class:`CoverUnavailable` without OpenCV and :class:`CoverError` for an unreadable image, or
+    :class:`TooLittleDetail` (a CoverError) for one with fewer than :data:`MIN_KEYPOINTS` points: there is nothing to say.
     """
     cv2, numpy = _opencv()
     first, second = _grey(cv2, numpy, original, height), _grey(cv2, numpy, other, height)
     sift = cv2.SIFT_create()
     points_a, described_a = sift.detectAndCompute(first, None)
     points_b, described_b = sift.detectAndCompute(second, None)
-    if described_a is None or described_b is None or len(described_a) < 2 or len(described_b) < 2:
-        return 0.0
+    if described_a is None or described_b is None or min(len(described_a), len(described_b)) < MIN_KEYPOINTS:
+        raise TooLittleDetail("too little detail in a cover to compare it")
     matcher = cv2.FlannBasedMatcher({"algorithm": 1, "trees": 5}, {})  # 1 = KD-tree, for float descriptors
     pairs = matcher.knnMatch(described_a, described_b, k=2)
     good = sum(1 for pair in pairs if len(pair) == 2 and pair[0].distance < ratio * pair[1].distance)
