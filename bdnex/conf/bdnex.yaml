@@ -110,10 +110,14 @@ aliases:                                # `bdnex settle-doubtful-matches` runs `
   - "find-files-moved-by-hand = relocate --find  # look for the files the library knows by their content"
 plugins: {}                             # free-form options of third-party sources, by source name
 
+# How web pages are fetched (every source uses it). With an `endpoint` and no `fetcher`, FlareSolverr is used; with neither,
+# the pages you saved from a browser (`bedetheque.pages_dir`).
+fetch:
+  endpoint: null                        # the address of your FlareSolverr (http://localhost:8191/v1), or a list of them (spread out, with fallback)
+  delay: [3, 10]                        # seconds slept before each real page request
+  parallel: null                        # pages fetched at once; empty: one per endpoint
+  fetcher: null                         # your own "package.module:function" (url -> page bytes); empty: FlareSolverr
+
 bedetheque:
-  delay: [3, 10]                        # seconds slept before each real album/series page request
   sitemap_delay: [0.5, 1.5]             # seconds slept between sitemap files (about 55 plain XML files)
   pages_dir: ~/.local/share/bdnex/pages # where saved album pages are looked up
-  fetcher: bdnex.importer.bedetheque:flaresolverr_fetch   # "package.module:function": url -> page bytes (write your own)
-  fetcher_endpoint: null                # the address your fetcher uses (FlareSolverr: http://localhost:8191/v1), or a list of them; empty: saved pages
-  parallel: null                        # album pages fetched at once; empty: one per endpoint

@@ -94,7 +94,7 @@ def test_import_album_with_a_bdtheque_address(tmp_path, make_cbz, monkeypatch):
     conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite")}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     calls = []
-    import bdnex.importer.bedetheque.fetchers as fetchers
+    import bdnex.fetchers as fetchers
 
     monkeypatch.setattr(fetchers, "build_fetcher", lambda settings: (lambda url: (calls.append(url), PAGE.encode())[1]))
     path = make_cbz("Pere des etoiles.cbz")

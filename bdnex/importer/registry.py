@@ -60,6 +60,14 @@ class OfflineError(FileNotFoundError):
     """A page was needed that is not in the library's cache, while working offline."""
 
 
+def offline_settings(settings):
+    """``settings`` with a page fetcher that can not reach the network and no politeness delays (nothing is requested, so there
+    is nothing to be polite about): the source built from it works only from what is stored."""
+    return settings.model_copy(update={
+        "fetch": settings.fetch.model_copy(update={"fetcher": "bdnex.importer.registry:offline_fetch", "delay": (0, 0)}),
+        "bedetheque": settings.bedetheque.model_copy(update={"sitemap_delay": (0, 0)})})
+
+
 def offline_fetch(url: str) -> bytes:
     """A fetcher that never touches the network: use it to work only from the stored pages."""
     raise OfflineError(f"{url} is not stored in the library and the network is not used")

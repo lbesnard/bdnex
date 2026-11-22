@@ -22,7 +22,7 @@ def add_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--no-covers", action="store_true", help="with --mirror: the pages only, do not download the covers")
     parser.add_argument("--covers-only", action="store_true",
                         help="with --mirror: only the covers of the albums the library already holds without one (no page is fetched)")
-    add_workers(parser, "album pages fetched with --mirror", "bedetheque.parallel")
+    add_workers(parser, "album pages fetched with --mirror", "fetch.parallel")
     add_pretend(parser, "be fetched by --mirror: how many albums and covers are missing, and about how much room they take")
     parser.add_argument("--yes", action="store_true", help="with --mirror: do not ask before fetching (a script, or the old `bdnex mirror`)")
 

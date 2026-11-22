@@ -156,10 +156,10 @@ A beets-like library manager for French comics (Bédéthèque): SQLite library, 
 - **Never commit the user's private fetcher address** (it lives in their own `~/.config/bdnex/bdnex.yaml`). Check
   `git diff --cached` before every commit, and never `git add -A` / `git add .`: add paths explicitly. `TODO.md` is
   the user's, untracked, never committed.
-- `flaresolverr_fetch` (`bedetheque.fetcher`, `fetcher_endpoint`) is the default page fetcher and the user's own code:
+- `flaresolverr_fetch` (`bdnex/fetchers.py`; config `fetch.fetcher`, `fetch.endpoint`, `fetch.parallel`, `fetch.delay`; the old `bedetheque.*` names are `config.MOVED_KEYS`) is the default page fetcher and the user's own code:
   its behaviour and its endpoint setup are not changed, and it is never run against the site from a session; a bug in how it handles failures may
   be fixed with a test that fakes `requests.post` (the user allowed it for the status / failover fixes), and never put their endpoint address in the repo. The config
-  validates that `bedetheque.fetcher` imports and is callable. `fetcher_endpoint` is a list (a string is one item): used
+  validates that `fetch.fetcher` imports and is callable. `fetch.endpoint` is a list (a string is one item): used
   round-robin with fallback, and pages are fetched `parallel` at a time (`Bedetheque.page_queue` / `PageQueue`: network in worker
   threads started as soon as a file is matched, album then series page, SQLite only in the calling thread; the album record is built in the loop as the pages arrive, `ImportSession._handle_arrivals`; `prefetch` is the older, ordered form). Covers do not use it (plain request).
 - Do not modify the user's real database or comics. Work on copies in the session scratchpad.

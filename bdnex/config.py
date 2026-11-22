@@ -30,6 +30,9 @@ DEFAULTS_PATH = CONF_DIR / "bdnex.yaml"
 
 # Options that were renamed: old key -> new key (the old one still works, with a warning).
 RENAMED_KEYS = {"directory": "collection_path"}
+# options that moved into another section (the fetcher is every source's, not Bédéthèque's): the old place keeps working
+MOVED_KEYS = {"bedetheque.fetcher": "fetch.fetcher", "bedetheque.fetcher_endpoint": "fetch.endpoint",
+              "bedetheque.parallel": "fetch.parallel", "bedetheque.delay": "fetch.delay"}
 
 # Top-level options that existed once: key -> config_version that removed it.
 REMOVED_KEYS = {"bdnex": 2}
@@ -258,22 +261,27 @@ class Paths(_Section):
 
 
 class Bedetheque(_Section):
-    delay: tuple[float, float]
     sitemap_delay: tuple[float, float]
     pages_dir: str
-    fetcher: Optional[str] = None
-    fetcher_endpoint: list[str] = Field(default_factory=list)  # one address, or several (spread out, with fallback)
+
+
+class Fetch(_Section):
+    """How the web pages are fetched, for every source."""
+
+    delay: tuple[float, float]
+    fetcher: Optional[str] = None  # empty: FlareSolverr (`endpoint`), else saved pages
+    endpoint: list[str] = Field(default_factory=list)  # one address, or several (spread out, with fallback)
     parallel: Optional[int] = Field(default=None, ge=1, le=16)  # pages fetched at once; empty: one per endpoint
 
-    @field_validator("fetcher_endpoint", mode="before")
+    @field_validator("endpoint", mode="before")
     @classmethod
     def _one_or_many_endpoints(cls, value):
-        """``fetcher_endpoint`` may be one address or a list; nothing at all is an empty list."""
+        """``endpoint`` may be one address or a list; nothing at all is an empty list."""
         if value is None:
             return []
         return [value] if isinstance(value, str) else value
 
-    @field_validator("fetcher_endpoint")
+    @field_validator("endpoint")
     @classmethod
     def _endpoints_are_addresses(cls, value):
         for endpoint in value:
@@ -288,7 +296,7 @@ class Bedetheque(_Section):
     def _fetcher_exists(cls, value):
         """``package.module:function`` must lead to a function that can be imported and called."""
         if value:
-            from bdnex.importer.bedetheque.fetchers import FetcherError, load_fetcher
+            from bdnex.fetchers import FetcherError, load_fetcher
 
             try:
                 load_fetcher(value)
@@ -316,6 +324,7 @@ class Settings(_Section):
     source: str = Field(min_length=1)
     aliases: list[str] = Field(default_factory=list)
     plugins: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    fetch: Fetch
     bedetheque: Bedetheque
 
     model_config = ConfigDict(extra="forbid", populate_by_name=True, validate_assignment=True)
@@ -524,6 +533,27 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
                 warnings.append(f"`{old}` is now called `{new}`: rename it in your config "
                                 "(`bdnex config --update` does it for you).")
 
+    for old, new in MOVED_KEYS.items():
+        section, _, name = old.partition(".")
+        if isinstance(user.get(section), dict) and name in user[section]:
+            value = user[section].pop(name)
+            target, _, key = new.partition(".")
+            if old == "bedetheque.fetcher":
+                from bdnex.fetchers import is_default
+
+                if is_default(value):
+                    value = None  # the default fetcher needs no line any more
+            if value is None:
+                continue
+            if isinstance(user.get(target), dict) and key in user[target]:
+                warnings.append(f"`{old}` is now called `{new}`, which is also set: `{old}` is ignored. Delete it.")
+            else:
+                user.setdefault(target, {})
+                if user[target] is None:
+                    user[target] = {}
+                user[target][key] = value
+                warnings.append(f"`{old}` is now called `{new}`: `bdnex config --update` moves it for you.")
+
     version = user.get("config_version", 0)
     if not isinstance(version, int) or isinstance(version, bool):
         errors.append("config_version: must be an integer")
@@ -555,11 +585,6 @@ def build_settings(user: Optional[dict]) -> tuple[Settings, list[str], dict]:
                 and not os.path.isdir(os.path.expanduser(settings.collection_path)):
             warnings.append(f"`collection_path` ({settings.collection_path}) is not an existing folder: create it, or fix it "
                             "with `bdnex config --edit` (a disk that is not mounted?)")
-        if settings.bedetheque.fetcher_endpoint and not settings.bedetheque.fetcher:
-            warnings.append(
-                "bedetheque.fetcher_endpoint is set but bedetheque.fetcher is not, so nothing uses it: "
-                f"album pages are read from {settings.bedetheque.pages_dir}. Set bedetheque.fetcher to the "
-                "'package.module:function' that should fetch pages.")
     except ValidationError as err:
         errors.extend(_format_errors(err))
         if not errors:  # never an unexplained failure
@@ -640,7 +665,7 @@ FIRST_RUN_MESSAGE = (
 
 
 # Options that hold a secret: ``bdnex config`` hides them (``--clear`` shows them) and the web page never sends them.
-SECRET_KEYS = {"api.token", "api.password", "komga.api_key", "komga.password", "bedetheque.fetcher_endpoint"}
+SECRET_KEYS = {"api.token", "api.password", "komga.api_key", "komga.password", "fetch.endpoint"}
 HIDDEN_VALUE = "<hidden>"
 
 

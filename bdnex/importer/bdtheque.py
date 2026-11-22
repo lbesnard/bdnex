@@ -2,7 +2,7 @@
 
 Not a matching source: bdnex has no list of its pages, so nothing here searches. It is for the file Bédéthèque does not know: the
 person gives the address of the page (the review screen's ``i``, ``bdnex import --album ADDRESS FILE``), the page is fetched with the
-same fetcher as Bédéthèque's (``bedetheque.fetcher``, its endpoints included), kept compressed in its own table (``bdtheque_pages``),
+same fetcher as Bédéthèque's (``fetch``, its endpoints included), kept compressed in its own table (``bdtheque_pages``),
 and read into an ordinary library album with ``source = bdtheque``.
 
 The page is a *series* page: its album list is loaded by the site's JavaScript and is not in the HTML. So an album here carries the
@@ -168,8 +168,8 @@ class Bdtheque:
 
 
 def create(library, settings) -> Bdtheque:
-    """A reader of bdtheque.com with the fetcher of ``bedetheque.fetcher`` (FlareSolverr and all its endpoints by default)."""
-    from bdnex.importer.bedetheque.fetchers import build_fetcher
+    """A reader of bdtheque.com with the fetcher of ``fetch`` (FlareSolverr and all its endpoints by default)."""
+    from bdnex.fetchers import build_fetcher
 
     return Bdtheque(library, build_fetcher(settings))
 

@@ -7,15 +7,14 @@ import sys
 
 from bdnex.importer.registry import UnknownSource, create_source
 from bdnex.library import Library
-from bdnex.importer.candidates import OFFLINE
+from bdnex.importer.registry import offline_settings
 
 
 def build(settings, library):
     """The album list of the source, loaded (no request: the list is already stored). Raises ``NotReady``."""
     from bdnex.importer.album_search import AlbumList
 
-    offline = settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
-        update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
+    offline = offline_settings(settings)
     source = create_source(settings.source, library, offline)
     if not source.is_ready():
         raise LookupError("The album list is not downloaded yet: run `bdnex init` first.")

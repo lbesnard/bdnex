@@ -44,8 +44,8 @@ list), then a first import as in rule 2. `.cbr` files need `unrar`, `7z` or `bsd
 | browse in a browser | `bdnex serve` |
 
 An import can be stopped with Ctrl-C and run again: decisions and the albums already complete are kept, and
-`bdnex import --fetch` continues the page downloads. Pages are requested politely (`bedetheque.delay`,
-`bedetheque.parallel`); a large collection takes hours.
+`bdnex import --fetch` continues the page downloads. Pages are requested politely (`fetch.delay`,
+`fetch.parallel`); a large collection takes hours.
 
 ## Keeping the whole catalogue
 

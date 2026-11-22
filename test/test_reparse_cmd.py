@@ -19,7 +19,7 @@ def env(tmp_path, monkeypatch):
     db = tmp_path / "lib.sqlite"
     conf = tmp_path / "c.yaml"
     conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(db),
-                                    "bedetheque": {"fetcher": "helpers:recording_fetch"}}))  # would hit the network
+                                    "fetch": {"fetcher": "helpers:recording_fetch"}}))  # would hit the network
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     helpers.FETCHED.clear()
     with Library(db) as lib:
@@ -108,7 +108,7 @@ def test_series_album_with_its_series_page_missing_does_not_fail_or_fetch(tmp_pa
     db = tmp_path / "lib.sqlite"
     conf = tmp_path / "c.yaml"
     conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(db),
-                                    "bedetheque": {"fetcher": "helpers:recording_fetch"}}))
+                                    "fetch": {"fetcher": "helpers:recording_fetch"}}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     helpers.FETCHED.clear()
     url = "https://m.bedetheque.com/BD-Nains-Tome-1-Redwin-de-la-Forge-245127.html"
@@ -210,8 +210,9 @@ def test_pages_read_in_several_processes_give_what_one_process_gives(env):
             lib.cache_put("bedetheque", "album", url, open(ONE_HTML, "rb").read())
             urls.append(url)
     settings = load_config().settings
-    offline = settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
-        update={"fetcher": reparse_cmd.OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
+    from bdnex.importer.registry import offline_settings
+
+    offline = offline_settings(settings)
     groups = [[url] for url in urls]
     alone = reparse_cmd.read_groups(settings, offline, groups, 1)
     several = reparse_cmd.read_groups(settings, offline, groups, 3)

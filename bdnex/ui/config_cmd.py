@@ -83,6 +83,13 @@ def _update(path) -> int:
     from bdnex.config import RENAMED_KEYS
 
     renamed = []
+    from bdnex.config import MOVED_KEYS
+    from bdnex.config_template import move_option
+
+    for old, new_name in MOVED_KEYS.items():  # an option that moved to another section keeps its value, comment and list
+        text, done = move_option(text, old, new_name)
+        if done:
+            renamed.append(done.rstrip("."))
     for old, new_name in RENAMED_KEYS.items():  # an option that changed its name keeps its value
         if re.search(rf"(?m)^{new_name}:", text):  # both are there: renaming would give two (the last wins); build_settings warns
             continue
@@ -99,7 +106,7 @@ def _update(path) -> int:
 
     backup = write_config_file(path, new) or path.with_name(path.name + ".bak")
     for line in renamed:
-        print(f"Renamed the option {line}.")
+        print(line if line.startswith(("Moved", "Dropped")) else f"Renamed the option {line}.")
     print(f"Updated {path} (the previous file is {backup.name}):")
     if added:
         print(f"Added {len(added)} option(s), commented out:")

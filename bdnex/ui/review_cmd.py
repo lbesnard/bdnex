@@ -46,12 +46,11 @@ def _batch(args, settings, out) -> int:
         return 2
     from bdnex.importer.registry import create_source
     from bdnex.ui import color
-    from bdnex.importer.candidates import OFFLINE
+    from bdnex.importer.registry import offline_settings
 
     if not context.has_library(settings, "nothing to review."):
         return 1
-    offline = settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
-        update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})  # searching the list needs no request
+    offline = offline_settings(settings)  # searching the list needs no request
 
     def build_source():
         """In the thread of the album list: its own read-only library, the album list loaded (a few seconds)."""

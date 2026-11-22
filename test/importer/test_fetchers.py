@@ -34,8 +34,8 @@ def test_load_fetcher_rejects_non_callable(monkeypatch):
 
 
 def _config_with_endpoint(monkeypatch, endpoint):
-    settings = types.SimpleNamespace(bedetheque=types.SimpleNamespace(fetcher_endpoint=endpoint))
-    monkeypatch.setattr("bdnex.importer.bedetheque.fetchers.load_config",
+    settings = types.SimpleNamespace(fetch=types.SimpleNamespace(endpoint=endpoint))
+    monkeypatch.setattr("bdnex.fetchers.load_config",
                         lambda: types.SimpleNamespace(settings=settings))
 
 
@@ -145,7 +145,7 @@ def test_flaresolverr_without_an_endpoint_says_what_to_set(tmp_path, monkeypatch
     conf = tmp_path / "bdnex.yaml"
     conf.write_text(yaml.safe_dump({"config_version": 2}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
-    with pytest.raises(FetcherError, match="fetcher_endpoint is not set"):
+    with pytest.raises(FetcherError, match="fetch.endpoint is not set"):
         flaresolverr_fetch("https://www.bedetheque.com/BD-X-1.html")
 
 
@@ -214,7 +214,7 @@ def test_which_endpoint_served_each_page_is_logged_and_a_fallback_is_not_silent(
         return _ok()
 
     monkeypatch.setattr("requests.post", post)
-    with caplog.at_level(logging.INFO, logger="bdnex.importer.bedetheque.fetchers"):
+    with caplog.at_level(logging.INFO, logger="bdnex.fetchers"):
         flaresolverr_fetch(ONESHOT_URL)
     text = caplog.text
     assert "http://down/v1 failed (refused): trying the next endpoint" in text  # shown by default (a warning)

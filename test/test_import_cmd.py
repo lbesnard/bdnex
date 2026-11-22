@@ -14,7 +14,7 @@ def setup(tmp_path, monkeypatch, make_cbz):
     conf = tmp_path / "bdnex.yaml"
     conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"),
                                     "import": {"auto": True},
-                                    "bedetheque": {"delay": [0, 0]}}))
+                                    "fetch": {"delay": [0, 0]}}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     web = FakeWeb()
     import bdnex.importer.bedetheque as bdt_plugin
@@ -173,13 +173,13 @@ def test_import_command_fetch_step_completes_matched_albums(setup, monkeypatch, 
 
 def test_import_with_a_mistyped_fetcher_prints_a_message_not_a_traceback(tmp_path, monkeypatch, capsys, make_cbz):
     conf = tmp_path / "bdnex.yaml"
-    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"), "bedetheque": {
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(tmp_path / "lib.sqlite"), "fetch": {
         "fetcher": "bdnex.importer.bedetheque.flaresolverr_fetch:flaresolverr_fetch"}}))
     monkeypatch.setenv("BDNEX_CONFIG", str(conf))
     assert import_cmd.run([make_cbz("a.cbz")], out=io.StringIO()) == 1
     err = capsys.readouterr().err
     assert "Did you mean 'bdnex.importer.bedetheque:flaresolverr_fetch'?" in err
-    assert "bedetheque.fetcher" in err and "Traceback" not in err
+    assert "fetch.fetcher" in err and "Traceback" not in err
 
 
 def test_report_describes_what_was_recorded(setup):
@@ -263,7 +263,7 @@ def test_select_works_on_library_files_that_match_a_query(setup):
 def test_import_says_where_pages_come_from_when_no_fetcher_is_set(setup, capsys):
     path, tmp_path = setup
     import_cmd.run([os.path.dirname(path)], out=io.StringIO())
-    assert "fetcher_endpoint` is not set" in capsys.readouterr().err
+    assert "fetch.endpoint` is not set" in capsys.readouterr().err
 
 
 def test_skipped_earlier_files_are_left_alone_until_asked_about_with_skipped(setup):

@@ -276,3 +276,42 @@ def test_a_commented_example_deeper_in_the_file_is_not_taken_for_the_option():
 def test_unicode_line_separators_in_a_value_survive():
     text = "komga:\n  api_key: \"a b\"\nwrite:\n  pdf: tag\n"
     assert "a b" in config_template.set_value(text, "write.pdf", "skip")
+
+
+# ------------------------------------------------------------------ options that moved to another section
+OLD = """config_version: 2
+collection_path: /comics
+bedetheque:
+  delay: [3, 10]   # polite
+  fetcher: bdnex.importer.bedetheque:flaresolverr_fetch
+  fetcher_endpoint:
+    - http://a:8191/v1
+    - http://b:8191/v1
+  parallel: 4
+  pages_dir: ~/pages
+"""
+
+
+def test_update_moves_the_fetch_options_with_their_list_and_comment_and_drops_the_default_fetcher():
+    text = OLD
+    done = []
+    for old, new in cfg.MOVED_KEYS.items():
+        text, what = config_template.move_option(text, old, new)
+        done.append(what)
+    import yaml
+
+    data = yaml.safe_load(text)
+    assert data["fetch"] == {"delay": [3, 10], "endpoint": ["http://a:8191/v1", "http://b:8191/v1"], "parallel": 4}
+    assert data["bedetheque"] == {"pages_dir": "~/pages"}  # what stays
+    assert "  delay: [3, 10]   # polite" in text  # the comment travelled
+    assert any("Dropped bedetheque.fetcher" in what for what in done) and "flaresolverr_fetch" not in text
+    assert build_settings(data)[0].fetch.endpoint == ["http://a:8191/v1", "http://b:8191/v1"]  # valid, and no warning needed
+
+
+def test_a_custom_fetcher_is_moved_and_an_option_already_in_the_new_place_wins():
+    text = "bedetheque:\n  fetcher: mymod:fetch\n  parallel: 5\nfetch:\n  parallel: 2\n"
+    text, what = config_template.move_option(text, "bedetheque.fetcher", "fetch.fetcher")
+    assert "Moved" in what and "  fetcher: mymod:fetch" in text.split("fetch:")[1]
+    text, what = config_template.move_option(text, "bedetheque.parallel", "fetch.parallel")
+    assert "already set" in what and "parallel: 5" not in text and "parallel: 2" in text
+    assert config_template.move_option(text, "bedetheque.delay", "fetch.delay") == (text, "")  # nothing to move: untouched

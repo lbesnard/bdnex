@@ -280,7 +280,7 @@ options, all in [Getting started](getting-started.md#album-pages) and
 
 1. save the page from your browser into `~/.local/share/bdnex/pages/`, then
    `bdnex import --fetch`;
-2. point `bedetheque.fetcher` at your own function (`url -> bytes`) in the configuration;
+2. point `fetch.fetcher` at your own function (`url -> bytes`) in the configuration;
 3. do nothing: the album stays *matched* (series, volume, title) and is still usable.
 
 ## …rebuild my albums from what is already stored, offline?

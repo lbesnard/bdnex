@@ -316,3 +316,55 @@ def set_aliases(text: str, items: list[str]) -> str:
     suffix = f"  {comment.group(1)}" if comment and comment.group(1) else ""
     lines[header:end] = [("aliases:" if block else "aliases: []") + suffix, *block]
     return "\n".join(lines) + "\n"
+
+
+def move_option(text: str, old: str, new: str) -> tuple[str, str]:
+    """Move the active option ``old`` (``bedetheque.fetcher_endpoint``) to ``new`` (``fetch.endpoint``), with its whole value (a list
+    over several lines too) and its trailing comment. Returns (new text, what was done: ``""`` when ``old`` is not active in the text).
+    An old ``fetcher`` that names the default function is dropped: the default needs no line."""
+    import yaml
+
+    old_section, _, old_name = old.partition(".")
+    new_section, _, new_name = new.partition(".")
+    lines = _lines(text)
+    header = next((i for i, line in enumerate(lines) if re.match(rf"^{re.escape(old_section)}:[ \t]*(#.*)?$", line)), None)
+    if header is None:
+        return text, ""
+    start = next((i for i in range(header + 1, _span_end(lines, header)) if re.match(rf"^  {re.escape(old_name)}:", lines[i])), None)
+    if start is None:
+        return text, ""
+    end = start + 1
+    while end < len(lines) and (re.match(r"^ {3,}\S", lines[end]) or re.match(r"^  - ", lines[end])):
+        end += 1
+    block = lines[start:end]
+    del lines[start:end]
+    try:
+        value = (yaml.safe_load("\n".join(re.sub(r"^  ", "", b) for b in block)) or {}).get(old_name)
+    except yaml.YAMLError:
+        value = "?"
+    if old_name == "fetcher":
+        from bdnex.fetchers import is_default
+
+        if is_default(value if isinstance(value, str) else None):
+            return "\n".join(lines) + "\n", f"Dropped {old} (the default fetcher needs no line)."
+    if value is None:  # `key: null`: nothing to carry over
+        return "\n".join(lines) + "\n", f"Dropped {old} (it was empty)."
+    block[0] = re.sub(rf"^  {re.escape(old_name)}:", f"  {new_name}:", block[0])
+    target = next((i for i, line in enumerate(lines) if re.match(rf"^{re.escape(new_section)}:[ \t]*(#.*)?$", line)), None)
+    if target is not None:  # the new section is active: the option goes at its end (an inactive `# name:` line stays as help)
+        end_of = _span_end(lines, target)
+        existing = [i for i in range(target + 1, end_of) if re.match(rf"^  {re.escape(new_name)}:", lines[i])]
+        if existing:
+            return "\n".join(lines) + "\n", f"Dropped {old} ({new} is already set)."
+        lines[end_of:end_of] = block
+    else:
+        commented = next((i for i, line in enumerate(lines) if re.match(rf"^#\s*{re.escape(new_section)}:[ \t]*(#.*)?$", line)), None)
+        if commented is not None:
+            lines[commented] = re.sub(r"^#\s*", "", lines[commented])
+            end_of = _span_end(lines, commented)
+            lines[end_of:end_of] = block
+        else:
+            if lines and lines[-1].strip():
+                lines.append("")
+            lines += [f"{new_section}:", *block]
+    return "\n".join(lines) + "\n", f"Moved {old} -> {new}."

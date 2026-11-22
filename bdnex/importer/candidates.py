@@ -12,11 +12,10 @@ from typing import Any, Optional
 
 from bdnex.importer import confirm, covers
 from bdnex.importer.matching import find_matches
-from bdnex.importer.registry import create_source
+from bdnex.importer.registry import offline_settings, create_source
 from bdnex.ui.describe import label
 
 logger = logging.getLogger(__name__)
-OFFLINE = "bdnex.importer.registry:offline_fetch"
 
 
 def is_low(settings, path: str, file: dict | None, album: dict | None, last: dict | None) -> str:
@@ -151,8 +150,7 @@ def iter_report(settings, library, query: list[str], low: bool = False, limit: i
     ``announce(None)`` is called before the files are chosen and ``announce(total)`` after; ``progress(number, total,
     path, now, why)`` before the slow part of a file (the covers) and ``step`` (see ``compare_covers``) at each cover.
     Raises ``QueryError``, ``NotReady`` or the source's own errors."""
-    offline = settings if cover else settings.model_copy(update={"bedetheque": settings.bedetheque.model_copy(
-        update={"fetcher": OFFLINE, "delay": (0, 0), "sitemap_delay": (0, 0)})})
+    offline = settings if cover else offline_settings(settings)
     source = create_source(settings.source, library, offline)
     linked = library.query(query, files=True)
     unlinked = library.unmatched(query)
