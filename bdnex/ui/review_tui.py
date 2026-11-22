@@ -202,6 +202,25 @@ def candidates_of(hub: SourceHub, path: str, album_id: Optional[int], limit: int
             for c, s in source.candidates(query_from_filename(path), limit=limit)]
 
 
+def open_in_browser(url: str) -> bool:
+    """Open a page in the person's browser when there is one to open: over SSH a browser would start on the other machine (or a text one
+    inside this terminal), and on a machine with no display `webbrowser` may start `lynx` on the tty of the screen. ``False``: do not."""
+    if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
+        return False
+    if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        return False
+    try:
+        return bool(webbrowser.open(url))
+    except Exception:
+        return False
+
+
+def show_address(app, url: str) -> None:
+    """The address where a browser can not be opened: copied (the terminal's clipboard) and said."""
+    app.copy_to_clipboard(url)
+    app.notify(f"{url}\n(copied; or ctrl/cmd-click the link in the detail or the Page column)", timeout=10)
+
+
 class CandidatesScreen(ModalScreen):
     """The albums this one file could be, best first, with where each score comes from: Enter links the highlighted one.
     Few and quick (the matcher's own list); `o` goes on to the search of the whole album list."""
@@ -282,7 +301,9 @@ class CandidatesScreen(ModalScreen):
     def action_open(self) -> None:
         index = self.query_one(OptionList).highlighted
         if index is not None and 0 <= index < len(self.found):
-            webbrowser.open(self.found[index][0].url)
+            url = self.found[index][0].url
+            if not open_in_browser(url):
+                show_address(self.app, url)
 
     def action_search(self) -> None:
         self.dismiss("search")
@@ -374,6 +395,7 @@ class FuzzyScreen(ModalScreen):
         if not self.is_attached or not self.query("#hits"):
             return  # the screen was closed while the search ran (Enter on a pasted address, Esc)
         self.hits = hits
+        self.shown = mine  # these hits answer the latest typed text
         options = self.query_one(OptionList)
         options.clear_options()
         options.add_options([Option(self.hit_line(candidate, score)) for candidate, score in hits])
@@ -431,6 +453,9 @@ class FuzzyScreen(ModalScreen):
             options.highlighted = max(0, min(len(self.hits) - 1, (options.highlighted or 0) + step))
 
     def pick(self, index: Optional[int]) -> None:
+        if getattr(self, "shown", -1) != getattr(self, "latest", 0):  # the hits on screen are for what was typed BEFORE: not this album
+            self.query_one("#count", Label).update(Text("still looking: press Enter again when the list has changed", style="yellow"))
+            return
         if index is not None and 0 <= index < len(self.hits):
             picked = self.hits[index][0]
             self.dismiss(picked.url if is_series_address(picked.url) else picked)  # a series is given as its address: its page is read
@@ -438,7 +463,9 @@ class FuzzyScreen(ModalScreen):
     def action_open(self) -> None:
         index = self.query_one(OptionList).highlighted
         if index is not None and 0 <= index < len(self.hits):
-            webbrowser.open(self.hits[index][0].url)
+            url = self.hits[index][0].url
+            if not open_in_browser(url):
+                show_address(self.app, url)
 
     def action_back(self) -> None:
         self.dismiss(None)
@@ -542,6 +569,8 @@ class EditScreen(ModalScreen):
         values = {key: self.query_one(f"#f-{key}", Input).value.strip() for key, _, _ in self.fields}
         if self.volumes is not None:
             lines = self.query_one("#volumes", TextArea).text.split("\n")
+            while len(lines) > len(self.volumes) and not lines[-1].strip():
+                lines.pop()  # a trailing newline is not a file
             numbers = []
             for line in lines:
                 first = line.split("\t", 1)[0].strip()
@@ -553,6 +582,13 @@ class EditScreen(ModalScreen):
                 self.query_one("#problem", Label).update("keep one line per file")
                 return
             values["__volumes__"] = numbers
+        from bdnex.library import manual
+
+        try:  # what would be refused after the form is gone (a year that is no year, an empty series) is said here, and nothing typed is lost
+            manual.check({k: v for k, v in values.items() if k != "__volumes__"}, series=self.volumes is not None)
+        except manual.FormError as err:
+            self.query_one("#problem", Label).update(str(err))
+            return
         self.dismiss(values)
 
     def action_back(self) -> None:
@@ -589,13 +625,23 @@ class CoverScreen(ModalScreen):
     def load(self) -> None:
         from bdnex.ui.cover_text import half_blocks
 
-        local, online, notes = batch.read_covers(*self.files)
-        width = max(20, min(40, (self.app.size.width * 9 // 10 - 12) // 2))
-        left = half_blocks(local, width) if local else None
-        right = half_blocks(online, width) if online else None
-        self.app.call_from_thread(self.show_pair, left, right, notes)
+        try:
+            local, online, notes = batch.read_covers(*self.files)
+            width = max(20, min(40, (self.app.size.width * 9 // 10 - 12) // 2))
+            left = half_blocks(local, width) if local else None
+            right = half_blocks(online, width) if online else None
+        except Exception as err:  # a picture is a help: its failure is said on the screen, never the end of the program
+            left = right = None
+            notes = f"could not read the pictures: {err}"
+        try:
+            self.app.call_from_thread(self.show_pair, left, right, notes)
+        except Exception:  # the screen was closed while the thread read: nobody to show it to
+            pass
 
     def show_pair(self, left, right, notes: str) -> None:
+        if not self.is_attached or not self.query("#left"):
+            return
+
         def side(heading: str, picture) -> Text:
             text = Text(heading + "\n", style="bold")
             text.append_text(picture if picture is not None else Text("(none)", style="dim"))
@@ -850,6 +896,8 @@ class ReviewApp(App):
             self.show_batch(rows, seconds)
             return
         self.loading = True
+        if self.batches and self.at < len(self.batches):
+            self.batches[self.at] = self.rows  # kept as it is: the table is emptied for the new one, and a failure must give it back
         self.rows = []
         self.query_one(DataTable).clear()
         self.sub_title = f"batch {self.batch_of()} · getting ready..."
@@ -915,6 +963,8 @@ class ReviewApp(App):
         self.loading = False
         self.show_loading(False)
         self.sub_title = f"batch {self.batch_of()}"
+        if self.batches and self.at < len(self.batches):
+            self.display(self.batches[self.at], "seen before")  # back to the batch that was there (`self.rows` was emptied for the new one)
         self.say(f"Could not weigh the files: {message}", "red")
 
     def show_batch(self, rows: list[batch.Row], seconds: float) -> None:
@@ -1107,13 +1157,23 @@ class ReviewApp(App):
             self.exit()
 
     # -- decisions: each one is saved at once
+    def supersede(self, row: batch.Row) -> None:
+        """A newer decision for the row: the page and cover still queued for the older link are cancelled (their job sees `link_id` changed)
+        and the row is no longer waiting for them (it would stay 'fetching' for ever: that job ends without telling it)."""
+        row.link_id += 1
+        row.pending = False
+
     def record(self, action: str) -> None:
         row = self.idle()
         if row is None:
             return
-        row.link_id += 1  # a decision cancels the page and cover still queued for it
-        row.pending = False
-        batch.decide(self.library, row, action)
+        self.supersede(row)
+        try:
+            batch.decide(self.library, row, action)
+        except Exception as err:  # a locked library: said, and the row stays as it was
+            logger.warning("%s: decision not saved: %s", os.path.basename(row.path), err, exc_info=True)
+            self.notify(f"Not saved ({err}): try again", severity="error", timeout=8)
+            return
         self.decided[row.status] = self.decided.get(row.status, 0) + 1
         self.refresh_row(row)
         self.advance()
@@ -1138,6 +1198,9 @@ class ReviewApp(App):
     def action_skip(self) -> None:
         row = self.idle()
         if row is not None:
+            if row.status not in ("", "skipped"):  # decided already (and saved): skipping would only change what the table says
+                self.notify("This file is decided already: `k` keeps, `u` unlinks, `l` leaves, `o` picks another album.", severity="warning")
+                return
             row.status = "skipped"  # nothing is saved: it is in the next batch again
             self.refresh_row(row)
             self.advance()
@@ -1198,7 +1261,12 @@ class ReviewApp(App):
         except manual.FormError as err:
             self.notify(str(err), severity="error")
             return
-        batch.record_manual(self.library, row, album_id)
+        self.supersede(row)  # the album of the site queued before is not to be linked back over this one
+        try:
+            batch.record_manual(self.library, row, album_id)
+        except Exception as err:
+            self.link_failed(row, err)
+            return
         self.decided["linked"] = self.decided.get("linked", 0) + 1
         logger.info("%s: %s", os.path.basename(row.path), row.message)
         self.notify(row.message, timeout=5)
@@ -1216,7 +1284,12 @@ class ReviewApp(App):
             self.notify(str(err), severity="error")
             return
         for row, album_id in zip(rows, ids):
-            batch.record_manual(self.library, row, album_id)
+            self.supersede(row)
+            try:
+                batch.record_manual(self.library, row, album_id)
+            except Exception as err:
+                self.link_failed(row, err)
+                continue
             self.marked.discard(id(row))
             self.refresh_row(row)
         self.decided["linked"] = self.decided.get("linked", 0) + len(rows)
@@ -1263,7 +1336,7 @@ class ReviewApp(App):
         else:
             heading = f"These {len(chosen)} marked files: pick a SERIES (or an album of it, or the address of the series page): each gets its volume"
         self.push_screen(FuzzyScreen(self.hub, self.search_start(chosen[0]), heading, series_ok=True, about=self.about_files(chosen)),
-                         lambda candidate: self.run_worker(self.propose(chosen, candidate)) if candidate is not None else None)
+                         lambda candidate: self.run_worker(self.guarded(self.propose(chosen, candidate), "the series")) if candidate is not None else None)
 
     def files_to_attach(self) -> list:
         row = self.current()
@@ -1275,6 +1348,17 @@ class ReviewApp(App):
         if not chosen:
             self.notify("Still linking this file: wait for it to finish.", severity="warning")
         return chosen
+
+    async def guarded(self, work, what: str = "that") -> None:
+        """Run a worker's coroutine so that its failure is said and logged: Textual ends the whole program for a worker that raises
+        (the screen, the pending fetches and what was typed would be gone)."""
+        try:
+            await work
+        except asyncio.CancelledError:
+            raise
+        except Exception as err:
+            logger.exception("%s failed", what)
+            self.notify(f"Could not do {what}: {err}", severity="error", timeout=10)
 
     async def propose(self, chosen: list, candidate) -> None:
         """``candidate``: an album of the series, or the address (text) of the series page."""
@@ -1343,15 +1427,8 @@ class ReviewApp(App):
         row = self.current()
         if row is None or not row.album_url:
             return
-        opened = False
-        if not os.environ.get("SSH_CONNECTION"):  # over SSH a browser would open on the other machine (or a text one here)
-            try:
-                opened = webbrowser.open(row.album_url)
-            except Exception:
-                opened = False
-        if not opened:
-            self.copy_to_clipboard(row.album_url)  # the terminal's clipboard (OSC 52), where it supports it
-            self.notify(f"{row.album_url}\n(copied; or ctrl/cmd-click the link in the detail or the Page column)", timeout=10)
+        if not open_in_browser(row.album_url):
+            show_address(self, row.album_url)
 
     # -- another album
     def search_start(self, row: batch.Row) -> str:
@@ -1440,7 +1517,7 @@ class ReviewApp(App):
             self.link(row, candidate.url, candidate)
 
         self.push_screen(AskScreen("The album's page address (Bédéthèque, or a bdtheque.com series page), or its number:", ""),
-                         lambda text: self.run_worker(given(text)) if text else None)
+                         lambda text: self.run_worker(self.guarded(given(text), "that address")) if text else None)
 
     # -- linking: the match is written at once; the album page and the cover are fetched in the background, one at a time
     def link(self, row: batch.Row, url: str, candidate=None, keep_both: bool = True, notify: bool = True, advance: bool = True) -> None:
@@ -1475,7 +1552,7 @@ class ReviewApp(App):
 
     def link_page(self, row: batch.Row, info) -> None:
         """The file is linked to an album read from a page the person gave (bdtheque.com): nothing else is fetched."""
-        row.link_id += 1
+        self.supersede(row)
         try:
             batch.link_info(self.library, row, info)
         except Exception as err:
@@ -1564,7 +1641,8 @@ class ReviewApp(App):
 
     def go_to(self, index: int) -> None:
         """Show a batch seen before, with the decisions made in it (and the fetches still running for its rows)."""
-        self.batches[self.at] = self.rows  # a sort replaced the list
+        if self.rows:
+            self.batches[self.at] = self.rows  # a sort replaced the list (never an emptied one: see `load_batch`)
         self.at = index
         self.number = index + 1
         self.display(self.batches[index], "seen before")

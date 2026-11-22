@@ -36,6 +36,59 @@ class Entry:
         return self.name.lower().endswith(IMAGE_EXTS)
 
 
+MAX_MEMBER = 512 * 1024 * 1024  # bytes: no page of a comic is this big; a member that declares or turns out to be more is refused
+MAX_TOTAL = 16 * 1024 ** 3      # bytes an archive may hold in all (the file is read whole into memory, `write.workers` at a time)
+MAX_MEMBERS = 50_000
+MAX_RATIO = 200                 # a member of more than 100 MB that packs this well is not a picture: a zip bomb
+BIG_MEMBER = 100 * 1024 * 1024
+
+
+class _Budget:
+    """What one archive may take in memory: checked on what its headers *declare* first, then on what is really read (a header can lie)."""
+
+    def __init__(self) -> None:
+        self.total = 0
+        self.members = 0
+
+    def check(self, name: str, size: int, packed: int) -> None:
+        self.members += 1
+        if self.members > MAX_MEMBERS:
+            raise ArchiveError(f"more than {MAX_MEMBERS:,} members: not a comic")
+        if size > MAX_MEMBER:
+            raise ArchiveError(f"{name} would take {size // 2 ** 20} MB in memory (at most {MAX_MEMBER // 2 ** 20} MB a page): refused")
+        if size > BIG_MEMBER and packed and size / packed > MAX_RATIO:
+            raise ArchiveError(f"{name} packs {size // max(1, packed)} to 1: not a picture, refused")
+        self.add(name, size)
+
+    def add(self, name: str, size: int) -> None:
+        self.total += size
+        if self.total > MAX_TOTAL:
+            raise ArchiveError(f"the archive holds more than {MAX_TOTAL // 2 ** 30} GB (at {name}): refused")
+
+
+def _read_limited(opener, name: str, budget: _Budget) -> bytes:
+    """Read one member, never more than ``MAX_MEMBER`` bytes: a header that says 1 KB and a stream that goes on is cut here."""
+    with opener() as handle:
+        data = handle.read(MAX_MEMBER + 1)
+    if len(data) > MAX_MEMBER:
+        raise ArchiveError(f"{name} is bigger than {MAX_MEMBER // 2 ** 20} MB once unpacked: refused")
+    return data
+
+
+def _clean_name(name: str, taken: set) -> str:
+    """A member name as it is written to the new CBZ: slashes (not backslashes), no leading slash or drive, no ``.`` / ``..`` parts
+    (a name like ``../../x`` would be a Zip Slip entry for whatever unpacks the new file later), never twice the same."""
+    parts = [part for part in name.replace("\\", "/").split("/") if part not in ("", ".", "..") and not (len(part) == 2 and part[1] == ":")]
+    clean = "/".join(parts) or "page"
+    unique, n = clean, 1
+    while unique in taken:
+        n += 1
+        stem, dot, ext = clean.rpartition(".")
+        unique = f"{stem}-{n}.{ext}" if dot else f"{clean}-{n}"
+    taken.add(unique)
+    return unique
+
+
 def _is_comicinfo(name: str) -> bool:
     return posixpath.basename(name).lower() == COMICINFO
 
@@ -76,30 +129,32 @@ def peek(path: str, fmt: str) -> tuple[Optional[bytes], Optional[int]]:
 
 
 def _read_zip(path):
-    entries, info = [], None
+    entries, info, budget, taken = [], None, _Budget(), set()
     with zipfile.ZipFile(path) as zf:
         for item in zf.infolist():
             if item.is_dir():
                 continue
-            data = zf.read(item)
+            budget.check(item.filename, item.file_size, item.compress_size)
+            data = _read_limited(lambda: zf.open(item), item.filename, budget)
             if _is_comicinfo(item.filename):
                 info = info or data
             else:
-                entries.append(Entry(item.filename, data, item.compress_type))
+                entries.append(Entry(_clean_name(item.filename, taken), data, item.compress_type))
     return entries, info
 
 
 def _read_rar(path):
-    entries, info = [], None
+    entries, info, budget, taken = [], None, _Budget(), set()
     with rartool.RarFile(path) as rf:
         for item in rf.infolist():
             if item.is_dir():
                 continue
-            data = rf.read(item)
+            budget.check(item.filename, item.file_size, getattr(item, "compress_size", 0))
+            data = _read_limited(lambda: rf.open(item), item.filename, budget)
             if _is_comicinfo(item.filename):
                 info = info or data
             else:
-                entries.append(Entry(item.filename.replace("\\", "/"), data))
+                entries.append(Entry(_clean_name(item.filename, taken), data))
     return entries, info
 
 
@@ -436,13 +491,15 @@ def read_entries_lenient(path: str, fmt: str) -> LenientRead:
 
 def _lenient_zip(path: str) -> LenientRead:
     result = LenientRead([], None, [], [])
+    budget, taken = _Budget(), set()
     with zipfile.ZipFile(path) as zf:
         for info in zf.infolist():
             if info.is_dir():
                 continue
             repaired = False
+            budget.check(info.filename, info.file_size, info.compress_size)
             try:
-                data = zf.read(info)
+                data = _read_limited(lambda: zf.open(info), info.filename, budget)
             except zipfile.BadZipFile as err:
                 if "CRC" not in str(err):
                     result.lost.append(f"{info.filename}: {err}")
@@ -462,7 +519,7 @@ def _lenient_zip(path: str) -> LenientRead:
             if _is_comicinfo(info.filename):
                 result.comicinfo = result.comicinfo or data
             else:
-                result.entries.append(Entry(info.filename, data, info.compress_type))
+                result.entries.append(Entry(_clean_name(info.filename, taken), data, info.compress_type))
                 if repaired:
                     result.repaired.append(info.filename)
     return result
@@ -470,17 +527,19 @@ def _lenient_zip(path: str) -> LenientRead:
 
 def _lenient_rar(path: str) -> LenientRead:
     result = LenientRead([], None, [], [])
+    budget, taken = _Budget(), set()
     with rartool.RarFile(path) as rf:
         for info in rf.infolist():
             if info.is_dir():
                 continue
+            budget.check(info.filename, info.file_size, getattr(info, "compress_size", 0))
             try:
-                data = rf.read(info)
+                data = _read_limited(lambda: rf.open(info), info.filename, budget)
             except Exception as err:
                 result.lost.append(f"{info.filename}: {err}")
                 continue
             if _is_comicinfo(info.filename):
                 result.comicinfo = result.comicinfo or data
             else:
-                result.entries.append(Entry(info.filename.replace("\\", "/"), data))
+                result.entries.append(Entry(_clean_name(info.filename, taken), data))
     return result

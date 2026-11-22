@@ -32,6 +32,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     args = parser.parse_args(argv)
     if (args.place or args.reimport) and args.restore is None:
         parser.error("--place and --reimport go with --restore ID")
+    if args.older_than is not None and not args.empty:
+        parser.error("--older-than goes with --empty")
     settings = context.settings()
     if settings is None:
         return 1
@@ -47,9 +49,9 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
             on = color.enabled(out)
             for entry in entries:
                 number = f"{entry['id']:>4}"
-                print(f"{color.role(number, 'hint', on)}  {color.role(entry['trashed'][:16], 'note', on)}  "
+                print(f"{color.role(number, 'hint', on)}  {color.role((entry['trashed'] or '')[:16], 'note', on)}  "
                       f"{human_size(entry['size'] or 0):>9}  {color.role(entry['path'], 'name', on)}", file=out)
-                print(f"      {color.role(entry['reason'], 'note', on)}", file=out)
+                print(f"      {color.role(entry['reason'] or '', 'note', on)}", file=out)
             where = settings.trash_path
             total = sum(e["size"] or 0 for e in entries)
             print(f"\n{color.role(str(len(entries)), 'count', on)} file(s), {human_size(total)} in {where}" if entries
@@ -74,9 +76,12 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
             if not prompter.confirm("Delete them for good?"):
                 print("Nothing changed.", file=out)
                 return 1
-        count, freed = trash.empty(library, entries)
+        problems: list[str] = []
+        count, freed = trash.empty(library, entries, settings, problems)
         print(f"Deleted {count} file(s), freed {human_size(freed)}.", file=out)
-    return 0
+        for problem in problems:
+            print(f"warning: {problem}", file=sys.stderr)
+    return 1 if problems else 0
 
 
 def _restore(args, settings, out) -> int:
@@ -88,7 +93,11 @@ def _restore(args, settings, out) -> int:
         if args.pretend:
             print(f"Would restore {entry['path']}", file=out)
             return 0
-        restored = trash.restore(library, args.restore)
+        try:
+            restored = trash.restore(library, args.restore, settings)
+        except trash.TrashError as err:
+            print(f"Not restored: {err}", file=sys.stderr)
+            return 1
     if restored is None:
         print("That file is no longer in the trash folder; its record was removed.", file=sys.stderr)
         return 1

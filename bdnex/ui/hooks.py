@@ -23,7 +23,9 @@ def run_hooks(settings, event: str, changed: int, command: str, stream=None) -> 
     if not commands or not changed:
         return 0
     stream = stream or sys.stderr
-    env = {**os.environ, "BDNEX_EVENT": event, "BDNEX_COMMAND": command, "BDNEX_CHANGED": str(changed)}
+    # a hook is a command of yours, but not one that needs the web page's password or token: they are not handed on
+    env = {**{k: v for k, v in os.environ.items() if k not in ("BDNEX_PASSWORD", "BDNEX_TOKEN")},
+           "BDNEX_EVENT": event, "BDNEX_COMMAND": command, "BDNEX_CHANGED": str(changed)}
     ran = 0
     for text in commands:
         try:
