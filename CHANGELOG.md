@@ -7,6 +7,7 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- Import: several files of one album (a spare version, a duplicate, the same book twice) now share one cover download instead of one each (each request waits its polite delay, and the second to finish lost the race: both wrote the same temporary file, so the cover was saved but reported as not downloaded). A cover is also written through a temporary file of its own now, so two threads or two runs cannot clash on it.
 - Import with `duplicates.action: replace` (or "replace" chosen when asked): the identical file already in the library is now moved to the trash only when the new file is actually linked. Before, a preview (`import -n`) and a file left unmatched (you chose none of the candidates) still trashed the old file, leaving the album with no file. The report says how many replaced files are in the trash.
 - `bdnex duplicates --covers`: a spare version is no longer listed as a "similar cover" of its own album (it has that cover by design), and blank or uniform first pages are no longer grouped together as one big "same book" group.
 - Review screen: a series with one album and no volume (a one-shot such as Scalp), given by its address or picked as a SERIES, links that album to the one file you chose when the file's name has no number; before it said "none with a volume number" and changed nothing.
