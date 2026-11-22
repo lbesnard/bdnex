@@ -159,3 +159,38 @@ def test_leaving_a_file_the_library_has_no_record_of_is_remembered(tmp_path, mak
         batch.decide(library, row, "leave")
         assert row.file_id is not None and library.get_file(path) is not None  # the mark has a file to sit on
         assert dict(library.file_attrs(row.file_id)).get("checked") == "leave" if hasattr(library, "file_attrs") else True
+
+
+def test_questions_that_come_by_themselves_wait_in_a_queue_and_never_open_over_a_window(env):
+    from bdnex.ui.review_tui import AskScreen
+
+    db, files = env
+    seen = {}
+    answers = []
+
+    async def script(app, pilot):
+        app.ask_later("first?", lambda: AskScreen("First question?", None), answers.append)
+        app.ask_later("second?", lambda: AskScreen("Second question?", None), answers.append)
+        await pilot.pause()
+        badge = app.query_one("#queue-badge")
+        seen["badge"] = (badge.display, str(badge.render()), badge.region.x + badge.region.width == app.size.width)  # red mark, at the right edge
+        seen["stack"] = len(app.screen_stack)  # nothing was put over the table
+        await pilot.press("w")
+        await pilot.pause()
+        seen["open"] = app.screen.question
+        await pilot.press("w")  # `w` inside a window is only text for it / ignored: the next question is not stacked over it
+        await pilot.pause()
+        seen["still_one"] = app.screen.question
+        await pilot.press("y")
+        await pilot.pause()
+        seen["left"] = len(app.waiting)
+        await pilot.press("w")
+        await pilot.pause()
+        await pilot.press("n")
+        await pilot.pause()
+        seen["empty"] = (len(app.waiting), app.query_one("#queue-badge").display)
+
+    drive(db, script)
+    assert seen["badge"][0] and "2 questions waiting" in seen["badge"][1] and seen["badge"][2]
+    assert seen["stack"] == 1 and seen["open"] == "First question?" and seen["still_one"] == "First question?"
+    assert seen["left"] == 1 and answers == [True, False] and seen["empty"] == (0, False)  # answered in order, then the mark goes

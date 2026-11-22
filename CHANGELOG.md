@@ -78,6 +78,7 @@ command runs, never while an import is fetching).
 - `bdnex --help` groups the commands by task.
 
 ### Added
+- Review screen: **a question that comes by itself waits in a queue** (`w` opens it) instead of opening over what you are doing: the answer to `a` (link the files to the series, or write them by hand) and "check the next batch?" no longer cover the hand-written form you are filling (two windows over each other, and a key meant for one answering the other). A red mark at the top right says how many wait (`● 2 questions waiting · w`); `w` opens the oldest, and says to finish the open window first when there is one.
 - **Docker image on the GitHub Container Registry**: each release (the Release workflow) builds and pushes `ghcr.io/lbesnard/bdnex` for amd64 and arm64, tagged with the version and `latest`. `compose.yaml` now pulls it (`BDNEX_VERSION` pins a release; `docker compose pull` updates); `compose.build.yaml` builds from the checkout instead. CI builds the image on every change and starts it for real (healthz, the login, the config and library on the volumes).
 
 ### Fixed
