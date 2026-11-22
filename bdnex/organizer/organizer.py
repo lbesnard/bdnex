@@ -642,7 +642,7 @@ class Organizer:
 
     def _drop_backup(self, entry: Optional[int]) -> None:
         if entry is not None:
-            trash.discard(self.library, entry)
+            trash.discard(self.library, entry, self.settings)
 
     def _room_problem(self, dest: str, needed: int) -> Optional[str]:
         """Why writing ``needed`` bytes at ``dest`` is not safe (``None`` when it is): the disk of the file and

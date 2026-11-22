@@ -50,3 +50,14 @@ def test_the_defaults_have_no_hook_and_a_bad_value_is_refused(tmp_path, monkeypa
     broken["hooks"]["after_import"] = "bdnex komga push"  # a list is needed
     with pytest.raises(ConfigError):
         build_settings(broken)
+
+
+def test_a_hook_is_not_handed_the_web_password_or_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("BDNEX_PASSWORD", "secret")
+    monkeypatch.setenv("BDNEX_TOKEN", "secret")
+    monkeypatch.setenv("KEPT", "yes")
+    marker = tmp_path / "marker"
+    command = (f"{sys.executable} -c \"import os; open({str(marker)!r}, 'w').write(repr(("
+               "os.environ.get('BDNEX_PASSWORD'), os.environ.get('BDNEX_TOKEN'), os.environ.get('KEPT'))))\"")
+    hooks.run_hooks(settings_with(after_import=[command]), "after_import", 1, "import", io.StringIO())
+    assert marker.read_text() == "(None, None, 'yes')"  # the rest of the environment is yours to use
