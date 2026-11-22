@@ -426,10 +426,17 @@ def parse_series_details(html: str, name_slug: str = "") -> dict[str, Any]:
         prefix = series_slug.most_common(1)[0][0]
     else:
         return details
+    # a longer series name that starts with this one (`Blake-et-Mortimer` for `Blake`): its albums are not this series' albums
+    longer = [other for other in series_slug if other.lower() != prefix.lower() and other.lower().startswith(prefix.lower() + "-")]
     albums, seen = [], set()
     for slug, ident, href in links:
         if ident in seen or not (slug == prefix or slug.startswith(prefix + "-")):
             continue
+        if "-Tome-" in slug:
+            if slug.split("-Tome-")[0].lower() != prefix.lower():
+                continue  # `Blake-et-Mortimer-Tome-1-...` on the page of `Blake`: another series
+        elif any(slug.lower() == other.lower() or slug.lower().startswith(other.lower() + "-") for other in longer):
+            continue  # a special of that other series
         seen.add(ident)
         tome = re.match(re.escape(prefix) + r"-Tome-(\d+)(?:-(.*))?$", slug)
         title = (tome.group(2) if tome else slug[len(prefix) + 1:]) or ""

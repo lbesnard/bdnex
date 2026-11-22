@@ -7,6 +7,9 @@ command runs, never while an import is fetching).
 ## Unreleased
 
 ### Fixed
+- `bdnex init`: a sitemap fetch that comes back as an error page (a 502, a rate limit, a challenge) is no longer taken for the end of the album list. It was stored as a good sitemap and everything after it was silently missing, for every later run and in the stored index; now only a real, empty `<urlset>` ends the list, anything else is refused (nothing stored, with a message), and a bad file stored by an earlier version is fetched again by `bdnex init` (and the list says where it stops until then).
+- A page that Cloudflare served normally, and that carries the `/cdn-cgi/challenge-platform/scripts/jsd/` script it injects into ordinary pages, is no longer taken for an anti-bot challenge (it was dropped and fetched again for ever, then refused): a challenge page is recognised by what it loads (`.../challenge-platform/h/...`), its title and its `_cf_chl_opt`.
+- A series page lists only the albums of its own series: `Blake` no longer takes the albums of `Blake et Mortimer` (nor `Spirou` those of `Spirou et Fantasio`) from the "similar series" links, which made "link by series address" offer the wrong albums.
 - A file name that says its volume (`T01`, `Tome 01`, `Vol. 3`) is read as that volume even when a bare number comes before it: `Apocalypse Mania - CYCLE 2 - Tome 01 - ...` is volume 1 (it was read as 2, the `CYCLE 2`), in the match, in the review screen and in series attach. A name without such a marker is read as before.
 - Review screen: `a` with one file and one album picked links that album, exactly (it used to look up "the volume of the file in the album's series" and could offer another album, `Tome 2 - Experiment IV`, for the one you picked). Picking a **SERIES**, or marking several files, still gives each file its volume.
 - `api.allowed_hosts`: the names the server answers to (see above).

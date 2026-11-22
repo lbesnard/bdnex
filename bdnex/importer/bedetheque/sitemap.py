@@ -79,11 +79,20 @@ def parse_sitemap(content: bytes | str) -> list[Candidate]:
     return candidates
 
 
-def is_empty_sitemap(content: bytes | str) -> bool:
-    """True for the empty ``<urlset/>`` the site serves past its last file."""
+def is_sitemap(content: bytes | str) -> bool:
+    """Is this a sitemap file at all (an XML ``<urlset>`` or ``<sitemapindex>``)? An error page, a challenge or a rate-limit page is not."""
     if isinstance(content, str):
         content = content.encode("utf-8")
-    return b"<loc>" not in content
+    head = content[:4000]
+    return b"<urlset" in head or b"<sitemapindex" in head
+
+
+def is_empty_sitemap(content: bytes | str) -> bool:
+    """True for the empty ``<urlset/>`` the site serves past its last file: a sitemap, with no address in it. Anything that is not a
+    sitemap is NOT the end of the list (it is an error): it would cut the album list short at that file for ever."""
+    if isinstance(content, str):
+        content = content.encode("utf-8")
+    return is_sitemap(content) and b"<loc>" not in content
 
 
 # Words in file names that say nothing about the album (language, format, scan group, ...).

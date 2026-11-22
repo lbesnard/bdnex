@@ -32,7 +32,8 @@ class BlockedError(RuntimeError):
     """The site answered with an anti-bot challenge instead of the page."""
 
 
-CHALLENGE_MARKERS = (b"<title>Just a moment", b"window._cf_chl_opt", b"/cdn-cgi/challenge-platform/")
+# `/cdn-cgi/challenge-platform/h/` is what a challenge page loads; the `/scripts/jsd/` snippet Cloudflare injects into ORDINARY pages is not one
+CHALLENGE_MARKERS = (b"<title>Just a moment", b"window._cf_chl_opt", b"/cdn-cgi/challenge-platform/h/")
 
 
 def looks_blocked(status_code: int, content: bytes) -> bool:
@@ -227,6 +228,8 @@ class Bedetheque:
         if kind not in ("sitemap", "cover") and looks_blocked(200, content):  # whichever fetcher it came from
             raise BlockedError(f"{url}: the fetcher returned an anti-bot challenge page, not the page. "
                                "Nothing was stored.")
+        if kind == "sitemap" and not sitemap.is_sitemap(content):  # an error page taken for the end of the list would cut it short for ever
+            raise BlockedError(f"{url}: the answer is not a sitemap (an error, a rate limit or a challenge page). Nothing was stored.")
         return content
 
     def _tracked_download(self, url: str, kind: str = "album") -> bytes:
@@ -325,6 +328,9 @@ class Bedetheque:
         fetched = 0
         for url in sitemap.sitemap_urls():
             cached = None if recache else self.library.cache_get(SOURCE, "sitemap", url)
+            if cached is not None and not sitemap.is_sitemap(cached):  # stored by an earlier version that took an error page for the end
+                logger.warning(f"The stored {url.rsplit('/', 1)[-1]} is not a sitemap: fetched again")
+                cached = None
             if cached is not None:
                 if sitemap.is_empty_sitemap(cached):
                     break
@@ -386,7 +392,7 @@ class Bedetheque:
         count = 0
         for url in sitemap.sitemap_urls():
             content = self.library.cache_get(SOURCE, "sitemap", url)
-            if content is None or sitemap.is_empty_sitemap(content):
+            if content is None or sitemap.is_empty_sitemap(content) or not sitemap.is_sitemap(content):
                 break
             count += 1
         return count
@@ -432,6 +438,9 @@ class Bedetheque:
             for url in sitemap.sitemap_urls():
                 content = self.library.cache_get(SOURCE, "sitemap", url)
                 if content is None or sitemap.is_empty_sitemap(content):
+                    break
+                if not sitemap.is_sitemap(content):  # not the end of the list: damaged. The albums after it are missing until `bdnex init`
+                    logger.warning(f"The stored {url.rsplit('/', 1)[-1]} is not a sitemap: the album list stops there; `bdnex init` fetches it again")
                     break
                 index.extend(sitemap.parse_sitemap(content))
             if not index:
