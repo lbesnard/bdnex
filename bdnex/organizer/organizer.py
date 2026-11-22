@@ -13,6 +13,7 @@ put in place; the checksum stored in the database is refreshed.
 from __future__ import annotations
 
 import datetime
+import contextlib
 import errno
 import logging
 import multiprocessing
@@ -466,7 +467,26 @@ class Organizer:
 
     def _carry_out(self, row, mode, dest, entries, xml, steps, converted, same_place, spare,
                    pdf_fields: Optional[dict] = None) -> FileResult:
-        """Write the new archive safely, then deal with the original and the library."""
+        """Write the new archive safely, then deal with the original and the library. A file the new one replaces (a collision answered
+        ``replace``) is copied to the trash first and only forgotten once the new archive is built and checked: when the build
+        fails, is refused or is interrupted, the existing file is still where it was and its copy in the trash is dropped."""
+        self._replacing, self._replace_backup = None, None
+        try:
+            result = self._carry_out_inner(row, mode, dest, entries, xml, steps, converted, same_place, spare, pdf_fields)
+        except BaseException:
+            self._drop_replace_backup()
+            raise
+        if result.outcome in (FAILED, SKIPPED):
+            self._drop_replace_backup()
+        return result
+
+    def _drop_replace_backup(self) -> None:
+        if self._replace_backup is not None:
+            self._drop_backup(self._replace_backup)
+            self._replace_backup = None
+
+    def _carry_out_inner(self, row, mode, dest, entries, xml, steps, converted, same_place, spare,
+                         pdf_fields: Optional[dict] = None) -> FileResult:
         path = row["path"]
         if not same_place and os.path.exists(dest):
             dest, became_spare = self._resolve_collision(dest, path, mode, spare)
@@ -480,6 +500,11 @@ class Organizer:
         if problem:
             return FileResult(path, FAILED, note=problem)
         delete = self._delete_wanted(path, dest, mode, converted)  # asked now, before anything is written
+        if self._replacing:
+            try:  # a copy, not a move: the existing file stays where it is until the new archive has replaced it
+                self._replace_backup = trash.keep_copy(self.library, self.settings, self._replacing, f"replaced by {path}")
+            except OSError as err:
+                return FileResult(path, FAILED, note=f"could not keep a copy of the file it would replace in the trash ({err}); nothing was changed")
         try:
             if pdf_fields is not None:  # a PDF that stays a PDF
                 self._build_pdf(path, dest, xml, pdf_fields)
@@ -509,6 +534,9 @@ class Organizer:
                 return FileResult(path, FAILED, note=f"the new archive failed the final check ({err}): "
                                                     "the original is kept")
 
+        if self._replacing:  # built and checked: the file it replaced is only in the trash now, so its record goes
+            self.library.remove_file(self._replacing)
+            steps.append("the file it replaced is in the trash (`bdnex trash`)")
         old_row = self.library.get_file(path)
         if mode != COPY and not same_place:
             self._stage("removing the original" if delete is not False else "keeping the original")
@@ -586,7 +614,8 @@ class Organizer:
             return None
         try:
             self._stage("keeping a copy of the damaged original in the trash")
-            return trash.keep_copy(self.library, self.settings, path, "damaged original, repaired in place", row=row)
+            # the record is read from the library by path, not taken from `row`: a row of `ls --files` has no `album_id` (its `id` is the album's)
+            return trash.keep_copy(self.library, self.settings, path, "damaged original, repaired in place")
         except OSError as err:  # no room for the copy: say so and do not touch the original
             raise archive.ArchiveError(f"could not keep a copy of the damaged original in the trash ({err}); nothing was changed") from err
 
@@ -678,16 +707,28 @@ class Organizer:
             return FileResult(path, UNCHANGED, dest, why + " (already in place)")
         if self.pretend:
             return FileResult(path, PRETEND, dest, f"would: move as it is, no tags written ({why})")
+        self._replacing, self._replace_backup = None, None
         if os.path.exists(dest):
             dest, became_spare = self._resolve_collision(dest, path, mode, spare)
             if dest is None:
                 return FileResult(path, SKIPPED, note="destination exists")
             spare = spare or became_spare
         os.makedirs(os.path.dirname(dest), exist_ok=True)
-        if mode == COPY:
-            shutil.copy2(path, dest)
-        else:
-            shutil.move(path, dest)
+        if self._replacing:
+            try:  # a copy: the existing file stays until the new bytes have replaced it
+                self._replace_backup = trash.keep_copy(self.library, self.settings, self._replacing, f"replaced by {path}")
+            except OSError as err:
+                return FileResult(path, FAILED, note=f"could not keep a copy of the file it would replace in the trash ({err}); nothing was changed")
+        try:
+            self._place_bytes(path, dest, move=mode != COPY)
+        except OSError as err:
+            self._drop_replace_backup()
+            return FileResult(path, FAILED, note=f"not moved: {err} (the original is untouched)")
+        except BaseException:
+            self._drop_replace_backup()
+            raise
+        if self._replacing:
+            self.library.remove_file(self._replacing)  # the file it replaced is only in the trash now
         self._update_library(path, dest)
         self._remember_copy(path, dest, mode)
         if spare:
@@ -696,6 +737,30 @@ class Organizer:
             self.library.record_move(self.batch, path, dest)
             self._prune_empty_dirs(path)
         return FileResult(path, COPIED if mode == COPY else MOVED, dest, why + " (moved as it is: no tags written)")
+
+    @staticmethod
+    def _same_device(src: str, dest: str) -> bool:
+        return os.stat(src).st_dev == os.stat(os.path.dirname(dest)).st_dev
+
+    @staticmethod
+    def _place_bytes(src: str, dest: str, move: bool) -> None:
+        """Put the bytes of ``src`` at ``dest`` without ever leaving a short file under the final name: a rename on one file system, else a
+        copy to a temporary name, checked for its size, then renamed over ``dest``; only then is the original removed (a move)."""
+        if move and Organizer._same_device(src, dest):
+            os.replace(src, dest)
+            return
+        tmp = dest + ".bdnex-tmp"
+        try:
+            shutil.copy2(src, tmp)
+            if os.path.getsize(tmp) != os.path.getsize(src):
+                raise OSError(errno.EIO, "the copy is not the size of the original")
+            os.replace(tmp, dest)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                os.remove(tmp)
+            raise
+        if move:
+            os.remove(src)
 
     # -------------------------------------------------------------- helpers
     def _destination(self, path: str, fmt: str, album_id: int, mode: str, spare: bool = False, as_is: bool = False):
@@ -823,8 +888,8 @@ class Organizer:
                 action = chooser(compare([existing], new, self.settings.duplicates.prefer), self.library.root)
         if action == "skip":
             return None, False
-        if action == "replace":
-            trash.move_to_trash(self.library, self.settings, dest, f"replaced by {src}")
+        if action == "replace":  # the existing file is copied to the trash only once the new archive is built (see `_carry_out`)
+            self._replacing = dest
             return dest, False
         if mode == WRITE:  # tags only: nothing leaves the folder, the new name just gets a number
             return str(trash.unique(Path(dest))), False
