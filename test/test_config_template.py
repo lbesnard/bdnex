@@ -6,6 +6,7 @@ import pytest
 import yaml
 
 from bdnex import config as cfg
+from bdnex import config_template
 from bdnex.config import Settings, build_settings, load_config, load_defaults
 from bdnex.config_template import comment_out, complete, missing, packaged
 
@@ -250,3 +251,28 @@ def test_set_value_round_trips_any_scalar(value):
     from bdnex.config_template import set_value
 
     assert yaml.safe_load(set_value(MINIMAL + "write:\n  conflict: ask\n", "write.conflict", value))["write"]["conflict"] == value
+
+
+def test_a_comment_of_the_users_does_not_end_a_section_and_no_key_is_written_twice():
+    text = "config_version: 2\nwrite:\n  pdf: tag\n  # Note: leave it\n  workers: 2\n"
+    new = config_template.set_value(text, "write.workers", 4)
+    assert new.count("workers:") == 1 and "workers: 4" in new and "# Note: leave it" in new
+
+
+def test_an_active_section_wins_over_a_commented_one_and_a_quoted_hash_is_not_a_comment():
+    text = "# write: some help\nwrite:\n  pdf: tag\n"
+    assert config_template.set_value(text, "write.pdf", "skip").count("write:") == 2  # the help line stays, one active section
+    quoted = 'aliases: []\nkomga:\n  url: "http://h/#a"  # my server\n'
+    new = config_template.set_value(quoted, "komga.url", "http://x")
+    assert new.endswith("url: http://x  # my server\n") and "#a" not in new
+
+
+def test_a_commented_example_deeper_in_the_file_is_not_taken_for_the_option():
+    text = "import:\n  sources:\n    - path: /x\n#     mode: move\n"
+    new = config_template.set_value(text, "import.mode", "copy")
+    assert "#     mode: move" in new and "  mode: copy" in new
+
+
+def test_unicode_line_separators_in_a_value_survive():
+    text = "komga:\n  api_key: \"a b\"\nwrite:\n  pdf: tag\n"
+    assert "a b" in config_template.set_value(text, "write.pdf", "skip")

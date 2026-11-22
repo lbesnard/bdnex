@@ -5,15 +5,13 @@ keeps the previous file as ``.bak`` and is applied to the running server at once
 
 from __future__ import annotations
 
-import os
-import shutil
 import typing
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from bdnex.config import SECRET_KEYS, ConfigError, Settings, build_settings, load_defaults
+from bdnex.config import SECRET_KEYS, ConfigError, Settings, build_settings, hide_userinfo, load_defaults, write_config_file
 from bdnex.config_template import _help_of, packaged, set_value
 
 HIDDEN = SECRET_KEYS  # secrets: never sent to the page
@@ -80,6 +78,8 @@ def describe(settings: Settings, text: str) -> list[dict[str, Any]]:
             default = (defaults.get(section) or {}).get(name) if section else defaults.get(name)
             help_ = _help_of(line)
             current = _value(settings, section, name)
+            if key == "komga.url" and isinstance(current, str):
+                current = hide_userinfo(current)  # http://user:password@host
             listed.append({
                 "key": key, "kind": kind, "choices": choices, "nullable": nullable, **_limits(field),
                 "value": current if kind != "complex" else None,
@@ -145,22 +145,14 @@ def change(settings: Settings, path: Path, changes: dict[str, Any], apply: bool)
             if bound in option and value is not None and not test(value, option[bound]):
                 raise ValueError(f"{key}: must be {'at least' if bound == 'min' else 'at most'} {option[bound]}")
         text = set_value(text, key, value)
-        lines.append(f"{key}: {option['value']!r} -> {value!r}")
+        lines.append(f"{key}: {option['value']!r} -> {value!r}")  # (the page's value is already masked)
     try:
         new_settings, _, _ = build_settings(yaml.safe_load(text) or {})
     except ConfigError as err:
         raise ValueError(str(err)) from err
     restart = sorted({key for key in changes if key.startswith("api.")})
     if apply:
-        backup = path.with_name(path.name + ".bak")
-        shutil.copyfile(path, backup)
-        shutil.copymode(path, backup)  # the file holds passwords and tokens: a chmod 600 file stays 600, and so does its copy
-        tmp = path.with_name(path.name + ".tmp")
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)  # never readable by others, not even for a moment
-        with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            handle.write(text)
-        shutil.copymode(path, tmp)
-        os.replace(tmp, path)
+        write_config_file(path, text)  # atomic, keeps the mode (also of the .bak) and a symbolic link
         for name in type(settings).model_fields:  # the running server follows at once (its closures hold this object)
             setattr(settings, name, getattr(new_settings, name))
     return {"changes": lines, "restart": restart, "stored": apply}

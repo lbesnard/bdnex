@@ -431,3 +431,61 @@ def test_special_is_the_tome_when_it_is_no_number_and_a_template_can_use_it():
     assert template.render(named, template.fields_for(album), lambda field: "?").parts == ["Chats du Louvre - INT - Les chats"]
     numbered = {**album, "volume": 3, "alternate_number": None}
     assert template.render(named, template.fields_for(numbered), lambda field: "?").parts == ["Chats du Louvre - T03 - Les chats"]
+
+
+# ------------------------------------------------------------------ the config file is never lost, never opened to others
+def test_a_typo_inside_a_list_entry_is_named_not_a_traceback():
+    from bdnex.config import ConfigError, build_settings
+
+    with pytest.raises(ConfigError, match=r"import\.sources\.0\.mod: unknown option"):
+        build_settings({"import": {"sources": [{"path": "/tmp/in", "mod": "move"}]}})
+
+
+def test_the_config_writer_is_atomic_private_and_follows_a_link(tmp_path):
+    import os
+
+    from bdnex.config import write_config_file
+
+    real = tmp_path / "dotfiles" / "bdnex.yaml"
+    real.parent.mkdir()
+    real.write_text("api:\n  password: secret\n")
+    os.chmod(real, 0o600)
+    link = tmp_path / "bdnex.yaml"
+    link.symlink_to(real)
+    backup = write_config_file(link, "api:\n  password: other\n")
+    assert link.is_symlink() and real.read_text().endswith("other\n")  # the dotfiles copy is what changed
+    assert backup.read_text().endswith("secret\n") and os.stat(backup).st_mode & 0o777 == 0o600 and os.stat(real).st_mode & 0o777 == 0o600
+    assert not list(real.parent.glob("*.tmp"))
+
+
+def test_an_alias_named_like_a_command_a_newer_bdnex_added_is_ignored_not_an_error():
+    from bdnex.config import build_settings
+
+    settings, _, _ = build_settings({"aliases": ["ls = review --auto"]})  # `ls` is a command: the command wins
+    assert settings.aliases  # the shipped ones are there; nothing raised
+
+
+def test_a_password_in_the_komga_url_is_hidden():
+    from bdnex.config import hide_userinfo, masked
+
+    assert hide_userinfo("http://admin:pw@host:25600/x") == "http://<hidden>@host:25600/x" and hide_userinfo("http://host") == "http://host"
+    assert masked({"komga": {"url": "http://a:b@h"}})["komga"]["url"] == "http://<hidden>@h"
+    assert masked({"plugins": {"x": {"api_token": "t", "name": "n"}}})["plugins"]["x"] == {"api_token": "<hidden>", "name": "n"}
+
+
+def test_a_source_that_is_a_link_to_the_collection_is_refused(tmp_path):
+    from bdnex.config import ConfigError, build_settings
+
+    comics = tmp_path / "comics"
+    comics.mkdir()
+    (tmp_path / "in").symlink_to(comics)
+    with pytest.raises(ConfigError, match="collection"):
+        build_settings({"collection_path": str(comics), "import": {"sources": [{"path": str(tmp_path / "in")}]}})
+
+
+def test_a_relative_collection_path_is_refused_where_it_is_used():
+    from bdnex.config import ConfigError, build_settings
+
+    settings, _, _ = build_settings({"collection_path": "comics"})
+    with pytest.raises(ConfigError, match="absolute"):
+        settings.require_collection()

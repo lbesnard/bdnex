@@ -20,12 +20,23 @@ def test_an_alias_is_a_command_with_its_options_and_what_follows_is_added():
     assert expand_alias(["new"], ['new = import --database-only "my folder"']) == ["import", "--database-only", "my folder"]
 
 
-@pytest.mark.parametrize("bad", ["fix", "Fix = review", "ls = review", "recheck = review", "x = nonsense --a",
+@pytest.mark.parametrize("bad", ["fix", "Fix = review", "x = nonsense --a",
                                  "x = ", "y = fix --auto"])
 def test_a_bad_alias_is_refused_with_the_reason(tmp_path, monkeypatch, bad):
     config(tmp_path, monkeypatch, [bad, "fix = review --auto"] if bad.startswith("y") else [bad])
     with pytest.raises(ConfigError):
         load_config()
+
+
+@pytest.mark.parametrize("clash", ["ls = review", "recheck = review"])
+def test_an_alias_named_like_a_command_is_ignored_with_a_warning(tmp_path, monkeypatch, clash):
+    """A later bdnex may add a command with the name of a user's alias: that must not break every command."""
+    config(tmp_path, monkeypatch, [clash])
+    loaded = load_config()
+    assert any("already a command" in warning for warning in loaded.warnings)
+    from bdnex.ui.commands import expand_alias
+
+    assert expand_alias(["ls"], loaded.settings.aliases) == ["ls"]  # the command is what runs
 
 
 def test_the_same_name_twice_is_refused(tmp_path, monkeypatch):
