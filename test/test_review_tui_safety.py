@@ -194,7 +194,6 @@ def test_questions_that_come_by_themselves_wait_in_a_queue_and_never_open_over_a
     assert seen["badge"][0] and "2 questions waiting" in seen["badge"][1] and seen["badge"][2]
     assert seen["stack"] == 1 and seen["open"] == "First question?" and seen["still_one"] == "First question?"
     assert seen["left"] == 1 and answers == [True, False] and seen["empty"] == (0, False)  # answered in order, then the mark goes
-||||||| e76b26f
 
 
 
