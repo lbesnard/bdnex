@@ -19,6 +19,7 @@ from typing import Callable, Iterable, Iterator, Optional, Union
 from bdnex.importer.matching import Match, find_matches
 
 MIN_PARALLEL = 8  # fewer files than this: a pool costs more than it saves
+WORKER_TIMEOUT = 900  # seconds a worker may take for one file (reading and hashing a PDF of hundreds of MB, on a slow disk, is minutes)
 
 _SOURCE = None  # set before the workers are forked; they read it from their copy of the process
 _SIDE: Optional[Callable] = None  # idem: what else a worker does with each file (see ``match_ahead(side=)``)
@@ -65,6 +66,19 @@ def match_ahead(source, paths: Iterable[str], workers: int = 1, lookahead: int =
     if side is not None and side_results is None:
         side_results = {}
     if workers <= 1 or len(paths) < min_parallel or not can_fork():
+        return _one_by_one(source, paths, side, side_results)
+    warm = getattr(source, "warm", None)
+    if warm:
+        warm()
+    _SOURCE, _SIDE = source, side
+    # a Pool forks all its workers right here, when this function is CALLED (a generator would wait for its first `next`, by which
+    # time the caller may have started threads: forking from a multi-threaded process can deadlock)
+    pool = multiprocessing.get_context("fork").Pool(processes=workers)
+    return _served_by(pool, paths, lookahead, side, side_results)
+
+
+def _one_by_one(source, paths, side, side_results) -> Iterator[tuple[str, Union[list[Match], Exception]]]:
+    if True:
         for path in paths:
             try:
                 found = find_matches(source, path)
@@ -76,15 +90,10 @@ def match_ahead(source, paths: Iterable[str], workers: int = 1, lookahead: int =
                 except Exception as err:
                     side_results[path] = err
             yield path, found
-        return
 
-    warm = getattr(source, "warm", None)
-    if warm:
-        warm()
-    _SOURCE, _SIDE = source, side
-    # a Pool forks all its workers right here, before any helper thread exists (forking later,
-    # from a multi-threaded process, can deadlock)
-    pool = multiprocessing.get_context("fork").Pool(processes=workers)
+
+def _served_by(pool, paths, lookahead, side, side_results) -> Iterator[tuple[str, Union[list[Match], Exception]]]:
+    global _SOURCE, _SIDE
     try:
         remaining = iter(paths)
         window: collections.deque = collections.deque()
@@ -101,7 +110,10 @@ def match_ahead(source, paths: Iterable[str], workers: int = 1, lookahead: int =
             path, pending = window.popleft()
             top_up()  # refill before handing over: the workers go on while the caller reviews
             try:
-                found = pending.get()
+                try:
+                    found = pending.get(timeout=WORKER_TIMEOUT)
+                except multiprocessing.TimeoutError:  # a worker killed (out of memory on a huge file) never answers: the file fails, the run goes on
+                    raise TimeoutError(f"the matching worker did not answer for {WORKER_TIMEOUT // 60} minutes (killed? out of memory?)") from None
                 if side is not None:
                     found, side_results[path] = found
                 yield path, found

@@ -65,12 +65,13 @@ class Library:
     """
 
     @classmethod
-    def for_settings(cls, settings, readonly=False, sync_sources=True) -> "Library":
-        """The library of a loaded configuration (its database and its ``collection_path``)."""
+    def for_settings(cls, settings, readonly=False, sync_sources=True, ephemeral=False) -> "Library":
+        """The library of a loaded configuration (its database and its ``collection_path``). ``ephemeral``: an empty library in
+        memory instead of the file (a preview of a library that does not exist yet: nothing is created)."""
         from bdnex.config import PLACEHOLDER_COLLECTION
 
         root = settings.collection_path if settings.collection_path not in ("", PLACEHOLDER_COLLECTION) else None
-        library = cls(settings.library_path, root=root, readonly=readonly)
+        library = cls(":memory:" if ephemeral else settings.library_path, root=root, readonly=readonly)
         if settings.import_.sources and not readonly and sync_sources:  # files under a source are stored as @alias/…
             for problem in library.sync_sources([(source.alias, source.folder) for source in settings.import_.sources]):
                 print(f"warning: {problem}", file=sys.stderr)
@@ -83,6 +84,7 @@ class Library:
             if not readonly:
                 os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
         self.path = path
+        self.readonly = readonly
         if readonly:
             # a read-only connection may be closed by another thread than the one that opened it (a web request
             # is set up and torn down in different worker threads)
