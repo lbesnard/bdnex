@@ -18,7 +18,7 @@ BROWSER = {"Accept": "text/html,application/xhtml+xml"}
 
 
 def app_for(settings, **kw):
-    return TestClient(create_app(settings, **kw))
+    return TestClient(create_app(settings, **kw), base_url="http://localhost")
 
 
 def login(web, name="me", secret="s3cret"):
@@ -58,7 +58,7 @@ def test_a_login_needs_the_page_header_and_a_secure_cookie_over_https(library):
     secure = web.post("/api/login", json={"username": "me", "password": "s3cret"}, headers=PAGE,
                       ).headers
     assert "secure" not in secure["set-cookie"].lower()
-    https = TestClient(create_app(library, password="s3cret", username="me"), base_url="https://testserver")
+    https = TestClient(create_app(library, password="s3cret", username="me"), base_url="https://localhost")
     assert "secure" in login(https).headers["set-cookie"].lower()
 
 

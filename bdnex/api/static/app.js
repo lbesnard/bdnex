@@ -13,6 +13,9 @@ const el = (tag, attrs = {}, ...kids) => {
   return node;
 };
 
+// an address from the site's pages or the metadata editor goes into an href only when it is a web address (never `javascript:`)
+const safeUrl = u => (typeof u === "string" && /^https?:\/\//i.test(u)) ? u : null;
+
 let token = "";
 try { token = sessionStorage.getItem("bdnex-token") || ""; } catch (e) { /* storage may be blocked */ }
 const app = { overview: null };
@@ -437,7 +440,7 @@ async function albumDialog(id, note) {
   const writeTags = () => { dialog.close(); startJob("write", { query: ["id:" + id], preview: false, interactive: true }); };
   dialog.replaceChildren(el("button", { class: "d-close", "aria-label": "close", onclick: () => dialog.close() }, "×"),
     el("div", { class: "d-body" }, cover(`/api/albums/${id}/cover`, a.title),
-      el("div", {}, el("h2", { style: "margin-top:0" }, label(a)), a.url ? el("a", { href: a.url, target: "_blank", rel: "noopener" }, "Open the album page") : null,
+      el("div", {}, el("h2", { style: "margin-top:0" }, label(a)), a.url ? el("a", { href: safeUrl(a.url), target: "_blank", rel: "noopener" }, "Open the album page") : null,
         canChange() ? el("div", { class: "row", style: "margin:8px 0" }, el("button", { onclick: () => dialog.replaceChildren(el("button", { class: "d-close", "aria-label": "close", onclick: () => dialog.close() }, "×"), el("div", { style: "padding:18px" }, el("h2", { style: "margin-top:0" }, label(a)), editForm(a, dialog))) }, "Edit"),
           a.files.length ? el("button", { onclick: writeTags, title: "Write this album's values into its files" }, "Write the tags into its files") : null) : null,
         note ? el("p", { class: "hint ok" }, note) : null,
@@ -453,7 +456,7 @@ async function seriesVolumes(id) {
     const text = v.volume != null ? String(v.volume) : "·";
     const tip = `${v.title || ""}${v.owned ? "" : " (missing)"}`;
     if (v.owned && v.album_id) return el("button", { class: "vol", title: tip, onclick: () => albumDialog(v.album_id) }, text);
-    return el(v.url ? "a" : "span", { class: "vol missing", title: tip, href: v.url || null, target: v.url ? "_blank" : null, rel: v.url ? "noopener" : null }, text);
+    return el(safeUrl(v.url) ? "a" : "span", { class: "vol missing", title: tip, href: safeUrl(v.url), target: safeUrl(v.url) ? "_blank" : null, rel: safeUrl(v.url) ? "noopener" : null }, text);
   });
   return el("div", {}, el("div", { class: "vols" }, tiles), el("p", { class: "legend" }, s.list_known ? "Filled: you have it. Dashed: missing (opens its page)." : "The list of volumes is unknown: run `bdnex import --fetch`."));
 }
@@ -482,7 +485,7 @@ function questionCard(jobId, q) {
       if (c.key) keys[c.key] = c.index;
       const answer = el("button", { class: "ans " + (c.tone || ""), onclick: () => send({ choice: c.index }) }, labelNodes(c.label));
       card.append(c.url && /^https?:\/\//.test(c.url) ? el("div", { class: "withlink" }, answer,
-        el("a", { class: "btn", href: c.url, target: "_blank", rel: "noopener noreferrer", title: "Open the album's page on the site" }, "page ↗")) : answer);
+        el("a", { class: "btn", href: safeUrl(c.url), target: "_blank", rel: "noopener noreferrer", title: "Open the album's page on the site" }, "page ↗")) : answer);
     }
     card.onkey = e => { const i = keys[e.key.toLowerCase()]; if (i != null && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); send({ choice: i }); } };
   } else if (q.kind === "search") {
