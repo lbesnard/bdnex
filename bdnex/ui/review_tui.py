@@ -1360,8 +1360,29 @@ class ReviewApp(App):
             logger.exception("%s failed", what)
             self.notify(f"Could not do {what}: {err}", severity="error", timeout=10)
 
+    READING = "reading the series"
+
     async def propose(self, chosen: list, candidate) -> None:
-        """``candidate``: an album of the series, or the address (text) of the series page."""
+        """``candidate``: an album of the series, or the address (text) of the series page.
+
+        Reading a series page can take seconds (it is fetched once): the marked files say so in their state column, with the turning dots and
+        the seconds, until the answer is here (or it failed), and meanwhile they can not be decided again."""
+        quick = len(chosen) == 1 and not isinstance(candidate, str)  # one file, one album: linked at once, nothing to wait for
+        waiting = [] if quick else [r for r in chosen if not r.busy]
+        now = time.monotonic()
+        for row in waiting:
+            row.busy, row.busy_what, row.started_at = True, self.READING, now
+            self.refresh_row(row)
+        try:
+            await self.propose_for(chosen, candidate)
+        finally:
+            for row in waiting:
+                if row.busy_what == self.READING:  # (not a state somebody else gave it meanwhile)
+                    row.busy, row.busy_what, row.started_at = False, "", 0.0
+                    if row in self.rows:
+                        self.refresh_row(row)
+
+    async def propose_for(self, chosen: list, candidate) -> None:
         paths = [r.path for r in chosen]
         if len(chosen) == 1 and not isinstance(candidate, str) and not chosen[0].busy:
             # one file and one album picked: that album is the answer. Looking up "the volume of the file in the album's series" would
