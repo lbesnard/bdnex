@@ -11,6 +11,8 @@ from bdnex.importer import covers
 from bdnex.library.database import Library
 
 TMP_SUFFIXES = (".bdnex-tmp", ".part")  # what an interrupted write or cover download leaves behind
+OWN_TMP = (".bdnex-tmp",)  # in your collection only bdnex's own: a `.part` there may be a download of yours that is still going on
+MOST_GONE = 0.5  # `--fix` forgets records of files that are gone only while less than this share of them is: more means a disk that is not mounted
 SHOWN = 5  # examples listed per finding
 
 
@@ -77,7 +79,8 @@ def check(library: Library, settings, matches: bool = False) -> list[Finding]:
     if missing:
         found.append(Finding("missing", f"{len(missing)} file(s) are in the library but not on disk", missing[:SHOWN],
                              "`bdnex relocate --find <folder>` finds them if they were only moved or renamed"))
-    changed = [r["path"] for r in rows if r["path"] not in set(missing) and _changed(r)]
+    gone = set(missing)
+    changed = [r["path"] for r in rows if r["path"] not in gone and _changed(r)]
     if changed:
         found.append(Finding("changed", f"{len(changed)} file(s) changed on disk since they were recorded", changed[:SHOWN],
                              "`bdnex import --as-is --force <folder>` records them again"))
@@ -168,10 +171,16 @@ def _leftovers(settings, library: Library) -> list[str]:
         roots.add(Path(library.root))
     found: list[str] = []
     for root in roots:
+        suffixes = TMP_SUFFIXES if root == settings.cover_path else OWN_TMP
         if root.is_dir():
-            found.extend(str(p) for p in root.rglob("*") if p.is_file() and p.name.endswith(TMP_SUFFIXES)
+            found.extend(str(p) for p in root.rglob("*") if p.is_file() and p.name.endswith(suffixes)
                          and not any(part.startswith(".") for part in p.relative_to(root).parts[:-1]))
     return sorted(found)
+
+
+def _mostly_gone(gone: int, total: int) -> bool:
+    """Most of what is recorded is not there: that is a disk that is not mounted (or a mistyped folder), not a few files lost."""
+    return total >= 10 and gone > total * MOST_GONE
 
 
 def fix(library: Library, settings, findings: list[Finding]) -> list[str]:
@@ -183,17 +192,26 @@ def fix(library: Library, settings, findings: list[Finding]) -> list[str]:
     if "cover-layout" in keys:
         done.append(f"moved {covers.migrate_flat_covers(library, settings.cover_path)} cover file(s) into a folder per album")
     if "cover-missing" in keys:
-        with library.conn:
-            count = library.conn.execute("SELECT cover_file FROM albums WHERE cover_file IS NOT NULL").fetchall()
-            gone = [r[0] for r in count if not (settings.cover_path / r[0]).exists()]
-            for name in gone:
-                library.conn.execute("UPDATE albums SET cover_file = NULL WHERE cover_file = ?", (name,))
-        done.append(f"forgot {len(gone)} cover file(s) that are gone (the next `import --fetch` downloads them)")
+        count = library.conn.execute("SELECT cover_file FROM albums WHERE cover_file IS NOT NULL").fetchall()
+        gone = [r[0] for r in count if not (settings.cover_path / r[0]).exists()]
+        if not settings.cover_path.is_dir() or _mostly_gone(len(gone), len(count)):
+            done.append(f"kept the {len(gone)} cover record(s) whose files are not found: {settings.cover_path} is missing or almost empty "
+                        "(a disk that is not mounted?). Nothing was forgotten")
+        else:
+            with library.conn:
+                for name in gone:
+                    library.conn.execute("UPDATE albums SET cover_file = NULL WHERE cover_file = ?", (name,))
+            done.append(f"forgot {len(gone)} cover file(s) that are gone (the next `import --fetch` downloads them)")
     if "trash-dead" in keys:
-        dead = [e for e in library.trash_entries() if not Path(e["trash_path"]).exists()]
-        for entry in dead:
-            library.delete_trash(entry["id"])
-        done.append(f"removed {len(dead)} dead trash record(s)")
+        entries = library.trash_entries()
+        dead = [e for e in entries if not Path(e["trash_path"]).exists()]
+        if (library.root and not Path(library.root).is_dir()) or _mostly_gone(len(dead), len(entries)):
+            done.append(f"kept the {len(dead)} trash record(s) whose files are not found: {library.root} is not there, or almost nothing of "
+                        "the trash is (a disk that is not mounted?). Nothing was removed, so `bdnex trash --restore` still has them")
+        else:
+            for entry in dead:
+                library.delete_trash(entry["id"])
+            done.append(f"removed {len(dead)} dead trash record(s)")
     if "matches" in keys:
         flagged = [finding.data for finding in findings if finding.key == "matches"][0]
         for path, reason in flagged:

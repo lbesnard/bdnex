@@ -31,7 +31,7 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     if settings is None:
         return 1
 
-    with Library.for_settings(settings) as library:
+    with Library.for_settings(settings, readonly=args.pretend) as library:  # -n changes nothing: not even an upgrade of the file
         counts = library.reset(apply=False)
         cache = library.cache_summary()
         from bdnex.ui import color
