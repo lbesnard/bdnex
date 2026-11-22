@@ -14,7 +14,10 @@ def enabled(stream=None) -> bool:
     """Colour when writing to a terminal. ``NO_COLOR`` turns it off, ``FORCE_COLOR`` on."""
     if os.environ.get("NO_COLOR"):
         return False
-    if os.environ.get("FORCE_COLOR"):
+    forced = os.environ.get("FORCE_COLOR")
+    if forced is not None and forced.strip().lower() in ("0", "false", "no", "off"):
+        return False  # the convention: FORCE_COLOR=0 means no colour
+    if forced:
         return True
     stream = stream if stream is not None else sys.stdout
     return bool(getattr(stream, "isatty", lambda: False)()) and os.environ.get("TERM") != "dumb"
@@ -118,10 +121,12 @@ class LogFormatter:
         self.on = on
 
     def format(self, record) -> str:
-        if not self.on:
-            return self.inner.format(record)
         import copy
 
+        if not self.on:  # the same text as the coloured line (the level padded the same), without the codes
+            plain = copy.copy(record)
+            plain.levelname = f"{record.levelname:<7}"
+            return self.inner.format(plain)
         shown = copy.copy(record)
         style = self.LEVELS.get(record.levelname, "dim")
         shown.levelname = paint(f"{record.levelname:<7}", style, True)

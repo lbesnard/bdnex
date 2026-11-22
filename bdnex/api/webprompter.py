@@ -94,6 +94,13 @@ class WebPrompter(InquirerPrompter):
         answer = self._ask_page({"kind": "select", "message": message, "choices": self._listed(choices, fragments, shortcuts)})
         return self._value(choices[int(answer["choice"])])
 
+    def search(self, path: str):
+        """The search of the whole album list is the page's own prompt: never ``fzf``, which has no terminal here."""
+        from bdnex.importer.matching import query_from_filename
+        from bdnex.library.query import fold
+
+        return self._search_by_prompt(fold(query_from_filename(path)))
+
     def _fuzzy(self, message: str, choices: list):
         answer = self._ask_page({"kind": "search", "message": message, "choices": self._listed(choices)})
         chosen = answer.get("choice")

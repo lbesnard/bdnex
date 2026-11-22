@@ -167,10 +167,13 @@ def fzf_pick(source, path: str, start: str) -> Optional[Candidate]:
     # Ctrl-O opens the third field (the page address) with the default browser
     opener = f"{shlex.quote(sys.executable)} -m webbrowser {{3}}"
     header = f"{os.path.basename(path)}   (Enter picks the album, Ctrl-O opens its page, Esc goes back)"
-    result = subprocess.run(
-        ["fzf", "-i", "--query", start, "--delimiter", "\t", "--with-nth", "1", "--prompt", "album> ",
-         "--header", header, "--bind", f"ctrl-o:execute-silent({opener})", "--layout=reverse", "--height=70%"],
-        input=lines, stdout=subprocess.PIPE, text=True)
+    try:
+        result = subprocess.run(
+            ["fzf", "-i", "--query", start, "--delimiter", "\t", "--with-nth", "1", "--prompt", "album> ",
+             "--header", header, "--bind", f"ctrl-o:execute-silent({opener})", "--layout=reverse", "--height=70%"],
+            input=lines, stdout=subprocess.PIPE, text=True)
+    except OSError:  # fzf went away after `which` found it
+        return None
     if result.returncode != 0 or not result.stdout.strip():
         return None  # no match, or Esc / Ctrl-C
     return catalogue.get(result.stdout.rstrip("\n").split("\t")[1])
@@ -196,6 +199,7 @@ class InquirerPrompter:
                 shortcuts: Optional[dict] = None):
         from InquirerPy import inquirer
 
+        self._need_terminal()
         prompt = inquirer.select(message=message, choices=choices,
                                  instruction=f"({self._hint(shortcuts)})")
         if shortcuts and getattr(self, "_picture", None) is not None:
@@ -230,6 +234,7 @@ class InquirerPrompter:
         """Type to filter the choices (case-insensitive); Ctrl-C gives ``None``."""
         from InquirerPy import inquirer
 
+        self._need_terminal()
         prompt = inquirer.fuzzy(message=message, choices=choices, instruction=f"({OPEN_HINT}; Ctrl-C goes back)",
                                 raise_keyboard_interrupt=False, mandatory=False, max_height="70%")
         bind_open(prompt)
@@ -238,6 +243,7 @@ class InquirerPrompter:
     def _text(self, message: str, default: str = "") -> str:
         from InquirerPy import inquirer
 
+        self._need_terminal()
         return inquirer.text(message=message, default=default).execute()
 
     @staticmethod
@@ -320,7 +326,11 @@ class InquirerPrompter:
             text = self._text("Album Id or address of its page (empty to go back):").strip()
             if not text:
                 return None
-            candidate = lookup(text)
+            try:  # a source that can not answer (its list is not loaded, the network): said, and asked again
+                candidate = lookup(text) if len(text) <= 300 and not re.search(r"\s", text) else None
+            except Exception as err:
+                print(f"Could not look that up ({err}).")
+                continue
             if candidate is not None:
                 return candidate
             print("That is not an album: type its number, or the address of its page "
@@ -444,6 +454,7 @@ class InquirerPrompter:
     def _checkbox(self, message: str, choices: list):
         from InquirerPy import inquirer
 
+        self._need_terminal()
         return inquirer.checkbox(message=message, choices=choices, instruction="(Space ticks, Enter confirms)",
                                  transformer=lambda picked: f"{len(picked)} file(s) ticked",
                                  raise_keyboard_interrupt=False, mandatory=False).execute()
@@ -453,7 +464,9 @@ class InquirerPrompter:
         self._need_terminal()
         choices = [{"name": os.path.basename(path), "value": path, "enabled": path in ticked} for path in paths]
         picked = self._checkbox(f"Which of these {len(paths)} files belong to the series?", choices)
-        return list(picked or [])
+        if picked is None:  # Ctrl-C is no answer: it is not "none of them belong" (which would send every file down the other path)
+            raise SkipFolder(folder)
+        return list(picked)
 
     # -- searching the whole album list
     def search(self, path: str) -> Optional[Candidate]:
@@ -540,9 +553,9 @@ class InquirerPrompter:
     def choose_placement(self, count: int, directory: str) -> str:
         """What to do with files imported from outside the library folder: ``move`` | ``copy`` | ``leave``."""
         return self._pick(f"{count} imported file(s) are outside your collection ({directory}). What now?", [
+            {"action": "copy", "value": "copy", "label": "Copy them into the library (the originals stay where they are)"},
             {"action": "move", "value": "move",
              "label": "Move them into the library (tags are written, names follow your templates)"},
-            {"action": "copy", "value": "copy", "label": "Copy them into the library (the originals stay where they are)"},
             {"action": "leave", "value": "leave",
              "label": "Leave them where they are (`bdnex move staged:true` places them later)"}])
 

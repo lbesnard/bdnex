@@ -876,6 +876,7 @@ def test_the_abort_key_of_a_real_question_raises_it(monkeypatch):
             return InquirerPrompter.ABORT
 
     monkeypatch.setattr(inquirer, "select", lambda **kw: Answer(**kw))
+    monkeypatch.setattr(InquirerPrompter, "_need_terminal", staticmethod(lambda: None))  # pytest has no terminal; the question is faked
     with pytest.raises(WriteAborted):
         InquirerPrompter().size_action("/x/a.cbr", 10, 99, 20)
     assert seen["choices"][-1]["name"].startswith("[A]bort the run")
