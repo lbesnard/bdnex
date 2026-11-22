@@ -20,12 +20,67 @@ class MissingField(Exception):
 SUBTITLE_COLON = re.compile(r"\s*:\s+")
 
 
-def sanitize(value: str) -> str:
+def parse_rules(mapping: dict[str, str]) -> list[tuple[str, "re.Pattern", str]]:
+    """beets' syntax: ``"FIELD REGEX": VALUE`` -> ``(field, compiled regex, value)``, in the order written. Raises ``ValueError`` saying what is wrong."""
+    rules = []
+    for key, value in (mapping or {}).items():
+        field, _, pattern = str(key).strip().partition(" ")
+        if not field or not pattern.strip():
+            raise ValueError(f"{key!r}: write it as `FIELD REGEX: VALUE` (for example `series .*Tintin.*: Tintin`)")
+        try:
+            rules.append((field, re.compile(pattern.strip(), re.IGNORECASE), "" if value is None else str(value)))
+        except re.error as err:
+            raise ValueError(f"{key!r}: bad regular expression ({err})") from None
+    return rules
+
+
+def apply_rewrites(fields: dict[str, Any], rules: list) -> dict[str, Any]:
+    """The template fields with ``paths.rewrite`` applied (beets' ``rewrite``): the first rule of a field whose regex is found in its value
+    gives it the new value, in the paths only (the library is not changed). Returns a copy."""
+    out, done = dict(fields), set()
+    for field, pattern, value in rules:
+        if field in out and field not in done and pattern.search(str(fields.get(field, ""))):
+            out[field], _ = value, done.add(field)
+    return out
+
+
+def collection_of(fields: dict[str, Any], path: str, rules: list) -> str:
+    """The collection an album belongs to (``paths.collections``): the first rule whose regex is found in the field it names (any template
+    field, or ``path`` / ``filename`` of the file), else ``""``. A family of albums the site does not group (Tintin, Astérix and their special
+    issues), put together in the paths."""
+    import os
+
+    seen = {**fields, "path": path, "filename": os.path.basename(path)}
+    for field, pattern, name in rules:
+        if field in seen and pattern.search(str(seen[field] if seen[field] is not None else "")):
+            return name
+    return ""
+
+
+def apply_replacements(value: str, rules: list) -> str:
+    for _, pattern, replacement in rules:
+        value = pattern.sub(replacement, value)
+    return value
+
+
+def parse_replacements(mapping: dict[str, str]) -> list[tuple[str, "re.Pattern", str]]:
+    """beets' ``replace``: ``REGEX: REPLACEMENT``, applied in order to every folder and file name, before bdnex's own safety rules (which stay)."""
+    rules = []
+    for pattern, replacement in (mapping or {}).items():
+        try:
+            rules.append(("", re.compile(str(pattern)), "" if replacement is None else str(replacement)))
+        except re.error as err:
+            raise ValueError(f"{pattern!r}: bad regular expression ({err})") from None
+    return rules
+
+
+def sanitize(value: str, replace: list = ()) -> str:
     """Make one path component safe on every platform.
 
     A colon that opens a subtitle (``Batman: Dark Victory``) becomes `` - `` (``Batman - Dark Victory``), as a person would write it; any other
     character a file system refuses (a colon in ``12:30``, ``?``, ``*``...) becomes ``_``."""
-    value = SUBTITLE_COLON.sub(" - ", str(value))
+    value = apply_replacements(str(value), replace) if replace else str(value)
+    value = SUBTITLE_COLON.sub(" - ", value)
     value = ILLEGAL.sub("_", value)
     value = re.sub(r"\s+", " ", value).strip().rstrip(". ")
     return value[:MAX_COMPONENT].rstrip(". ") or "_"
@@ -64,11 +119,12 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
         "writer": ", ".join(credits.get("Writer", [])),
         "penciller": ", ".join(credits.get("Penciller", [])),
         "colorist": ", ".join(credits.get("Colorist", [])),
+        "collection": "",  # from `paths.collections` (the organizer fills it: it needs the file's path)
     }
 
 
 FIELD_NAMES = ("kind", "series", "title", "volume", "special", "language", "year", "publisher", "isbn", "genre", "authors",
-               "writer", "penciller", "colorist")  # what `fields_for` provides (a test keeps the two together)
+               "writer", "penciller", "colorist", "collection")  # what `fields_for` provides (a test keeps the two together)
 
 
 FUNCTION = re.compile(r"%(\w+)\{")
@@ -149,7 +205,7 @@ class Rendered:
     skipped_field: Optional[str] = None
 
 
-def render(template: str, values: dict[str, Any], resolve_missing: Callable[[str], Optional[str]]) -> Rendered:
+def render(template: str, values: dict[str, Any], resolve_missing: Callable[[str], Optional[str]], replace: list = ()) -> Rendered:
     """Render a template into path components.
 
     ``resolve_missing(field)`` is called for an empty field and returns the value to
@@ -172,7 +228,7 @@ def render(template: str, values: dict[str, Any], resolve_missing: Callable[[str
         pad = match.group("pad")
         if pad and str(value).isdigit():
             value = str(int(value)).zfill(int(pad))
-        return sanitize(value)
+        return sanitize(value, replace)
 
     def expand(text: str, lenient: bool = False) -> str:
         """``$variables`` and ``%functions{...}`` of a piece of template (``if`` and ``ifdef`` work out only the branch they take)."""
@@ -206,7 +262,7 @@ def render(template: str, values: dict[str, Any], resolve_missing: Callable[[str
         for component in template.split("/"):
             rendered = expand(component).strip()
             if rendered:
-                parts.append(sanitize(rendered))
+                parts.append(sanitize(rendered, replace))
     except MissingField as err:
         return Rendered([], skipped_field=err.field)
     return Rendered(parts)

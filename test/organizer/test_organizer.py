@@ -1404,3 +1404,27 @@ def test_the_series_year_option_leaves_the_sites_year_out_of_the_path(lib, make_
     assert kept.count("(1999)") == 2  # as before: the year is in $series, in the folder and in the name
     stripped = Organizer(lib, settings_for(tmp_path, paths={"series_year": "strip"}), force=True)._destination(path, "cbz", album, MOVE)
     assert "(1999)" not in stripped and stripped.count("Dark Victory") == 2 and stripped.endswith("- T01 - War.cbz")
+
+
+def test_collections_rewrite_and_replace_shape_the_destination(lib, make_cbz, tmp_path):
+    album = lib.add_album(AlbumInfo("b", "8", "Astérix chez les Quebecois", series=SeriesInfo("b", "s8", "Astérix (Hors Série)"), volume=1,
+                                    language="fr"))
+    path = make_cbz("Astérix - HS - chez les Quebecois.cbz", directory=tmp_path / "Astérix" / "Astérix - HS")
+    paths = {"series": "Series/%ifdef{collection,$collection}/$series/$series - T$volume:02 - $title",
+             "collections": {"path .*/Astérix/.*": "Astérix & Obélix"},
+             "rewrite": {"series .*Hors Série.*": "Hors Série"},
+             "replace": {"é": "e"}}
+    dest = Organizer(lib, settings_for(tmp_path, paths=paths), force=True)._destination(path, "cbz", album, MOVE)
+    assert dest.endswith("Series/Asterix & Obelix/Hors Serie/Hors Serie - T01 - Asterix chez les Quebecois.cbz"), dest  # replace: every name
+    plain = Organizer(lib, settings_for(tmp_path, paths={"series": paths["series"]}), force=True)._destination(path, "cbz", album, MOVE)
+    assert "Series/Astérix (Hors Série)/" in plain  # no collection matched: the collection folder is simply not there
+
+
+def test_a_bad_rule_is_refused_when_the_configuration_is_read():
+    import pytest
+
+    from bdnex.config import ConfigError
+
+    for bad in ({"collections": {"nofield .*": "x"}}, {"rewrite": {"series (": "x"}}, {"replace": {"(": "x"}}, {"rewrite": {"collection .*": "x"}}):
+        with pytest.raises(ConfigError):
+            build_settings({"config_version": 2, "paths": bad})

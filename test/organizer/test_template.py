@@ -107,3 +107,30 @@ def test_a_year_the_site_added_to_a_series_name_can_be_left_out():
     assert template.strip_year("Batman: Dark Victory (1999)") == "Batman: Dark Victory"
     assert template.strip_year("Les Nains") == "Les Nains" and template.strip_year("Spirou (1938) Hors-série") == "Spirou (1938) Hors-série"  # only a trailing one
     assert template.strip_year("(1999)") == "(1999)"  # never nothing
+
+
+# ------------------------------------------------------------------ beets-style replace / rewrite, and collections
+def test_replace_rewrite_and_collections_use_the_beets_syntax():
+    import pytest
+
+    rules = template.parse_rules({"series .*Tintin.*": "Tintin", "title ^$": "x"})
+    assert [(f, r.pattern, v) for f, r, v in rules][0] == ("series", ".*Tintin.*", "Tintin")
+    for bad in ({"series": "x"}, {"series (": "x"}, {"": "x"}):
+        with pytest.raises(ValueError):
+            template.parse_rules(bad)
+    fields = {"series": "Les Aventures de Tintin", "title": "Le Lotus bleu", "writer": "Hergé"}
+    assert template.apply_rewrites(fields, template.parse_rules({"series .*tintin.*": "Tintin", "writer .*": "H."}))["series"] == "Tintin"
+    assert fields["series"] == "Les Aventures de Tintin"  # a copy: the library's value is not touched
+    first = template.parse_rules({"path .*/Astérix/.*": "Astérix", "series .*": "Other"})
+    assert template.collection_of({"series": "X"}, "/c/Astérix/HS/a.pdf", first) == "Astérix"  # the first rule that matches
+    assert template.collection_of({"series": "X"}, "/c/Other/a.pdf", first) == "Other" and template.collection_of({}, "/c/a.pdf", []) == ""
+    replace = template.parse_replacements({"[‐]": "-", "’": "'"})
+    assert template.sanitize("a‐b’c: d", replace) == "a-b'c - d"  # the user's rules first, bdnex's own safety after (the colon rule too)
+
+
+def test_a_missing_collection_drops_out_of_the_path_with_ifdef():
+    values = {"series": "Astérix", "title": "T", "volume": 1, "collection": ""}
+    tpl = "Series/%ifdef{collection,$collection}/$series/$series - T$volume:02"
+    missing = lambda name: ""  # noqa: E731  (nothing is asked here: the collection is only asked about when written as `$collection` alone)
+    assert template.render(tpl, values, missing).parts == ["Series", "Astérix", "Astérix - T01"]
+    assert template.render(tpl, {**values, "collection": "Astérix & Obélix"}, missing).parts == ["Series", "Astérix & Obélix", "Astérix", "Astérix - T01"]

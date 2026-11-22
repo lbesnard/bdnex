@@ -94,6 +94,9 @@ paths:
   rules: []                             # other templates for some albums, first match wins (see the docs)
   missing_field: ask                    # ask | placeholder | skip
   placeholder: Unknown
+  replace: {}                           # beets' `replace`: '[\u2010]': '-'  (REGEX: replacement, in every folder and file name; bdnex's own safety rules still apply)
+  rewrite: {}                           # beets' `rewrite`: 'series .*Tintin.*': Tintin  ("FIELD REGEX": the new value of that field, in the paths)
+  collections: {}                       # 'path .*/Astérix/.*': Astérix  ("FIELD REGEX": the collection of the albums that match; `$collection` in a template)
   series_year: keep                     # keep | strip: the site names some series with their year (`Batman: Dark Victory (1999)`); strip leaves it out of $series
 
 source: bedetheque                      # metadata source: a built-in name, an installed plugin, or 'package.module:factory'
