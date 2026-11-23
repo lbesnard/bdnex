@@ -28,6 +28,7 @@ FIELD_HELP = {
     "path": "the file's path", "publisher": "publisher", "rating": "the source's rating", "review": "flagged for `bdnex review`",
     "series": "series name", "size": "the file's size in bytes", "source": "where the album comes from",
     "spare": "a spare version of an album that has another main file", "staged": "waiting to be moved into the collection",
+    "subseries": "a hand-set subfolder inside the series (`bdnex edit`), for an album the site does not list",
     "summary": "the summary", "tagged": "(files) linked to an album", "title": "the album's title", "url": "the album's page address",
     "volume": "the volume number", "year": "year of publication",
 }

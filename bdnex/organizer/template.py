@@ -123,11 +123,12 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
         # the site's own "Collection"; a `paths.collections` rule (the organizer applies it: it needs the file's path) wins when one matches
         "collection": edition.get("Collection") or "",
         "cycle": edition.get("Cycle") or "",  # the site's own "Cycle" within a collection, e.g. "3"
+        "subseries": album.get("subseries") or "",  # hand-set (`bdnex edit`): a subfolder inside the series, for an album the site does not list
     }
 
 
 FIELD_NAMES = ("kind", "series", "title", "volume", "special", "language", "year", "publisher", "isbn", "genre", "authors",
-               "writer", "penciller", "colorist", "collection", "cycle")  # what `fields_for` provides (a test keeps the two together)
+               "writer", "penciller", "colorist", "collection", "cycle", "subseries")  # what `fields_for` provides (a test keeps the two together)
 
 
 FUNCTION = re.compile(r"%(\w+)\{")

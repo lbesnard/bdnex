@@ -90,6 +90,12 @@ def test_credits_any_and_by_role(lib):
     assert titles(lib.query(["writer:lupano"])) == ["La bibliomule de Cordoue"]
 
 
+def test_subseries_is_queryable(lib):
+    lib.edit_album(lib.query(["title:bibliomule"])[0]["id"], {"subseries": "Making-of"})
+    assert titles(lib.query(["subseries:making"])) == ["La bibliomule de Cordoue"]
+    assert lib.query(["subseries:nope"]) == []
+
+
 def test_genre_publisher_kind(lib):
     assert titles(lib.query(["genre:humour"])) == ["Astérix le Gaulois"]
     assert titles(lib.query(["genre:=satire"])) == ["La bibliomule de Cordoue"]

@@ -85,8 +85,7 @@ options:
   --sources             the folders of `import.sources` in the configuration: what is
                         new in them is copied or moved into the collection, each
                         source in its own mode. Added to the paths, if any
-  -s TERM, --select TERM
-                        work on the files already in the library that match this
+  -s, --select TERM     work on the files already in the library that match this
                         `bdnex ls --files` term (repeatable, all must match):
                         `--select tagged:false`, `--select 'author:uderzo'`. Added to
                         the paths, if any
@@ -338,8 +337,8 @@ options:
 fields: any, attr, author, colorist, complete, corrupted, cover, coverartist,
 embedded, fileid, filename, filepages, files, format, genre, id, inker, isbn, kind,
 language, letterer, md5, metadata, pages, partial, path, penciller, publisher, rating,
-review, series, size, source, spare, staged, summary, tagged, title, url, volume,
-writer, year
+review, series, size, source, spare, staged, subseries, summary, tagged, title, url,
+volume, writer, year
 
 Examples:
   bdnex ls series:nains                                           the albums of a series

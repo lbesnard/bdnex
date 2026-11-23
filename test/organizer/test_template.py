@@ -135,6 +135,14 @@ def test_fields_for_reads_the_site_s_own_collection_and_cycle():
     assert template.fields_for(ALBUM)["collection"] == "" and template.fields_for(ALBUM)["cycle"] == ""  # no edition table: empty, not asked
 
 
+def test_subseries_is_hand_set_not_from_the_site():
+    assert template.fields_for(ALBUM)["subseries"] == ""
+    assert template.fields_for({**ALBUM, "subseries": "Making-of"})["subseries"] == "Making-of"
+    parts = render("Series/$series/%ifdef{subseries,$subseries}/$title", {**ALBUM, "subseries": "Making-of"}).parts
+    assert parts == ["Series", "Nains", "Making-of", "Redwin de la Forge"]
+    assert render("Series/$series/%ifdef{subseries,$subseries}/$title", ALBUM).parts == ["Series", "Nains", "Redwin de la Forge"]
+
+
 def test_a_missing_collection_drops_out_of_the_path_with_ifdef():
     values = {"series": "Astérix", "title": "T", "volume": 1, "collection": ""}
     tpl = "Series/%ifdef{collection,$collection}/$series/$series - T$volume:02"

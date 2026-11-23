@@ -90,7 +90,7 @@ def register_functions(conn) -> None:
 # field -> SQL expression (album mode and file mode share the same joins: a, s, pub, f)
 TEXT_FIELDS = {"title": "a.title", "series": "s.name", "publisher": "pub.name", "isbn": "a.isbn",
                "language": "a.language", "summary": "a.summary", "kind": "a.kind",
-               "url": "a.url", "source": "a.source"}
+               "url": "a.url", "source": "a.source", "subseries": "a.subseries"}
 FILE_TEXT_FIELDS = {"path": "f.path", "filename": "basename(f.path)", "format": "f.format", "md5": "f.md5",
                     "embedded": "COALESCE(f.embedded, '')"}
 NUMERIC_FIELDS = {"id": "a.id", "year": "a.year", "volume": "a.volume", "pages": "a.pages", "rating": "a.rating"}
@@ -106,7 +106,7 @@ ALL_FIELDS = sorted({*TEXT_FIELDS, *FILE_TEXT_FIELDS, *NUMERIC_FIELDS, *FILE_NUM
 
 # what `any:` looks in (everything text-like; credits and genres included)
 ANY_FIELDS = ("title", "series", "publisher", "isbn", "language", "summary", "kind", "url", "source", "author",
-              "genre", "filename", "path", "format")
+              "genre", "filename", "path", "format", "subseries")
 
 
 @dataclass

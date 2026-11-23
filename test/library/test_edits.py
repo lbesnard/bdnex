@@ -42,6 +42,16 @@ def test_edits_survive_a_new_import_of_the_album(lib):
     assert got["credits"] == {"Inker": ["I"], "Writer": ["Me"]}  # roles never edited still follow the site
 
 
+def test_subseries_is_a_hand_edit_that_survives_a_new_import(lib):
+    album = lib.add_album(nains())
+    assert lib.get_album(album)["subseries"] is None  # never set by the source
+    lib.edit_album(album, {"subseries": "Making-of"})
+    lib.add_album(nains(title="From the site"))  # a fresh parse of the same album: the hand edit is not overwritten
+    assert lib.get_album(album)["subseries"] == "Making-of"
+    lib.edit_album(album, {"subseries": None})
+    assert lib.get_album(album)["subseries"] is None
+
+
 def test_edits_survive_merge_and_are_not_reported_as_changes(lib):
     album = lib.add_album(nains())
     lib.edit_album(album, {"title": "Mine"})
