@@ -453,9 +453,9 @@ class Library:
             publisher_id = self._get_or_create("publishers", info.publisher) if info.publisher else None
             self.conn.execute(
                 """INSERT INTO albums(kind, series_id, title, volume, alternate_number,
-                       publisher_id, isbn, year, month, day, pages, language, format,
+                       publisher_id, isbn, year, month, day, pages, language, format, subseries,
                        summary, rating, cover_url, url, source, source_id, extra)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(source, source_id) DO UPDATE SET
                        kind = excluded.kind, series_id = excluded.series_id,
                        title = excluded.title, volume = excluded.volume,
@@ -463,12 +463,12 @@ class Library:
                        publisher_id = excluded.publisher_id, isbn = excluded.isbn,
                        year = excluded.year, month = excluded.month, day = excluded.day,
                        pages = excluded.pages, language = excluded.language,
-                       format = excluded.format, summary = excluded.summary,
+                       format = excluded.format, subseries = excluded.subseries, summary = excluded.summary,
                        rating = excluded.rating, cover_url = excluded.cover_url,
                        url = excluded.url, extra = excluded.extra""",
                 (info.kind, series_id, info.title, info.volume, info.alternate_number,
                  publisher_id, info.isbn, info.year, info.month, info.day, info.pages,
-                 info.language, info.format, info.summary, info.rating, info.cover_url,
+                 info.language, info.format, info.subseries, info.summary, info.rating, info.cover_url,
                  info.url, info.source, info.source_id,
                  json.dumps(info.extra, ensure_ascii=False, default=str, sort_keys=True)))
             album_id = self.conn.execute(
@@ -491,7 +491,7 @@ class Library:
 
     # ------------------------------------------------------------ hand edits
     EDIT_SCALARS = ("title", "volume", "alternate_number", "publisher", "isbn", "year", "month", "day",
-                    "pages", "language", "format", "summary")
+                    "pages", "language", "format", "subseries", "summary")
     EDIT_FIELDS = EDIT_SCALARS + ("series", "credits", "genres")
 
     def _edits_of(self, album_id: int) -> dict[str, Any]:

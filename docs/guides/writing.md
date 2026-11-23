@@ -245,7 +245,7 @@ paths:
 
 - `$field` or `${field}`; `$volume:02` zero-pads a number. A special such as *Hors-série* is used
   as `$volume` when there is no number.
-- Fields: `kind series title volume special language year publisher isbn genre authors writer penciller colorist collection cycle`.
+- Fields: `kind series title volume special language year publisher isbn genre authors writer penciller colorist collection cycle subseries`.
 - **Functions**, written `%name{argument,argument}`; arguments can hold `$fields` and other functions:
   `%upper{}` `%lower{}` `%title{}` `%capitalize{}`, `%left{text,n}` and `%right{text,n}` (the first or last `n`
   characters), `%asciify{text}` (no accents), `%first{text,count,skip,sep,join}` (some of the items of a list such as
@@ -274,6 +274,10 @@ paths:
   outside the braces): when `$collection` or `$cycle` is empty (neither a rule nor a site value), that whole component renders to
   nothing and its folder level drops out on its own, independently of the other. A bare `$collection` or `$cycle` would be asked
   about instead, like any empty field. `$cycle` has no rule of its own: it is only ever the site's value.
+- **`$subseries`**: a hand-set subfolder inside the series, for an album the site does not list at all (a documentary, an extra) that
+  should still sit next to the series it belongs to, instead of in the main series folder (or being treated as a spare version of
+  another album it has nothing to do with). It has no rule: set it on the album by hand, with `e` in `bdnex review --batch` or
+  `bdnex edit --set subseries=... id:ID`. Typically paired with `%ifdef`: `Series/$series/%ifdef{subseries,$subseries}/$title`.
 - **`paths.rewrite`** (beets' `rewrite`) changes the value of a field *in the paths only* (the library keeps what it has): `'series .*Hors Série.*': Hors Série`.
   The first rule of a field whose regex is found in its value wins; the collection is worked out before the rewrites.
 - **`paths.replace`** (beets' `replace`) applies `REGEX: replacement` in order to every folder and file name, before bdnex's own safety rules (which stay):

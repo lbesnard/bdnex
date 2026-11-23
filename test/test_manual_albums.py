@@ -21,6 +21,27 @@ def test_a_file_gets_an_album_written_by_hand_and_it_can_be_edited(make_cbz):
     assert lib.get_album(album)["title"] == "Feral City" and lib.get_album(album)["year"] == 2006
 
 
+def test_the_form_covers_every_field_bdnex_edit_has(make_cbz):
+    lib = Library(":memory:")
+    path = make_cbz("Doc.cbz")
+    album = manual.create(lib, path, {
+        "series": "Amazonie", "volume": "", "alternate_number": "Making-of", "title": "Les coulisses", "subseries": "Making-of",
+        "publisher": "Glénat", "isbn": "978-2-7234-0000-0", "year": "2020", "month": "6", "day": "15",
+        "language": "fr", "format": "Format normal", "pages": "48",
+        "writer": "A", "artist": "B", "inker": "C", "colorist": "D", "letterer": "E", "coverartist": "F",
+        "genres": "Documentaire", "summary": "Un bonus",
+    })
+    got = lib.get_album(album)
+    assert got["alternate_number"] == "Making-of" and got["subseries"] == "Making-of" and got["isbn"] == "978-2-7234-0000-0"
+    assert (got["month"], got["day"], got["pages"], got["language"], got["format"]) == (6, 15, 48, "fr", "Format normal")
+    assert got["credits"] == {"Writer": ["A"], "Penciller": ["B"], "Inker": ["C"], "Colorist": ["D"], "Letterer": ["E"], "CoverArtist": ["F"]}
+    form = manual.form_of(lib, album)
+    assert form["isbn"] == "978-2-7234-0000-0" and form["subseries"] == "Making-of" and form["coverartist"] == "F"
+    manual.update(lib, album, {**form, "subseries": "", "isbn": ""})
+    got = lib.get_album(album)
+    assert got["subseries"] is None and got["isbn"] is None  # cleared, not left as empty text
+
+
 def test_several_files_make_one_series_each_with_its_own_volume(make_cbz):
     lib = Library(":memory:")
     paths = [make_cbz(f"Fell 0{n}.cbz") for n in (2, 3)]

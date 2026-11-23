@@ -43,6 +43,7 @@ class AlbumInfo:
     pages: Optional[int] = None
     language: Optional[str] = None
     format: Optional[str] = None
+    subseries: Optional[str] = None  # a hand-set subfolder inside the series, for an album the site does not list
     summary: Optional[str] = None
     rating: Optional[float] = None
     cover_url: Optional[str] = None

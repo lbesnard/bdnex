@@ -13,23 +13,41 @@ import uuid
 from typing import Any, Optional
 
 from bdnex.library import AlbumInfo, Library, SeriesInfo
+from bdnex.library.models import CREDIT_ROLES
 from bdnex.library.query import fold
 
 MANUAL = "manual"
+
+# the credit roles of the form: their key (lower case, as typed) -> one of CREDIT_ROLES ("artist" is bdnex's own word for Penciller)
+CREDIT_KEYS = {"writer": "Writer", "artist": "Penciller", "inker": "Inker", "colorist": "Colorist",
+              "letterer": "Letterer", "coverartist": "CoverArtist"}
 
 # the form: key, label, hint
 FIELDS = (
     ("series", "Series", "empty = a one-shot"),
     ("volume", "Volume", "a number"),
+    ("alternate_number", "Special", "Hors-série, Intégrale... when there is no number"),
     ("title", "Title", "empty = the series and the volume"),
+    ("subseries", "Subfolder", "a subfolder inside the series, for an album the site does not list"),
     ("publisher", "Publisher", ""),
+    ("isbn", "ISBN", ""),
     ("year", "Year", "four digits"),
+    ("month", "Month", "1 to 12"),
+    ("day", "Day", "1 to 31"),
+    ("language", "Language", "a code, e.g. fr"),
+    ("format", "Format", ""),
+    ("pages", "Pages", "a number"),
     ("writer", "Writer(s)", "separate with , or ;"),
     ("artist", "Artist(s)", "separate with , or ;"),
+    ("inker", "Inker(s)", "separate with , or ;"),
+    ("colorist", "Colorist(s)", "separate with , or ;"),
+    ("letterer", "Letterer(s)", "separate with , or ;"),
+    ("coverartist", "Cover artist(s)", "separate with , or ;"),
     ("genres", "Genres", "separate with , or ;"),
     ("summary", "Summary", ""),
 )
-SHARED = ("series", "publisher", "year", "writer", "artist", "genres", "summary")  # what files of one series have in common
+# what files of one series have in common (volume, the special tag, title, subfolder, isbn, pages, month and day vary file to file)
+SHARED = ("series", "publisher", "year", "language", "format", *CREDIT_KEYS, "genres", "summary")
 
 
 class FormError(ValueError):
@@ -60,15 +78,19 @@ def guess(path: str) -> dict[str, str]:
     return {"series": folder, "volume": "" if volume is None else str(volume)}
 
 
+def _str(album: dict[str, Any], key: str) -> str:
+    return "" if album.get(key) is None else str(album[key])
+
+
 def form_of(library: Library, album_id: int) -> dict[str, str]:
     """The form of an album already written by hand (to edit it)."""
     album = library.get_album(album_id) or {}
     credits = album.get("credits") or {}
-    return {"series": album.get("series") or "", "volume": "" if album.get("volume") is None else str(album["volume"]),
-            "title": album.get("title") or "", "publisher": album.get("publisher") or "",
-            "year": "" if album.get("year") is None else str(album["year"]),
-            "writer": "; ".join(credits.get("Writer", [])), "artist": "; ".join(credits.get("Penciller", [])),
-            "genres": "; ".join(album.get("genres") or []), "summary": album.get("summary") or ""}
+    values = {key: _str(album, key) for key in ("series", "volume", "alternate_number", "title", "subseries", "publisher",
+                                                  "isbn", "year", "month", "day", "language", "format", "pages", "summary")}
+    values.update({key: "; ".join(credits.get(role, [])) for key, role in CREDIT_KEYS.items()})
+    values["genres"] = "; ".join(album.get("genres") or [])
+    return values
 
 
 def is_manual(library: Library, album_id: Optional[int]) -> bool:
@@ -84,20 +106,29 @@ def series_key(name: str) -> str:
     return f"manual-{slug}-{hashlib.sha1(name.strip().casefold().encode()).hexdigest()[:6]}"
 
 
+def _text(values: dict[str, str], key: str) -> Optional[str]:
+    return (values.get(key) or "").strip() or None
+
+
 def _info(values: dict[str, str], path: str, volume: Optional[int]) -> AlbumInfo:
     series = (values.get("series") or "").strip()
     title = (values.get("title") or "").strip()
     if not title:
         title = (f"{series} - T{volume:02d}" if series and volume is not None else series
                  or os.path.splitext(os.path.basename(path))[0])
-    credits = {role: names for role, names in (("Writer", _names(values.get("writer", ""))),
-                                               ("Penciller", _names(values.get("artist", "")))) if names}
+    credits = {role: _names(values.get(key, "")) for key, role in CREDIT_KEYS.items()}
+    credits = {role: names for role, names in credits.items() if names}
     return AlbumInfo(
         MANUAL, uuid.uuid4().hex[:12], title,
         series=SeriesInfo(MANUAL, series_key(series), series) if series else None,
-        volume=volume, publisher=(values.get("publisher") or "").strip() or None,
-        year=_number(values.get("year", ""), "the year", 1000, 9999), summary=(values.get("summary") or "").strip() or None,
-        credits=credits, genres=_names(values.get("genres", "")))
+        volume=volume, alternate_number=_text(values, "alternate_number"),
+        publisher=_text(values, "publisher"), isbn=_text(values, "isbn"),
+        year=_number(values.get("year", ""), "the year", 1000, 9999),
+        month=_number(values.get("month", ""), "the month", 1, 12),
+        day=_number(values.get("day", ""), "the day", 1, 31),
+        pages=_number(values.get("pages", ""), "the pages", 0, 99999),
+        language=_text(values, "language"), format=_text(values, "format"), subseries=_text(values, "subseries"),
+        summary=_text(values, "summary"), credits=credits, genres=_names(values.get("genres", "")))
 
 
 def check(values: dict[str, str], series: bool = False) -> None:
@@ -131,9 +162,11 @@ def update(library: Library, album_id: int, values: dict[str, str]) -> None:
     album = library.get_album(album_id) or {}
     new = _info(values, "", _number(values.get("volume", ""), "the volume", 0, 9999))
     changes: dict[str, Any] = {"title": new.title if (values.get("title") or "").strip() else album.get("title"),
-                               "volume": new.volume, "publisher": new.publisher, "year": new.year, "summary": new.summary,
-                               "genres": new.genres, "credits": {"Writer": new.credits.get("Writer", []),
-                                                                 "Penciller": new.credits.get("Penciller", [])}}
+                               "volume": new.volume, "alternate_number": new.alternate_number, "publisher": new.publisher,
+                               "isbn": new.isbn, "year": new.year, "month": new.month, "day": new.day, "pages": new.pages,
+                               "language": new.language, "format": new.format, "subseries": new.subseries,
+                               "summary": new.summary, "genres": new.genres,
+                               "credits": {role: new.credits.get(role, []) for role in CREDIT_ROLES}}
     if album.get("kind") == "series" and new.series is not None and new.series.name != album.get("series"):
         changes["series"] = new.series.name
     library.edit_album(album_id, changes)

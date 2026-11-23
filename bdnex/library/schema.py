@@ -256,4 +256,10 @@ MIGRATIONS = [
         fetched TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
     """,
+    # --- version 14 ------------------------------------------------------
+    # A hand-set subfolder inside its series (`$subseries`), for an album the site does not list (a documentary, an extra) that
+    # should still sit next to the series it belongs to, instead of being treated as a spare version of another album.
+    """
+    ALTER TABLE albums ADD COLUMN subseries TEXT;
+    """,
 ]

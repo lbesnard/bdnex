@@ -80,7 +80,7 @@ async def fetched(app, pilot, timeout=15.0):
     await settle(app, pilot)
 
 
-def drive(db, script, unmatched=True, size=50, source=None, columns=170):
+def drive(db, script, unmatched=True, size=50, source=None, columns=170, rows=45):
     """Run the app, call ``script(app, pilot)`` once the batch is shown, and return the cells of the table."""
     settings = load_config().settings
     source = source or FakeSource()
@@ -89,7 +89,7 @@ def drive(db, script, unmatched=True, size=50, source=None, columns=170):
     async def go():
         with Library(db) as lib:
             app = review_tui.ReviewApp(lib, settings, source, size, (), unmatched)
-            async with app.run_test(size=(columns, 45)) as pilot:
+            async with app.run_test(size=(columns, rows)) as pilot:
                 await settle(app, pilot)
                 await script(app, pilot)
                 await settle(app, pilot)
@@ -1069,7 +1069,7 @@ def test_edit_form_ok_button_saves(env):
         await settle(app, pilot)
         assert app.screen.__class__.__name__ != "EditScreen"
 
-    drive(db, _edit_screen_script(then))
+    drive(db, _edit_screen_script(then), rows=120)  # the hand-written form has many fields now: taller, so OK stays on screen
     with Library(db) as lib:
         assert any((lib.get_album(lib.get_file(p)["album_id"]) or {}).get("series") == "Fell" for p in files.values())
 
@@ -1091,8 +1091,8 @@ def test_edit_form_cancel_button_and_x_outside_a_text_field(env):
         await settle(app, pilot)
         assert app.screen.__class__.__name__ != "EditScreen"
 
-    drive(db, _edit_screen_script(cancel))
-    drive(db, _edit_screen_script(x_in_field))
+    drive(db, _edit_screen_script(cancel), rows=120)  # the hand-written form has many fields now: taller, so Cancel/OK stay on screen
+    drive(db, _edit_screen_script(x_in_field))  # keyboard-driven: no click, so the default screen size is fine
     with Library(db) as lib:
         assert not any((lib.get_album(lib.get_file(p)["album_id"]) or {}).get("series") == "Fell" for p in files.values()
                        if lib.get_file(p)["album_id"])
