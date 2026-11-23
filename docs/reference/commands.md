@@ -334,11 +334,11 @@ options:
   --missing        list registered files that are no longer on disk (moved or deleted
                    outside bdnex)
 
-fields: any, attr, author, colorist, complete, corrupted, cover, coverartist,
-embedded, fileid, filename, filepages, files, format, genre, id, inker, isbn, kind,
-language, letterer, md5, metadata, pages, partial, path, penciller, publisher, rating,
-review, series, size, source, spare, staged, subseries, summary, tagged, title, url,
-volume, writer, year
+fields: any, attr, author, collection, colorist, complete, corrupted, cover,
+coverartist, cycle, embedded, fileid, filename, filepages, files, format, genre, id,
+inker, isbn, kind, language, letterer, md5, metadata, pages, partial, path, penciller,
+publisher, rating, review, series, size, source, spare, staged, subseries, summary,
+tagged, title, url, volume, writer, year
 
 Examples:
   bdnex ls series:nains                                           the albums of a series

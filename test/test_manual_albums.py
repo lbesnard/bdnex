@@ -26,6 +26,7 @@ def test_the_form_covers_every_field_bdnex_edit_has(make_cbz):
     path = make_cbz("Doc.cbz")
     album = manual.create(lib, path, {
         "series": "Amazonie", "volume": "", "alternate_number": "Making-of", "title": "Les coulisses", "subseries": "Making-of",
+        "collection": "Kathy Austin", "cycle": "3",
         "publisher": "Glénat", "isbn": "978-2-7234-0000-0", "year": "2020", "month": "6", "day": "15",
         "language": "fr", "format": "Format normal", "pages": "48",
         "writer": "A", "artist": "B", "inker": "C", "colorist": "D", "letterer": "E", "coverartist": "F",
@@ -33,13 +34,16 @@ def test_the_form_covers_every_field_bdnex_edit_has(make_cbz):
     })
     got = lib.get_album(album)
     assert got["alternate_number"] == "Making-of" and got["subseries"] == "Making-of" and got["isbn"] == "978-2-7234-0000-0"
+    assert got["collection"] == "Kathy Austin" and got["cycle"] == "3"
     assert (got["month"], got["day"], got["pages"], got["language"], got["format"]) == (6, 15, 48, "fr", "Format normal")
     assert got["credits"] == {"Writer": ["A"], "Penciller": ["B"], "Inker": ["C"], "Colorist": ["D"], "Letterer": ["E"], "CoverArtist": ["F"]}
     form = manual.form_of(lib, album)
     assert form["isbn"] == "978-2-7234-0000-0" and form["subseries"] == "Making-of" and form["coverartist"] == "F"
-    manual.update(lib, album, {**form, "subseries": "", "isbn": ""})
+    assert form["collection"] == "Kathy Austin" and form["cycle"] == "3"
+    manual.update(lib, album, {**form, "subseries": "", "isbn": "", "collection": "", "cycle": ""})
     got = lib.get_album(album)
     assert got["subseries"] is None and got["isbn"] is None  # cleared, not left as empty text
+    assert got["collection"] is None and got["cycle"] is None
 
 
 def test_several_files_make_one_series_each_with_its_own_volume(make_cbz):

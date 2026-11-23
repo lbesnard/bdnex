@@ -82,8 +82,8 @@ def long(album: dict[str, Any], files: list[dict[str, Any]]) -> str:
     add("format", album.get("format"))
     extra = album.get("extra") or {}
     edition = extra.get("edition_fields") or {}
-    add("collection", edition.get("Collection"))
-    add("cycle", edition.get("Cycle"))
+    add("collection", album.get("collection") or edition.get("Collection"))
+    add("cycle", album.get("cycle") or edition.get("Cycle"))
     add("weight", edition.get("Poids"))
     add("printed", edition.get("Achevé impr."))
     add("edition", extra.get("edition_info"))

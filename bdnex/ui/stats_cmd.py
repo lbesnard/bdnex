@@ -16,7 +16,10 @@ from bdnex.ui import context
 # One line per query field (a test fails when a field has none: the list of fields can not outgrow its help).
 FIELD_HELP = {
     "any": "the text in any text field at once", "attr": "your own marks: attr:name or attr:name=value (`bdnex mark`)", "author": "any credit (any role)", "colorist": "a credit with that role",
-    "coverartist": "a credit with that role", "inker": "a credit with that role", "letterer": "a credit with that role",
+    "collection": "a hand-set override (`bdnex edit`) of the site's own Collection; searches the override only, not the site's value",
+    "coverartist": "a credit with that role",
+    "cycle": "a hand-set override (`bdnex edit`) of the site's own Cycle; searches the override only, not the site's value",
+    "inker": "a credit with that role", "letterer": "a credit with that role",
     "penciller": "a credit with that role", "writer": "a credit with that role",
     "complete": "the album's page was read", "partial": "only the sitemap address is known (the page was not read)",
     "corrupted": "the file is damaged", "cover": "similarity of the file's cover with the album's (0-100)",

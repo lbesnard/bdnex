@@ -52,6 +52,14 @@ def test_subseries_is_a_hand_edit_that_survives_a_new_import(lib):
     assert lib.get_album(album)["subseries"] is None
 
 
+def test_collection_and_cycle_are_hand_edits_that_survive_a_new_import(lib):
+    album = lib.add_album(nains(extra={"edition_fields": {"Collection": "Les Nains", "Cycle": "1"}}))
+    assert lib.get_album(album)["collection"] is None and lib.get_album(album)["cycle"] is None  # never set by the source
+    lib.edit_album(album, {"collection": "Mine", "cycle": "9"})
+    lib.add_album(nains(title="From the site", extra={"edition_fields": {"Collection": "Les Nains", "Cycle": "1"}}))
+    assert lib.get_album(album)["collection"] == "Mine" and lib.get_album(album)["cycle"] == "9"
+
+
 def test_edits_survive_merge_and_are_not_reported_as_changes(lib):
     album = lib.add_album(nains())
     lib.edit_album(album, {"title": "Mine"})

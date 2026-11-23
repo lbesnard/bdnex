@@ -262,4 +262,11 @@ MIGRATIONS = [
     """
     ALTER TABLE albums ADD COLUMN subseries TEXT;
     """,
+    # --- version 15 ------------------------------------------------------
+    # A hand-set override of the site's own "Collection" and "Cycle" (`extra.edition_fields`), for an edition that has neither
+    # (an intégrale, say) or whose site value is wrong. Wins over a `paths.collections` rule and over the site's own value.
+    """
+    ALTER TABLE albums ADD COLUMN collection TEXT;
+    ALTER TABLE albums ADD COLUMN cycle TEXT;
+    """,
 ]
