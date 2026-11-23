@@ -20,7 +20,10 @@ def run(argv: list[str], out=sys.stdout) -> int:
     parser.add_argument("--matches", action="store_true",
                         help="also weigh every match against its album's page (the file's own tags, volume, year, authors, "
                              "its folder) and list the ones that look wrong; with --fix they are flagged for `bdnex review`")
-    parser.add_argument("--fix", action="store_true", help="settle what is safe to settle (listed as [fixable])")
+    parser.add_argument("--fix", action="store_true",
+                        help="apply the fixes listed as [fixable]: remove empty series and dead trash records, forget cover "
+                             "records whose file is gone, move covers into the per-album layout; with --matches, also flag "
+                             "doubtful matches for `bdnex review`")
     args = parser.parse_args(argv)
     settings = context.settings()
     if settings is None:

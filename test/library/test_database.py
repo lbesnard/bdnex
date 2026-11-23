@@ -55,6 +55,33 @@ def test_newer_schema_refused(tmp_path):
         Library(path)
 
 
+def test_an_older_schema_opened_read_only_names_a_command_that_actually_migrates_it(tmp_path, monkeypatch):
+    """A read-only open never migrates (``ls``, ``stats``...): it refuses and says to run a command that writes to the
+    library instead. The one it names must really not be read-only itself, or the advice is circular."""
+    import io
+
+    import yaml
+    from bdnex.library.schema import MIGRATIONS
+    from bdnex.ui import review_cmd
+
+    path = tmp_path / "lib.sqlite"
+    old = sqlite3.connect(path)
+    for statement in MIGRATIONS[:4]:
+        old.executescript(statement)
+    old.execute("PRAGMA user_version = 4")
+    old.commit()
+    old.close()
+    with pytest.raises(SchemaTooNewError, match=r"bdnex review"):
+        Library(path, readonly=True)
+    conf = tmp_path / "bdnex.yaml"
+    conf.write_text(yaml.safe_dump({"config_version": 2, "library": str(path)}))
+    monkeypatch.setenv("BDNEX_CONFIG", str(conf))
+    out = io.StringIO()
+    assert review_cmd.run([], out=out) == 0 and "Nothing to review" in out.getvalue()  # nothing flagged: it changes nothing else
+    with Library(path, readonly=True) as lib:  # no longer refused: the mismatch is gone, with no other side effect
+        assert lib.schema_version == SCHEMA_VERSION
+
+
 def test_add_series_album_roundtrip(lib):
     album_id = lib.add_album(nains())
     album = lib.get_album(album_id)

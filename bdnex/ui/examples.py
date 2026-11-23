@@ -86,7 +86,7 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
     "check": [
         ("bdnex check", "is the library consistent with itself and the disk?"),
         ("bdnex check --matches", "also weigh every match against its album's page"),
-        ("bdnex check --fix", "settle what is safe to settle"),
+        ("bdnex check --fix", "remove empty series, dead trash records, gone covers"),
     ],
     "write": [
         ("bdnex write -n", "preview: which files would get a ComicInfo.xml"),

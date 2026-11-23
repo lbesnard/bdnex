@@ -562,7 +562,10 @@ options:
   --matches   also weigh every match against its album's page (the file's own tags,
               volume, year, authors, its folder) and list the ones that look wrong;
               with --fix they are flagged for `bdnex review`
-  --fix       settle what is safe to settle (listed as [fixable])
+  --fix       apply the fixes listed as [fixable]: remove empty series and dead trash
+              records, forget cover records whose file is gone, move covers into the
+              per-album layout; with --matches, also flag doubtful matches for `bdnex
+              review`
 
 Looks at the database (integrity, links between tables), at the files it points to
 (missing, changed), at covers, the trash and leftovers of interrupted writes. Nothing
@@ -573,7 +576,7 @@ doubtful matches for `bdnex review`).
 Examples:
   bdnex check            is the library consistent with itself and the disk?
   bdnex check --matches  also weigh every match against its album's page
-  bdnex check --fix      settle what is safe to settle
+  bdnex check --fix      remove empty series, dead trash records, gone covers
 ```
 
 ## Change the files
