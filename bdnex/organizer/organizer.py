@@ -801,8 +801,9 @@ class Organizer:
         if self.settings.paths.series_year == "strip":
             fields["series"] = template.strip_year(fields["series"])  # (two series of one name told apart by their year share a folder then)
         paths = self.settings.paths
-        # a `paths.collections` rule wins (explicit, and the only way for a series the site does not group); else keep the site's own $collection
-        fields["collection"] = template.collection_of(fields, path, template.parse_rules(paths.collections)) or fields["collection"]
+        # a hand-set $collection (`bdnex edit`) always wins; else a `paths.collections` rule; else the site's own value, already in fields["collection"]
+        rule_collection = template.collection_of(fields, path, template.parse_rules(paths.collections))
+        fields["collection"] = album.get("collection") or rule_collection or fields["collection"]
         fields = template.apply_rewrites(fields, template.parse_rules(paths.rewrite))
         rendered = template.render(tpl, fields, lambda name: self._missing(name, album_id, album),
                                    template.parse_replacements(paths.replace))

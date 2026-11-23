@@ -135,6 +135,13 @@ def test_fields_for_reads_the_site_s_own_collection_and_cycle():
     assert template.fields_for(ALBUM)["collection"] == "" and template.fields_for(ALBUM)["cycle"] == ""  # no edition table: empty, not asked
 
 
+def test_a_hand_set_collection_or_cycle_wins_over_the_site():
+    album = {**ALBUM, "collection": "Mine", "cycle": "9",
+             "extra": {"edition_fields": {"Collection": "Les mondes d'Aldébaran", "Cycle": "3"}}}
+    fields = template.fields_for(album)
+    assert fields["collection"] == "Mine" and fields["cycle"] == "9"
+
+
 def test_subseries_is_hand_set_not_from_the_site():
     assert template.fields_for(ALBUM)["subseries"] == ""
     assert template.fields_for({**ALBUM, "subseries": "Making-of"})["subseries"] == "Making-of"

@@ -258,10 +258,11 @@ paths:
   A function can not contain a `/` (a folder separator), and a typo in a function name is refused when the configuration is read.
 - The site names some series with the year of their first album, to tell them from another series of the same name (`Batman: Dark Victory (1999)`): `$series` has it too. `paths.series_year: strip` leaves a trailing `(year)` out of `$series` in paths (two series told apart only by their year then share a folder).
 - **`$collection` and `$cycle`**: some editions carry the site's own "Collection" and "Cycle" (its edition table, e.g. *Les mondes d'Aldébaran*,
-  cycle `3`); bdnex fills them in from there when present. For a family of albums the site does *not* group this way (Tintin, Astérix and their
-  special issues, spread over several series, or none), the first rule of `paths.collections` that matches wins instead and names `$collection`
-  itself. A rule is `"FIELD REGEX": NAME` (beets' syntax; the regex is found anywhere in the value, case ignored); FIELD is a template field or
-  `path` / `filename`, the file's own location (your folders already group them):
+  cycle `3`); bdnex fills them in from there when present — but not every edition of a series carries both (an intégrale, say, may have a
+  `Cycle` and no `Collection` at all: that is the site's own data, not a bug). For a family of albums the site does *not* group this way
+  (Tintin, Astérix and their special issues, spread over several series, or none), the first rule of `paths.collections` that matches wins
+  instead and names `$collection` itself. A rule is `"FIELD REGEX": NAME` (beets' syntax; the regex is found anywhere in the value, case
+  ignored); FIELD is a template field or `path` / `filename`, the file's own location (your folders already group them):
 
   ```yaml
   paths:
@@ -271,9 +272,13 @@ paths:
   ```
 
   Each `%ifdef{...}` is its own path component (a function can not contain a `/`, so the slash that separates folders always stays
-  outside the braces): when `$collection` or `$cycle` is empty (neither a rule nor a site value), that whole component renders to
-  nothing and its folder level drops out on its own, independently of the other. A bare `$collection` or `$cycle` would be asked
-  about instead, like any empty field. `$cycle` has no rule of its own: it is only ever the site's value.
+  outside the braces): when `$collection` or `$cycle` is empty (neither a hand-set value, a rule, nor a site value), that whole component
+  renders to nothing and its folder level drops out on its own, independently of the other. A bare `$collection` or `$cycle` would be asked
+  about instead, like any empty field.
+
+  Either can also be set **by hand** (`e` in `bdnex review --batch`, or `bdnex edit --set collection=... --set cycle=...`), for the odd
+  edition the site gives neither, or gives the wrong one. A hand-set value always wins: over a `paths.collections` rule for `$collection`
+  (which `$cycle` has none of — it is only ever the site's value or a hand-set one), and over the site's own value for both.
 - **`$subseries`**: a hand-set subfolder inside the series, for an album the site does not list at all (a documentary, an extra) that
   should still sit next to the series it belongs to, instead of in the main series folder (or being treated as a spare version of
   another album it has nothing to do with). It has no rule: set it on the album by hand, with `e` in `bdnex review --batch` or

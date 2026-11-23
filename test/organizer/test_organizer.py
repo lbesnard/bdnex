@@ -1432,6 +1432,17 @@ def test_the_site_s_own_collection_is_used_when_no_rule_matches_but_a_rule_still
     assert "Series/Overridden/Cycle 3/Antarès/" in overridden  # an explicit rule still wins over the site's value
 
 
+def test_a_hand_set_collection_wins_over_a_rule_and_the_site(lib, make_cbz, tmp_path):
+    album = lib.add_album(AlbumInfo("b", "10", "Episode 1", series=SeriesInfo("b", "s10", "Antarès"), volume=1, language="fr",
+                                    collection="My Override", cycle="9",
+                                    extra={"edition_fields": {"Collection": "Les mondes d'Aldébaran", "Cycle": "3"}}))
+    path = make_cbz("b.cbz")
+    paths = {"series": "Series/%ifdef{collection,$collection}/Cycle $cycle/$series/$series - T$volume:02 - $title",
+            "collections": {"series .*Antarès.*": "Rule Collection"}}
+    dest = Organizer(lib, settings_for(tmp_path, paths=paths), force=True)._destination(path, "cbz", album, MOVE)
+    assert "Series/My Override/Cycle 9/Antarès/" in dest  # the hand-set values, over both the rule and the site
+
+
 def test_a_bad_rule_is_refused_when_the_configuration_is_read():
     import pytest
 

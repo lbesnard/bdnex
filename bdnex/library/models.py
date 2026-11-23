@@ -44,6 +44,8 @@ class AlbumInfo:
     language: Optional[str] = None
     format: Optional[str] = None
     subseries: Optional[str] = None  # a hand-set subfolder inside the series, for an album the site does not list
+    collection: Optional[str] = None  # a hand-set override of the site's own "Collection" (extra.edition_fields)
+    cycle: Optional[str] = None  # a hand-set override of the site's own "Cycle" (extra.edition_fields)
     summary: Optional[str] = None
     rating: Optional[float] = None
     cover_url: Optional[str] = None

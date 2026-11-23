@@ -96,6 +96,13 @@ def test_subseries_is_queryable(lib):
     assert lib.query(["subseries:nope"]) == []
 
 
+def test_collection_and_cycle_overrides_are_queryable(lib):
+    lib.edit_album(lib.query(["title:bibliomule"])[0]["id"], {"collection": "Neopolis", "cycle": "9"})
+    assert titles(lib.query(["collection:neopolis"])) == ["La bibliomule de Cordoue"]
+    assert titles(lib.query(["cycle:9"])) == ["La bibliomule de Cordoue"]
+    assert lib.query(["collection:nope"]) == []
+
+
 def test_genre_publisher_kind(lib):
     assert titles(lib.query(["genre:humour"])) == ["Astérix le Gaulois"]
     assert titles(lib.query(["genre:=satire"])) == ["La bibliomule de Cordoue"]

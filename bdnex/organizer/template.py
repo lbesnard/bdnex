@@ -47,7 +47,8 @@ def apply_rewrites(fields: dict[str, Any], rules: list) -> dict[str, Any]:
 def collection_of(fields: dict[str, Any], path: str, rules: list) -> str:
     """The collection an album belongs to (``paths.collections``): the first rule whose regex is found in the field it names (any template
     field, or ``path`` / ``filename`` of the file), else ``""``. A family of albums the site does not group (Tintin, Astérix and their special
-    issues), put together in the paths. The caller falls back to the site's own ``$collection`` (``fields_for``) when no rule matches."""
+    issues), put together in the paths. The caller (never a hand-set ``$collection``, which always wins first) falls back to the site's own
+    value (``fields_for``) when no rule matches."""
     import os
 
     seen = {**fields, "path": path, "filename": os.path.basename(path)}
@@ -120,9 +121,10 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
         "writer": ", ".join(credits.get("Writer", [])),
         "penciller": ", ".join(credits.get("Penciller", [])),
         "colorist": ", ".join(credits.get("Colorist", [])),
-        # the site's own "Collection"; a `paths.collections` rule (the organizer applies it: it needs the file's path) wins when one matches
-        "collection": edition.get("Collection") or "",
-        "cycle": edition.get("Cycle") or "",  # the site's own "Cycle" within a collection, e.g. "3"
+        # the site's own "Collection", unless overridden by hand (`bdnex edit --set collection=...`); a `paths.collections` rule
+        # (the organizer applies it: it needs the file's path) wins over the site's value, but never over a hand-set one
+        "collection": album.get("collection") or edition.get("Collection") or "",
+        "cycle": album.get("cycle") or edition.get("Cycle") or "",  # the site's own "Cycle", unless overridden by hand
         "subseries": album.get("subseries") or "",  # hand-set (`bdnex edit`): a subfolder inside the series, for an album the site does not list
     }
 
