@@ -224,7 +224,7 @@ def _komga_command(action: str):
 SPECS: dict[str, Spec] = {
     "check": Spec("Check the library", False, _simple("check_cmd", lambda o, s: [])),
     # `check` alone changes nothing: it is the preview of `check --fix` (the command has no -n)
-    "check-fix": Spec("Check the library and settle what is safe", True,
+    "check-fix": Spec("Check the library, removing empty series and dead records", True,
                       _simple("check_cmd", lambda o, s: [] if o.get("preview", True) else ["--fix"])),
     "duplicates": Spec("Find duplicates", False, _simple("duplicates_cmd", lambda o, s: [])),
     "init": Spec("Download the album list (init)", True, _simple("init_cmd", lambda o, s: []), preview=False),

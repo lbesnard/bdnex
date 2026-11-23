@@ -106,7 +106,8 @@ class Library:
                 self.conn.close()
                 raise SchemaTooNewError(
                     f"{self.path} has schema v{found}, this bdnex needs v{SCHEMA_VERSION}: `ls`, `stats` and `review --list` "
-                    "are read-only and never upgrade it; run a write command once instead, for example `bdnex check --fix`")
+                    "are read-only and never upgrade it; run `bdnex review` once instead (it changes nothing when there is "
+                    "nothing flagged, and asks before changing anything when there is)")
             self._load_roots()
             return
         self._migrate()
