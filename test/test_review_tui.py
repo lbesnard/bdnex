@@ -416,6 +416,70 @@ def test_i_takes_an_address_or_a_number(env, monkeypatch):
     assert result["cells"][0][7] == "linked"
 
 
+def test_slash_searches_the_table_and_brackets_cycle_through_matches(env):
+    from textual.widgets import DataTable
+
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        notified = []
+        app.notify = lambda message, **kw: notified.append(message)
+        table = app.query_one(DataTable)
+        assert table.cursor_row == 0
+        await pilot.press("/")
+        await pilot.pause()
+        assert app.screen.__class__.__name__ == "AskScreen"
+        await pilot.press(*"forge")
+        await pilot.press("enter")
+        await pilot.pause()
+        seen["after_forge"] = table.cursor_row  # the only file whose name holds "forge"
+        await pilot.press("/")
+        await pilot.press(*"nains")
+        await pilot.press("enter")
+        await pilot.pause()
+        seen["after_nains"] = table.cursor_row  # already on a match: Enter does not move it off
+        await pilot.press("]")
+        await pilot.pause()
+        seen["next"] = table.cursor_row  # skips the row that does not match, wrapping around
+        await pilot.press("]")
+        await pilot.pause()
+        seen["next_again"] = table.cursor_row  # only two matches: back to the first
+        await pilot.press("[")
+        await pilot.pause()
+        seen["prev"] = table.cursor_row
+        await pilot.press("/")
+        await pilot.press(*"xyzzy")
+        await pilot.press("enter")
+        await pilot.pause()
+        seen["no_match_cursor"] = table.cursor_row  # nothing holds it: the cursor stays
+        seen["notified"] = list(notified)
+
+    result, _ = drive(db, script)
+    assert result["cells"][seen["after_forge"]][1] == "Nains - T02 - Forge.cbz"
+    assert seen["after_nains"] == seen["after_forge"]
+    assert seen["next"] != seen["after_nains"] and result["cells"][seen["next"]][1] == "Nains - T05 - Autre.cbz"
+    assert seen["next_again"] == seen["after_nains"]
+    assert seen["prev"] == seen["next"]
+    assert seen["no_match_cursor"] == seen["prev"]
+    assert any("No match for 'xyzzy'" in message for message in seen["notified"])
+
+
+def test_brackets_say_so_when_there_is_no_search_yet(env):
+    db, files = env
+    seen = {}
+
+    async def script(app, pilot):
+        notified = []
+        app.notify = lambda message, **kw: notified.append(message)
+        await pilot.press("]")
+        await pilot.pause()
+        seen["notified"] = list(notified)
+
+    result, _ = drive(db, script)
+    assert any("No search yet" in message for message in seen["notified"])
+
+
 def test_capital_o_hands_over_to_the_real_fzf_when_it_is_installed(env, monkeypatch):
     import contextlib
 

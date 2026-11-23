@@ -705,6 +705,9 @@ class ReviewApp(App):
         Binding("b", "previous_batch", "Previous batch"),
         Binding("n", "next_batch", "Next batch"),
         Binding("q", "quit", "Quit"),
+        Binding("/", "find", "Search"),
+        Binding("]", "find_next", "Next match", show=False),
+        Binding("[", "find_prev", "Previous match", show=False),
         *[Binding(str(number), f"sort({number - 1})", f"Sort by {name}", show=False) for number, (name, _) in enumerate(COLUMNS, start=1)],
     ]
 
@@ -739,6 +742,7 @@ class ReviewApp(App):
         self.loading = False
         self.timing = ""
         self.sort_column: Optional[int] = None  # a column of COLUMNS, sorted by a click on its header or by a number key
+        self.find_query: str = ""  # the last search typed with `/`; `]` and `[` look for the next or previous match of it
         self.sort_reverse = False
         self.marked: set[int] = set()  # ids of the rows marked with space (to attach to a series together)
         self.order: dict[int, int] = {}  # each row's place when the batch was made (``#`` sorts back to it)
@@ -1197,6 +1201,53 @@ class ReviewApp(App):
             self.notify("Still linking this file: wait for it to finish.", severity="warning")
             return None
         return row
+
+    # -- search (`/`): a quick jump by text, not a filter (every row stays on the screen)
+    def row_haystack(self, row: batch.Row) -> str:
+        words = (os.path.basename(row.path), row.folder, row.album or "no album", row.dest,
+                 row.status, KIND_WORD.get(row.kind, row.kind))
+        return " ".join(words).lower()
+
+    def find_match(self, start: int, step: int) -> Optional[int]:
+        """The row closest to ``start`` (going by ``step``, wrapping around) whose file, folder, album, destination or state holds
+        ``self.find_query``; ``None`` when nothing does, or there is nothing to look for."""
+        query = self.find_query.strip().lower()
+        if not query or not self.rows:
+            return None
+        count = len(self.rows)
+        for offset in range(count):
+            index = (start + offset * step) % count
+            if query in self.row_haystack(self.rows[index]):
+                return index
+        return None
+
+    def action_find(self) -> None:
+        self.push_screen(AskScreen("Search (file, folder, album, destination, state):", self.find_query), self.find_submitted)
+
+    def find_submitted(self, text: Optional[str]) -> None:
+        if text is None:  # Esc: the search in progress (if any) is unchanged
+            return
+        self.find_query = text.strip()
+        self.find_step(1, include_current=True)
+
+    def action_find_next(self) -> None:
+        self.find_step(1)
+
+    def action_find_prev(self) -> None:
+        self.find_step(-1)
+
+    def find_step(self, step: int, include_current: bool = False) -> None:
+        """Move to the next (or, ``step=-1``, previous) row matching the last search. ``]``/`[` repeat it without opening the search box."""
+        if not self.find_query:
+            self.notify("No search yet: press / first.", severity="warning")
+            return
+        table = self.query_one(DataTable)
+        start = table.cursor_row if include_current else table.cursor_row + step
+        index = self.find_match(start, step)
+        if index is None:
+            self.notify(f"No match for {self.find_query!r}.", severity="warning")
+        else:
+            table.move_cursor(row=index)
 
     def refresh_row(self, row: batch.Row) -> None:
         table = self.query_one(DataTable)
