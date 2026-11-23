@@ -115,6 +115,8 @@ When you link a file to an album that **already has another file**, it is linked
 | `p` | open the page of the album now linked, in your browser. Over SSH (where a browser would open on the other machine) the address is copied to your clipboard (where the terminal allows it) and shown; the **Page** column and the address under the table are links too: ctrl/cmd-click them in a terminal that knows links |
 | `n` | the next batch (it is weighed in the background while you work on this one, so it appears at once; after `b`, the batch you left) |
 | `b` | the previous batch, with the decisions you made in it (and the fetches still running for its files) |
+| `/` | **search the table**: a text box to jump the cursor to a row whose file name, folder, album, *Would go to* path or state holds the words you type, whatever the column (`n`/`b` already mean the next/previous batch, so this is not vim's `/` + `n`) |
+| `]`, `[` | the next, or previous, row that still matches the last `/` search, wrapping around; nothing moves (and it says so) when there is no search yet, or nothing else matches |
 | `q` | quit |
 
 **Another album (`o`)** is a search box over the whole album list, and **`c`** shows both covers:
