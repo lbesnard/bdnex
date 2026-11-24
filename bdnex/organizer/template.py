@@ -131,7 +131,7 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
 
 
 FIELD_NAMES = ("kind", "series", "title", "volume", "special", "language", "year", "publisher", "isbn", "genre", "authors",
-               "writer", "penciller", "colorist", "collection", "cycle", "subseries", "category")  # what `fields_for` provides (a test keeps the two together)
+               "writer", "penciller", "colorist", "collection", "cycle", "category", "subseries")  # what `fields_for` provides (a test keeps the two together)
 
 
 FUNCTION = re.compile(r"%(\w+)\{")
