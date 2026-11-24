@@ -20,12 +20,12 @@ from bdnex.library.review_batch import CHECKED, Batch, Row, folder_of
 LIMIT = 1000  # rows drawn at once: the table is fast to fill up to this, and a screen can not show more anyway; the filters narrow it
 NONE = "(none)"
 
-STATES = (("unreviewed", "not reviewed yet"), ("reviewed", "reviewed"), ("linked", "linked to an album"), ("unmatched", "no album"),
+STATES = (("needs attention", "not reviewed, and no album or a doubtful match"), ("unreviewed", "not reviewed yet"), ("reviewed", "reviewed"), ("linked", "linked to an album"), ("unmatched", "no album"),
           ("doubtful", "flagged: the match is doubtful"), ("duplicates", "several files for one album"), ("versions", "a version or child of another album"),
           ("damaged", "the file is damaged"))
 CHECKED_SQL = "EXISTS (SELECT 1 FROM file_attrs x WHERE x.file_id = f.id AND x.key = 'checked')"
 STATE_SQL = {
-    "unreviewed": f"NOT {CHECKED_SQL}", "reviewed": CHECKED_SQL, "linked": "f.album_id IS NOT NULL", "unmatched": "f.album_id IS NULL",
+    "needs attention": f"(NOT {CHECKED_SQL} AND (f.album_id IS NULL OR f.review IS NOT NULL))", "unreviewed": f"NOT {CHECKED_SQL}", "reviewed": CHECKED_SQL, "linked": "f.album_id IS NOT NULL", "unmatched": "f.album_id IS NULL",
     "doubtful": "f.review IS NOT NULL",
     "duplicates": "(f.spare = 1 OR f.album_id IN (SELECT album_id FROM files WHERE album_id IS NOT NULL GROUP BY album_id HAVING COUNT(*) > 1))",
     "versions": "a.relation IS NOT NULL", "damaged": "f.corrupted = 1"}

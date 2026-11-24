@@ -250,7 +250,7 @@ class ColumnsMixin:
             return Text(row.status, style=t.STATUS_STYLE.get(row.status, ""))
         if row.message.startswith(("refused", "failed")):
             return Text(row.message.split(":")[0], style="bold red")
-        return Text(t.KIND_WORD.get(row.kind, row.kind) + (f" (was {row.previous})" if row.previous else ""), style=t.KIND_STYLE.get(row.kind, ""))
+        return Text(t.KIND_WORD.get(row.kind, row.kind) + (f" · reviewed: {row.previous}" if row.previous else ""), style=t.KIND_STYLE.get(row.kind, ""))
 
     def sort_key(self, index: int, row):
         """What the column ``index`` sorts by; ``None`` puts the row after the others, whatever the direction."""

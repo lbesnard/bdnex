@@ -43,7 +43,7 @@ from bdnex.ui.review_panels import FacetCommands
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "dim", "skipped": "yellow"}
 KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "ok": "green"}
-KIND_WORD = {"wrong": "contradicted", "unconfirmed": "unconfirmed", "unmatched": "no album", "ok": "nothing against"}
+KIND_WORD = {"wrong": "looks wrong", "unconfirmed": "to check", "unmatched": "no album", "ok": "looks right"}  # (what bdnex thinks of the match; `reviewed` is what you did)
 EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 SEARCH_LIMIT = 60
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # braille dots turning: a state that is waiting for the site

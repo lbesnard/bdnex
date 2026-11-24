@@ -19,13 +19,14 @@ from textual.widgets import Button, Input, Label, Select, Static, TextArea, Tree
 
 from bdnex.library import folders
 
-STATUS_STYLE = {folders.DONE: "green", folders.PARTIAL: "dark_orange", folders.TODO: "red"}
-STATUS_MARK = {folders.DONE: "●", folders.PARTIAL: "◐", folders.TODO: "○"}  # (the shape says it too: a colour is not the only sign)
+STATUS_STYLE = {folders.DONE: "green", folders.PARTIAL: "dark_orange", folders.TODO: "yellow", folders.PROBLEM: "red"}
+STATUS_MARK = {folders.DONE: "●", folders.PARTIAL: "◐", folders.TODO: "○", folders.PROBLEM: "✖"}  # (the shape says it too: a colour is not the only sign)
 
 
 def node_label(node: "folders.FolderNode") -> Text:
-    """``● Tintin  41/60`` in the colour of how far it is reviewed."""
-    return Text(f"{STATUS_MARK[node.status]} {node.name or 'collection'}  {node.below_checked}/{node.total}", style=STATUS_STYLE[node.status])
+    """``● Tintin  41/60`` in the colour of how far it is reviewed; ``!3`` when 3 files wait for a look (no album, or a doubtful match)."""
+    issues = f"  !{node.below_issues}" if node.below_issues else ""
+    return Text(f"{STATUS_MARK[node.status]} {node.name or 'collection'}  {node.below_checked}/{node.total}{issues}", style=STATUS_STYLE[node.status])
 
 
 class FolderTree(Tree):

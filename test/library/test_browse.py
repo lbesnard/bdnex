@@ -59,7 +59,7 @@ def test_the_rows_say_what_each_file_is(env):
 
 
 @pytest.mark.parametrize("group,value,expected", [
-    ("State", "unreviewed", 5), ("State", "reviewed", 1), ("State", "unmatched", 1), ("State", "doubtful", 1), ("State", "duplicates", 2),
+    ("State", "unreviewed", 5), ("State", "needs attention", 2), ("State", "reviewed", 1), ("State", "unmatched", 1), ("State", "doubtful", 1), ("State", "duplicates", 2),
     ("State", "versions", 1), ("State", "linked", 5), ("Kind", "series", 4), ("Kind", "oneshot", 1), ("Category", "BD", 3),
     ("Category", browse.NONE, 1), ("Collection", "Soleil", 1), ("Genre", "Fantasy", 3), ("Genre", "Humour", 2), ("Author", "Jarry", 1),
     ("Series", "Nains", 3), ("Publisher", "Soleil", 1), ("Format", "cbz", 6), ("Language", "fr", 3)])

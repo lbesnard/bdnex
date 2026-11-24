@@ -89,8 +89,8 @@ def test_the_tree_shows_how_far_each_folder_is_reviewed_and_a_click_opens_its_fi
 
     drive(db, root, script)
     assert seen["root"].startswith("◐ collection") and "1/5" in seen["root"]
-    assert [text.split("  ")[0] for text, _ in seen["children"]] == ["○ Klezmer", "◐ Tintin"]
-    assert [style for _, style in seen["children"]] == ["red", "dark_orange"]
+    assert [text.split("  ")[0] for text, _ in seen["children"]] == ["○ Klezmer", "◐ Tintin"]  # all matched, none reviewed: yellow, not red
+    assert [style for _, style in seen["children"]] == ["yellow", "dark_orange"]
     assert "reviewed 1/5" in seen["progress"]
     assert seen["rows"] == ["Tintin T1.cbz", "Tintin T2.cbz", "Tintin T3.cbz"]
     assert seen["previous"] == ["keep", "", ""]  # what was decided before is shown

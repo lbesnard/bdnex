@@ -111,7 +111,7 @@ def test_the_table_opens_at_once_and_shows_file_folder_album_scores_state_and_ho
     first, second, third = result["cells"]
     assert first[1] == "Nains - T05 - Autre.cbz" and "Redwin" in first[3] and first[5] == "78%" and first[6] == "-"
     assert third[3] == "(no album)" and third[1] == "Loose file.cbz"  # the unmatched is shown, last
-    assert [first[7], second[7], third[7]] == ["contradicted", "unconfirmed", "no album"]  # what is wrong, until it is decided
+    assert [first[7], second[7], third[7]] == ["looks wrong", "to check", "no album"]  # what is wrong, until it is decided
 
 
 def test_a_loading_panel_says_what_is_being_done_until_the_table_is_ready(env, monkeypatch):

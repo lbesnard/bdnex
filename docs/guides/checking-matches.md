@@ -19,7 +19,7 @@ files are `unverified`.
 
 ## Settling the doubtful ones at once: `bdnex review --auto`
 
-`bdnex review` asks about each flagged file. When there are thousands (an import flags every file whose cover does not
+`bdnex review --no-tui` asks about each flagged file (`bdnex review` alone opens the review screen, below). When there are thousands (an import flags every file whose cover does not
 look like its album's, and a different edition or a PDF's first page often does not), `bdnex review --auto` weighs
 **every flagged file and every match applied under `match.strong_threshold`** (an older `import --auto=all` applied the
 ones in the middle unasked) and settles them by rule, asking nothing but one question before it changes anything.
@@ -51,23 +51,24 @@ Files you chose (`import --album`, `review`) and the ones read from their own ta
 bdnex review --auto -n                # the numbers and what would change (the covers of the candidates are requested)
 bdnex review --auto                   # settle them (asks once; -y to not ask)
 bdnex import --skipped --auto=all     # then decide the unlinked ones again: strict, and the covers of the best candidates vote
-bdnex review                          # what is still flagged, one by one
+bdnex review --no-tui                 # what is still flagged, one by one (no screen)
 ```
 
 `-n` shows only the counts. `--json` prints the verdicts, with the evidence and the better album found, and changes
 nothing. A digital edition whose cover differs from the print album's is contradicted by its cover alone: with no better
 album it is unlinked, and `bdnex import --album` links it back. A shorter way to type it: an [alias](configuration.md#aliases-commands-with-a-name-that-says-what-they-do).
 
-## A table, a batch at a time: `bdnex review --batch`
+## The review screen: `bdnex review`
 
-For checking by eye, a batch at a time, with every decision saved as you make it:
+`bdnex review` in a terminal opens the review screen (`--no-tui` asks one file at a time instead; `--list` and `--auto` never open it). It works a batch at a time, with every decision saved as you make it. `--batch N` sets the size of a batch (50 by default):
 
 ```bash
-bdnex review --batch 50               # the next 50 doubtful files, in a table
-bdnex review --batch 50 --unmatched   # the same, with the files that have no album
-bdnex review --batch 50 series:batman # only some files (same terms as `bdnex ls --files`)
-bdnex review --batch 50 series:batman --all   # every Batman file, the doubtful ones first, then the rest
-bdnex review --batch 50 --again       # the files you already checked too (the State column says what you decided)
+bdnex review                          # the next 50 doubtful files, in a table
+bdnex review --unmatched              # the same, with the files that have no album
+bdnex review series:batman            # only some files (same terms as `bdnex ls --files`)
+bdnex review series:batman --all      # every Batman file, the doubtful ones first, then the rest
+bdnex review --again                  # the files you already checked too (the State column says what you decided)
+bdnex review --batch 100 --no-tree    # 100 to a batch, the left panel hidden
 ```
 
 The last column, **Would go to**, is where `bdnex move` would put the file, relative to your collection: the `paths` template of the album's kind
@@ -157,7 +158,7 @@ covers still to come, bdnex says how many: `bdnex import --fetch` gets them.
 Each decision is **written at once** to the library (a `checked` mark, the flag, the link), so quitting, Ctrl-C or a lost SSH
 connection loses nothing. Files already checked are not shown again: **run the same command later to continue**. At the end
 of a batch it asks whether to check the next one. Textual is installed with bdnex; if it is missing,
-`bdnex review` and `bdnex review --auto` work as before. Linking to another album
+`bdnex review --no-tui` and `bdnex review --auto` work without it. Linking to another album
 reads that album's page (a request), so it takes a moment; a file whose chosen album already has another file is refused
 and says so.
 
@@ -167,7 +168,7 @@ and says so.
 bdnex check --matches               # how many look wrong, and why (changes nothing)
 bdnex check --matches --fix         # flag them for `bdnex review`
 bdnex candidates --low --limit 5    # the other albums they could be
-bdnex review                        # one by one, with the two covers side by side
+bdnex review --no-tui               # one by one, with the two covers side by side
 ```
 
 `bdnex candidates` always needs to be told which files: a query (`bdnex candidates series:nains`), `--low` (the files in

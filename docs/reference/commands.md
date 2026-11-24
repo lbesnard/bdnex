@@ -223,13 +223,13 @@ Examples:
 Go through the doubtful matches: one by one with both covers, or settled by rule with --auto.
 
 ```text
-usage: bdnex review [-h] [--list] [--json] [--auto] [--batch N] [--unmatched]
-                    [--no-tree] [--all] [--again] [--candidates N] [--no-cover] [-y]
-                    [-n] [-v] [--log-file PATH]
+usage: bdnex review [-h] [--list] [--json] [--auto] [--no-tui] [--batch N]
+                    [--unmatched] [--no-tree] [--all] [--again] [--candidates N]
+                    [--no-cover] [-y] [-n] [-v] [--log-file PATH]
                     [query ...]
 
-``bdnex review``: go through the flagged matches one by one, with the file's cover and
-the album's side by side.
+``bdnex review``: the review screen (folders, filters, the doubtful matches,
+duplicates, bulk edits); ``--no-tui`` asks one file at a time.
 
 positional arguments:
   query            only these files, same terms as `bdnex ls --files` (e.g.
@@ -248,18 +248,22 @@ options:
                    the file's (see --candidates), else unlinked (`bdnex import
                    --skipped --auto=all` decides them again); the ones nothing
                    confirms or contradicts are left as they are
-  --batch N        a table of the next N files to check (for example `--batch 50`):
-                   file, folder, album now, match score, cover score; keep, unlink or
-                   pick another album from the album list. Every decision is saved at
-                   once and the files checked are not shown again: run it again to
-                   continue; a query limits the files, as in `bdnex ls --files`
-  --unmatched      with --batch: also the files that have no album
-  --no-tree        with --batch: start with the folder tree hidden (`f` shows it; the
+  --no-tui         do not open the review screen: ask about the flagged files one at a
+                   time, in the terminal, with both covers side by side (the screen is
+                   the default in a terminal)
+  --batch N        the size of a batch in the review screen (default 50): the next N
+                   files to check: file, folder, album now, match score, cover score;
+                   keep, unlink or pick another album from the album list. Every
+                   decision is saved at once and the files checked are not shown
+                   again: run it again to continue; a query limits the files, as in
+                   `bdnex ls --files`
+  --unmatched      in the screen: also the files that have no album
+  --no-tree        in the screen: start with the left panel hidden (`f` shows it; the
                    screen remembers how you left it)
-  --all            with --batch: every file of the query, not only the doubtful ones
+  --all            in the screen: every file of the query, not only the doubtful ones
                    (those come first, then the files without album, then the rest): to
                    look through a series, e.g. `--batch 50 series:batman --all`
-  --again          with --batch: also the files already checked (the table says what
+  --again          in the screen: also the files already checked (the table says what
                    you decided then)
   --candidates N   for each contradicted file, compare the covers of its N best other
                    candidates (the saved cover when there is one, else one request
@@ -285,15 +289,16 @@ another album, or leave it for later. `bdnex candidates` lists the other albums 
 could be.
 
 Examples:
-  bdnex review                                 go through the flagged matches one by one, both covers side by side
-  bdnex review series:nains                    only the files of one series
-  bdnex review --batch 50                      a table of the next 50 files to check; keep, unlink or pick another album; continue later
-  bdnex review --batch 50 --unmatched          the same, with the files that have no album too
-  bdnex review --batch 50 series:batman --all  look through every Batman file (the doubtful ones first), not only the doubtful
-  bdnex review --batch 50 --again              also the files you already checked, with what you decided then
-  bdnex review --list                          only list the flagged files and why; ask nothing
-  bdnex review --auto -n                       preview the rule: how many are confirmed, switched, unlinked; changes nothing
-  bdnex review --auto                          settle the doubtful matches by rule (asks once before changing anything)
+  bdnex review                        the review screen: folders and filters on the left, a table of files, the doubtful matches first
+  bdnex review series:nains           only the files of one series
+  bdnex review --unmatched            the same, with the files that have no album too
+  bdnex review series:batman --all    look through every Batman file (the doubtful ones first), not only the doubtful
+  bdnex review --again                also the files you already checked, with what you decided then
+  bdnex review --batch 100 --no-tree  100 files to a batch, the left panel hidden
+  bdnex review --no-tui               no screen: the flagged matches one at a time, both covers side by side
+  bdnex review --list                 only list the flagged files and why; ask nothing
+  bdnex review --auto -n              preview the rule: how many are confirmed, switched, unlinked; changes nothing
+  bdnex review --auto                 settle the doubtful matches by rule (asks once before changing anything)
 ```
 
 ## Look at the library

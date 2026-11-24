@@ -82,3 +82,21 @@ def test_not_recursive_leaves_the_subfolders_alone(lib):
     put(lib, "Series/Tintin/1.cbz")
     put(lib, "Series/Tintin/Bonus/1.cbz")
     assert fo.mark_reviewed(lib, "Series/Tintin", recursive=False) == 1
+
+
+def test_a_folder_with_a_file_to_look_at_is_a_problem_and_a_clean_one_only_awaits_your_look(lib):
+    a = album(lib, 1, "Aama")
+    put(lib, "Series/Aama/1.cbz", a)  # matched, nothing doubtful: not reviewed, but nothing wrong
+    put(lib, "Series/Aama/2.cbz", a)
+    put(lib, "Series/Loose/1.cbz")  # no album
+    flagged = put(lib, "Series/Doubt/1.cbz", a)
+    with lib.conn:
+        lib.conn.execute("UPDATE files SET review = 'cover differs' WHERE id = ?", (flagged,))
+    seen = put(lib, "Series/Seen/1.cbz")  # no album, but you looked at it and left it: not a problem any more
+    lib.set_attr("file", seen, CHECKED, "leave")
+    root = fo.build(fo.progress(lib))
+    assert fo.find(root, "Series/Aama").status == fo.TODO and fo.find(root, "Series/Aama").label() == "Aama  0/2"
+    assert fo.find(root, "Series/Loose").status == fo.PROBLEM and fo.find(root, "Series/Doubt").status == fo.PROBLEM
+    assert fo.find(root, "Series/Seen").status == fo.DONE
+    assert fo.find(root, "Series").status == fo.PROBLEM and fo.find(root, "Series").below_issues == 2
+    assert fo.find(root, "Series/Loose").label() == "Loose  0/1  !1"
