@@ -456,21 +456,22 @@ def test_a_click_on_a_triangle_opens_the_folder_and_a_filter_group(env):
     db, root, paths = env
     seen = {}
 
-    async def opens(pilot, selector, node, offsets):
-        """Click along the node's line until it is open (the arrow is a few cells in, depending on the depth); a click is given time to act."""
+    async def opens(pilot, selector, get_node, offsets):
+        """Click along the node's line until it is open (the arrow is a few cells in, depending on the depth); a click is given time to act.
+        The node is looked up again each time: the trees are refreshed in the background."""
         for x in offsets:
-            await pilot.click(selector, offset=(x, node.line))
+            await pilot.click(selector, offset=(x, get_node().line))
             for _ in range(80):  # up to four seconds: a loaded machine is slow, and a second click would close it again
                 await pilot.pause(0.05)
-                if node.is_expanded:
+                if get_node().is_expanded:
                     return True
         return False
 
     async def script(app, pilot, lib):
-        series = [n for n in app.folder_tree.root.children if "Series" in str(n.label)][0]
-        assert not series.is_expanded
+        series = lambda: [n for n in app.folder_tree.root.children if "Series" in str(n.label)][0]  # noqa: E731
+        assert not series().is_expanded
         seen["folder"] = await opens(pilot, "#foldertree", series, range(2, 9))
-        seen["filter"] = await opens(pilot, "#facettree", app.facet_tree.root.children[1], range(0, 6))  # Kind
+        seen["filter"] = await opens(pilot, "#facettree", lambda: app.facet_tree.root.children[1], range(0, 6))  # Kind
 
     drive(db, root, script)
     assert seen == {"folder": True, "filter": True}
@@ -525,3 +526,22 @@ def test_a_line_of_tips_and_a_help_screen_say_how_to_use_it(env):
     drive(db, root, script)
     assert seen["tip"].startswith("Tip: Double-click a column header") and seen["next"] != seen["tip"]
     assert seen["help"] == "HelpScreen" and seen["closed"]
+
+
+def test_a_filter_group_you_opened_stays_open_when_the_counts_are_read_again(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        tree = app.facet_tree
+        kind = [n for n in tree.root.children if str(n.label).startswith("Kind")][0]
+        kind.expand()
+        await pilot.pause()
+        app.folders_ready(app.folder_root, app.folder_bad, {"State": [("unreviewed", 3)], "Kind": [("series", 5)]})  # what a refresh does
+        await pilot.pause()
+        again = [n for n in app.facet_tree.root.children if str(n.label).startswith("Kind")][0]
+        seen["open"] = again.is_expanded
+        seen["others"] = [n.is_expanded for n in app.facet_tree.root.children if not str(n.label).startswith("Kind")]
+
+    drive(db, root, script)
+    assert seen["open"] is True and seen["others"] == [False]

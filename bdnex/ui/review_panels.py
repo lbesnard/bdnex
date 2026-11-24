@@ -243,26 +243,45 @@ class FacetTree(TickTree):
     def fill(self, found: dict) -> None:
         from bdnex.library import browse
 
+        opened = self.open_keys()  # the counts are read again after a decision: what you had opened stays open
         self.clear()
         self.described = dict(browse.STATES)
         for group in browse.GROUPS:
             values = found.get(group) or []
             if not values:
                 continue
-            node = self.root.add(Text(f"{group}  ({len(values)})" if group != "State" else group, style="bold"), allow_expand=True)
+            node = self.root.add(Text(f"{group}  ({len(values)})" if group != "State" else group, style="bold"), data=("group", group),
+                                 allow_expand=True)
             if len(values) > folders.MANY:
                 letters: dict[str, list] = {}
                 for value, count in values:
                     letter = (value[:1] or "#").upper()
                     letters.setdefault(letter if letter.isalpha() else "#", []).append((value, count))
                 for letter in sorted(letters):
-                    sub = node.add(Text(f"{letter}  ({len(letters[letter])})", style="dim"), data=("letter",), allow_expand=True)
+                    sub = node.add(Text(f"{letter}  ({len(letters[letter])})", style="dim"), data=("letter", group, letter), allow_expand=True)
                     for value, count in letters[letter]:
                         sub.add_leaf(self.value_label(group, value, count), data=("facet", (group, value), count))
             else:
                 for value, count in values:
                     node.add_leaf(self.value_label(group, value, count), data=("facet", (group, value), count))
         self.root.expand()
+        for node in self.all_nodes():
+            if self.node_key(node) in opened:
+                node.expand()
+
+    @staticmethod
+    def node_key(node) -> Optional[tuple]:
+        return tuple(node.data[:3]) if node.data and node.data[0] in ("group", "letter") else None
+
+    def all_nodes(self):
+        stack = list(self.root.children)
+        while stack:
+            node = stack.pop()
+            yield node
+            stack.extend(node.children)
+
+    def open_keys(self) -> set:
+        return {self.node_key(node) for node in self.all_nodes() if node.is_expanded and self.node_key(node)}
 
     def value_label(self, group: str, value: str, count: int) -> Text:
         label = Text(f"{'☑' if (group, value) in self.ticked else '☐'} {value}  {count}")
