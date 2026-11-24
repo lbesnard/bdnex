@@ -27,6 +27,15 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 | `bdtheque_pages` | the series pages of bdtheque.com (a second site, read for the albums you give by address), by canonical address, zlib-compressed (schema v13), apart from `source_cache` |
 | `meta` | small values: that paths are stored relative, when the album list last grew |
 
+### Indexes
+
+SQLite indexes are B-trees, like PostgreSQL's default, and can be partial (`WHERE ...`). Schema v17 adds the ones the review screen's filters
+and folder views need, so that a facet or a folder is a lookup and not a scan of every file: `albums(category)`, `albums(collection)` (only the
+rows that have one), `albums(kind)`, `albums(publisher_id)`, `albums(relation)`, `album_genres(genre_id, album_id)`, and one-value partial
+indexes on `files` for spare versions, flagged files and damaged files. The files of a folder are found by a range on the unique index of
+`files.path` (`folder/` up to `folder0`). Where a move would put each file is not stored: it is worked out in memory (about 0.1 ms a file)
+and kept up to date from the albums that change.
+
 The schema version is stored in `PRAGMA user_version`; migrations live in
 `bdnex/library/schema.py` and are append-only. Schema v11 changes data, not tables: the `album` and `series` pages of `source_cache` are
 stored zlib-compressed (about a tenth of their size; `Library.cache_get` reads compressed and plain pages alike), and the upgrade from v10 compresses

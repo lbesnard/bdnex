@@ -10,6 +10,7 @@ import contextlib
 import json
 import logging
 import os
+from typing import Optional
 
 from bdnex.library import review_batch as batch
 from bdnex.ui import review_panels as panels
@@ -27,11 +28,37 @@ class ReviewExtras:
 
     folder_root = None
     folder_tree = None
+    facet_tree = None
+    move_tree = None
+    move_root = None
+    planned: Optional[dict] = None  # {file id: where a move would put it}, known a few seconds after the screen opens
+    plan_dirty: set = set()  # albums changed since: their destinations are worked out again
+    facet_choices: list = []  # [(group, value, files)] for the command palette
     folder_bad: dict = {}
     folder_current = ""
     counts_due = False
 
-    # -- the tree
+    # -- Ctrl+P: every action of the screen by name (a filter value is found by `FacetCommands`)
+    def get_system_commands(self, screen):
+        from textual.app import SystemCommand
+
+        yield from super().get_system_commands(screen)
+        for title, help_text, callback in (
+                ("Folders: show or hide the left panel", "the folders, the folders after a move, the filters (f)", self.action_folders),
+                ("Folder: mark it reviewed", "every file of the folder on the screen (R)", self.action_reviewed_folder),
+                ("Duplicates: the other files of this album", "trash, make main, keep as a version (D)", self.action_duplicates),
+                ("Edit the marked files", "one form: fields, kind, a volume each (E)", self.action_bulk),
+                ("Series or one-shot", "the marked files, or this one (K)", self.action_kind),
+                ("Volume of this file", "type it, Enter goes to the next (V)", self.action_volume),
+                ("Mark every file", "or none, when all are marked (m)", self.action_mark_all),
+                ("Keep this match", "the flag goes (k)", self.action_keep),
+                ("Unlink this file", "it is asked about again by `bdnex import --skipped` (u)", self.action_unlink),
+                ("Another album: search", "the whole album list (o)", self.action_other),
+                ("Covers: the file's and the album's", "side by side (c)", self.action_cover),
+                ("Everything: all the files", "the first thousand, in path order", lambda: self.open_selection("folder", "", "the collection"))):
+            yield SystemCommand(title, help_text, callback)
+
+    # -- the left panel: the folders as they are, the folders after a move, and the filters
     def want_tree(self) -> bool:
         if self.tree_pref is not None:
             return self.tree_pref
@@ -47,37 +74,93 @@ class ReviewExtras:
                     json.dump({"tree": shown}, handle)
 
     def start_folders(self) -> None:
-        pane = self.query_one("#folderpane")
-        pane.display = self.want_tree()
+        self.plan_dirty, self.facet_choices, self.folder_bad = set(), [], {}
+        self.query_one("#folderpane").display = self.want_tree()
         self.run_worker(self.read_folders, thread=True, group="folders", exclusive=True)
 
     def read_folders(self) -> None:
-        from bdnex.library import Library, folders
+        """In a worker with its own read-only library: the counts of the folders and of the filters (fast: indexes), then where a move would put
+        every file (about two seconds for 17 000 files), or, after an edit, only the albums that changed."""
+        from bdnex.library import Library, browse, folders
 
+        dirty, self.plan_dirty = set(self.plan_dirty), set()
         try:
             with Library.for_settings(self.settings, readonly=True) as library:
                 root = folders.build(folders.progress(library))
                 bad = folders.inconsistent(library)
+                found = browse.facets(library)
+                with contextlib.suppress(Exception):
+                    self.call_from_thread(self.folders_ready, root, bad, found)
+                if self.planned is None or dirty:
+                    planned = browse.plan(library, self.settings, only=dirty or None)
+                else:
+                    planned = {}
+                checked = browse.checked_ids(library)
+                move_root = None
+                if self.planned is not None or planned:
+                    merged = {**(self.planned or {}), **planned}
+                    move_root = folders.build(browse.plan_counts(merged, checked))
         except Exception as err:
             logger.info("the folder tree could not be read: %s", err)
             return
         with contextlib.suppress(Exception):
-            self.call_from_thread(self.folders_ready, root, bad)
+            self.call_from_thread(self.plan_ready, planned, move_root, dirty)
 
-    def folders_ready(self, root, bad: dict) -> None:
+    def folders_ready(self, root, bad: dict, found: dict) -> None:
         self.folder_root, self.folder_bad = root, bad
+        self.facet_choices = [(group, value, count) for group, values in found.items() for value, count in values]
         pane = self.query_one("#folderpane")
         if self.folder_tree is None:
-            pane.remove_children()
+            for waiting in ("#foldersloading", "#facetwait"):
+                with contextlib.suppress(Exception):
+                    self.query_one(waiting).remove()
             self.folder_tree = panels.FolderTree(root, id="foldertree")
-            pane.mount(self.folder_tree)
+            self.query_one("#folderslot").mount(self.folder_tree)
+            self.facet_tree = panels.FacetTree(found, id="facettree")
+            self.query_one("#facetslot").mount(self.facet_tree)
         else:
             self.folder_tree.refresh_counts(root)
+            self.facet_tree.fill(found)
         self.counts_due = False
         self.update_title()
+        pane.refresh()
+
+    def plan_ready(self, planned: dict, move_root, dirty: set) -> None:
+        """Where a move would put the files is known (or known again for the albums that changed): the second tree, and the *Would go to* of the rows."""
+        if self.planned is None:
+            self.planned = {}
+        if dirty:
+            gone = {file_id for file_id, album in self.file_albums(self.planned).items() if album in dirty}
+            for file_id in gone:
+                self.planned.pop(file_id, None)
+        self.planned.update(planned)
+        if move_root is not None:
+            self.move_root = move_root
+            slot = self.query_one("#moveslot")
+            if self.move_tree is None:
+                self.move_tree = panels.FolderTree(move_root, id="movetree")
+                slot.mount(self.move_tree)
+                with contextlib.suppress(Exception):
+                    self.query_one("#movewait").remove()
+            else:
+                self.move_tree.refresh_counts(move_root)
+        for row in self.rows:
+            if row.file_id in self.planned and (not row.dest or dirty):
+                row.dest = self.planned[row.file_id]
+                self.refresh_row(row)
+
+    def file_albums(self, planned: dict) -> dict:
+        """``{file id: album id}`` for the planned files, from the screen's own library (a cheap lookup: only used after an edit)."""
+        ids = list(planned)
+        found = {}
+        for start in range(0, len(ids), 500):
+            chunk = ids[start:start + 500]
+            for row in self.library.conn.execute(f"SELECT id, album_id FROM files WHERE id IN ({','.join('?' * len(chunk))})", chunk):
+                found[row["id"]] = row["album_id"]
+        return found
 
     def schedule_counts(self) -> None:
-        """A decision changed a file's state: the tree's counts are read again in a moment (once, however many decisions come)."""
+        """A decision changed a file's state: the counts are read again in a moment (once, however many decisions come)."""
         if self.folder_tree is not None and not self.counts_due:
             self.counts_due = True
             self.set_timer(1.5, lambda: self.run_worker(self.read_folders, thread=True, group="folders", exclusive=True))
@@ -102,45 +185,60 @@ class ReviewExtras:
         if pane.display and self.folder_tree is not None:
             self.folder_tree.focus()
         else:
-            self.query_one("DataTable").focus()
+            table.focus()
 
     def on_tree_node_selected(self, event) -> None:
-        folder = event.node.data
-        if folder is None or getattr(folder, "group", ""):
+        """A folder (either tree) or a filter value: all its files, everything below it, in the table."""
+        data = event.node.data
+        tree_id = getattr(event.control, "id", "")
+        if data is None:
             return
-        self.open_folder(folder.path)
+        if tree_id == "facettree":
+            if isinstance(data, tuple) and data[0] == "facet":
+                self.open_selection("facet", data[1], f"{data[1][0]}: {data[1][1]}")
+            return
+        if getattr(data, "group", ""):
+            return  # a group of letters: it only opens
+        kind = "planned" if tree_id == "movetree" else "folder"
+        self.open_selection(kind, data.path, f"{'after a move: ' if kind == 'planned' else ''}{data.path or 'the collection'}")
 
     def open_folder(self, folder: str) -> None:
-        self.folder_current = folder
-        self.say(f"Reading {folder or 'the collection'}...")
-        self.run_worker(lambda: self.weigh_folder(folder), thread=True, group="folder", exclusive=True)
+        self.open_selection("folder", folder, folder or "the collection")
 
-    def weigh_folder(self, folder: str) -> None:
+    def open_facet(self, group: str, value: str) -> None:
+        self.open_selection("facet", (group, value), f"{group}: {value}")
+
+    def open_selection(self, kind: str, value, title: str) -> None:
+        self.folder_current = value if kind == "folder" else ""
+        self.say(f"Reading {title}...")
+        self.run_worker(lambda: self.weigh_selection(kind, value, title), thread=True, group="folder", exclusive=True)
+
+    def weigh_selection(self, kind: str, value, title: str) -> None:
         import time
 
-        from bdnex.library import Library
+        from bdnex.library import Library, browse
 
         started = time.monotonic()
         try:
             with Library.for_settings(self.settings, readonly=True) as library:
-                rows = batch.folder_batch(library, self.settings, folder)
+                rows = browse.rows_for(library, self.settings, kind, value, self.planned)
         except Exception as err:
             self.call_from_thread(self.show_error, str(err))
             return
-        self.call_from_thread(self.show_folder, folder, rows, time.monotonic() - started)
+        self.call_from_thread(self.show_folder, title, rows, time.monotonic() - started)
 
-    def show_folder(self, folder: str, rows, seconds: float) -> None:
-        """A folder's files as a batch of their own: ``b`` and ``n`` still go back and forth between the batches."""
+    def show_folder(self, title: str, rows, seconds: float) -> None:
+        """The files of a selection as a batch of their own: ``b`` and ``n`` still go back and forth between the batches."""
         self.batches.append(rows)
         self.batch_totals.append(len(rows))
         self.at = len(self.batches) - 1
         self.number = self.at + 1
-        self.display(rows, f"{folder or 'the collection'}: {len(rows)} file(s) in {seconds:.1f} s")
+        self.display(rows, f"{title}: {len(rows)} file(s) in {seconds:.2f} s")
         below = getattr(rows, "total", len(rows))
         if below > len(rows):
-            self.notify(f"{below} files below: the folder's own {len(rows)} are shown, open a subfolder for the others.", timeout=6)
-        if folder in self.folder_bad:
-            self.notify(f"{folder}: {self.folder_bad[folder]}", severity="warning", timeout=6)
+            self.notify(f"{below} files: the first {len(rows)} are shown. Open a subfolder or add a filter for the others.", timeout=6)
+        if title in self.folder_bad:
+            self.notify(f"{title}: {self.folder_bad[title]}", severity="warning", timeout=6)
 
     def action_reviewed_folder(self) -> None:
         """Everything in the folder on the screen is looked at: marked reviewed (a flagged match is kept, nothing is moved or unlinked)."""

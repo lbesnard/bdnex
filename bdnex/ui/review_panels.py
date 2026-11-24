@@ -6,11 +6,13 @@ Each is a thin widget over a library module (``library/folders``, ``library/twin
 from __future__ import annotations
 
 import os
+from functools import partial
 from typing import Optional
 
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.command import DiscoveryHit, Hit, Provider
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Static, TextArea, Tree
@@ -79,6 +81,61 @@ class FolderTree(Tree):
         node = search(self.root)
         if node is not None:
             self.move_cursor(node)
+
+
+class FacetTree(Tree):
+    """The filters: groups (state, kind, category, collection, genre, author, series...) and their values with the number of files.
+    Selecting a value asks the screen to show its files. A group with very many values (authors, series) lists them by first letter."""
+
+    def __init__(self, found: dict, **kwargs) -> None:
+        super().__init__("Filters", **kwargs)
+        self.show_root = False
+        self.guide_depth = 3
+        self.fill(found)
+
+    def fill(self, found: dict) -> None:
+        from bdnex.library import browse
+
+        self.clear()
+        described = dict(browse.STATES)
+        for group in browse.GROUPS:
+            values = found.get(group) or []
+            if not values:
+                continue
+            node = self.root.add(Text(f"{group}  ({len(values)})" if group != "State" else group, style="bold"), allow_expand=True)
+            if len(values) > folders.MANY:
+                letters: dict[str, list] = {}
+                for value, count in values:
+                    letter = (value[:1] or "#").upper()
+                    letters.setdefault(letter if letter.isalpha() else "#", []).append((value, count))
+                for letter in sorted(letters):
+                    sub = node.add(Text(f"{letter}  ({len(letters[letter])})", style="dim"), allow_expand=True)
+                    for value, count in letters[letter]:
+                        sub.add_leaf(Text(f"{value}  {count}"), data=("facet", (group, value)))
+            else:
+                for value, count in values:
+                    label = Text(f"{value}  {count}")
+                    if group == "State" and value in described:
+                        label.append(f"   {described[value]}", style="dim")
+                    node.add_leaf(label, data=("facet", (group, value)))
+        self.root.expand()
+
+
+class FacetCommands(Provider):
+    """Ctrl+P: type a few letters of a filter value (`genre fantasy`, `author hergé`, `series tintin`, `state duplicates`): its files are shown."""
+
+    async def search(self, query: str):
+        matcher = self.matcher(query)
+        for group, value, count in self.app.facet_choices:
+            text = f"{group}: {value}"
+            score = matcher.match(text)
+            if score > 0:
+                yield Hit(score, matcher.highlight(text), partial(self.app.open_facet, group, value), help=f"{count} file(s)")
+
+    async def discover(self):
+        for group, value, count in self.app.facet_choices:
+            if group == "State":
+                yield DiscoveryHit(f"State: {value}", partial(self.app.open_facet, group, value), help=f"{count} file(s)")
 
 
 class DuplicateScreen(ModalScreen):

@@ -33,12 +33,13 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
+from textual.widgets import TabbedContent, TabPane, Button, Checkbox, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
 from bdnex.library import review_batch as batch
 from bdnex.ui import color
 from bdnex.ui.review_extras import ReviewExtras
+from bdnex.ui.review_panels import FacetCommands
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "dim", "skipped": "yellow"}
 KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "ok": "green"}
@@ -47,7 +48,8 @@ EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 SEARCH_LIMIT = 60
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # braille dots turning: a state that is waiting for the site
 COLUMNS = (("#", 3), ("File", 40), ("Folder", 22), ("Album now", 40), ("Page", 8), ("Match", 8), ("Cover", 8), ("State", 14),
-           ("Would go to", 44))  # (last: the numbers of the columns before it, which the keys and the tests know, stay as they were)
+           ("Would go to", 44), ("Kind", 7), ("Vol", 5))  # (the numbers of the columns before these stay as they were; `Would go to` takes the room left)
+FLEX_COLUMN = 8
 STATE_COLUMN = 7
 STATE_ORDER = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # the state column sorts by how doubtful, then by decision
 DECIDED_ORDER = {"keep": 10, "linked": 11, "unlinked": 12, "left": 13, "skipped": 14}
@@ -674,12 +676,16 @@ class ReviewApp(ReviewExtras, App):
     """The table of one batch, the detail of the row under the cursor, and the keys that decide."""
 
     TITLE = "bdnex review"
+    COMMANDS = App.COMMANDS | {FacetCommands}
     CSS = """
     #queue-badge { dock: right; width: auto; height: 1; padding: 0 1; background: red; color: white; text-style: bold; display: none; }
     #loading { height: 2fr; min-height: 8; content-align: center middle; text-align: left; }
     #main { height: 1fr; }
-    #folderpane { width: 34; border-right: solid $accent; }
-    #foldertree { width: 100%; height: 100%; }
+    #folderpane { width: 38; border-right: solid $accent; }
+    #trees { height: 1fr; }
+    #folderslot, #moveslot, #facetslot { height: 1fr; }
+    #facetbox { height: 1fr; border-top: solid $accent; }
+    #foldertree, #movetree, #facettree { width: 100%; height: 100%; }
     #center { width: 1fr; }
     #table { height: 2fr; min-height: 8; }
     #detailrow { height: 1fr; min-height: 8; border-top: solid $accent; }
@@ -719,7 +725,7 @@ class ReviewApp(ReviewExtras, App):
         Binding("/", "find", "Search"),
         Binding("]", "find_next", "Next match", show=False),
         Binding("[", "find_prev", "Previous match", show=False),
-        *[Binding(str(number), f"sort({number - 1})", f"Sort by {name}", show=False) for number, (name, _) in enumerate(COLUMNS, start=1)],
+        *[Binding(str(number), f"sort({number - 1})", f"Sort by {name}", show=False) for number, (name, _) in enumerate(COLUMNS[:9], start=1)],
     ]
 
     def __init__(self, library, settings, source, size: int = 50, terms=(), unmatched: bool = False,
@@ -741,6 +747,7 @@ class ReviewApp(ReviewExtras, App):
         self.batch_size, self.terms, self.unmatched = size, list(terms), unmatched
         self.everything, self.again = everything, again
         self.rows: list[batch.Row] = []
+        self.album_cache: dict = {}  # album id -> (kind, volume), for the rows a selection did not build
         self.shown: set[str] = set()  # every file of every batch of this run: the next batch never repeats one
         self.number = 0
         self.terminal_stderr = sys.stderr  # the real one, before any fetch redirects it
@@ -768,7 +775,16 @@ class ReviewApp(ReviewExtras, App):
         yield Static("", id="queue-badge")
         with Horizontal(id="main"):
             with Vertical(id="folderpane"):
-                yield Static("reading the folders...", id="foldersloading")
+                with TabbedContent(id="trees"):
+                    with TabPane("Folders", id="tab-folders"):
+                        with Vertical(id="folderslot"):
+                            yield Static("reading the folders...", id="foldersloading")
+                    with TabPane("After a move", id="tab-moves"):
+                        with Vertical(id="moveslot"):
+                            yield Static("working out where a move would put each file...", id="movewait")
+                with Vertical(id="facetbox"):
+                    with Vertical(id="facetslot"):
+                        yield Static("Filters: reading...", id="facetwait")
             with Vertical(id="center"):
                 yield Static("", id="loading")
                 yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
@@ -1044,8 +1060,8 @@ class ReviewApp(ReviewExtras, App):
         table = self.query_one(DataTable)
         for index, (name, width) in enumerate(COLUMNS):
             arrow = (" ▼" if self.sort_reverse else " ▲") if index == self.sort_column else ""
-            if index == len(COLUMNS) - 1:  # where a move would put the file: a path is long, so it takes what the screen has left (at least `width`)
-                width = max(width, self.table_width() - sum(w for _, w in COLUMNS[:-1]) - 2 * len(COLUMNS) - 2)
+            if index == FLEX_COLUMN:  # where a move would put the file: a path is long, so it takes what the screen has left (at least `width`)
+                width = max(width, self.table_width() - sum(w for i, (_, w) in enumerate(COLUMNS) if i != FLEX_COLUMN) - 2 * len(COLUMNS) - 2)
             table.add_column(f"{name}{arrow}", width=width, key=str(index))  # (a fixed width: the table never has to measure its cells)
 
     def table_width(self) -> int:
@@ -1089,6 +1105,10 @@ class ReviewApp(ReviewExtras, App):
             return row.cover
         if index == 8:
             return row.dest.casefold() if row.dest else None
+        if index == 9:
+            return self.album_facts(row)[0] or None
+        if index == 10:
+            return self.album_facts(row)[1]
         return DECIDED_ORDER.get(row.status) if row.status else STATE_ORDER.get(row.kind, 5)
 
     def action_sort(self, index: int) -> None:
@@ -1139,7 +1159,25 @@ class ReviewApp(ReviewExtras, App):
         match = Text("you", style="cyan") if row.status == "linked" else score_text(row.score)
         return [Text(str(number), style="bold reverse magenta" if id(row) in self.marked else "cyan"), Text(os.path.basename(row.path), style="bold"),
                 Text(row.folder, style="dim"), album_text(row), page_text(row.album_url), match, score_text(row.cover), state,
-                Text(row.dest or "-", style="dim" if row.dest != "?" and not row.dest.startswith("(") else "yellow")]
+                Text(row.dest or ("…" if self.planned is None else "-"), style="dim" if row.dest != "?" and not row.dest.startswith("(") else "yellow"),
+                *self.kind_cells(row)]
+
+    def album_facts(self, row: batch.Row) -> tuple[str, Optional[int]]:
+        """``(series | oneshot | "", volume)`` of the row's album: from the row when a selection built it, else read once from the library."""
+        if row.album_kind:
+            return row.album_kind, row.volume
+        if row.album_id is None:
+            return "", None
+        cached = self.album_cache.get(row.album_id)
+        if cached is None:
+            album = self.library.get_album(row.album_id) or {}
+            cached = self.album_cache[row.album_id] = (album.get("kind") or "", album.get("volume"))
+        return cached
+
+    def kind_cells(self, row: batch.Row) -> list:
+        kind, volume = self.album_facts(row)
+        word = {"series": Text("series", style="cyan"), "oneshot": Text("1-shot", style="magenta")}.get(kind, Text("-", style="dim"))
+        return [word, Text("-" if volume is None else str(volume), style="dim" if volume is None else "")]
 
     def show_detail(self, index: int) -> None:
         if not (0 <= index < len(self.rows)):
@@ -1323,6 +1361,10 @@ class ReviewApp(ReviewExtras, App):
         with contextlib.suppress(Exception):
             file = self.library.get_file(row.path) or {}
             row.dest = batch.destination_of(self.library, self.settings, file, file.get("album_id"))
+            self.album_cache.clear()  # (its album may have changed kind or volume)
+            row.album_kind = ""
+            if file.get("album_id") is not None:
+                self.plan_dirty.add(file["album_id"])  # the second tree follows: where a move would put this album's files is worked out again
 
     def record(self, action: str) -> None:
         row = self.idle()
@@ -1451,6 +1493,7 @@ class ReviewApp(ReviewExtras, App):
         series name changed), so the table says what the library holds."""
         from bdnex.ui.describe import label
 
+        self.plan_dirty.update(album_ids)
         for other in self.rows:
             file = self.library.get_file(other.path) or {}
             if file.get("album_id") in album_ids:

@@ -244,3 +244,101 @@ def test_a_folder_shows_the_files_that_have_no_album_and_no_import_record(env, m
 
     drive(db, root, script)
     assert ("Stray.cbz", "unmatched") in seen["rows"] and len(seen["rows"]) == 4
+
+
+def test_a_folder_with_subfolders_shows_every_file_below_it(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        series = app.folder_tree.root.children[0]
+        series.expand()
+        await pilot.pause()
+        app.folder_tree.select_node(series)  # a click on `Series`, which only has subfolders
+        await settle(app, pilot)
+        seen["rows"] = sorted(os.path.basename(r.path) for r in app.rows)
+        seen["kinds"] = [(str(c[9]), str(c[10])) for c in [app.query_one("DataTable").get_row_at(i) for i in range(len(app.rows))]]
+
+    drive(db, root, script)
+    assert len(seen["rows"]) == 5 and "Klezmer T05 main.cbz" in seen["rows"] and "Tintin T3.cbz" in seen["rows"]
+    assert ("series", "5") in seen["kinds"] and ("series", "2") in seen["kinds"]  # the Kind and Vol columns, on the right
+
+
+def test_the_filters_list_albums_by_state_series_genre_and_a_click_shows_their_files(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        tree = app.facet_tree
+        assert isinstance(tree, review_panels.FacetTree)
+        groups = {str(n.label).split("  ")[0]: n for n in tree.root.children}
+        seen["groups"] = list(groups)
+        groups["State"].expand()
+        await pilot.pause()
+        seen["states"] = {str(n.label).split("  ")[0]: str(n.label).split("  ")[1].split()[0] for n in groups["State"].children}
+        app.open_facet("State", "duplicates")
+        await settle(app, pilot)
+        seen["dups"] = sorted(os.path.basename(r.path) for r in app.rows)
+        app.open_facet("Series", "Tintin")
+        await settle(app, pilot)
+        seen["tintin"] = len(app.rows)
+        seen["choices"] = [c for c in app.facet_choices if c[0] == "Series"]
+
+    drive(db, root, script)
+    assert seen["groups"][:2] == ["State", "Kind"] and "Series" in seen["groups"]
+    assert seen["states"]["unreviewed"] == "4" and seen["states"]["duplicates"] == "2" and seen["states"]["reviewed"] == "1"
+    assert seen["dups"] == ["Klezmer T05 main.cbz", "Klezmer T05 spare.cbz"] and seen["tintin"] == 3
+    assert ("Series", "Klezmer", 2) in seen["choices"]
+
+
+def test_the_second_tree_shows_where_a_move_would_put_the_files_and_follows_an_edit(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        for _ in range(20):  # the plan is worked out in the background
+            if app.move_tree is not None:
+                break
+            await pilot.pause(0.2)
+        seen["tops"] = [str(n.label).split("  ")[0].split(" ", 1)[1] for n in app.move_tree.root.children]
+        app.open_selection("planned", "Series", "after a move: Series")
+        await settle(app, pilot)
+        seen["dests"] = sorted(r.dest for r in app.rows)
+        # an edit: the album of the first Tintin file goes to another series; its place in the second tree follows
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("m")
+        await pilot.press("E")
+        await pilot.pause()
+        app.screen.query_one("#b-series").value = "Hergé"
+        app.screen.action_accept()
+        await settle(app, pilot)
+        for _ in range(30):
+            if any("Hergé" in dest for dest in app.planned.values()):
+                break
+            await pilot.pause(0.2)
+        seen["after"] = sorted(d for d in app.planned.values() if "Hergé" in d)
+
+    drive(db, root, script)
+    assert seen["tops"] == ["_versions", "Series"]  # the spare version goes to its own folder
+    assert len(seen["dests"]) == 4 and all(d.startswith("Series/") for d in seen["dests"])
+    assert len(seen["after"]) == 3 and seen["after"][0].startswith("Series/Hergé/Hergé - T01")
+
+
+def test_the_command_palette_has_the_actions_and_the_filter_values(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        titles = [c.title for c in app.get_system_commands(app.screen)]
+        seen["titles"] = titles
+        from bdnex.ui.review_panels import FacetCommands
+
+        provider = FacetCommands(app.screen)
+        hits = [hit async for hit in provider.search("series klez")]
+        seen["hits"] = [h.help for h in hits]
+
+    drive(db, root, script)
+    assert "Duplicates: the other files of this album" in seen["titles"] and "Edit the marked files" in seen["titles"]
+    assert "Series or one-shot" in seen["titles"] and "Folders: show or hide the left panel" in seen["titles"]
+    assert seen["hits"] == ["2 file(s)"]

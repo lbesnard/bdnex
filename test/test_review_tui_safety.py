@@ -177,7 +177,7 @@ def test_the_table_has_a_column_with_where_a_move_would_put_each_file_and_it_goe
     seen = {}
 
     async def script(app, pilot):
-        assert review_tui.COLUMNS[-1][0] == "Would go to"
+        assert review_tui.COLUMNS[review_tui.FLEX_COLUMN][0] == "Would go to"  # (Kind and Vol come after it)
         first = app.rows[0]  # linked to "Nains T01 Redwin"
         seen["dest"] = first.dest
         seen["cell"] = str(app.query_one("DataTable").get_row_at(0)[8])
