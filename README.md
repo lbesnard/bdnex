@@ -56,9 +56,11 @@ based on metadata and not an obscure filename.
 - files imported from outside your library folder (a download folder) are moved or copied in, or left and placed later
 - a **web page** (`bdnex serve`): browse the library as a wall of covers, see which volumes of a series are missing,
   review doubtful matches, and, if you allow it, run the same tasks as the command line without a terminal
-- `bdnex review --batch 50`: a table (a terminal screen) of the doubtful matches, 50 at a time, folder by folder: file, album now, page link, match and cover
-  scores; keep, unlink, search another album, see both covers, give a whole series its albums at once; every decision is saved
-  ![The review table](docs/_static/screens/review-table.svg)
+- `bdnex review`: the review screen (a terminal screen). On the left, your folders (coloured by what they need), the folders as `bdnex move` would organise them, and
+  filters (state, kind, category, collection, genre, author, series...): click or tick any of them to see all its files in the table. Choose the table's columns,
+  see the album's metadata beside each file, keep, unlink, search another album, compare duplicates, edit many files at once (series or one-shot, collection,
+  volumes...); every decision is saved and the screen opens as you left it
+  ![The review screen](docs/_static/screens/review-screen.png)
 - `bdnex mirror`: keep the whole Bédéthèque catalogue (album pages, series pages, covers) in your library, through several endpoints at once
 - cover check: the file's cover against the album's, with SIFT (OpenCV, installed with bdnex)
 - `bdnex edit`, `import --reparse`, `reset`, `relocate`: fix, rebuild offline, start over, move your collection
