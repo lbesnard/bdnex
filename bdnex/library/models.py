@@ -46,6 +46,7 @@ class AlbumInfo:
     subseries: Optional[str] = None  # a hand-set subfolder inside the series, for an album the site does not list
     collection: Optional[str] = None  # a hand-set override of the site's own "Collection" (extra.edition_fields)
     cycle: Optional[str] = None  # a hand-set override of the site's own "Cycle" (extra.edition_fields)
+    category: Optional[str] = None  # a hand-set kind of publication (BD, Manga, Comics...): `$category` in the path templates
     summary: Optional[str] = None
     rating: Optional[float] = None
     cover_url: Optional[str] = None

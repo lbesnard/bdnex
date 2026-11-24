@@ -269,4 +269,15 @@ MIGRATIONS = [
     ALTER TABLE albums ADD COLUMN collection TEXT;
     ALTER TABLE albums ADD COLUMN cycle TEXT;
     """,
+    # --- version 16 ------------------------------------------------------
+    # `category`: a hand-set kind of publication (BD, Manga, Comics...), apart from `kind` (series or one-shot): `$category` in the path
+    # templates puts Manga and Comics in their own folders. `parent_id` + `relation`: an album that is another version of `parent_id`
+    # (a black and white scan, an older edition the site does not list) or a child of it; a `version` goes to the spare versions folder.
+    # The parent is kept when the child is the one left (SET NULL): a child never takes the parent down with it.
+    """
+    ALTER TABLE albums ADD COLUMN category TEXT;
+    ALTER TABLE albums ADD COLUMN parent_id INTEGER REFERENCES albums(id) ON DELETE SET NULL;
+    ALTER TABLE albums ADD COLUMN relation TEXT CHECK (relation IS NULL OR relation IN ('version', 'child'));
+    CREATE INDEX idx_albums_parent ON albums(parent_id);
+    """,
 ]

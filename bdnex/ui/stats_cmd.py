@@ -17,6 +17,7 @@ from bdnex.ui import context
 FIELD_HELP = {
     "any": "the text in any text field at once", "attr": "your own marks: attr:name or attr:name=value (`bdnex mark`)", "author": "any credit (any role)", "colorist": "a credit with that role",
     "collection": "a hand-set override (`bdnex edit`) of the site's own Collection; searches the override only, not the site's value",
+    "category": "a hand-set kind of publication (`bdnex edit`): BD, Manga, Comics...",
     "coverartist": "a credit with that role",
     "cycle": "a hand-set override (`bdnex edit`) of the site's own Cycle; searches the override only, not the site's value",
     "inker": "a credit with that role", "letterer": "a credit with that role",
@@ -28,7 +29,7 @@ FIELD_HELP = {
     "format": "cbz, cbr or pdf", "genre": "a genre of the album", "id": "the album's number in the library",
     "isbn": "ISBN", "kind": "series or oneshot", "language": "language code", "md5": "the file's checksum",
     "metadata": "the file already had a ComicInfo.xml", "pages": "pages of the album (the source's count)",
-    "path": "the file's path", "publisher": "publisher", "rating": "the source's rating", "review": "flagged for `bdnex review`",
+    "path": "the file's path", "relation": "version or child: this album is another version of (or a child of) another album", "publisher": "publisher", "rating": "the source's rating", "review": "flagged for `bdnex review`",
     "series": "series name", "size": "the file's size in bytes", "source": "where the album comes from",
     "spare": "a spare version of an album that has another main file", "staged": "waiting to be moved into the collection",
     "subseries": "a hand-set subfolder inside the series (`bdnex edit`), for an album the site does not list",

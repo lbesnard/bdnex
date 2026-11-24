@@ -70,6 +70,9 @@ def long(album: dict[str, Any], files: list[dict[str, Any]]) -> str:
     add("volume", album.get("volume") if album.get("volume") is not None else album.get("alternate_number"))
     add("title", album["title"])
     add("subfolder", album.get("subseries"))
+    add("category", album.get("category"))
+    if album.get("parent_id") is not None:
+        add(album.get("relation") or "related", f"album {album['parent_id']}")
     credits = album.get("credits") or {}
     for role in [*ROLE_ORDER, *sorted(set(credits) - set(ROLE_ORDER))]:  # standard roles, then Translator, Other...
         add(role.lower(), ", ".join(credits.get(role, [])))

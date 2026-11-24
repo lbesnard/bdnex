@@ -454,9 +454,9 @@ class Library:
             publisher_id = self._get_or_create("publishers", info.publisher) if info.publisher else None
             self.conn.execute(
                 """INSERT INTO albums(kind, series_id, title, volume, alternate_number,
-                       publisher_id, isbn, year, month, day, pages, language, format, subseries, collection, cycle,
+                       publisher_id, isbn, year, month, day, pages, language, format, subseries, collection, cycle, category,
                        summary, rating, cover_url, url, source, source_id, extra)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(source, source_id) DO UPDATE SET
                        kind = excluded.kind, series_id = excluded.series_id,
                        title = excluded.title, volume = excluded.volume,
@@ -465,12 +465,12 @@ class Library:
                        year = excluded.year, month = excluded.month, day = excluded.day,
                        pages = excluded.pages, language = excluded.language,
                        format = excluded.format, subseries = excluded.subseries,
-                       collection = excluded.collection, cycle = excluded.cycle, summary = excluded.summary,
+                       collection = excluded.collection, cycle = excluded.cycle, category = excluded.category, summary = excluded.summary,
                        rating = excluded.rating, cover_url = excluded.cover_url,
                        url = excluded.url, extra = excluded.extra""",
                 (info.kind, series_id, info.title, info.volume, info.alternate_number,
                  publisher_id, info.isbn, info.year, info.month, info.day, info.pages,
-                 info.language, info.format, info.subseries, info.collection, info.cycle, info.summary, info.rating, info.cover_url,
+                 info.language, info.format, info.subseries, info.collection, info.cycle, info.category, info.summary, info.rating, info.cover_url,
                  info.url, info.source, info.source_id,
                  json.dumps(info.extra, ensure_ascii=False, default=str, sort_keys=True)))
             album_id = self.conn.execute(
@@ -493,7 +493,7 @@ class Library:
 
     # ------------------------------------------------------------ hand edits
     EDIT_SCALARS = ("title", "volume", "alternate_number", "publisher", "isbn", "year", "month", "day",
-                    "pages", "language", "format", "subseries", "collection", "cycle", "summary")
+                    "pages", "language", "format", "subseries", "collection", "cycle", "category", "summary")
     EDIT_FIELDS = EDIT_SCALARS + ("series", "credits", "genres")
 
     def _edits_of(self, album_id: int) -> dict[str, Any]:
@@ -573,6 +573,41 @@ class Library:
         self.conn.execute("UPDATE series SET name = ?, extra = ? WHERE id = ?", (name, json.dumps(extra, ensure_ascii=False), series_id))
         for row in self.conn.execute("SELECT id FROM albums WHERE series_id = ?", (series_id,)).fetchall():
             self._store_edits(row["id"], {**self._edits_of(row["id"]), "series": name})
+
+    RELATIONS = ("version", "child")
+
+    def set_relation(self, album_id: int, parent_id: Optional[int], relation: Optional[str] = None) -> None:
+        """Say that an album is another ``version`` of ``parent_id`` (a black and white scan, an older edition) or its ``child``;
+        ``parent_id=None`` removes the link. An album is never its own parent, and the links never make a loop."""
+        if parent_id is None:
+            relation = None
+        elif relation not in self.RELATIONS:
+            raise ValueError(f"a relation is one of: {', '.join(self.RELATIONS)}")
+        if parent_id is not None:
+            if parent_id == album_id:
+                raise ValueError("an album can not be its own parent")
+            if self.get_album(parent_id) is None:
+                raise KeyError(f"no album {parent_id}")
+            seen, up = {album_id}, parent_id
+            while up is not None:  # walk up from the new parent: meeting the album again would close a loop
+                if up in seen:
+                    raise ValueError("that link would make a loop")
+                seen.add(up)
+                row = self.conn.execute("SELECT parent_id FROM albums WHERE id = ?", (up,)).fetchone()
+                up = row["parent_id"] if row else None
+        with self.conn:
+            self.conn.execute("UPDATE albums SET parent_id = ?, relation = ? WHERE id = ?", (parent_id, relation, album_id))
+
+    def related_albums(self, album_id: int) -> dict[str, Any]:
+        """The album's ``parent`` (``{id, title, relation}``, or ``None``) and its ``children`` (the same, a list)."""
+        album = self.conn.execute("SELECT parent_id, relation FROM albums WHERE id = ?", (album_id,)).fetchone()
+        parent = None
+        if album is not None and album["parent_id"] is not None:
+            row = self.conn.execute("SELECT id, title FROM albums WHERE id = ?", (album["parent_id"],)).fetchone()
+            parent = {"id": row["id"], "title": row["title"], "relation": album["relation"]} if row else None
+        children = [{"id": r["id"], "title": r["title"], "relation": r["relation"]} for r in self.conn.execute(
+            "SELECT id, title, relation FROM albums WHERE parent_id = ? ORDER BY id", (album_id,))]
+        return {"parent": parent, "children": children}
 
     def series_albums(self, album_id: int) -> list[int]:
         """Ids of all the albums in the same series as ``album_id`` (just itself for a one-shot)."""

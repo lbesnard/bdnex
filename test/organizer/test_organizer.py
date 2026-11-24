@@ -1451,3 +1451,17 @@ def test_a_bad_rule_is_refused_when_the_configuration_is_read():
     for bad in ({"collections": {"nofield .*": "x"}}, {"rewrite": {"series (": "x"}}, {"replace": {"(": "x"}}, {"rewrite": {"collection .*": "x"}}):
         with pytest.raises(ConfigError):
             build_settings({"config_version": 2, "paths": bad})
+
+
+def test_category_is_a_path_field_and_a_version_album_goes_to_the_versions_folder(lib, make_cbz, tmp_path):
+    main = lib.add_album(AlbumInfo("b", "20", "Naruto 1", series=SeriesInfo("b", "s20", "Naruto"), volume=1, language="fr", category="Manga"))
+    version = lib.add_album(AlbumInfo("manual", "v1", "Naruto 1 N&B", series=SeriesInfo("b", "s20", "Naruto"), volume=1, language="fr",
+                                      category="Manga"))
+    lib.set_relation(version, main, "version")
+    path = make_cbz("n.cbz")
+    paths = {"series": "$category/$series/$series - T$volume:02 - $title"}
+    organizer = Organizer(lib, settings_for(tmp_path, paths=paths), force=True)
+    assert organizer._destination(path, "cbz", main, MOVE).endswith("Manga/Naruto/Naruto - T01 - Naruto 1.cbz")
+    spare = organizer._destination(path, "cbz", version, MOVE)
+    assert "_versions" in spare or organizer.settings.duplicates.versions_dir in spare
+    assert spare.endswith("Manga/Naruto/Naruto - T01 - Naruto 1 N&B.cbz"), spare

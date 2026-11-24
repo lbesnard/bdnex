@@ -146,3 +146,40 @@ def test_relocate_pretend_and_collisions_change_nothing(lib, make_cbz, tmp_path)
     lib.conn.execute("INSERT INTO files(path, md5, size, format) VALUES ('/new/A.cbz', 'x', 1, 'cbz')")
     result = lib.relocate(str(tmp_path), "/new")
     assert result["collisions"] == ["/new/A.cbz"] and lib.get_file(path)
+
+
+def test_category_is_a_hand_edit_that_survives_a_new_import_and_can_be_searched(lib):
+    album = lib.add_album(nains())
+    assert lib.get_album(album)["category"] is None
+    lib.edit_album(album, {"category": "Manga"})
+    lib.add_album(nains(title="Redwin (re-read)"))  # the same album read again from the site
+    assert lib.get_album(album)["category"] == "Manga"
+    assert [a["id"] for a in lib.query(["category:manga"])] == [album]
+
+
+def test_a_version_links_to_its_parent_and_the_links_never_loop(lib):
+    parent = lib.add_album(nains())
+    version = lib.add_album(nains(source_id="2", title="Redwin N&B"))
+    lib.set_relation(version, parent, "version")
+    assert lib.get_album(version)["relation"] == "version" and lib.get_album(version)["parent_id"] == parent
+    related = lib.related_albums(parent)
+    assert related["parent"] is None and [c["id"] for c in related["children"]] == [version]
+    assert lib.related_albums(version)["parent"]["id"] == parent
+    assert [a["id"] for a in lib.query(["relation:version"])] == [version]
+    with pytest.raises(ValueError):
+        lib.set_relation(parent, version, "child")  # parent -> version -> parent
+    with pytest.raises(ValueError):
+        lib.set_relation(parent, parent, "version")
+    with pytest.raises(ValueError):
+        lib.set_relation(version, parent, "twin")
+    lib.set_relation(version, None)
+    assert lib.get_album(version)["parent_id"] is None and lib.get_album(version)["relation"] is None
+
+
+def test_deleting_the_parent_keeps_the_child(lib):
+    parent = lib.add_album(nains())
+    child = lib.add_album(nains(source_id="3", title="Hors série"))
+    lib.set_relation(child, parent, "child")
+    with lib.conn:
+        lib.conn.execute("DELETE FROM albums WHERE id = ?", (parent,))
+    assert lib.get_album(child)["parent_id"] is None

@@ -31,6 +31,7 @@ FIELDS = (
     ("subseries", "Subfolder", "a subfolder inside the series, for an album the site does not list"),
     ("collection", "Collection", "overrides the site's own Collection, and any paths.collections rule"),
     ("cycle", "Cycle", "overrides the site's own Cycle"),
+    ("category", "Category", "BD, Manga, Comics...: `$category` in the path templates"),
     ("publisher", "Publisher", ""),
     ("isbn", "ISBN", ""),
     ("year", "Year", "four digits"),
@@ -49,7 +50,7 @@ FIELDS = (
     ("summary", "Summary", ""),
 )
 # what files of one series have in common (volume, the special tag, title, subfolder, cycle, isbn, pages, month and day vary file to file)
-SHARED = ("series", "collection", "publisher", "year", "language", "format", *CREDIT_KEYS, "genres", "summary")
+SHARED = ("series", "collection", "category", "publisher", "year", "language", "format", *CREDIT_KEYS, "genres", "summary")
 
 
 class FormError(ValueError):
@@ -88,7 +89,7 @@ def form_of(library: Library, album_id: int) -> dict[str, str]:
     """The form of an album already written by hand (to edit it)."""
     album = library.get_album(album_id) or {}
     credits = album.get("credits") or {}
-    values = {key: _str(album, key) for key in ("series", "volume", "alternate_number", "title", "subseries", "collection", "cycle",
+    values = {key: _str(album, key) for key in ("series", "volume", "alternate_number", "title", "subseries", "collection", "cycle", "category",
                                                   "publisher", "isbn", "year", "month", "day", "language", "format", "pages", "summary")}
     values.update({key: "; ".join(credits.get(role, [])) for key, role in CREDIT_KEYS.items()})
     values["genres"] = "; ".join(album.get("genres") or [])
@@ -130,7 +131,7 @@ def _info(values: dict[str, str], path: str, volume: Optional[int]) -> AlbumInfo
         day=_number(values.get("day", ""), "the day", 1, 31),
         pages=_number(values.get("pages", ""), "the pages", 0, 99999),
         language=_text(values, "language"), format=_text(values, "format"), subseries=_text(values, "subseries"),
-        collection=_text(values, "collection"), cycle=_text(values, "cycle"),
+        collection=_text(values, "collection"), cycle=_text(values, "cycle"), category=_text(values, "category"),
         summary=_text(values, "summary"), credits=credits, genres=_names(values.get("genres", "")))
 
 
@@ -168,7 +169,7 @@ def update(library: Library, album_id: int, values: dict[str, str]) -> None:
                                "volume": new.volume, "alternate_number": new.alternate_number, "publisher": new.publisher,
                                "isbn": new.isbn, "year": new.year, "month": new.month, "day": new.day, "pages": new.pages,
                                "language": new.language, "format": new.format, "subseries": new.subseries,
-                               "collection": new.collection, "cycle": new.cycle,
+                               "collection": new.collection, "cycle": new.cycle, "category": new.category,
                                "summary": new.summary, "genres": new.genres,
                                "credits": {role: new.credits.get(role, []) for role in CREDIT_ROLES}}
     if album.get("kind") == "series" and new.series is not None and new.series.name != album.get("series"):

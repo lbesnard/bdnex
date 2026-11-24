@@ -813,7 +813,7 @@ class Organizer:
             return FileResult(path, SKIPPED, note="the path template is empty")
         *folders, name = rendered.parts
         extension = f".{fmt}" if as_is or tagged_pdf else ".cbz"  # an untouched file keeps what it is
-        if spare:  # an extra version of the album: same name, in the spare versions folder
+        if spare or album.get("relation") == "version":  # an extra version of the album (or an album that is a version of another): in the spare versions folder
             return str(root.joinpath(self.settings.duplicates.versions_dir, *folders, name + extension))
         return str(root.joinpath(*folders, name + extension))
 

@@ -25,9 +25,9 @@ from bdnex.ui.output import add_pretend
 
 MAX_BULK = 2000  # albums one edit may change (the web page has the same limit)
 INT_FIELDS = {"volume": (0, 9999), "year": (0, 9999), "month": (1, 12), "day": (1, 31), "pages": (0, 99999)}
-TEXT_FIELDS = ("title", "alternate_number", "publisher", "language", "format", "isbn", "subseries", "collection", "cycle", "summary")
+TEXT_FIELDS = ("title", "alternate_number", "publisher", "language", "format", "isbn", "subseries", "collection", "cycle", "category", "summary")
 ORDER = ("series", "volume", "title", "alternate_number", "publisher", "year", "month", "day", "pages",
-         "language", "format", "isbn", "subseries", "collection", "cycle", "summary", "credits", "genres")
+         "language", "format", "isbn", "subseries", "collection", "cycle", "category", "summary", "credits", "genres")
 
 HEADER = """\
 # bdnex edit: change the values you want, save and close the editor.

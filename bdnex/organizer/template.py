@@ -125,12 +125,13 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
         # (the organizer applies it: it needs the file's path) wins over the site's value, but never over a hand-set one
         "collection": album.get("collection") or edition.get("Collection") or "",
         "cycle": album.get("cycle") or edition.get("Cycle") or "",  # the site's own "Cycle", unless overridden by hand
+        "category": album.get("category") or "",  # hand-set (`bdnex edit`, the review screen): BD, Manga, Comics...
         "subseries": album.get("subseries") or "",  # hand-set (`bdnex edit`): a subfolder inside the series, for an album the site does not list
     }
 
 
 FIELD_NAMES = ("kind", "series", "title", "volume", "special", "language", "year", "publisher", "isbn", "genre", "authors",
-               "writer", "penciller", "colorist", "collection", "cycle", "subseries")  # what `fields_for` provides (a test keeps the two together)
+               "writer", "penciller", "colorist", "collection", "cycle", "subseries", "category")  # what `fields_for` provides (a test keeps the two together)
 
 
 FUNCTION = re.compile(r"%(\w+)\{")
