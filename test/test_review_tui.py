@@ -211,7 +211,7 @@ def test_keys_decide_and_each_decision_is_saved_at_once(env):
         await pilot.press("l")  # the file without album: leave it
 
     result, _ = drive(db, script)
-    assert [row[7] for row in result["cells"]] == ["unlinked", "keep", "left"]
+    assert [row[7] for row in result["cells"]] == ["unlinked", "kept", "no album online"]
     assert result["app"].decided == {"unlinked": 1, "keep": 1, "left": 1}
     with Library(db) as lib:
         assert lib.get_file(files["wrong"])["album_id"] is None and lib.last_import(files["wrong"])["outcome"] == "skipped"

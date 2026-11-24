@@ -254,10 +254,14 @@ class ColumnsMixin:
             return Text(f"{spin} linked · fetching {now - row.started_at:.0f}s" if row.started_at else
                         f"linked · queued {now - row.queued_at:.0f}s", style="yellow")
         if row.status:
-            return Text(row.status, style=t.STATUS_STYLE.get(row.status, ""))
+            return Text(t.STATUS_WORD.get(row.status, row.status), style=t.STATUS_STYLE.get(row.status, ""))
         if row.message.startswith(("refused", "failed")):
             return Text(row.message.split(":")[0], style="bold red")
-        return Text(t.KIND_WORD.get(row.kind, row.kind) + (f" · reviewed: {row.previous}" if row.previous else ""), style=t.KIND_STYLE.get(row.kind, ""))
+        if row.previous:  # decided before (the `checked` mark): what you said then
+            said = row.previous.split(":")[0]
+            word = {"keep": "kept", "unlink": "unlinked", "other": "linked", "leave": "no album online" if row.album_id is None else "left"}.get(said, said)
+            return Text(f"reviewed · {word}", style="green")
+        return Text(t.KIND_WORD.get(row.kind, row.kind) + "", style=t.KIND_STYLE.get(row.kind, ""))
 
     def sort_key(self, index: int, row):
         """What the column ``index`` sorts by; ``None`` puts the row after the others, whatever the direction."""

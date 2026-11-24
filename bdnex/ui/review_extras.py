@@ -11,7 +11,8 @@ import logging
 import os
 from typing import Optional
 
-from textual.widgets import Button
+from rich.text import Text
+from textual.widgets import Button, Static
 
 from bdnex.library import review_batch as batch
 from bdnex.ui import review_panels as panels
@@ -35,6 +36,29 @@ class ReviewExtras:
     folder_bad: dict = {}
     folder_current = ""
     counts_due = False
+
+    # -- a line of tips at the bottom (a new one every few seconds; `?` has them all)
+    def start_tips(self) -> None:
+        self.tip_at = 0
+        self.query_one("#tips").display = bool(self.view_extra.get("tips", True))
+        self.show_tip()
+        self.set_interval(9, self.next_tip)
+
+    def show_tip(self) -> None:
+        with contextlib.suppress(Exception):
+            self.query_one("#tips", Static).update(Text(f"Tip: {panels.TIPS[self.tip_at % len(panels.TIPS)]}   (? help · Ctrl+P commands)"))
+
+    def next_tip(self) -> None:
+        self.tip_at += 1
+        self.show_tip()
+
+    def action_tips(self) -> None:
+        tips = self.query_one("#tips")
+        tips.display = not tips.display
+        self.remember(tips=tips.display)
+
+    def action_help(self) -> None:
+        self.push_screen(panels.HelpScreen())
 
     # -- the layout as it was left (sizes of the panes dragged with the mouse, the tab of the left panel)
     def restore_layout(self) -> None:
@@ -63,6 +87,9 @@ class ReviewExtras:
 
         yield from super().get_system_commands(screen)
         for title, help_text, callback in (
+                ("Help: every key", "(?)", self.action_help),
+                ("Tips line: show or hide", "the line of tips at the bottom", self.action_tips),
+                ("Columns: choose what the table shows", "(C)", self.action_columns),
                 ("Folders: show or hide the left panel", "the folders, the organised folders, the filters (f)", self.action_folders),
                 ("Folder: mark it reviewed", "every file of the folder on the screen (R)", self.action_reviewed_folder),
                 ("Duplicates: the other files of this album", "trash, make main, keep as a version (D)", self.action_duplicates),
@@ -255,15 +282,15 @@ class ReviewExtras:
     def open_selection(self, kind: str, value, title: str) -> None:
         self.open_selections([(kind, value)], title)
 
-    def open_selections(self, picks: list, title: str) -> None:
-        """The files of one or several selections: folders and ``organised`` folders are alternatives, a group's values are alternatives, different
-        groups go together."""
+    def open_selections(self, picks: list, title: str, page: int = 0) -> None:
+        """The files of one or several selections, one page (a batch size) at a time: folders and ``organised`` folders are alternatives, a group's
+        values are alternatives, different groups go together. ``n`` and ``b`` turn the pages."""
         only = picks[0] if len(picks) == 1 else None
         self.folder_current = only[1] if only and only[0] == "folder" else ""
         self.say(f"Reading {title}...")
-        self.run_worker(lambda: self.weigh_selection(picks, title), thread=True, group="folder", exclusive=True)
+        self.run_worker(lambda: self.weigh_selection(picks, title, page), thread=True, group="folder", exclusive=True)
 
-    def weigh_selection(self, picks: list, title: str) -> None:
+    def weigh_selection(self, picks: list, title: str, page: int = 0) -> None:
         import time
 
         from bdnex.library import Library, browse
@@ -271,24 +298,44 @@ class ReviewExtras:
         started = time.monotonic()
         try:
             with Library.for_settings(self.settings, readonly=True) as library:
-                rows = browse.rows_for_many(library, self.settings, picks, self.planned)
+                rows = browse.rows_for_many(library, self.settings, picks, self.planned, self.batch_size, page * self.batch_size)
         except Exception as err:
             self.call_from_thread(self.show_error, str(err))
             return
-        self.call_from_thread(self.show_folder, title, rows, time.monotonic() - started)
+        rows.selection = (picks, title, page)
+        self.call_from_thread(self.show_folder, title, rows, time.monotonic() - started, page)
 
-    def show_folder(self, title: str, rows, seconds: float) -> None:
-        """The files of a selection as a batch of their own: ``b`` and ``n`` still go back and forth between the batches."""
-        self.batches.append(rows)
-        self.batch_totals.append(len(rows))
-        self.at = len(self.batches) - 1
-        self.number = self.at + 1
-        self.display(rows, f"{title}: {len(rows)} file(s) in {seconds:.2f} s")
-        below = getattr(rows, "total", len(rows))
-        if below > len(rows):
-            self.notify(f"{below} files: the first {len(rows)} are shown. Open a subfolder or add a filter for the others.", timeout=6)
+    def show_folder(self, title: str, rows, seconds: float, page: int = 0) -> None:
+        """The files of a selection as a batch of their own (a later page replaces the page before it): ``b`` and ``n`` turn the pages, and,
+        past the first and last page, go back and forth between the batches."""
+        total = getattr(rows, "total", len(rows))
+        if page > 0 and self.batches:
+            self.batches[self.at] = rows
+            self.batch_totals[self.at] = len(rows)
+        else:
+            self.batches.append(rows)
+            self.batch_totals.append(len(rows))
+            self.at = len(self.batches) - 1
+            self.number = self.at + 1
+        first = page * self.batch_size + 1
+        pages = max(1, -(-total // self.batch_size))
+        where = f"{first}-{first + len(rows) - 1} of {total}" if rows else "none"
+        self.display(rows, f"{title}: {where}" + (f" · page {page + 1}/{pages}: n and b turn the pages" if pages > 1 else "") + f" · {seconds:.2f} s")
         if title in self.folder_bad:
             self.notify(f"{title}: {self.folder_bad[title]}", severity="warning", timeout=6)
+
+    def page_step(self, step: int) -> bool:
+        """``n`` / ``b`` inside a selection: the next or previous page of it. False when there is no further page that way (the batches go on)."""
+        selection = getattr(self.rows, "selection", None)
+        if not selection or self.loading:
+            return False
+        picks, title, page = selection
+        total = getattr(self.rows, "total", 0)
+        new = page + step
+        if new < 0 or new * self.batch_size >= total:
+            return False
+        self.open_selections(picks, title, new)
+        return True
 
     def action_reviewed_folder(self) -> None:
         """Everything in the folder on the screen is looked at: marked reviewed (a flagged match is kept, nothing is moved or unlinked)."""

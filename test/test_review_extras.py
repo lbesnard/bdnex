@@ -450,3 +450,78 @@ def test_the_panes_can_be_resized_with_the_mouse_and_the_sizes_and_tab_are_remem
         saved = json.loads(lib.get_meta("review.view"))
         assert saved["sizes"]["folderpane"] == seen["after"] and saved["tab"] == "tab-moves"
         assert saved["sizes"]["detailrow"] == seen["detail"]
+
+
+def test_a_click_on_a_triangle_opens_the_folder_and_a_filter_group(env):
+    db, root, paths = env
+    seen = {}
+
+    async def opens(pilot, selector, node, offsets):
+        """Click along the node's line until it is open (the arrow is a few cells in, depending on the depth); a click is given time to act."""
+        for x in offsets:
+            await pilot.click(selector, offset=(x, node.line))
+            for _ in range(80):  # up to four seconds: a loaded machine is slow, and a second click would close it again
+                await pilot.pause(0.05)
+                if node.is_expanded:
+                    return True
+        return False
+
+    async def script(app, pilot, lib):
+        series = [n for n in app.folder_tree.root.children if "Series" in str(n.label)][0]
+        assert not series.is_expanded
+        seen["folder"] = await opens(pilot, "#foldertree", series, range(2, 9))
+        seen["filter"] = await opens(pilot, "#facettree", app.facet_tree.root.children[1], range(0, 6))  # Kind
+
+    drive(db, root, script)
+    assert seen == {"folder": True, "filter": True}
+
+
+def test_n_and_b_turn_the_pages_of_a_selection_fifty_at_a_time_by_default(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series")  # 5 files, 2 to a page
+        await settle(app, pilot)
+        seen["p1"] = [os.path.basename(r.path) for r in app.rows]
+        seen["title1"] = app.sub_title
+        await pilot.press("n")
+        await settle(app, pilot)
+        seen["p2"] = [os.path.basename(r.path) for r in app.rows]
+        await pilot.press("n")
+        await settle(app, pilot)
+        seen["p3"] = [os.path.basename(r.path) for r in app.rows]
+        await pilot.press("b")
+        await settle(app, pilot)
+        seen["back"] = [os.path.basename(r.path) for r in app.rows]
+        await pilot.press("2")  # a sort keeps the page and the total
+        await settle(app, pilot)
+        await pilot.press("n")
+        await settle(app, pilot)
+        seen["after_sort"] = [os.path.basename(r.path) for r in app.rows]
+
+    drive(db, root, script, size=2)
+    assert len(seen["p1"]) == 2 and len(seen["p2"]) == 2 and len(seen["p3"]) == 1
+    assert "1-2 of 5" in seen["title1"] and "page 1/3" in seen["title1"]
+    assert seen["back"] == seen["p2"] and len(seen["after_sort"]) == 1  # sorted, and `n` still goes to the 3rd page
+    assert not set(seen["p1"]) & set(seen["p2"]) and not set(seen["p2"]) & set(seen["p3"])  # no file twice
+
+
+def test_a_line_of_tips_and_a_help_screen_say_how_to_use_it(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        seen["tip"] = str(app.query_one("#tips").render())
+        app.next_tip()
+        seen["next"] = str(app.query_one("#tips").render())
+        await pilot.press("question_mark")
+        await pilot.pause()
+        seen["help"] = type(app.screen).__name__
+        await pilot.press("escape")
+        await pilot.pause()
+        seen["closed"] = type(app.screen).__name__ != "HelpScreen"
+
+    drive(db, root, script)
+    assert seen["tip"].startswith("Tip: Double-click a column header") and seen["next"] != seen["tip"]
+    assert seen["help"] == "HelpScreen" and seen["closed"]

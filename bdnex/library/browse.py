@@ -17,16 +17,18 @@ from typing import Any, Optional
 
 from bdnex.library.review_batch import CHECKED, Batch, Row, folder_of
 
-LIMIT = 1000  # rows drawn at once: the table is fast to fill up to this, and a screen can not show more anyway; the filters narrow it
+LIMIT = 50  # rows to a page by default (the screen passes its batch size): `n` and `b` turn the pages
 NONE = "(none)"
 
-STATES = (("needs attention", "not reviewed, and no album or a doubtful match"), ("unreviewed", "not reviewed yet"), ("reviewed", "reviewed"), ("linked", "linked to an album"), ("unmatched", "no album"),
-          ("doubtful", "flagged: the match is doubtful"), ("duplicates", "several files for one album"), ("versions", "a version or child of another album"),
-          ("damaged", "the file is damaged"))
+STATES = (("needs attention", "not reviewed, and no album or a doubtful match"), ("unreviewed", "not reviewed yet"),
+          ("reviewed", "you looked at it"), ("linked", "linked to an album"), ("no album", "linked to no album"),
+          ("no album online", "reviewed, and no album: nothing exists online for it"), ("doubtful", "flagged: the match is doubtful"),
+          ("duplicates", "several files for one album"), ("versions", "a version or child of another album"), ("damaged", "the file is damaged"))
 CHECKED_SQL = "EXISTS (SELECT 1 FROM file_attrs x WHERE x.file_id = f.id AND x.key = 'checked')"
 STATE_SQL = {
-    "needs attention": f"(NOT {CHECKED_SQL} AND (f.album_id IS NULL OR f.review IS NOT NULL))", "unreviewed": f"NOT {CHECKED_SQL}", "reviewed": CHECKED_SQL, "linked": "f.album_id IS NOT NULL", "unmatched": "f.album_id IS NULL",
-    "doubtful": "f.review IS NOT NULL",
+    "needs attention": f"(NOT {CHECKED_SQL} AND (f.album_id IS NULL OR f.review IS NOT NULL))", "unreviewed": f"NOT {CHECKED_SQL}",
+    "reviewed": CHECKED_SQL, "linked": "f.album_id IS NOT NULL", "no album": "f.album_id IS NULL",
+    "no album online": f"({CHECKED_SQL} AND f.album_id IS NULL)", "doubtful": "f.review IS NOT NULL",
     "duplicates": "(f.spare = 1 OR f.album_id IN (SELECT album_id FROM files WHERE album_id IS NOT NULL GROUP BY album_id HAVING COUNT(*) > 1))",
     "versions": "a.relation IS NOT NULL", "damaged": "f.corrupted = 1"}
 JOINS = "FROM files f LEFT JOIN albums a ON a.id = f.album_id LEFT JOIN series s ON s.id = a.series_id"
@@ -143,26 +145,27 @@ def prefix_range(folder: str) -> tuple[str, str]:
     return low, low[:-1] + chr(ord("/") + 1)
 
 
-def rows_for(library, settings, kind: str, value: Any, planned: Optional[dict[int, str]] = None, limit: int = LIMIT) -> Batch:
-    """The rows of one selection (at most ``limit``, in path order); ``.total`` is how many there are in all."""
-    return rows_for_many(library, settings, [(kind, value)], planned, limit)
+def rows_for(library, settings, kind: str, value: Any, planned: Optional[dict[int, str]] = None, limit: int = LIMIT, offset: int = 0) -> Batch:
+    """The rows of one selection (``limit`` of them from ``offset``, in path order); ``.total`` is how many there are in all."""
+    return rows_for_many(library, settings, [(kind, value)], planned, limit, offset)
 
 
-def _planned_rows(library, ids: list[int], planned: dict[int, str], limit: int) -> Batch:
-    """The files at ``ids``, in the order of where a move would put them (the first ``limit``)."""
+def _planned_rows(library, ids: list[int], planned: dict[int, str], limit: int, offset: int = 0) -> Batch:
+    """The files at ``ids``, in the order of where a move would put them (``limit`` of them from ``offset``)."""
     ids = sorted(ids, key=lambda i: planned[i].casefold())
+    page = ids[offset:offset + limit]
     rows = []
-    for start in range(0, min(len(ids), limit), 500):
-        chunk = ids[start:start + 500][:limit - start]
+    for start in range(0, len(page), 500):
+        chunk = page[start:start + 500]
         rows += library.conn.execute(f"{SELECT} WHERE f.id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
-    order = {i: n for n, i in enumerate(ids)}
+    order = {i: n for n, i in enumerate(page)}
     rows.sort(key=lambda r: order[r["id"]])
     batch = _rows(library, rows, planned)
     batch.total = len(ids)
     return batch
 
 
-def rows_for_many(library, settings, selections: list, planned: Optional[dict[int, str]] = None, limit: int = LIMIT) -> Batch:
+def rows_for_many(library, settings, selections: list, planned: Optional[dict[int, str]] = None, limit: int = LIMIT, offset: int = 0) -> Batch:
     """The files of several selections: folders (and organised folders) are alternatives, the values of one filter group are alternatives, and
     different kinds go together (these folders AND this genre AND not reviewed yet)."""
     conn = library.conn
@@ -187,7 +190,7 @@ def rows_for_many(library, settings, selections: list, planned: Optional[dict[in
         prefixes = [move.rstrip("/") + "/" if move else "" for move in moves]
         ids = [i for i, dest in (planned or {}).items() if any(not prefix or dest.startswith(prefix) for prefix in prefixes)]
         if not parts and not groups:
-            return _planned_rows(library, ids, planned or {}, limit)  # only organised folders: in the order a move would give
+            return _planned_rows(library, ids, planned or {}, limit, offset)  # only organised folders: in the order a move would give
         conn.execute("CREATE TEMP TABLE IF NOT EXISTS plansel(id INTEGER PRIMARY KEY)")
         conn.execute("DELETE FROM plansel")
         conn.executemany("INSERT INTO plansel(id) VALUES (?)", [(i,) for i in ids])
@@ -201,7 +204,7 @@ def rows_for_many(library, settings, selections: list, planned: Optional[dict[in
         parts.append("(" + " OR ".join(conditions) + ")")
     where = " AND ".join(parts) or "1"
     total = conn.execute(f"SELECT COUNT(*) {JOINS} WHERE {where}", params).fetchone()[0]
-    rows = conn.execute(f"{SELECT} WHERE {where} ORDER BY f.path LIMIT ?", [*params, limit]).fetchall()
+    rows = conn.execute(f"{SELECT} WHERE {where} ORDER BY f.path LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()
     batch = _rows(library, rows, planned)
     batch.total = total
     return batch

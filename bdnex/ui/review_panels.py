@@ -144,7 +144,7 @@ class TickTree(Tree):
     async def _on_click(self, event) -> None:
         """Ctrl-click ticks the entry under the mouse (and does not open it)."""
         if not event.ctrl:
-            return await super()._on_click(event)
+            return  # (the tree's own click handler runs after this one: calling it here too would open a folder and shut it again)
         line = event.style.meta.get("line", -1)
         node = self.get_node_at_line(line) if line >= 0 else None
         if node is not None:
@@ -286,6 +286,55 @@ class FacetTree(TickTree):
 
     def selections(self) -> list[tuple[str, object]]:
         return [("facet", key) for key in sorted(self.ticked)]
+
+
+TIPS = (
+    "Double-click a column header to change what it shows · C picks all the columns",
+    "Drag the thin bars between the panes to resize them (the sizes are remembered)",
+    "Space or ctrl-click ticks a folder or a filter · 'Show ticked' shows them together",
+    "Ctrl-click a row marks it · E edits all the marked files at once (series, collection, volumes...)",
+    "n and b turn the pages · f hides the left panel · d hides the album's metadata",
+    "Ctrl+P finds any action or filter: try 'series tintin' or 'state duplicates'",
+    "D shows the other files of an album: trash a duplicate, keep a version · K series or one-shot · V volume",
+    "R marks the folder on the screen as reviewed · l says there is no album online for a file",
+    "? lists every key",
+)
+
+HELP = """\
+LOOKING
+  the left panel: Folders (on disk), Organised (as `bdnex move` would build them), Filters. Click or Enter: all the files below it, 50 at a time
+  n / b      next / previous page (then the next / previous batch)         f   the left panel on or off      d   the album's metadata on or off
+  space or ctrl-click on a folder or a filter: tick it · T or 'Show ticked' shows all the ticked ones together · 'Clear ticks' unticks all
+  C  columns · double-click a header: change that column's field · click a header: sort · 1-9 sort by that column · / ] [  search the page
+  drag the thin bars between the panes to resize · Ctrl+P: every action and every filter value by name · ? this help · q quit
+DECIDING
+  k keep the match · u unlink · l no album online (reviewed, nothing exists for it) · s skip · o another album · t this file's candidates · i address
+  space or ctrl-click on a row marks it · m marks all · x unmarks · a gives the marked files the albums of a series · c covers · p open the page
+FIXING MANY AT ONCE
+  E one form for the marked files (any field, series or one-shot, a volume each) · K series or one-shot · V volume · e edit one by hand
+  D the duplicates of a file: trash, make main, keep as a version or child, wrong album · R the folder on the screen is reviewed
+COLOURS
+  folders: green ● reviewed · red ✖ a file with no album or a doubtful match (!n) · orange ◐ partly reviewed · yellow ○ matched, not reviewed yet
+  State: looks right · to check · looks wrong · no album · then what you decided (kept, linked, unlinked, no album online)
+"""
+
+
+class HelpScreen(ModalScreen):
+    """Every key of the screen, in a few lines."""
+
+    BINDINGS = [Binding("escape", "close", "Close"), Binding("question_mark", "close", "Close", show=False), Binding("q", "close", "Close", show=False)]
+    CSS = """
+    HelpScreen { align: center middle; }
+    #help { width: 96%; height: auto; max-height: 94%; border: round $accent; padding: 1 2; background: $surface; overflow-y: auto; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="help"):
+            yield Static(HELP, markup=False)
+            yield Label(Text("Esc closes", style="dim"))
+
+    def action_close(self) -> None:
+        self.dismiss(None)
 
 
 class FacetCommands(Provider):

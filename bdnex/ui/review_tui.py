@@ -41,7 +41,8 @@ from bdnex.ui import color
 from bdnex.ui.review_extras import ReviewExtras
 from bdnex.ui.review_panels import FacetCommands, Splitter
 
-STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "dim", "skipped": "yellow"}
+STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "green", "skipped": "yellow"}
+STATUS_WORD = {"keep": "kept", "linked": "linked", "unlinked": "unlinked", "left": "no album online", "skipped": "skipped"}  # what a decision of this session is called
 KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "ok": "green"}
 KIND_WORD = {"wrong": "looks wrong", "unconfirmed": "to check", "unmatched": "no album", "ok": "looks right"}  # (what bdnex thinks of the match; `reviewed` is what you did)
 EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
@@ -691,6 +692,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     #detailrow { height: 1fr; min-height: 8; border-top: solid $accent; }
     #detail { width: 1fr; height: 100%; padding: 0 1; overflow-y: auto; }
     #meta { width: 45%; height: 100%; border-left: solid $accent; padding: 0 1; overflow-y: auto; }
+    #tips { height: 1; padding: 0 1; color: $text-muted; background: $boost; }
     #log { height: 7; border-top: solid $accent; padding: 0 1; color: $text-muted; }
     """
     BINDINGS = [
@@ -701,7 +703,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         Binding("O", "other_fzf", "Search with fzf", show=False),
         Binding("i", "ident", "Id / address"),
         Binding("s", "skip", "Skip"),
-        Binding("l", "leave", "Leave"),
+        Binding("l", "leave", "No album online"),
         Binding("p", "page", "Open page"),
         Binding("c", "cover", "Covers"),
         Binding("space", "mark", "Mark"),
@@ -714,6 +716,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         Binding("w", "waiting", "Waiting questions"),
         Binding("e", "edit", "Edit by hand"),
         Binding("C", "columns", "Columns"),
+        Binding("question_mark", "help", "Help"),
         Binding("f", "folders", "Folders on/off"),
         Binding("R", "reviewed_folder", "Folder reviewed"),
         Binding("T", "show_ticked", "Show the ticked"),
@@ -802,6 +805,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
                     yield Static("", id="detail")
                     yield Static("", id="meta")
         yield RichLog(id="log", max_lines=500, wrap=True, markup=False, highlight=False)
+        yield Static("", id="tips")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -815,6 +819,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         self.set_interval(0.15, self.tick_pending)
         self.query_one("#meta").display = bool(self.view_extra.get("meta", True))  # the album's metadata is shown unless `d` hid it
         self.restore_layout()
+        self.start_tips()
         self.start_folders()
         self.load_batch()
 
@@ -1098,7 +1103,9 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         keep = self.current()
         keys = [(self.sort_key(index, row), row) for row in self.rows]
         present = sorted((pair for pair in keys if pair[0] is not None), key=lambda pair: pair[0], reverse=self.sort_reverse)
-        self.rows = [row for _, row in present] + [row for key, row in keys if key is None]  # without a value: last
+        sorted_rows = batch.Batch([row for _, row in present] + [row for key, row in keys if key is None])  # without a value: last
+        sorted_rows.__dict__.update(getattr(self.rows, "__dict__", {}))  # (the total, the page of a selection)
+        self.rows = sorted_rows
         self.batches[self.at] = self.rows
         self.render_table()
         if keep is not None:
@@ -1883,7 +1890,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
             self.refresh_row(row)
 
     def action_next_batch(self) -> None:
-        if self.loading:
+        if self.loading or self.page_step(1):
             return
         if self.at < len(self.batches) - 1:  # came back with `b`: the batch after this one is already known
             self.go_to(self.at + 1)
@@ -1891,7 +1898,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
             self.load_batch()
 
     def action_previous_batch(self) -> None:
-        if self.loading:
+        if self.loading or self.page_step(-1):
             return
         if self.at <= 0:
             self.notify("This is the first batch.", timeout=3)
