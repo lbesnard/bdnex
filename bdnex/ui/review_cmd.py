@@ -72,7 +72,8 @@ def _batch(args, settings, out) -> int:
         except Exception as err:
             print(err, file=sys.stderr)
             return 1
-        decided = review_tui.run(library, settings, build_source, args.batch, args.query, args.unmatched, args.all, args.again, args.verbose)
+        decided = review_tui.run(library, settings, build_source, args.batch, args.query, args.unmatched, args.all, args.again, args.verbose,
+                                  False if args.no_tree else None)
     on = color.enabled(out)
     total = sum(decided.values())
     parts = ", ".join(f"{n} {what}" for what, n in sorted(decided.items()) if n)
@@ -173,6 +174,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                              "is saved at once and the files checked are not shown again: run it again to continue; a query "
                              "limits the files, as in `bdnex ls --files`")
     parser.add_argument("--unmatched", action="store_true", help="with --batch: also the files that have no album")
+    parser.add_argument("--no-tree", action="store_true",
+                        help="with --batch: start with the folder tree hidden (`f` shows it; the screen remembers how you left it)")
     parser.add_argument("--all", action="store_true",
                         help="with --batch: every file of the query, not only the doubtful ones (those come first, then the files "
                              "without album, then the rest): to look through a series, e.g. `--batch 50 series:batman --all`")
@@ -187,8 +190,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     settings = context.settings()
     if settings is None:
         return 1
-    if (args.unmatched or args.all or args.again) and args.batch is None:
-        print("--unmatched, --all and --again go with --batch N (the table).", file=sys.stderr)
+    if (args.unmatched or args.all or args.again or args.no_tree) and args.batch is None:
+        print("--unmatched, --all, --again and --no-tree go with --batch N (the table).", file=sys.stderr)
         return 2
     if args.batch is not None:  # (`--batch 0` is refused by the screen's own check: it used to be read as 'no batch' and start --auto)
         return _batch(args, settings, out)

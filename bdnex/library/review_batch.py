@@ -162,6 +162,36 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
     return rows
 
 
+FOLDER_LIMIT = 300  # a folder with more files than this shows only its own files (the subfolders are opened one by one)
+
+
+def folder_batch(library: Library, settings, folder: str, recursive: bool = True) -> "Batch":
+    """Every file of a folder (and below, when ``recursive``), whatever its state, with what it was decided before: the rows to go through a
+    folder at a time. ``folder`` is the stored folder (``Series/Tintin``). At most :data:`FOLDER_LIMIT` files are weighed: a bigger folder
+    gives its own files only (``rows.total`` still says how many there are below)."""
+    prefix = folder.rstrip("/") + "/" if folder else ""
+    below = sum(1 for (_, path, _) in _stored_below(library, prefix))
+    recursive = recursive and below <= FOLDER_LIMIT
+    rows = next_batch(library, settings, size=10 ** 6, terms=[f"path:{prefix}"] if prefix else [], everything=True, again=True)
+    chosen = Batch()
+    for row in rows:
+        stored = library._store(row.path)
+        if prefix and not stored.startswith(prefix):
+            continue  # `path:` finds the text anywhere in the path
+        if not recursive and "/" in stored[len(prefix):]:
+            continue
+        chosen.append(row)
+    chosen.sort(key=lambda row: (os.path.dirname(row.path).casefold(), os.path.basename(row.path).casefold()))
+    chosen.total = below
+    return chosen
+
+
+def _stored_below(library: Library, prefix: str):
+    from bdnex.library import folders
+
+    return folders.stored_files(library, prefix.rstrip("/"), True)
+
+
 def decide(library: Library, row: Row, action: str, album_id: Optional[int] = None) -> None:
     """Write a decision to the library now: ``keep`` (the flag goes), ``unlink`` (remembered as skipped, so ``import
     --skipped`` decides it again), ``other`` (``album_id``: the file is already linked to it, record that) or ``leave``."""

@@ -223,9 +223,9 @@ Examples:
 Go through the doubtful matches: one by one with both covers, or settled by rule with --auto.
 
 ```text
-usage: bdnex review [-h] [--list] [--json] [--auto] [--batch N] [--unmatched] [--all]
-                    [--again] [--candidates N] [--no-cover] [-y] [-n] [-v]
-                    [--log-file PATH]
+usage: bdnex review [-h] [--list] [--json] [--auto] [--batch N] [--unmatched]
+                    [--no-tree] [--all] [--again] [--candidates N] [--no-cover] [-y]
+                    [-n] [-v] [--log-file PATH]
                     [query ...]
 
 ``bdnex review``: go through the flagged matches one by one, with the file's cover and
@@ -254,6 +254,8 @@ options:
                    once and the files checked are not shown again: run it again to
                    continue; a query limits the files, as in `bdnex ls --files`
   --unmatched      with --batch: also the files that have no album
+  --no-tree        with --batch: start with the folder tree hidden (`f` shows it; the
+                   screen remembers how you left it)
   --all            with --batch: every file of the query, not only the doubtful ones
                    (those come first, then the files without album, then the rest): to
                    look through a series, e.g. `--batch 50 series:batman --all`

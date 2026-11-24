@@ -38,6 +38,7 @@ from textual.widgets.option_list import Option
 
 from bdnex.library import review_batch as batch
 from bdnex.ui import color
+from bdnex.ui.review_extras import ReviewExtras
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "dim", "skipped": "yellow"}
 KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "ok": "green"}
@@ -669,13 +670,17 @@ class CoverScreen(ModalScreen):
 
 
 # ----------------------------------------------------------------------------- the table
-class ReviewApp(App):
+class ReviewApp(ReviewExtras, App):
     """The table of one batch, the detail of the row under the cursor, and the keys that decide."""
 
     TITLE = "bdnex review"
     CSS = """
     #queue-badge { dock: right; width: auto; height: 1; padding: 0 1; background: red; color: white; text-style: bold; display: none; }
     #loading { height: 2fr; min-height: 8; content-align: center middle; text-align: left; }
+    #main { height: 1fr; }
+    #folderpane { width: 34; border-right: solid $accent; }
+    #foldertree { width: 100%; height: 100%; }
+    #center { width: 1fr; }
     #table { height: 2fr; min-height: 8; }
     #detailrow { height: 1fr; min-height: 8; border-top: solid $accent; }
     #detail { width: 1fr; height: 100%; padding: 0 1; overflow-y: auto; }
@@ -702,6 +707,12 @@ class ReviewApp(App):
         Binding("d", "metadata", "Album metadata panel"),
         Binding("w", "waiting", "Waiting questions"),
         Binding("e", "edit", "Edit by hand"),
+        Binding("f", "folders", "Folders on/off"),
+        Binding("R", "reviewed_folder", "Folder reviewed"),
+        Binding("D", "duplicates", "Duplicates"),
+        Binding("E", "bulk", "Edit the marked files"),
+        Binding("K", "kind", "Series / one-shot"),
+        Binding("V", "volume", "Volume"),
         Binding("b", "previous_batch", "Previous batch"),
         Binding("n", "next_batch", "Next batch"),
         Binding("q", "quit", "Quit"),
@@ -712,8 +723,9 @@ class ReviewApp(App):
     ]
 
     def __init__(self, library, settings, source, size: int = 50, terms=(), unmatched: bool = False,
-                 everything: bool = False, again: bool = False, verbose: int = 0):
+                 everything: bool = False, again: bool = False, verbose: int = 0, tree: Optional[bool] = None):
         super().__init__()
+        self.tree_pref = tree  # None: as it was left last time (``f`` toggles)
         self.verbose = verbose
         self.ui_thread = None
         self.ui_loop = None
@@ -754,11 +766,15 @@ class ReviewApp(App):
     def compose(self) -> ComposeResult:
         yield Header()
         yield Static("", id="queue-badge")
-        yield Static("", id="loading")
-        yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
-        with Horizontal(id="detailrow"):
-            yield Static("", id="detail")
-            yield Static("", id="meta")
+        with Horizontal(id="main"):
+            with Vertical(id="folderpane"):
+                yield Static("reading the folders...", id="foldersloading")
+            with Vertical(id="center"):
+                yield Static("", id="loading")
+                yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
+                with Horizontal(id="detailrow"):
+                    yield Static("", id="detail")
+                    yield Static("", id="meta")
         yield RichLog(id="log", max_lines=500, wrap=True, markup=False, highlight=False)
         yield Footer()
 
@@ -771,6 +787,7 @@ class ReviewApp(App):
         self.hub.ready.add_done_callback(self.list_loaded)
         self.take_the_log()
         self.set_interval(0.15, self.tick_pending)
+        self.start_folders()
         self.load_batch()
 
     def on_unmount(self) -> None:
@@ -1016,7 +1033,7 @@ class ReviewApp(App):
         self.timing = timing
         self.render_table()
         if not self.rows:
-            self.sub_title = "nothing left to check"
+            self.sub_title = "nothing left to check" + self.progress_text()
             self.say("Nothing left to check: every doubtful file has been looked at. "
                      "`bdnex import --skipped --auto=all` decides the unlinked ones again.", "green")
 
@@ -1086,7 +1103,8 @@ class ReviewApp(App):
     def update_title(self) -> None:
         done = sum(1 for row in self.rows if row.status)
         by = f" · by {COLUMNS[self.sort_column][0].lower()} {'▼' if self.sort_reverse else '▲'}" if self.sort_column is not None else ""
-        self.sub_title = f"batch {self.batch_of()} · {done}/{len(self.rows)} checked{by} · {self.timing}".rstrip(" ·")
+        self.sub_title = f"batch {self.batch_of()} · {done}/{len(self.rows)} checked{by} · {self.timing}".rstrip(" ·") + self.progress_text()
+        self.schedule_counts()
 
     def batch_of(self) -> str:
         """``3/53``: this batch and about how many there are (files to check when the run began, by the batch size)."""
@@ -1903,9 +1921,9 @@ class ReviewApp(App):
 
 
 def run(library, settings, source, size: int = 50, terms=(), unmatched: bool = False, everything: bool = False,
-        again: bool = False, verbose: int = 0) -> dict[str, int]:
+        again: bool = False, verbose: int = 0, tree: Optional[bool] = None) -> dict[str, int]:
     """Run the table until the person quits; returns how many files were decided, by decision."""
-    app = ReviewApp(library, settings, source, size, terms, unmatched, everything, again, verbose)
+    app = ReviewApp(library, settings, source, size, terms, unmatched, everything, again, verbose, tree)
     app.finish_fetches = True
     app.run()
     run.unfetched = app.finish_pending_fetches()  # the caller says what is left for `bdnex import --fetch`
