@@ -36,6 +36,27 @@ class ReviewExtras:
     folder_current = ""
     counts_due = False
 
+    # -- the layout as it was left (sizes of the panes dragged with the mouse, the tab of the left panel)
+    def restore_layout(self) -> None:
+        sizes = self.view_extra.get("sizes") or {}
+        with contextlib.suppress(Exception):
+            if sizes.get("folderpane"):
+                self.query_one("#folderpane").styles.width = int(sizes["folderpane"])
+            if sizes.get("facetbox"):
+                self.query_one("#facetbox").styles.height = int(sizes["facetbox"])
+            if sizes.get("detailrow"):
+                self.query_one("#detailrow").styles.height = int(sizes["detailrow"])
+            if self.view_extra.get("tab") in ("tab-folders", "tab-moves"):
+                self.query_one("#trees").active = self.view_extra["tab"]
+
+    def on_splitter_moved(self, event) -> None:
+        self.remember(sizes={"folderpane": self.query_one("#folderpane").size.width, "facetbox": self.query_one("#facetbox").size.height,
+                             "detailrow": self.query_one("#detailrow").size.height})
+
+    def on_tabbed_content_tab_activated(self, event) -> None:
+        if event.pane is not None and event.pane.id in ("tab-folders", "tab-moves") and self.view_extra.get("tab") != event.pane.id:
+            self.remember(tab=event.pane.id)
+
     # -- Ctrl+P: every action of the screen by name (a filter value is found by `FacetCommands`)
     def get_system_commands(self, screen):
         from textual.app import SystemCommand

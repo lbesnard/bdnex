@@ -422,3 +422,31 @@ def test_a_double_click_on_a_header_changes_that_column_s_field_and_the_view_is_
         import json
 
         assert json.loads(lib.get_meta("review.view"))["columns"] == ["file", "series", "vol", "size"]
+
+
+def test_the_panes_can_be_resized_with_the_mouse_and_the_sizes_and_tab_are_remembered(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        seen["before"] = app.query_one("#folderpane").size.width
+        splitter = app.query_one("#split-left")
+        await pilot.mouse_down(splitter)
+        await pilot.hover(None, offset=(60, 10))  # drag to the right
+        await pilot.mouse_up(None, offset=(60, 10))
+        await settle(app, pilot)
+        seen["after"] = app.query_one("#folderpane").size.width
+        app.query_one("#split-detail").drag_to(80, 30)  # (the same, called directly: the height of the detail pane)
+        app.query_one("#split-detail").post_message(review_panels.Splitter.Moved(app.query_one("#split-detail")))
+        app.query_one("#trees").active = "tab-moves"
+        await settle(app, pilot)
+        seen["detail"] = app.query_one("#detailrow").size.height
+
+    drive(db, root, script)
+    assert seen["after"] > seen["before"] + 10
+    with Library(db, root=root) as lib:
+        import json
+
+        saved = json.loads(lib.get_meta("review.view"))
+        assert saved["sizes"]["folderpane"] == seen["after"] and saved["tab"] == "tab-moves"
+        assert saved["sizes"]["detailrow"] == seen["detail"]

@@ -131,7 +131,7 @@ def test_the_batch_options_need_batch(env, capsys):
 
     for flag in ("--all", "--again", "--unmatched"):
         assert review_cmd.run([flag]) == 2
-    assert "go with --batch" in capsys.readouterr().err
+    assert "review screen" in capsys.readouterr().err  # (no terminal here: the screen is not what `bdnex review` opens)
 
 
 def test_an_album_without_series_proposes_nothing():

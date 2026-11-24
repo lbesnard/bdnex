@@ -86,6 +86,9 @@ About 1900 tests; the whole suite takes ~6 minutes, so run the tests of what you
   (disable it). `category` (`$category`) is a hand-set field apart from `kind`; `parent_id` + `relation` (`version` goes to the spare versions folder).
   The left panel (folders / after a move / filters) reads `library/browse.py`: `rows_for` (one indexed query per selection, 1000 rows at most; never
   weigh files one by one for a list), `plan` (where a move puts every file, ~0.1 ms each, in memory, updated from the albums that change), `facets`.
+  The table's columns are a registry in `ui/review_columns.py` (`COLUMN_TYPES`, `ColumnsMixin`: a new field = a row there, a `cell` branch and a sort key); the
+  view (columns, pane sizes, tab, `d` panel) is saved in `meta` under `review.view`. A mixin cannot use `@on`: name handlers `on_<message>`; a Textual app does
+  not receive its widgets' clicks (subclass the widget, see `ReviewTable`). Folder colours: red = a file to look at (no album / doubtful), not "unreviewed".
   Schema v17 is indexes only. Long work runs in a worker with its own read-only `Library`.
   A series / one-shot choice by hand is `Library.assign_series` / `make_oneshot` and is stored in the album's edits so a re-import keeps it.
 - Aliases (`aliases: ["NAME = COMMAND  # WHY"]`, `commands.expand_alias`) are a shorter way to type a bdnex command, nothing else: never

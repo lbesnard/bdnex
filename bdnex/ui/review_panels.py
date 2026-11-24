@@ -32,6 +32,56 @@ def node_label(node: "folders.FolderNode", ticked: bool = False) -> Text:
                 style=STATUS_STYLE[node.status])
 
 
+class Splitter(Static):
+    """A handle between two panes: press on it and drag with the mouse to resize them (the pane the handle is next to takes the new size).
+
+    ``target``: the selector of the pane that grows or shrinks; ``axis`` ``"x"``: the pane is to the left of the handle (its width follows the
+    mouse); ``"y"``: the pane is below the handle (its height follows the mouse). The sizes are kept in the saved view."""
+
+    class Moved(Message):
+        def __init__(self, splitter: "Splitter") -> None:
+            super().__init__()
+            self.splitter = splitter
+
+    DEFAULT_CSS = """
+    Splitter { background: $accent 35%; }
+    Splitter:hover { background: $accent; }
+    Splitter.x { width: 1; height: 100%; }
+    Splitter.y { height: 1; width: 100%; }
+    """
+
+    def __init__(self, target: str, axis: str, minimum: int = 8, **kwargs) -> None:
+        super().__init__("", classes=axis, **kwargs)
+        self.target, self.axis, self.minimum, self.dragging = target, axis, minimum, False
+
+    def on_mouse_down(self, event) -> None:
+        self.dragging = True
+        self.capture_mouse()
+        event.stop()
+
+    def on_mouse_move(self, event) -> None:
+        if self.dragging:
+            self.drag_to(event.screen_x, event.screen_y)
+            event.stop()
+
+    def on_mouse_up(self, event) -> None:
+        if self.dragging:
+            self.dragging = False
+            self.release_mouse()
+            self.post_message(self.Moved(self))
+            event.stop()
+
+    def drag_to(self, x: int, y: int) -> None:
+        """Resize the pane so that the handle is at screen position ``(x, y)`` (never smaller than ``minimum``, nor larger than the screen less room)."""
+        pane = self.app.query_one(self.target)
+        if self.axis == "x":
+            width = max(self.minimum, min(x - pane.region.x, self.app.size.width - 30))
+            pane.styles.width = width
+        else:
+            height = max(self.minimum // 2, min(pane.region.bottom - y, self.app.size.height - 12))
+            pane.styles.height = height
+
+
 class TickTree(Tree):
     """A tree whose entries can be ticked (space, or ctrl-click: like the marks of the table); the app shows the files of all the ticked ones.
 

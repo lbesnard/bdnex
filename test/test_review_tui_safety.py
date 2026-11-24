@@ -300,9 +300,12 @@ def test_d_shows_the_metadata_of_the_album_beside_the_detail_and_e_changes_it(en
 
     async def script(app, pilot):
         panel = app.query_one("#meta")
-        seen["closed"] = panel.display
+        seen["shown"] = panel.display  # shown by default
         app.query_one("DataTable").move_cursor(row=0)  # linked to the album "Redwin" (series Nains, T1, 2015, Soleil)
-        await pilot.press("d")
+        await pilot.press("d")  # hides it
+        await pilot.pause()
+        seen["hidden"] = panel.display
+        await pilot.press("d")  # shows it again
         await pilot.pause()
         seen["open"] = panel.display
         seen["text"] = str(panel.render())
@@ -319,7 +322,7 @@ def test_d_shows_the_metadata_of_the_album_beside_the_detail_and_e_changes_it(en
         seen["row"] = (row.album, str(panel.render()))
 
     drive(db, script)
-    assert seen["closed"] is False and seen["open"] is True
+    assert seen["shown"] is True and seen["hidden"] is False and seen["open"] is True
     assert "Redwin" in seen["text"] and "Nains" in seen["text"] and "2015" in seen["text"] and "e edits these" in seen["text"]
     assert seen["form"] == "EditScreen" and "series" in seen["fields"] and "title" in seen["fields"]  # the series can be renamed too (it asks first)
     assert "Redwin de la Forge" in seen["row"][0] and "2016" in seen["row"][1] and "changed by you" in seen["row"][1]  # the table and the panel follow

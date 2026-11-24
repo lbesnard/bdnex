@@ -39,7 +39,7 @@ from textual.widgets.option_list import Option
 from bdnex.library import review_batch as batch
 from bdnex.ui import color
 from bdnex.ui.review_extras import ReviewExtras
-from bdnex.ui.review_panels import FacetCommands
+from bdnex.ui.review_panels import FacetCommands, Splitter
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "dim", "skipped": "yellow"}
 KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "ok": "green"}
@@ -789,12 +789,15 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
                     with TabPane("Organised", id="tab-moves"):
                         with Vertical(id="moveslot"):
                             yield Static("working out how `bdnex move` would organise the files...", id="movewait")
+                yield Splitter("#facetbox", "y", id="split-filters")
                 with Vertical(id="facetbox"):
                     with Vertical(id="facetslot"):
                         yield Static("Filters: reading...", id="facetwait")
+            yield Splitter("#folderpane", "x", id="split-left")
             with Vertical(id="center"):
                 yield Static("", id="loading")
                 yield ReviewTable(id="table", cursor_type="row", zebra_stripes=True)
+                yield Splitter("#detailrow", "y", id="split-detail")
                 with Horizontal(id="detailrow"):
                     yield Static("", id="detail")
                     yield Static("", id="meta")
@@ -811,6 +814,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         self.take_the_log()
         self.set_interval(0.15, self.tick_pending)
         self.query_one("#meta").display = bool(self.view_extra.get("meta", True))  # the album's metadata is shown unless `d` hid it
+        self.restore_layout()
         self.start_folders()
         self.load_batch()
 
