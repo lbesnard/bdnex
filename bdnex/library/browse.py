@@ -144,31 +144,62 @@ def prefix_range(folder: str) -> tuple[str, str]:
 
 
 def rows_for(library, settings, kind: str, value: Any, planned: Optional[dict[int, str]] = None, limit: int = LIMIT) -> Batch:
-    """The rows of a selection (at most ``limit``, in path order); ``.total`` is how many there are in all."""
+    """The rows of one selection (at most ``limit``, in path order); ``.total`` is how many there are in all."""
+    return rows_for_many(library, settings, [(kind, value)], planned, limit)
+
+
+def _planned_rows(library, ids: list[int], planned: dict[int, str], limit: int) -> Batch:
+    """The files at ``ids``, in the order of where a move would put them (the first ``limit``)."""
+    ids = sorted(ids, key=lambda i: planned[i].casefold())
+    rows = []
+    for start in range(0, min(len(ids), limit), 500):
+        chunk = ids[start:start + 500][:limit - start]
+        rows += library.conn.execute(f"{SELECT} WHERE f.id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+    order = {i: n for n, i in enumerate(ids)}
+    rows.sort(key=lambda r: order[r["id"]])
+    batch = _rows(library, rows, planned)
+    batch.total = len(ids)
+    return batch
+
+
+def rows_for_many(library, settings, selections: list, planned: Optional[dict[int, str]] = None, limit: int = LIMIT) -> Batch:
+    """The files of several selections: folders (and organised folders) are alternatives, the values of one filter group are alternatives, and
+    different kinds go together (these folders AND this genre AND not reviewed yet)."""
     conn = library.conn
-    if kind == "folder":
-        if value:
-            low, high = prefix_range(value)
-            where, params = "f.path >= ? AND f.path < ?", [low, high]
-        else:
-            where, params = "1", []
-    elif kind == "facet":
-        where, params = _text_condition(*value)
-    elif kind == "planned":
-        ids = sorted((i for i, dest in (planned or {}).items() if not value or dest.startswith(value.rstrip("/") + "/")),
-                     key=lambda i: planned[i].casefold())
-        total = len(ids)
-        rows = []
-        for start in range(0, min(len(ids), limit), 500):
-            chunk = ids[start:start + 500][:limit - start]
-            rows += conn.execute(f"{SELECT} WHERE f.id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
-        order = {i: n for n, i in enumerate(ids)}
-        rows.sort(key=lambda r: order[r["id"]])
-        batch = _rows(library, rows, planned)
-        batch.total = total
-        return batch
-    else:
-        raise ValueError(f"no selection {kind!r}")
+    folders = [value for kind, value in selections if kind == "folder"]
+    moves = [value for kind, value in selections if kind == "planned"]
+    groups: dict[str, list] = {}
+    for kind, value in selections:
+        if kind == "facet":
+            groups.setdefault(value[0], []).append(value[1])
+        elif kind not in ("folder", "planned"):
+            raise ValueError(f"no selection {kind!r}")
+    parts: list[str] = []
+    params: list = []
+    if folders and "" not in folders:
+        ranges = []
+        for folder in folders:
+            low, high = prefix_range(folder)
+            ranges.append("(f.path >= ? AND f.path < ?)")
+            params += [low, high]
+        parts.append("(" + " OR ".join(ranges) + ")")
+    if moves:
+        prefixes = [move.rstrip("/") + "/" if move else "" for move in moves]
+        ids = [i for i, dest in (planned or {}).items() if any(not prefix or dest.startswith(prefix) for prefix in prefixes)]
+        if not parts and not groups:
+            return _planned_rows(library, ids, planned or {}, limit)  # only organised folders: in the order a move would give
+        conn.execute("CREATE TEMP TABLE IF NOT EXISTS plansel(id INTEGER PRIMARY KEY)")
+        conn.execute("DELETE FROM plansel")
+        conn.executemany("INSERT INTO plansel(id) VALUES (?)", [(i,) for i in ids])
+        parts.append("f.id IN (SELECT id FROM plansel)")
+    for group, values in groups.items():
+        conditions = []
+        for value in values:
+            condition, extra = _text_condition(group, value)
+            conditions.append(condition)
+            params += extra
+        parts.append("(" + " OR ".join(conditions) + ")")
+    where = " AND ".join(parts) or "1"
     total = conn.execute(f"SELECT COUNT(*) {JOINS} WHERE {where}", params).fetchone()[0]
     rows = conn.execute(f"{SELECT} WHERE {where} ORDER BY f.path LIMIT ?", [*params, limit]).fetchall()
     batch = _rows(library, rows, planned)

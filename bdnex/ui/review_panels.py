@@ -12,6 +12,7 @@ from typing import Optional
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
+from textual.message import Message
 from textual.command import DiscoveryHit, Hit, Provider
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
@@ -23,17 +24,92 @@ STATUS_STYLE = {folders.DONE: "green", folders.PARTIAL: "dark_orange", folders.T
 STATUS_MARK = {folders.DONE: "●", folders.PARTIAL: "◐", folders.TODO: "○", folders.PROBLEM: "✖"}  # (the shape says it too: a colour is not the only sign)
 
 
-def node_label(node: "folders.FolderNode") -> Text:
-    """``● Tintin  41/60`` in the colour of how far it is reviewed; ``!3`` when 3 files wait for a look (no album, or a doubtful match)."""
+def node_label(node: "folders.FolderNode", ticked: bool = False) -> Text:
+    """``☐ ● Tintin  41/60`` in the colour of what it needs (red: files to look at; orange: partly reviewed; yellow: matched, not reviewed
+    yet; green: reviewed); ``!3`` when 3 files wait for a look (no album, or a doubtful match). The box is the tick (space, or ctrl-click)."""
     issues = f"  !{node.below_issues}" if node.below_issues else ""
-    return Text(f"{STATUS_MARK[node.status]} {node.name or 'collection'}  {node.below_checked}/{node.total}{issues}", style=STATUS_STYLE[node.status])
+    return Text(f"{'☑' if ticked else '☐'} {STATUS_MARK[node.status]} {node.name or 'collection'}  {node.below_checked}/{node.total}{issues}",
+                style=STATUS_STYLE[node.status])
 
 
-class FolderTree(Tree):
-    """The folders of the library, coloured by how far they are reviewed; selecting one asks the screen to show its files.
+class TickTree(Tree):
+    """A tree whose entries can be ticked (space, or ctrl-click: like the marks of the table); the app shows the files of all the ticked ones.
+
+    Enter or a plain click shows the files of the one entry, as before. A group (a letter) ticks everything it holds."""
+
+    BINDINGS = [Binding("space", "tick", "Tick", show=False)]
+
+    class Ticked(Message):
+        """The ticks changed (``count`` of them in this tree)."""
+
+        def __init__(self, tree: "TickTree", count: int) -> None:
+            super().__init__()
+            self.tree, self.count = tree, count
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.ticked: set = set()
+
+    # what the subclasses say
+    def keys_under(self, node) -> list:
+        """The keys a tick on ``node`` sets (a folder: itself; a group: everything in it)."""
+        raise NotImplementedError
+
+    def label_of(self, node) -> Text:
+        raise NotImplementedError
+
+    def selections(self) -> list[tuple[str, object]]:
+        raise NotImplementedError
+
+    def toggle(self, node) -> None:
+        keys = self.keys_under(node)
+        if not keys:
+            return
+        if all(key in self.ticked for key in keys):
+            self.ticked.difference_update(keys)
+        else:
+            self.ticked.update(keys)
+        self.relabel()
+        self.post_message(self.Ticked(self, len(self.ticked)))
+
+    def clear_ticks(self) -> None:
+        self.ticked.clear()
+        self.relabel()
+        self.post_message(self.Ticked(self, 0))
+
+    def relabel(self) -> None:
+        def walk(tree_node) -> None:
+            for child in tree_node.children:
+                label = self.label_of(child)
+                if label is not None:
+                    child.set_label(label)
+                walk(child)
+
+        walk(self.root)
+
+    def action_tick(self) -> None:
+        if self.cursor_node is not None:
+            self.toggle(self.cursor_node)
+
+    async def _on_click(self, event) -> None:
+        """Ctrl-click ticks the entry under the mouse (and does not open it)."""
+        if not event.ctrl:
+            return await super()._on_click(event)
+        line = event.style.meta.get("line", -1)
+        node = self.get_node_at_line(line) if line >= 0 else None
+        if node is not None:
+            self.move_cursor(node)
+            self.toggle(node)
+        event.stop()
+        event.prevent_default()
+
+
+class FolderTree(TickTree):
+    """The folders of the library (as they are, or as `bdnex move` would organise them), coloured by what they need; selecting one asks the screen
+    to show its files, everything below it.
 
     Children are added when a folder is opened (a library of 6000 folders is not built at once); a folder with very many children shows
-    them in groups by first letter."""
+    them in groups by first letter, and a group shows (or ticks) all the folders it holds."""
 
     def __init__(self, root: "folders.FolderNode", **kwargs) -> None:
         super().__init__(node_label(root), data=root, **kwargs)
@@ -45,9 +121,28 @@ class FolderTree(Tree):
     def fill(self, tree_node, folder: "folders.FolderNode") -> None:
         tree_node.remove_children()
         for child in folder.shown_children():
-            node = tree_node.add(node_label(child), data=child, allow_expand=bool(child.children))
+            node = tree_node.add(self.label_of_folder(child), data=child, allow_expand=bool(child.children))
             if child.children:
                 node.data = child
+
+    def label_of_folder(self, folder) -> Text:
+        return node_label(folder, all(key in self.ticked for key in self.folder_keys(folder)))
+
+    @staticmethod
+    def folder_keys(folder) -> list[str]:
+        if folder.group:
+            return [child.path for child in folder.children.values()]
+        return [folder.path]
+
+    def keys_under(self, node) -> list:
+        return self.folder_keys(node.data) if node.data is not None else []
+
+    def label_of(self, node) -> Text:
+        return self.label_of_folder(node.data) if node.data is not None else None
+
+    def selections(self) -> list[tuple[str, object]]:
+        kind = "planned" if self.id == "movetree" else "folder"
+        return [(kind, path) for path in sorted(self.ticked)]
 
     def on_tree_node_expanded(self, event: Tree.NodeExpanded) -> None:
         node = event.node
@@ -60,7 +155,7 @@ class FolderTree(Tree):
             if folder is None:
                 return
             tree_node.data = folder
-            tree_node.set_label(node_label(folder))
+            tree_node.set_label(self.label_of_folder(folder) if tree_node is not self.root else node_label(folder))
             by_name = {child.name: child for child in folder.shown_children()}
             for child in tree_node.children:
                 walk(child, by_name.get(child.data.name if child.data is not None else None))
@@ -84,9 +179,10 @@ class FolderTree(Tree):
             self.move_cursor(node)
 
 
-class FacetTree(Tree):
+class FacetTree(TickTree):
     """The filters: groups (state, kind, category, collection, genre, author, series...) and their values with the number of files.
-    Selecting a value asks the screen to show its files. A group with very many values (authors, series) lists them by first letter."""
+    Selecting a value shows its files; a letter shows (or ticks) all the values under it. Ticks of one group are alternatives (genre
+    Fantasy OR Humour); ticks of different groups go together (genre Fantasy AND not reviewed yet)."""
 
     def __init__(self, found: dict, **kwargs) -> None:
         super().__init__("Filters", **kwargs)
@@ -98,7 +194,7 @@ class FacetTree(Tree):
         from bdnex.library import browse
 
         self.clear()
-        described = dict(browse.STATES)
+        self.described = dict(browse.STATES)
         for group in browse.GROUPS:
             values = found.get(group) or []
             if not values:
@@ -110,16 +206,36 @@ class FacetTree(Tree):
                     letter = (value[:1] or "#").upper()
                     letters.setdefault(letter if letter.isalpha() else "#", []).append((value, count))
                 for letter in sorted(letters):
-                    sub = node.add(Text(f"{letter}  ({len(letters[letter])})", style="dim"), allow_expand=True)
+                    sub = node.add(Text(f"{letter}  ({len(letters[letter])})", style="dim"), data=("letter",), allow_expand=True)
                     for value, count in letters[letter]:
-                        sub.add_leaf(Text(f"{value}  {count}"), data=("facet", (group, value)))
+                        sub.add_leaf(self.value_label(group, value, count), data=("facet", (group, value), count))
             else:
                 for value, count in values:
-                    label = Text(f"{value}  {count}")
-                    if group == "State" and value in described:
-                        label.append(f"   {described[value]}", style="dim")
-                    node.add_leaf(label, data=("facet", (group, value)))
+                    node.add_leaf(self.value_label(group, value, count), data=("facet", (group, value), count))
         self.root.expand()
+
+    def value_label(self, group: str, value: str, count: int) -> Text:
+        label = Text(f"{'☑' if (group, value) in self.ticked else '☐'} {value}  {count}")
+        if group == "State" and value in getattr(self, "described", {}):
+            label.append(f"   {self.described[value]}", style="dim")
+        return label
+
+    def leaves(self, node) -> list:
+        if node.data and node.data[0] == "facet":
+            return [node.data]
+        return [leaf for child in node.children for leaf in self.leaves(child)]
+
+    def keys_under(self, node) -> list:
+        return [data[1] for data in self.leaves(node)]
+
+    def label_of(self, node) -> Optional[Text]:
+        if node.data and node.data[0] == "facet":
+            (group, value), count = node.data[1], node.data[2]
+            return self.value_label(group, value, count)
+        return None
+
+    def selections(self) -> list[tuple[str, object]]:
+        return [("facet", key) for key in sorted(self.ticked)]
 
 
 class FacetCommands(Provider):

@@ -7,19 +7,17 @@ the tree's counts are read in a worker with its own read-only library.
 from __future__ import annotations
 
 import contextlib
-import json
 import logging
 import os
 from typing import Optional
 
+from textual.widgets import Button
+
 from bdnex.library import review_batch as batch
 from bdnex.ui import review_panels as panels
+from bdnex.ui.review_panels import TickTree
 
 logger = logging.getLogger(__name__)
-
-
-def preference_file(settings, library) -> str:
-    return str(getattr(library, "path", "") or "") + ".review-ui.json"
 
 
 class ReviewExtras:
@@ -44,7 +42,7 @@ class ReviewExtras:
 
         yield from super().get_system_commands(screen)
         for title, help_text, callback in (
-                ("Folders: show or hide the left panel", "the folders, the folders after a move, the filters (f)", self.action_folders),
+                ("Folders: show or hide the left panel", "the folders, the organised folders, the filters (f)", self.action_folders),
                 ("Folder: mark it reviewed", "every file of the folder on the screen (R)", self.action_reviewed_folder),
                 ("Duplicates: the other files of this album", "trash, make main, keep as a version (D)", self.action_duplicates),
                 ("Edit the marked files", "one form: fields, kind, a volume each (E)", self.action_bulk),
@@ -58,20 +56,14 @@ class ReviewExtras:
                 ("Everything: all the files", "the first thousand, in path order", lambda: self.open_selection("folder", "", "the collection"))):
             yield SystemCommand(title, help_text, callback)
 
-    # -- the left panel: the folders as they are, the folders after a move, and the filters
+    # -- the left panel: the folders as they are, the organised folders, and the filters
     def want_tree(self) -> bool:
         if self.tree_pref is not None:
             return self.tree_pref
-        with contextlib.suppress(Exception):
-            with open(preference_file(self.settings, self.library), encoding="utf-8") as handle:
-                return bool(json.load(handle).get("tree", True))
-        return True
+        return bool(self.view_extra.get("tree", True))
 
     def remember_tree(self, shown: bool) -> None:
-        with contextlib.suppress(Exception):
-            if self.library.path != ":memory:":
-                with open(preference_file(self.settings, self.library), "w", encoding="utf-8") as handle:
-                    json.dump({"tree": shown}, handle)
+        self.remember(tree=shown)
 
     def start_folders(self) -> None:
         self.plan_dirty, self.facet_choices, self.folder_bad = set(), [], {}
@@ -188,7 +180,7 @@ class ReviewExtras:
             table.focus()
 
     def on_tree_node_selected(self, event) -> None:
-        """A folder (either tree) or a filter value: all its files, everything below it, in the table."""
+        """A folder (either tree), a letter, or a filter value: all its files, everything below it, in the table."""
         data = event.node.data
         tree_id = getattr(event.control, "id", "")
         if data is None:
@@ -196,11 +188,42 @@ class ReviewExtras:
         if tree_id == "facettree":
             if isinstance(data, tuple) and data[0] == "facet":
                 self.open_selection("facet", data[1], f"{data[1][0]}: {data[1][1]}")
+            elif isinstance(data, tuple) and data[0] == "letter":  # a letter: every value under it (alternatives of one group)
+                leaves = event.control.leaves(event.node)
+                if leaves:
+                    group = leaves[0][1][0]
+                    self.open_selections([("facet", leaf[1]) for leaf in leaves], f"{group}: {event.node.label.plain.split('  ')[0]}")
             return
-        if getattr(data, "group", ""):
-            return  # a group of letters: it only opens
         kind = "planned" if tree_id == "movetree" else "folder"
-        self.open_selection(kind, data.path, f"{'after a move: ' if kind == 'planned' else ''}{data.path or 'the collection'}")
+        if getattr(data, "group", ""):  # a group of letters: all the folders it holds
+            self.open_selections([(kind, child.path) for child in data.children.values()], f"{data.group}: {len(data.children)} folders")
+            return
+        self.open_selection(kind, data.path, f"{'organised: ' if kind == 'planned' else ''}{data.path or 'the collection'}")
+
+    def ticked_selections(self) -> list:
+        return [sel for tree in (self.folder_tree, self.move_tree, self.facet_tree) if tree is not None for sel in tree.selections()]
+
+    def on_tick_tree_ticked(self, event: TickTree.Ticked) -> None:  # (a mixin: no `@on`, which only a message pump's own class collects)
+        count = len(self.ticked_selections())
+        self.query_one("#show-ticked", Button).label = f"Show ticked ({count})" if count else "Show ticked"
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "show-ticked":
+            self.action_show_ticked()
+        elif event.button.id == "clear-ticks":
+            self.action_clear_ticks()
+
+    def action_show_ticked(self) -> None:
+        picks = self.ticked_selections()
+        if not picks:
+            self.notify("Nothing ticked: space (or ctrl-click) ticks a folder or a filter.", timeout=4)
+            return
+        self.open_selections(picks, f"{len(picks)} ticked")
+
+    def action_clear_ticks(self) -> None:
+        for tree in (self.folder_tree, self.move_tree, self.facet_tree):
+            if tree is not None:
+                tree.clear_ticks()
 
     def open_folder(self, folder: str) -> None:
         self.open_selection("folder", folder, folder or "the collection")
@@ -209,11 +232,17 @@ class ReviewExtras:
         self.open_selection("facet", (group, value), f"{group}: {value}")
 
     def open_selection(self, kind: str, value, title: str) -> None:
-        self.folder_current = value if kind == "folder" else ""
-        self.say(f"Reading {title}...")
-        self.run_worker(lambda: self.weigh_selection(kind, value, title), thread=True, group="folder", exclusive=True)
+        self.open_selections([(kind, value)], title)
 
-    def weigh_selection(self, kind: str, value, title: str) -> None:
+    def open_selections(self, picks: list, title: str) -> None:
+        """The files of one or several selections: folders and ``organised`` folders are alternatives, a group's values are alternatives, different
+        groups go together."""
+        only = picks[0] if len(picks) == 1 else None
+        self.folder_current = only[1] if only and only[0] == "folder" else ""
+        self.say(f"Reading {title}...")
+        self.run_worker(lambda: self.weigh_selection(picks, title), thread=True, group="folder", exclusive=True)
+
+    def weigh_selection(self, picks: list, title: str) -> None:
         import time
 
         from bdnex.library import Library, browse
@@ -221,7 +250,7 @@ class ReviewExtras:
         started = time.monotonic()
         try:
             with Library.for_settings(self.settings, readonly=True) as library:
-                rows = browse.rows_for(library, self.settings, kind, value, self.planned)
+                rows = browse.rows_for_many(library, self.settings, picks, self.planned)
         except Exception as err:
             self.call_from_thread(self.show_error, str(err))
             return

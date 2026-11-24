@@ -18,7 +18,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label, OptionList, SelectionList
+from textual.widgets import Button, DataTable, Label, OptionList, SelectionList
 from textual.widgets.option_list import Option
 
 logger = logging.getLogger(__name__)
@@ -106,6 +106,13 @@ class ColumnChoiceScreen(ModalScreen):
 
     def action_close(self) -> None:
         self.dismiss(None)
+
+
+class ReviewTable(DataTable):
+    """The table of the review screen: it tells the app about clicks (a Textual app does not receive the clicks of its widgets)."""
+
+    def on_click(self, event: events.Click) -> None:
+        self.app.table_clicked(event)
 
 
 class ColumnsMixin:
@@ -300,21 +307,19 @@ class ColumnsMixin:
         self.save_view()
         self.render_table()
 
-    def on_click(self, event: events.Click) -> None:
+    def table_clicked(self, event: events.Click) -> None:
         """Double-click a header: change that column's field. Ctrl-click a row: mark it, like space."""
         with contextlib.suppress(Exception):
             meta = event.style.meta
-            table = self.query_one("DataTable")
-            if event.widget is not table or "column" not in meta:
+            if "column" not in meta:
                 return
             if event.ctrl and meta.get("row", -1) >= 0:
                 self.toggle_mark_at(meta["row"])
-                event.stop()
-            elif event.chain >= 2 and meta.get("row") == -1:
+            elif meta.get("row") == -1 and event.chain >= 2:
                 index = meta["column"]
+                self.double_header = True  # the two clicks sorted the column: the sort that follows this one is skipped
                 if 0 <= index < len(self.view):
                     self.push_screen(ColumnChoiceScreen(self.view[index], self.view), lambda key: self.swap_column(index, key))
-                    event.stop()
 
     def toggle_mark_at(self, index: int) -> None:
         """Mark or unmark the row at ``index`` (a ctrl-click does what space does, without moving the cursor)."""

@@ -47,7 +47,7 @@ KIND_WORD = {"wrong": "looks wrong", "unconfirmed": "to check", "unmatched": "no
 EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 SEARCH_LIMIT = 60
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # braille dots turning: a state that is waiting for the site
-from bdnex.ui.review_columns import COLUMN_TYPES, COLUMNS, DEFAULT_VIEW, FLEX_COLUMN, ColumnsMixin  # noqa: E402,F401
+from bdnex.ui.review_columns import COLUMN_TYPES, COLUMNS, DEFAULT_VIEW, FLEX_COLUMN, ColumnsMixin, ReviewTable  # noqa: E402,F401
 STATE_COLUMN = 7
 STATE_ORDER = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # the state column sorts by how doubtful, then by decision
 DECIDED_ORDER = {"keep": 10, "linked": 11, "unlinked": 12, "left": 13, "skipped": 14}
@@ -680,6 +680,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     #loading { height: 2fr; min-height: 8; content-align: center middle; text-align: left; }
     #main { height: 1fr; }
     #folderpane { width: 38; border-right: solid $accent; }
+    #tickbar { height: 3; }
+    #tickbar Button { min-width: 8; margin-right: 1; }
     #trees { height: 1fr; }
     #folderslot, #moveslot, #facetslot { height: 1fr; }
     #facetbox { height: 1fr; border-top: solid $accent; }
@@ -688,7 +690,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     #table { height: 2fr; min-height: 8; }
     #detailrow { height: 1fr; min-height: 8; border-top: solid $accent; }
     #detail { width: 1fr; height: 100%; padding: 0 1; overflow-y: auto; }
-    #meta { width: 45%; height: 100%; border-left: solid $accent; padding: 0 1; overflow-y: auto; display: none; }
+    #meta { width: 45%; height: 100%; border-left: solid $accent; padding: 0 1; overflow-y: auto; }
     #log { height: 7; border-top: solid $accent; padding: 0 1; color: $text-muted; }
     """
     BINDINGS = [
@@ -714,6 +716,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         Binding("C", "columns", "Columns"),
         Binding("f", "folders", "Folders on/off"),
         Binding("R", "reviewed_folder", "Folder reviewed"),
+        Binding("T", "show_ticked", "Show the ticked"),
         Binding("D", "duplicates", "Duplicates"),
         Binding("E", "bulk", "Edit the marked files"),
         Binding("K", "kind", "Series / one-shot"),
@@ -776,19 +779,22 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         yield Static("", id="queue-badge")
         with Horizontal(id="main"):
             with Vertical(id="folderpane"):
+                with Horizontal(id="tickbar"):
+                    yield Button("Show ticked", id="show-ticked")
+                    yield Button("Clear ticks", id="clear-ticks")
                 with TabbedContent(id="trees"):
                     with TabPane("Folders", id="tab-folders"):
                         with Vertical(id="folderslot"):
                             yield Static("reading the folders...", id="foldersloading")
-                    with TabPane("After a move", id="tab-moves"):
+                    with TabPane("Organised", id="tab-moves"):
                         with Vertical(id="moveslot"):
-                            yield Static("working out where a move would put each file...", id="movewait")
+                            yield Static("working out how `bdnex move` would organise the files...", id="movewait")
                 with Vertical(id="facetbox"):
                     with Vertical(id="facetslot"):
                         yield Static("Filters: reading...", id="facetwait")
             with Vertical(id="center"):
                 yield Static("", id="loading")
-                yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
+                yield ReviewTable(id="table", cursor_type="row", zebra_stripes=True)
                 with Horizontal(id="detailrow"):
                     yield Static("", id="detail")
                     yield Static("", id="meta")
@@ -804,6 +810,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         self.hub.ready.add_done_callback(self.list_loaded)
         self.take_the_log()
         self.set_interval(0.15, self.tick_pending)
+        self.query_one("#meta").display = bool(self.view_extra.get("meta", True))  # the album's metadata is shown unless `d` hid it
         self.start_folders()
         self.load_batch()
 
@@ -1073,6 +1080,9 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
 
     # -- sorting: a click on a header, or the number of the column
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
+        if getattr(self, "double_header", False):  # a double-click opens the column's field chooser: it is not a sort
+            self.double_header = False
+            return
         self.action_sort(event.column_index)
 
     def action_sort(self, index: int) -> None:
@@ -1127,6 +1137,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     def action_metadata(self) -> None:
         panel = self.query_one("#meta", Static)
         panel.display = not panel.display
+        self.remember(meta=panel.display)
         row = self.current()
         if panel.display and row is not None:
             self.show_meta(row)

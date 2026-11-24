@@ -88,3 +88,16 @@ def test_the_plan_says_where_a_move_would_put_each_file_and_its_files_can_be_lis
     got = browse.rows_for(lib, settings, "planned", "BD", planned)
     assert [r.dest for r in got] == ["BD/Nains/Nains - T01 - Redwin.cbz", "BD/Nains/Nains - T02 - Forge.cbz"] and got.total == 2
     assert browse.plan(lib, settings, only={lib.get_file(settings.require_collection() / "Manga/Naruto/1.cbz")["album_id"]}).keys() == {files["Manga/Naruto/1.cbz"]}
+
+
+def test_several_selections_are_alternatives_inside_a_kind_and_go_together_across_kinds(env):
+    settings, lib, files = env
+    both = browse.rows_for_many(lib, settings, [("folder", "Series/Nains"), ("folder", "Manga")])
+    assert both.total == 4 and len(both) == 4  # two folders: the files of either
+    genres = browse.rows_for_many(lib, settings, [("facet", ("Genre", "Fantasy")), ("facet", ("Genre", "Humour"))])
+    assert genres.total == 3  # one group: either value
+    narrowed = browse.rows_for_many(lib, settings, [("folder", "Series"), ("facet", ("State", "unreviewed"))])
+    assert narrowed.total == 2  # the folder AND the state: Nains 2 and its bis (1.cbz is reviewed)
+    planned = browse.plan(lib, settings)
+    mixed = browse.rows_for_many(lib, settings, [("planned", "BD"), ("facet", ("State", "unreviewed"))], planned)
+    assert [r.dest for r in mixed] == ["BD/Nains/Nains - T02 - Forge.cbz"] and mixed.total == 1
