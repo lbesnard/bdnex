@@ -79,6 +79,12 @@ About 1900 tests; the whole suite takes ~6 minutes, so run the tests of what you
   runs in the screen's thread (workers with their own read-only `Library`; the screen's own library writes the decisions; downloads go
   through `ui/review_fetch.DetailsQueue`). `bdnex ls --sitemap` / `--for FILE` and the screen's `o` are the same offline search
   (`album_search.search_folded`).
+- **Going through the whole collection** (`review --batch`): `library/folders.py` (the tree: counts and colours from the `checked` mark, `inconsistent`,
+  `mark_reviewed`), `library/bulk.py` (one form for many files: `shared` / `apply`, checks first through `edit_cmd.doc_changes`, nothing written when
+  one value is refused), `library/twins.py` (files of one album: compare, trash, `make_main`, `keep_as_version`). The screen side is `ui/review_panels.py`
+  (`FolderTree`, `DuplicateScreen`, `BulkScreen`) and the mixin `ui/review_extras.py`; keys `f R D E K V`. A hidden `Input` still takes the focus
+  (disable it). `category` (`$category`) is a hand-set field apart from `kind`; `parent_id` + `relation` (`version` goes to the spare versions folder).
+  A series / one-shot choice by hand is `Library.assign_series` / `make_oneshot` and is stored in the album's edits so a re-import keeps it.
 - Aliases (`aliases: ["NAME = COMMAND  # WHY"]`, `commands.expand_alias`) are a shorter way to type a bdnex command, nothing else: never
   let one run a shell command. Every command needs rows in `ui/examples.py`.
 
