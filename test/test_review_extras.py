@@ -227,3 +227,20 @@ def test_a_different_version_keeps_its_file_and_gets_an_album_of_its_own(env):
     with Library(db, root=root) as lib:
         new = lib.get_album(lib.get_file(paths["spare"])["album_id"])
         assert new["title"] == "Kishinev-des-fous (N&B)" and new["relation"] == "version" and new["source"] == "manual"
+
+
+def test_a_folder_shows_the_files_that_have_no_album_and_no_import_record(env, make_cbz):
+    db, root, paths = env
+    with Library(db, root=root) as lib:
+        stray = str(root / "Series" / "Tintin" / "Stray.cbz")
+        shutil.copy(make_cbz("stray.cbz"), stray)
+        lib.add_file(stray)
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        seen["rows"] = [(os.path.basename(r.path), r.kind) for r in app.rows]
+
+    drive(db, root, script)
+    assert ("Stray.cbz", "unmatched") in seen["rows"] and len(seen["rows"]) == 4

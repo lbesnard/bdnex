@@ -181,6 +181,14 @@ def folder_batch(library: Library, settings, folder: str, recursive: bool = True
         if not recursive and "/" in stored[len(prefix):]:
             continue
         chosen.append(row)
+    have = {row.path for row in chosen}
+    marks = library.file_marks(CHECKED)
+    for file_id, stored, album_id in _stored_below(library, prefix):  # files with no album and no import record are in no other list
+        path = library._resolve(stored)
+        if path in have or album_id is not None or (not recursive and "/" in stored[len(prefix):]):
+            continue
+        chosen.append(Row(path, folder_of(path), None, None, None, None, None, "unmatched", ["no album"], file_id,
+                          facts=facts_of(None, library.get_file(path) or {}), previous=marks.get(path, "")))
     chosen.sort(key=lambda row: (os.path.dirname(row.path).casefold(), os.path.basename(row.path).casefold()))
     chosen.total = below
     return chosen

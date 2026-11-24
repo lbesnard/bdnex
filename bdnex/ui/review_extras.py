@@ -90,6 +90,15 @@ class ReviewExtras:
         pane = self.query_one("#folderpane")
         pane.display = not pane.display
         self.remember_tree(pane.display)
+        table = self.query_one("DataTable")
+        keep = table.cursor_row
+
+        def redraw() -> None:  # the table has more or less room now: its last column takes what is left
+            if self.rows:
+                self.render_table()
+                table.move_cursor(row=min(keep, len(self.rows) - 1))
+
+        self.call_after_refresh(redraw)
         if pane.display and self.folder_tree is not None:
             self.folder_tree.focus()
         else:

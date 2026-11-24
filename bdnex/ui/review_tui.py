@@ -1045,8 +1045,14 @@ class ReviewApp(ReviewExtras, App):
         for index, (name, width) in enumerate(COLUMNS):
             arrow = (" ▼" if self.sort_reverse else " ▲") if index == self.sort_column else ""
             if index == len(COLUMNS) - 1:  # where a move would put the file: a path is long, so it takes what the screen has left (at least `width`)
-                width = max(width, self.size.width - sum(w for _, w in COLUMNS[:-1]) - 2 * len(COLUMNS) - 2)
+                width = max(width, self.table_width() - sum(w for _, w in COLUMNS[:-1]) - 2 * len(COLUMNS) - 2)
             table.add_column(f"{name}{arrow}", width=width, key=str(index))  # (a fixed width: the table never has to measure its cells)
+
+    def table_width(self) -> int:
+        """The room the table has: the screen less the folder tree, when it is shown."""
+        with contextlib.suppress(Exception):
+            return self.query_one("#center").size.width or self.size.width
+        return self.size.width
 
     def render_table(self) -> None:
         table = self.query_one(DataTable)
