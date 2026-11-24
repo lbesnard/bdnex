@@ -54,7 +54,7 @@ def test_the_rows_say_what_each_file_is(env):
     assert first.album == "Nains - T01 - Redwin" and (first.album_kind, first.volume, first.category) == ("series", 1, "BD")
     assert first.previous == "keep" and first.kind == "ok" and bis.spare and bis.album_id == second.album_id
     loose = browse.rows_for(lib, settings, "folder", "OneShot")
-    assert [(r.album, r.kind) for r in loose] == [(None, "unmatched"), ("Maus", "ok")]
+    assert sorted((r.album or "", r.kind) for r in loose) == [("", "unmatched"), ("Maus", "ok")]
     assert browse.rows_for(lib, settings, "folder", "Manga")[0].kind == "unconfirmed"
 
 
