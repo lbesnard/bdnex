@@ -183,3 +183,24 @@ def test_deleting_the_parent_keeps_the_child(lib):
     with lib.conn:
         lib.conn.execute("DELETE FROM albums WHERE id = ?", (parent,))
     assert lib.get_album(child)["parent_id"] is None
+
+
+def test_an_album_can_be_put_in_a_series_of_my_own_and_back_to_a_one_shot_and_it_survives_a_re_import(lib):
+    shot = lib.add_album(nains(source_id="9", title="Les Nains", series=None, volume=None))
+    other = lib.add_album(nains(source_id="10", title="Les Nains 2", series=None, volume=None))
+    assert lib.get_album(shot)["kind"] == "oneshot"
+    lib.assign_series(shot, "Tintin")
+    lib.assign_series(other, "tintin")  # the same series, whatever the case
+    one, two = lib.get_album(shot), lib.get_album(other)
+    assert one["kind"] == "series" and one["series"] == "Tintin" and lib.series_id_of(shot) == lib.series_id_of(other)
+    lib.add_album(nains(source_id="9", title="Les Nains (re-read)", series=None, volume=None))  # the site still says: a one-shot
+    assert lib.get_album(shot)["kind"] == "series" and lib.get_album(shot)["series"] == "Tintin"
+    lib.make_oneshot(shot)
+    assert lib.get_album(shot)["kind"] == "oneshot" and lib.get_album(shot)["series"] is None
+    lib.add_album(nains(source_id="9", title="Again", volume=3))  # the site now lists it in a series: the hand edit wins
+    assert lib.get_album(shot)["kind"] == "oneshot"
+    assert lib.get_album(other)["series"] == "Tintin"  # the other album kept its series
+    lib.make_oneshot(other)
+    assert lib.conn.execute("SELECT COUNT(*) FROM series WHERE name = 'Tintin'").fetchone()[0] == 0  # nobody left: the series goes
+    with pytest.raises(ValueError):
+        lib.assign_series(shot, "  ")

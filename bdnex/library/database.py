@@ -504,7 +504,11 @@ class Library:
     def _apply_edits(info: AlbumInfo, edits: dict[str, Any]) -> AlbumInfo:
         """``info`` with the user's edits laid over it (a new object; ``info`` is untouched)."""
         changes: dict[str, Any] = {key: edits[key] for key in Library.EDIT_SCALARS if key in edits}
-        if "series" in edits and info.series is not None:
+        if edits.get("kind") == "oneshot":  # made a one-shot by hand: the site's series does not come back with a re-read
+            changes["series"] = None
+        elif edits.get("kind") == "series" and edits.get("assigned") and edits.get("series"):  # put in a series of its own by hand
+            changes["series"] = SeriesInfo("manual", edits["assigned"], edits["series"])
+        elif "series" in edits and info.series is not None:
             changes["series"] = dataclasses.replace(info.series, name=edits["series"])
         if "credits" in edits:
             credits = {**info.credits, **edits["credits"]}
@@ -573,6 +577,41 @@ class Library:
         self.conn.execute("UPDATE series SET name = ?, extra = ? WHERE id = ?", (name, json.dumps(extra, ensure_ascii=False), series_id))
         for row in self.conn.execute("SELECT id FROM albums WHERE series_id = ?", (series_id,)).fetchall():
             self._store_edits(row["id"], {**self._edits_of(row["id"]), "series": name})
+
+    def assign_series(self, album_id: int, name: str) -> None:
+        """Put an album in the series called ``name`` (a one-shot becomes a series album; an album of another series moves). The series is
+        one of your own, shared by every album given the same name, and the change survives a re-import like any hand edit. Only this
+        album moves: the others of its old series stay (``edit --set series=`` is what renames a whole series)."""
+        from bdnex.library.manual import MANUAL, series_key
+
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("a series needs its name")
+        album = self.get_album(album_id)
+        if album is None:
+            raise KeyError(f"no album {album_id}")
+        found = self.conn.execute("SELECT source_id, name FROM series WHERE source = ? AND name = ? COLLATE NOCASE",
+                                  (MANUAL, name)).fetchone()
+        key, name = (found["source_id"], found["name"]) if found else (series_key(name), name)  # the series keeps the name it was given first
+        before = self.series_id_of(album_id)
+        series_id = self.add_series(SeriesInfo(MANUAL, key, name))
+        with self.conn:
+            self.conn.execute("UPDATE albums SET kind = 'series', series_id = ? WHERE id = ?", (series_id, album_id))
+            edits = {**self._edits_of(album_id), "kind": "series", "series": name, "assigned": key}
+            self._store_edits(album_id, edits)
+        if before != series_id:
+            self.delete_series_if_unused(before)
+
+    def make_oneshot(self, album_id: int) -> None:
+        """Make an album a one-shot (it leaves its series); kept across re-imports."""
+        if self.get_album(album_id) is None:
+            raise KeyError(f"no album {album_id}")
+        before = self.series_id_of(album_id)
+        with self.conn:
+            self.conn.execute("UPDATE albums SET kind = 'oneshot', series_id = NULL WHERE id = ?", (album_id,))
+            edits = {k: v for k, v in self._edits_of(album_id).items() if k not in ("series", "assigned")}
+            self._store_edits(album_id, {**edits, "kind": "oneshot"})
+        self.delete_series_if_unused(before)
 
     RELATIONS = ("version", "child")
 
