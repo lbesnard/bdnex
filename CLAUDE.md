@@ -1,214 +1,146 @@
 # bdnex
 
-A beets-like library manager for French comics (Bédéthèque): SQLite library, `import` (match + fetch), `ls`,
-`write`/`move`/`repair`/`convert`, `edit`, `reset`, `relocate`, `review`, `undo`, `check`, `duplicates`, `trash`,
-`series`, `komga` (pushes metadata to a Komga server through its API; Komga ignores the tags inside a PDF), `serve`,
-`completion`; `import --as-is` records files first, `--select` re-imports by query. Docs: Sphinx in `docs/`
-(Read the Docs). Python via **uv**; run things with `uv run`.
+A beets-like library manager for French comics (Bédéthèque): SQLite library, `import` (match + fetch), `ls`, `write`/`move`/
+`repair`/`convert`, `edit`, `review`, `check`, `komga`, `serve` (web page + JSON API) and more (`bdnex --help`; the table of
+commands is `bdnex/ui/commands.py`). Python 3.10-3.13, run with **uv** (`uv run ...`). Docs: Sphinx in `docs/` (Read the Docs).
+About 1900 tests; the whole suite takes ~6 minutes, so run the tests of what you touched while working and everything before a PR.
 
 ## Layout
-- `bdnex/ui/*_cmd.py`: one module per command, each with a `run(argv)`. **`bdnex/ui/commands.py` is the one table of commands**
-  (name, module, summary, group): the usage text and the dispatch read it; the tab completion reads the usage text. A new command =
-  a row there, its module, its docs page entry (the sync tests say what is missing).
-- `bdnex/ui/prompts.py` (match question, keys, Back, search, URL), `thumbnail.py`, `color.py`.
-- `bdnex/importer/`: `matching.py` (fuzzy), `folders.py` (series/versions/unclear), `pipeline.py` (background matching),
-  `session.py` (the import loop; its early page fetching is the `EarlyFetch` mixin in `session_early.py`, the cover and
-  match-weighing pass is `CoverPass` in `session_covers.py`, the result types and exceptions are in `session_types.py`
-  and re-exported by `session`), `covers.py`, `bedetheque/` (source plugin).
-- `bdnex/organizer/`: `organizer.py` (write/move/repair: `process` is a few small steps, keep it that way),
-  `archive.py` (lossless CBZ/CBR/PDF reading and writing), `comicinfo.py`, `template.py`; `bdnex/trash.py`, `versions.py`.
-- `bdnex/komga.py` + `bdnex/ui/komga_cmd.py`: `bdnex komga show|push` (see "Komga" below).
-- `bdnex/library/`: `database.py`, `schema.py` (migrations), `query.py` (the query language), `scan.py`.
-- `bdnex/api/`: `bdnex serve`, a read-only FastAPI app plus one static page (`static/index.html`); extra `bdnex[api]`.
-- `bdnex/config.py` + `bdnex/conf/bdnex.yaml` (every option and its default, also the source of the commented
-  user file: `config_template.py`).
+- `bdnex/ui/*_cmd.py`: one module per command, each with a `run(argv)`. **`ui/commands.py` is the one table of commands**
+  (name, module, summary, group): the usage text, the dispatch and the tab completion read it. `RENAMED` holds old names that
+  became options of another command (`recheck`, `reparse`, `relink`, `fields`, `mirror`). Shared UI: `prompts.py`, `keys.py`,
+  `color.py`, `results.py`, `context.py`, `output.py`, `examples.py` (the examples at the end of every `--help`).
+- `bdnex/importer/`: `matching.py` (fuzzy), `folders.py` (series/versions/unclear), `pipeline.py`, `session.py` (the import loop,
+  split in `session_early.py`, `session_covers.py`, `session_vote.py`, `session_types.py`), `confirm.py`, `covers.py`,
+  `candidates.py`, `album_search.py`, `mirror.py`, `source.py` + `registry.py` (the source plugin contract,
+  `docs/dev/plugins.md`), `bedetheque/` (the built-in source).
+- `bdnex/organizer/`: `organizer.py` (write/move/repair; `process` is a few small steps, keep it that way), `archive.py`
+  (lossless CBZ/CBR/PDF), `comicinfo.py`, `template.py`. Also `bdnex/trash.py`, `versions.py`, `komga.py`, `parallel.py`.
+- `bdnex/library/`: `database.py`, `schema.py` (migrations), `query.py` (query language), `scan.py`, `health.py`, `recheck.py`,
+  `review_batch.py`. `bdnex/api/`: `bdnex serve`. `bdnex/config.py` + `bdnex/conf/bdnex.yaml` (every option and default; also
+  the source of the commented user file, `config_template.py`).
+- Generated or enforced: `docs/reference/commands.md` is generated (`uv run python -m bdnex.ui.cli_reference > docs/reference/commands.md`
+  after any option change); `test_docs_in_sync` and `test_examples` fail when docs or examples drift from the code.
 
-## The collection and its sources (a core idea: keep it straight)
-- **One collection**: `collection_path` (was `directory`; the old key still works with a warning). bdnex organises it
-  with the `paths` templates; the library tracks the files in it with **relative** paths.
-- **Sources** (`import.sources`: `path`, `mode` copy|move, `name`) are where new files arrive. A file under one is
-  stored as `@alias/relative` (table `roots` holds the real folder once, so `bdnex relocate OLD NEW` is one UPDATE);
-  any other outside file keeps its absolute path. Always go through `Library._store` / `_resolve`, never build stored
-  paths by hand. A collection folder whose name starts with `@` is stored as `./@…`.
-- **A `copy` source is read-only**: `Organizer._read_only` refuses write/repair/move on files under it (only
-  `COPY` is allowed). Never add a code path that modifies, moves, converts or deletes such a file.
-- **Copies remember their origin** (`origins` table: source path, size, mtime): `import` skips what was already copied
-  (`already copied to …`) and reports, but never re-copies, a file that changed at the source.
-- `bdnex import .` / `--sources`: a path under a source follows that source's mode with no question; other outside
-  folders follow `import.outside`; `--move` / `--copy` / `--no-move` win for one run. `import --as-is` + `--select` +
-  `move` is how an existing collection is brought in.
+## The collection and its sources (keep it straight)
+- **One collection**: `collection_path` (old key `directory` still works with a warning). bdnex organises it with the `paths`
+  templates; the library tracks its files with **relative** paths.
+- **Sources** (`import.sources`: `path`, `mode` copy|move, `name`) are where new files arrive. A file under one is stored as
+  `@alias/relative` (table `roots` holds the real folder once, so `bdnex relocate OLD NEW` is one UPDATE); any other outside file keeps
+  its absolute path. Always go through `Library._store` / `_resolve`, never build stored paths by hand. A collection folder whose name
+  starts with `@` is stored as `./@…`.
+- **A `copy` source is read-only**: `Organizer._read_only` refuses write/repair/move on files under it. Never add a code path that
+  modifies, moves, converts or deletes such a file.
+- **Copies remember their origin** (`origins` table): `import` skips what was already copied and never re-copies a file that changed at the source.
+- `bdnex import .` / `--sources`: a path under a source follows its mode with no question; other outside folders follow `import.outside`;
+  `--move` / `--copy` / `--no-move` win for one run.
+
+## Safety rules (the ones that cost the most when forgotten)
+- **Never touch the user's real library, comics or the real site from a session.** A bdnex of this code opens the real library
+  read-write and *upgrades* it. Work on copies in the scratchpad. `flaresolverr_fetch` (`bdnex/fetchers.py`, config `fetch.*`) is the
+  user's own code: never run it against the site, never change its behaviour or endpoint setup (a failure-handling bug may be fixed with a
+  test that fakes `requests.post`), never put their endpoint address in the repo. `init --mirror` is never run for real either.
+- **Tests never touch the real home** (autouse `isolated_home` in `test/conftest.py`; it also switches the automatic cover check off).
+  `FakeWeb` (`test/helpers.py`) serves fixtures and a real picture. A bug found by reading code gets a test that fails without the fix.
+- **Precision before coverage**: a wrong match costs more than an unasked one. `--auto=all` never asks and applies only strong matches
+  without a *doubt* (`Match.doubt`, `matching._doubts`); a medium one is queued and decided by its cover (`session_vote`). Never apply a
+  medium match unasked. A match that looks wrong is flagged (`files.review`), never unlinked by itself. Change the matcher only with
+  `tools/eval_matching.py run/report` on a real library (look at wrong-at-strong, not totals); the cover comparison with
+  `tools/eval_covers.py` (change `covers.sift_similarity` / `cover.match_percentage` only with its numbers).
+- **`-n` (preview) is read-only and fast**: opens the library read-only, never reads page data. `import --database-only` changes no comic file.
+- **A schema change appends a migration** in `schema.py` (never edit a released one), documents the column in `docs/dev/library.md`,
+  and the PR says "back up the database first": an older bdnex refuses a newer schema.
+- **Stored pages are compressed** (`Library.COMPRESSED_KINDS`): never read `source_cache.content` of an album/series/letter page directly,
+  use `cache_get` / `cache_put`. A cover address of an album whose page was not read is a guess (`guess_cover_url`).
+- **Covers are fetched with a plain request**, never the page fetcher, and validated as pictures before they are kept.
+- **Never commit private data** (fetcher address, a library, comics, paths of the user's library). `TODO.md` is the user's: untracked,
+  never committed. Never `git add -A` / `.`: add paths explicitly and read `git diff --cached` first.
+- **Dependencies**: images are read and drawn with PyMuPDF only (no PIL, no numpy). OpenCV is a normal dependency but still degrades
+  (`covers.opencv_installed()`). Anything optional must degrade, never crash. Anything drawn is a help, never a reason for an import to fail.
+
+## Concurrency (import and organizer)
+- **Import fetches while it matches** (`Bedetheque.page_queue` / `PageQueue`, `ImportSession._handle_arrivals`): album then series page
+  are downloaded in worker threads; **only the main thread touches SQLite**. A failed page is left to the sequential phase. `--force` and
+  `-n` skip the queue. Ctrl-C / abort run `_finish_stored`; never leave the executor open (its threads would hold the exit).
+- **Several files at once** (`Organizer.run(workers=)`, `parallel.map_ordered`): workers are forked processes with their own `Library`
+  connection (never shared; no in-memory library). `map_ordered` is for read-only work and must not touch a database. A worker holds a
+  `_Deferring` prompter: a question raises `Deferred` **before anything is written** and the main process redoes the file. So a
+  question must be asked *before* the new file is built (see `_delete_wanted`); never add one after `_build`. `_independent` keeps files
+  with the same destination out of the pool. A file is held whole in memory (PDFs can be hundreds of MB): `write.workers` caps it.
+
+## Match checking (`confirm`, `review`, `recheck`)
+- `confirm.assess(path, album, embedded)` weighs a file against its *complete* album: pure, offline, no file read. `confirm.judge` is the one
+  place that decides (never re-implement it). Strong against = another volume, a "supplément" for a tome, the file's tags naming another
+  series; weak = another year, unknown names in a `(group)`. The volume agreeing confirms nothing (the match was ranked on it).
+  It runs when a page arrives (`ImportSession._confirm`) and over the library with `bdnex check --matches`.
+- **`bdnex review`** is the one command for doubtful matches (`--auto` settles by rule through `ui/verdicts.py`: `settle_verdicts` is the
+  one place that applies verdicts; it never touches a file the user chose). `--batch N` is a Textual screen (`ui/review_tui.py`) over
+  `library/review_batch.py`: keep the logic there and the screen thin; test it with Textual's pilot (`test/test_review_tui.py`). Nothing slow
+  runs in the screen's thread (workers with their own read-only `Library`; the screen's own library writes the decisions; downloads go
+  through `ui/review_fetch.DetailsQueue`). `bdnex ls --sitemap` / `--for FILE` and the screen's `o` are the same offline search
+  (`album_search.search_folded`).
+- Aliases (`aliases: ["NAME = COMMAND  # WHY"]`, `commands.expand_alias`) are a shorter way to type a bdnex command, nothing else: never
+  let one run a shell command. Every command needs rows in `ui/examples.py`.
 
 ## The web page (`bdnex/api/`)
-- A FastAPI app + static files (`static/index.html`, `app.css`, `app.js`: plain JS, **no build step**, shipped in the
-  wheel; everything from the server goes through `textContent`, never `innerHTML`). Reading opens the library
-  read-only; **changing is off unless `api.allow_changes`** and then needs the token, the `X-Requested-With: bdnex`
-  header and a same-site `Origin` (`can_change` in `app.py`).
-- Tasks are `jobs.SPECS`: a fixed list that runs the CLI `run(argv, out=...)` functions in a thread, one at a time, never an
-  arbitrary command line. Options are checked (`query` = plain terms, `paths` inside the collection or a source). A real
-  run adds `--force` (nobody can answer questions yet); previews use `-n`. New web feature that writes = new spec + tests.
-- **Questions on the page**: `api/webprompter.py` is `InquirerPrompter` with its four low-level prompts (`_select`, `_fuzzy`,
-  `_text`, `_checkbox`) replaced: they put a question on the `Job` (`Job.ask` blocks the job's thread, `POST /api/jobs/{id}/answer`
-  answers). Commands build their prompter with `prompts.new_prompter(...)`, never `InquirerPrompter(...)`, so a job can
-  swap it (`use_prompter`). A new question must go through those four methods (not `inquirer.*` directly), and keep
-  working with `fragments=None`. Never add a second copy of a question for the web.
-- **Login** (`api/auth.py`): a form + session cookie (HttpOnly, SameSite=Strict) for browsers, HTTP Basic and the bearer token for
-  scripts, `Throttle` (5 wrong guesses lock a client for 5 min; `api.behind_proxy` decides what "client" is). The page's own
-  requests carry `X-Bdnex-Page` so a 401 never triggers the browser's Basic box. The CSP forbids inline scripts: no
-  `<script>` bodies and no `onclick=` attributes in the static HTML.
-- **Settings page** (`api/settings_api.py`): the form is built from the packaged defaults (their order and help) and the
-  pydantic model (kinds, choices, limits); a change goes through `config_template.set_value` (line edit, comments kept) and
-  `build_settings` before the file is written. A new option needs no page work, but a secret goes in `HIDDEN`.
-- **Folder watch** (`api/watch.py`): a daemon thread of `bdnex serve` (started by the app's startup event, never by a test
-  client) that, when `watch.enabled`, starts the `watch` task = `import --sources --unattended`. `--unattended` gives the session
-  *no prompter* (strong matches applied, the rest skipped, duplicates skipped) and the organizer `force`: nothing is ever asked.
-  Anything that must ask must not run from the watcher.
-- **The metadata editor** (`POST /api/albums/{id}/edit`, `POST /api/edit`) calls `edit_cmd.doc_changes` / `describe_changes` /
-  `parse_assignments`, so the web and `bdnex edit` can never disagree on what a valid value is. Do not validate fields twice.
-- **Every API route and task is in `docs/guides/api.md`** (`test_docs_in_sync` fails otherwise), and `test/api/test_jobs_match_the_cli.py`
-  checks every flag a task builds against its command's `--help`: a new task is a row in `COMMAND_OF` / `EVERYTHING` there. A
-  real change goes through `can_change` (it marks the request; `protect` then writes `<library>.changes.jsonl`, `GET /api/history`;
-  an endpoint may add `request.state.detail`). A command's logic is a function the CLI and the API both call
-  (`importer/candidates.build_report`, `stats_cmd.summary`, `mark_cmd.apply_marks`, `review_cmd.settle`): never a second copy.
-- **Look at it for real**: Chromium is available. `tools/demo_library.py` builds a demo library; see the
-  `check-web-page` skill for serving it and taking screenshots. Never claim a page works from the code alone.
+- FastAPI + plain static JS/CSS (`static/`, **no build step**, shipped in the wheel). Everything from the server goes through
+  `textContent`, never `innerHTML`; the CSP forbids inline scripts (no `<script>` bodies, no `onclick=`).
+- Reading opens the library read-only. **Changing is off unless `api.allow_changes`**, then needs the token, the `X-Requested-With: bdnex`
+  header and a same-site `Origin` (`can_change` in `app.py`); a real change is logged (`protect` → `<library>.changes.jsonl`, `GET /api/history`).
+- Tasks are `jobs.SPECS`: a fixed list that runs the CLI `run(argv, out=...)` functions in a thread, one at a time, never an arbitrary
+  command line. A real run adds `--force`; previews use `-n`. **New web feature that writes = a new spec + tests**, a row in `COMMAND_OF` /
+  `EVERYTHING` in `test/api/test_jobs_match_the_cli.py` (it checks every flag a task builds against the command's `--help`), and the route
+  or task in `docs/guides/api.md`.
+- A command's logic is a function the CLI and the API both call (`candidates.build_report`, `stats_cmd.summary`, `mark_cmd.apply_marks`,
+  `review_cmd.settle`, `edit_cmd.doc_changes`/`describe_changes`/`parse_assignments`): never a second copy, never validate a field twice.
+- **Questions on the page**: `api/webprompter.py` replaces the four low-level prompts (`_select`, `_fuzzy`, `_text`, `_checkbox`) so a job
+  can wait for an answer. Commands build their prompter with `prompts.new_prompter(...)`, never `InquirerPrompter(...)`; a new question goes
+  through those four methods, not `inquirer.*`, and works with `fragments=None`.
+- **Login** (`auth.py`): form + session cookie for browsers, HTTP Basic / bearer token for scripts, `Throttle` after 5 wrong guesses. The
+  page's own requests carry `X-Bdnex-Page` so a 401 never opens the browser's Basic box. **Settings page**: the form is built from the
+  packaged defaults and the pydantic model; a change goes through `config_template.set_value`; a secret goes in `HIDDEN`.
+- **Folder watch** (`watch.py`, started by the app's startup event, never by a test client) runs `import --sources --unattended`:
+  no prompter, strong matches applied, the rest skipped. Anything that must ask must not run from the watcher.
+- **Look at it for real** (see the `check-web-page` skill). Never claim a page works from the code alone.
 
-## Komga (`bdnex komga show|push`, docs/guides/komga.md)
-- Komga ignores the tags inside a PDF, so the library's metadata is pushed through its API (`POST /api/v1/books/list`,
-  `PATCH /api/v1/books/{id}/metadata`, `PATCH /api/v1/series/{id}/metadata`; checked against Komga's OpenAPI file, not a live server).
-- A library file is paired with a Komga book by **file name + size** (`komga.match`), never by path (containers, other
-  machines); ties are left alone, never guessed. `show` only reads (a table: Komga value, bdnex value, what push would do);
-  `push` sends **only what differs**, locks the fields it sends (`komga.lock`), and `--fields` limits it. Omitted fields are
-  never sent (Komga leaves them alone), and tags are the genres *added* to Komga's own.
+## Komga (`bdnex komga show|push`, `docs/guides/komga.md`)
+- Komga ignores the tags inside a PDF, so metadata is pushed through its API (checked against its OpenAPI file, not a live server).
+- A library file is paired with a Komga book by **file name + size** (`komga.match`), never by path; ties are left alone. `show` only reads;
+  `push` sends **only what differs**, locks the fields it sends, `--fields` limits it; omitted fields are never sent.
 - A new field = a row in `komga.book_fields` / `series_fields`, its lock in `BOOK_LOCKS` / `SERIES_LOCKS`, its name in
-  `komga_cmd.BOOK_FIELD_KEYS` / `SERIES_FIELD_KEYS`, the table in docs/guides/komga.md and a test with the fake session.
-- `komga_cmd` parses with `parse_intermixed_args`: before Python 3.13 `argparse` rejects options after a positional list.
+  `komga_cmd.BOOK_FIELD_KEYS` / `SERIES_FIELD_KEYS`, the docs table and a test with the fake session.
+- `komga_cmd` parses with `parse_intermixed_args` (before Python 3.13 `argparse` rejects options after a positional list).
 
-## The import fetches while it matches (`Bedetheque.page_queue`, `ImportSession._handle_arrivals`)
-- A linked file's album page, then its series page, is downloaded in worker threads at once (`PageQueue`); **only the main
-  thread touches SQLite** (`store()` / `wait()` return the arrivals). `_handle_arrivals` builds the album record from the
-  stored pages (no request) and fills the file's result; covers wait for the cover pass (a request would block matching).
-- A failed page is left for the sequential fetch phase, which reports it for its file. `--force` (recache) and `-n` do not
-  use the queue. Ctrl-C / abort run `_finish_stored` (complete what is stored, then close the queue); never leave the
-  executor open (its threads would hold the exit).
-- Fetching writes to the library only: `--database-only` must still change no comic file (`test/test_outside.py`).
+## Docker (`Dockerfile`, `compose.yaml`, `docker/`, `docs/guides/docker.md`)
+- Runs `bdnex serve` as `PUID:PGID`, `HOME` a writable temp folder; config, library, covers are volumes (`/config`, `/data`, `/covers`)
+  beside `/comics`. The entrypoint seeds `/config/bdnex.yaml` and an empty library. Login is HTTP Basic (`api.username` / `BDNEX_PASSWORD`);
+  `/healthz` is the only open route. A change to the image is tested for real (`docker build -t bdnex:local .`, run with temp volumes, curl
+  `/healthz` and a login: CI does the same). Never put a user's fetcher address or password in the image or repo.
 
-## A second look at a match (`importer/confirm.py`, `bdnex check --matches`)
-- `confirm.assess(path, album, embedded)` weighs a file against its *complete* album (credits, year, volume, the file's own
-  tags): pure, offline, no file read. Strong against = another volume, a "supplément" for a tome, the file's tags naming
-  another series; weak = another year (a reissue), unknown names in a `(group)`. The **volume agreeing confirms nothing**
-  (the match was ranked on it). A match that looks wrong is flagged (`files.review`), never unlinked.
-- It runs when a page arrives (`ImportSession._confirm`) and for the whole library with `bdnex check --matches` (`library/health.doubtful_matches`). `confirm.judge` is the one place that decides; never re-implement it.
-  Credit labels of a page are mapped in `parser.OTHER_CREDIT_ROLES` (`Encrage` is `Inker`); `LEGACY_ROLES` reads old names back.
-
-- **`--auto=all` never asks and applies only strong matches without a doubt** (`match.auto_all`); a medium one is queued and
-  decided at the end by its cover (`importer/session_vote.py`, `match.cover_vote`): never apply a medium match unasked.
-- **`bdnex review --batch N`** (`ui/review_tui.py`, Textual: a core dependency) is a screen over `library/review_batch.py` (`next_batch`,
-  `decide`, `link_to`): every decision is written at once (a `checked` mark; `^attr:checked` leaves the file out of the next batch),
-  Nothing slow runs in the screen's thread: files are weighed in a worker with its own read-only `Library`, the album list lives in `SourceHub` (one thread that owns the source and its library, `fuzzy_search` for `o`), a link is written at once by the screen's own library (`review_batch.link_now`: a partial album from the address when the library has none, the file linked, a spare version when the album has another file); the album page, series page and cover are downloaded afterwards by `review_fetch.DetailsQueue` (`ReviewApp.fetcher`): up to `bedetheque.parallel` / one per endpoint downloads at once through a `PageQueue`, while ONE thread (its own) stores the pages and then runs `verdicts.rematch` for each file in turn (which finds them stored: no request, so two files of a series never write one row together; with one worker each import fetches for itself); stdout/stderr captured into the log panel; a decision on the row bumps `row.link_id`, which cancels what is queued, and an unlink wins over an import that ends later; only the screen's own library writes the decisions. `O` hands the terminal to the real `fzf` (`prompts.fzf_pick`) through `App.suspend()`. Keep the logic in `review_batch`, the screen
-  thin; test the screen with Textual's pilot (`test/test_review_tui.py`).
-- **Review screen extras**: `c` = `CoverScreen` (the file's first page and the album's saved cover as half-block text, `ui/cover_text.py`; nothing is fetched),
-  `space` marks rows and `a` links them to a series by volume (`review_batch.propose_for_series`, sequentially), a link refused because the album already has a
-  file is linked as a spare version at once (`import --album ... --keep-both`). `p` copies the address over SSH (never starts a browser there).
-- **`bdnex ls --sitemap` / `--for FILE`** (`importer/album_search.py`, `ui/sitemap_search.py`) searches the whole album list by text, offline; the review screen's `o` search is the same function (`search_folded`). It is how an assistant finds an album `candidates` did not list.
-- **`bdnex init --mirror`** (`importer/mirror.py`, `ui/mirror_cmd.py`; `bdnex mirror` and `bdnex fields` are `commands.RENAMED` aliases of `init --mirror ...` and `ls --fields`) fetches every album of the album list the library lacks (page, series page, cover) through `PageQueue`;
-  the library is the state (no resume file); it stops after 10 failures in a row. Never run it against the real site from a session.
-- **Stored pages are compressed** (schema v11, `Library.COMPRESSED_KINDS`, `cache_put`/`cache_get`; the upgrade compresses the old ones, `_compress_stored_pages`, after the
-  automatic `.bak-v10` copy). Never read `source_cache.content` of an album/series page directly. **A bdnex of this code opens the user's real library read-write and upgrades it: do not run
-  write commands on it from a session.** A cover address of an album whose page was not read is a guess (`guess_cover_url`, wrong for ~1 in 5): `download_cover` reads the page when it 404s.
-- **One command for doubtful matches: `bdnex review`** (`--auto` settles by rule). `library/recheck.py` weighs the flagged files and
-  the matches applied under `match.strong_threshold` (page, tags, saved covers); `ui/verdicts.py` looks for a better album by the covers of
-  the other candidates (`look_for_better`, the cover-vote rule) and applies the verdicts (`settle_verdicts`: one place): kept = flag goes,
-  wrong = switched or unlinked, unconfirmed = left alone. It never touches a file chosen by the user (no score in the import log).
-  `recheck` is only a renamed `review --auto` (`commands.RENAMED`). **Aliases** (`aliases: ["NAME = COMMAND  # WHY"]`; a default set ships in `bdnex.yaml`; every command needs rows in `ui/examples.py`, shown after `--help`), `commands.expand_alias`)
-  are a shorter way to type a bdnex command, nothing else: never let one run a shell command.
-- **Precision before coverage**: a wrong match costs more than an unasked one. A strong first choice is still asked about
-  when a *doubt* is set (`Match.doubt`, `matching._doubts`): another album within `match.min_margin` points, or a strong
-  contradiction. Candidates whose page was read get a few points when year/author agree and **never lose any** (a penalty
-  biases against known albums; measured). Change the matcher only with `tools/eval_matching.py run/report` on a real
-  library (answer key = matches `confirm.assess` calls confirmed); look at wrong-at-strong, not just totals.
-  The cover comparison is measured the same way with `tools/eval_covers.py run/report` (AUC and the catch rate of wrong matches at a given false-alarm rate, per
-  score variant): change `covers.sift_similarity` or `cover.match_percentage` only with its numbers (a correct match scores about 50, not 100; the default is 3: 5 % of right matches flagged, every wrong-series one caught, about 43 % of the wrong-volume ones; AUC 0.98 / 0.95).
-
-## Several files at once (`Organizer.run(workers=)`, `bdnex/parallel.py`)
-- `parallel.map_ordered(function, items, workers)` is the helper for read-only work (hashing, reading first pages): forked processes,
-  results in order, an exception is the item's result. It must not touch a database; the caller stores the results.
-- `write`, `move` and `repair` use `Organizer.run(workers=, repair=)`; `duplicates --covers`, `relocate --find` and `import --as-is`
-  use `map_ordered`.
-- Workers are forked processes with their own `Library` connection (a connection is never shared; an in-memory library
-  can not be used with workers). A worker holds a `_Deferring` prompter: any question raises `Deferred` **before anything is
-  written**, and the main process redoes that file with the real prompter, in order. So a question must always be asked
-  *before* the new file is built (see `_delete_wanted`); never add one after `_build`.
-- `_independent` keeps files with the same destination (or a destination another file is leaving) out of the pool.
-  Progress for the bar is read from shared memory (`_STATE`): `Future.running()` is true as soon as a task is queued.
-- Memory: a file is held whole while it is worked on; a PDF can be hundreds of MB. `write.workers` caps it.
-
-## Docker (`Dockerfile`, `compose.yaml`, `docker/`, docs/guides/docker.md)
-- The image runs `bdnex serve` as `PUID:PGID` (compose `user:`), `HOME` is a writable temp folder; config, library and
-  covers are volumes (`/config`, `/data`, `/covers`) beside `/comics`. The entrypoint seeds `/config/bdnex.yaml` and an empty
-  library, so `serve` can start. The login is HTTP Basic (`api.username` / `BDNEX_PASSWORD`); `/healthz` is the only open route.
-- A change to the image is tested for real: `docker build -t bdnex:local .`, run it with temp volumes, curl `/healthz`
-  and a login. Never put a user's fetcher address or password in the image or the repo (`.env` is ignored).
-
-## Rules that are easy to forget
-- **Tests never touch the real home.** `test/conftest.py` has an autouse `isolated_home` fixture; keep it.
-- **Docs are enforced by tests** (`test/test_docs_in_sync.py`): every command, flag, config option, query field and
-  table must appear in `docs/`. Add the docs in the same change (see the `add-cli-option` skill).
-- **Never commit the user's private fetcher address** (it lives in their own `~/.config/bdnex/bdnex.yaml`). Check
-  `git diff --cached` before every commit, and never `git add -A` / `git add .`: add paths explicitly. `TODO.md` is
-  the user's, untracked, never committed.
-- `flaresolverr_fetch` (`bdnex/fetchers.py`; config `fetch.fetcher`, `fetch.endpoint`, `fetch.parallel`, `fetch.delay`; the old `bedetheque.*` names are `config.MOVED_KEYS`) is the default page fetcher and the user's own code:
-  its behaviour and its endpoint setup are not changed, and it is never run against the site from a session; a bug in how it handles failures may
-  be fixed with a test that fakes `requests.post` (the user allowed it for the status / failover fixes), and never put their endpoint address in the repo. The config
-  validates that `fetch.fetcher` imports and is callable. `fetch.endpoint` is a list (a string is one item): used
-  round-robin with fallback, and pages are fetched `parallel` at a time (`Bedetheque.page_queue` / `PageQueue`: network in worker
-  threads started as soon as a file is matched, album then series page, SQLite only in the calling thread; the album record is built in the loop as the pages arrive, `ImportSession._handle_arrivals`; `prefetch` is the older, ordered form). Covers do not use it (plain request).
-- Do not modify the user's real database or comics. Work on copies in the session scratchpad.
-- PRs target `main`. **Do not stack**: a PR based on another branch is merged into that branch, not into `main`, and its
-  work never ships (it happened twice). Branch from `origin/main`; if two changes touch the same code, merge the first
-  one into the second branch, or put both in one PR.
-- **A schema change appends a migration** in `schema.py` (never edit a released one), documents the column in
-  `docs/dev/library.md`, and the PR says "back up the database first": an older bdnex refuses a newer schema.
-- **Dependencies:** images are read and drawn with PyMuPDF only (no PIL, no numpy). OpenCV is a normal dependency (the `cover`
-  extra is empty, kept for old install commands) but still degrades: `covers.opencv_installed()`. Anything optional must degrade, never crash.
-- **`-n` (preview) is read-only and fast**: it opens the library read-only and never reads page data.
-- **Covers are fetched with a plain request**, never with the user's page fetcher, and are validated as pictures
-  before they are kept.
-- Commit and PR trailers come from the session's attribution reminder; do not hard-code a session URL here.
+## Conventions
+- Comments say *why*; docs and code in plain, short English. French only for album data. A bug found by reading gets a test.
+- **Prompts**: InquirerPy is wrapped by thin `_select/_text/_fuzzy/_checkbox` methods so tests can script them. **Keys, labels and colours
+  live in one table, `ui/keys.py` (`ACTIONS`)**: a question lists the actions it offers, never hand-written `[K]` text. `skip` is always `S`,
+  `skip_folder` `F`, `back` `B`, `abort` `A` (red, last); a new answer = a new row there (and the keys table in `docs/guides/importing.md`);
+  `build` raises when a question uses a key twice. Write-side questions end with `[A]bort`.
+- **Colour is a role, never a colour name** (`ui/color.py`: `role(text, "bad", on)`, `verdict`, `hints`, `paint_score`), with `on = color.enabled(out)`:
+  plain text in a pipe, and the text must be identical with and without colour. Log lines (`-v`) go through `color.LogFormatter`.
+- **A command starts with `ui/context.py`**: `settings = context.settings(...)`, `context.has_library(settings, "nothing to ...")`,
+  `context.bad_query(err)` (exit code 2). Never write your own "No library yet" or `except ConfigError`.
+- **Results are drawn by `ui/results.py`**: a command names the outcome (a row in `STYLES`); it never picks a colour or prints its own `●`.
+- **Shared options and formats**: `-n` is `add_pretend(parser, ...)`, `--workers` is `add_workers(parser, ...)` (`ui/output.py`); sizes,
+  durations, short paths are `bdnex/formatting.py`. Do not write another `megabytes`.
+- **Verbosity** (`ui/output.py`, `ImportSession.verbosity`): default = phases, a count line per percent and only the files that need a look;
+  `-v` = every file (`session.detail()`); `-vv` = debug; `-vvv` = libraries + SQL; `--log-file` always gets debug. A new per-file message goes
+  through `detail()`, a decision for the user's eye through `_attention`, and a skip carries its reason in `result.note`. Every step of a slow
+  command is said as it happens. Long commands show phases with `banner()`.
+- **Config**: a new option needs the default (with a `# comment`) in `bdnex/conf/bdnex.yaml`, the pydantic model in `config.py` and
+  `docs/guides/configuration.md`; renamed keys go in `RENAMED_KEYS` / `MOVED_KEYS`; bump `CONFIG_VERSION` only for removals.
 - Terminal pictures (kitty, iTerm2, tmux) cannot be verified without the user's terminal: say so honestly.
 
 ## Checks before a PR
-`uv run pytest -q`, `uv run ruff check --select F bdnex` (catches undefined names the tests miss: a prompt that
-never ran in a test crashed that way), `uv run python -m compileall -q bdnex` (Python >= 3.10 syntax), and
-`uv run sphinx-build -W -E -q docs <scratch>/html`. See the `pr-checklist` skill.
-
-## Conventions
-- Comments say *why*; keep docs and code in plain, short English. French only for album data.
-- Prompts: InquirerPy is wrapped by thin `_select/_text/_fuzzy/_checkbox` methods so tests can script them. **Keys,
-  labels and colours live in one table, `bdnex/ui/keys.py` (`ACTIONS`)**: a question lists the actions it offers
-  (`_pick` / `_ask` entries `{"action": "skip", "value": ...}`, `label=` to reword), never hand-written `[K]` text or
-  colours. `skip` is always `S`, `skip_folder` `F`, `back` `B`, `abort` `A` (red, last); green = safe, yellow = put
-  off, red = destructive or stop. A new answer = a new row there (and the keys table in `docs/guides/importing.md`);
-  `build` raises when a question uses a key twice. Write-side questions end with `[A]bort` (`_ask` adds it).
-- Tests: autouse fixtures isolate HOME and switch the automatic cover check off; `FakeWeb` (test/helpers.py) serves
-  fixtures and a real picture. A bug found by reading code gets a test that fails without the fix.
-- **Verbosity** (`ui/output.py`, `ImportSession.verbosity`): default = phases, a count line every percent, and only the files that need a look
-  (skipped with *why*, duplicate, failed); `-v` = every file + reason (`session.detail()`); `-vv` = bdnex's own debug (`logger.debug`,
-  thread names); `-vvv` = libraries + SQL (`bdnex.sql`); `--log-file` always gets debug. A new per-file message goes through
-  `detail()`, a decision that needs the user's eye goes through `_attention`, and a skip must carry its reason in `result.note`.
-- **Colour is a role, never a colour name** (`ui/color.py`: `role(text, "bad", on)`, `verdict(text, "contradicted", on)`, `hints()`,
-  `paint_score`): title/name = bold (where the eye lands), good = green, warn = yellow (in doubt, left as it is), bad = red,
-  hint = cyan (what to type next), note/path = dim. `on = color.enabled(out)`: plain text in a pipe, and
-  `test_colour_only_adds_escape_codes_never_changes_the_text` checks the text is the same. A new command prints through roles;
-  log lines (`-v`) go through `color.LogFormatter`. Every step of a slow command is said as it happens (`candidates --cover`
-  streams file, cover, decision), never only in a report at the end.
-- Long commands show their phases with `banner()` and tint progress lines (`ui/output.py`); plain text in a pipe.
-- **Shared options and formats**: `-n` is `add_pretend(parser, "what would happen")` and `--workers` is
-  `add_workers(parser, ...)` (`ui/output.py`); sizes, durations and short paths are `bdnex/formatting.py`
-  (`human_size`, `human_duration`, `short_path`). Do not write another `megabytes`.
-- **A command starts with `ui/context.py`**: `settings = context.settings(...)` (config + the library file exists, one
-  wording, exit code 1), `context.has_library(settings, "nothing to ...")`, `context.bad_query(err)` (exit code 2).
-  Never write your own "No library yet" or `except ConfigError`.
-- **Results are drawn by `ui/results.py`**: one table of outcome -> colour (`STYLES`), one shape (`head` / `block` /
-  `footer`: `● label  Title`, indented lines, a rule and counts). A command names the outcome; it never picks a colour
-  or prints its own `●`. A new kind of result = a row in `STYLES`.
-- Anything drawn is a help, never a reason for the import to fail (swallow errors, log at debug).
+`uv run pytest -q`, `uv run ruff check --select F bdnex` (catches undefined names the tests miss), `uv run python -m compileall -q bdnex`
+(Python >= 3.10 syntax), and `uv run sphinx-build -W -E -q docs <scratch>/html` (needs `uv sync --extra docs`). CI also runs 3.10-3.13, the
+docs and a Docker build. PRs target `main`; **do not stack** (a PR based on another branch is merged into that branch and never ships):
+branch from `origin/main`, and if two changes touch the same code put them in one PR. Commit and PR trailers come from the session's
+attribution reminder. See the `pr-checklist` skill.

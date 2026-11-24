@@ -4,7 +4,7 @@ description: Run the bdnex checks and publish a change as a PR (tests, py3.10 co
 ---
 
 1. `git status`; the user's `TODO.md` stays untracked.
-2. `uv run pytest -q` (all green; `test/test_docs_in_sync.py` fails when docs drift).
+2. `uv run pytest -q` (all green, ~6 min; `test/test_docs_in_sync.py` and `test/test_examples.py` fail when docs drift; run the tests of what you touched first).
 3. `uv run ruff check --select F bdnex` (undefined names) and `uv run python -m compileall -q bdnex`.
    CI also runs Python 3.10-3.13 and `argparse` differs (options after positionals fail before 3.13). To try another
    version: `uv sync --python 3.10 --extra dev --extra docs`, run the tests, then `uv sync --python 3.12 --extra dev
