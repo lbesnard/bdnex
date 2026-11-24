@@ -84,6 +84,9 @@ About 1900 tests; the whole suite takes ~6 minutes, so run the tests of what you
   one value is refused), `library/twins.py` (files of one album: compare, trash, `make_main`, `keep_as_version`). The screen side is `ui/review_panels.py`
   (`FolderTree`, `DuplicateScreen`, `BulkScreen`) and the mixin `ui/review_extras.py`; keys `f R D E K V`. A hidden `Input` still takes the focus
   (disable it). `category` (`$category`) is a hand-set field apart from `kind`; `parent_id` + `relation` (`version` goes to the spare versions folder).
+  The left panel (folders / after a move / filters) reads `library/browse.py`: `rows_for` (one indexed query per selection, 1000 rows at most; never
+  weigh files one by one for a list), `plan` (where a move puts every file, ~0.1 ms each, in memory, updated from the albums that change), `facets`.
+  Schema v17 is indexes only. Long work runs in a worker with its own read-only `Library`.
   A series / one-shot choice by hand is `Library.assign_series` / `make_oneshot` and is stored in the album's edits so a re-import keeps it.
 - Aliases (`aliases: ["NAME = COMMAND  # WHY"]`, `commands.expand_alias`) are a shorter way to type a bdnex command, nothing else: never
   let one run a shell command. Every command needs rows in `ui/examples.py`.
