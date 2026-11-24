@@ -280,4 +280,18 @@ MIGRATIONS = [
     ALTER TABLE albums ADD COLUMN relation TEXT CHECK (relation IS NULL OR relation IN ('version', 'child'));
     CREATE INDEX idx_albums_parent ON albums(parent_id);
     """,
+    # --- version 17 ------------------------------------------------------
+    # Indexes only, for the review screen's filters (category, collection, genre, publisher, spare, flagged, damaged files): every one is a
+    # lookup of the facet's value to its albums or files, instead of a scan of all of them. No table changes.
+    """
+    CREATE INDEX idx_albums_category ON albums(category) WHERE category IS NOT NULL;
+    CREATE INDEX idx_albums_collection ON albums(collection) WHERE collection IS NOT NULL;
+    CREATE INDEX idx_albums_kind ON albums(kind);
+    CREATE INDEX idx_albums_publisher ON albums(publisher_id);
+    CREATE INDEX idx_albums_relation ON albums(relation) WHERE relation IS NOT NULL;
+    CREATE INDEX idx_album_genres_genre ON album_genres(genre_id, album_id);
+    CREATE INDEX idx_files_spare ON files(spare) WHERE spare = 1;
+    CREATE INDEX idx_files_review ON files(review) WHERE review IS NOT NULL;
+    CREATE INDEX idx_files_corrupted ON files(corrupted) WHERE corrupted = 1;
+    """,
 ]

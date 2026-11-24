@@ -42,6 +42,10 @@ class Row:
     facts: str = ""  # what the album says (year, credits, pages) next to what the file is: to judge a match by eye
     previous: str = ""  # an earlier decision (the ``checked`` mark), shown when files already checked are asked for again
     dest: str = ""  # where `bdnex move` would put the file, relative to the collection (``""``: no album, or not worked out)
+    album_kind: str = ""  # ``series`` | ``oneshot`` ("" = not read yet: the screen asks the library when it draws the row)
+    volume: Optional[int] = None
+    category: str = ""
+    spare: bool = False
 
 
 def destination_of(library: Library, settings, file: dict, album_id: Optional[int]) -> str:
