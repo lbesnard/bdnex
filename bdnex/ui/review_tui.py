@@ -47,9 +47,7 @@ KIND_WORD = {"wrong": "contradicted", "unconfirmed": "unconfirmed", "unmatched":
 EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 SEARCH_LIMIT = 60
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # braille dots turning: a state that is waiting for the site
-COLUMNS = (("#", 3), ("File", 40), ("Folder", 22), ("Album now", 40), ("Page", 8), ("Match", 8), ("Cover", 8), ("State", 14),
-           ("Would go to", 44), ("Kind", 7), ("Vol", 5))  # (the numbers of the columns before these stay as they were; `Would go to` takes the room left)
-FLEX_COLUMN = 8
+from bdnex.ui.review_columns import COLUMN_TYPES, COLUMNS, DEFAULT_VIEW, FLEX_COLUMN, ColumnsMixin  # noqa: E402,F401
 STATE_COLUMN = 7
 STATE_ORDER = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # the state column sorts by how doubtful, then by decision
 DECIDED_ORDER = {"keep": 10, "linked": 11, "unlinked": 12, "left": 13, "skipped": 14}
@@ -672,7 +670,7 @@ class CoverScreen(ModalScreen):
 
 
 # ----------------------------------------------------------------------------- the table
-class ReviewApp(ReviewExtras, App):
+class ReviewApp(ColumnsMixin, ReviewExtras, App):
     """The table of one batch, the detail of the row under the cursor, and the keys that decide."""
 
     TITLE = "bdnex review"
@@ -713,6 +711,7 @@ class ReviewApp(ReviewExtras, App):
         Binding("d", "metadata", "Album metadata panel"),
         Binding("w", "waiting", "Waiting questions"),
         Binding("e", "edit", "Edit by hand"),
+        Binding("C", "columns", "Columns"),
         Binding("f", "folders", "Folders on/off"),
         Binding("R", "reviewed_folder", "Folder reviewed"),
         Binding("D", "duplicates", "Duplicates"),
@@ -747,7 +746,9 @@ class ReviewApp(ReviewExtras, App):
         self.batch_size, self.terms, self.unmatched = size, list(terms), unmatched
         self.everything, self.again = everything, again
         self.rows: list[batch.Row] = []
-        self.album_cache: dict = {}  # album id -> (kind, volume), for the rows a selection did not build
+        self.album_data: dict = {}  # album id -> the album, for the cells a selection did not build
+        self.file_data: dict = {}  # path -> the file's record, the same
+        self.load_view()  # the columns as they were left (saved in the library)
         self.shown: set[str] = set()  # every file of every batch of this run: the next batch never repeats one
         self.number = 0
         self.terminal_stderr = sys.stderr  # the real one, before any fetch redirects it
@@ -1053,17 +1054,6 @@ class ReviewApp(ReviewExtras, App):
             self.say("Nothing left to check: every doubtful file has been looked at. "
                      "`bdnex import --skipped --auto=all` decides the unlinked ones again.", "green")
 
-    def add_columns(self) -> None:
-        """The columns, with an arrow on the sorted one. Every column has a width of its own: a Textual ``DataTable`` measures
-        auto-width columns late (Textualize/textual#6759), so a table that is rebuilt (here: by a sort) could paint its first rows
-        with stale widths. Long names are cut, so the scores and the state are always on screen."""
-        table = self.query_one(DataTable)
-        for index, (name, width) in enumerate(COLUMNS):
-            arrow = (" ▼" if self.sort_reverse else " ▲") if index == self.sort_column else ""
-            if index == FLEX_COLUMN:  # where a move would put the file: a path is long, so it takes what the screen has left (at least `width`)
-                width = max(width, self.table_width() - sum(w for i, (_, w) in enumerate(COLUMNS) if i != FLEX_COLUMN) - 2 * len(COLUMNS) - 2)
-            table.add_column(f"{name}{arrow}", width=width, key=str(index))  # (a fixed width: the table never has to measure its cells)
-
     def table_width(self) -> int:
         """The room the table has: the screen less the folder tree, when it is shown."""
         with contextlib.suppress(Exception):
@@ -1085,35 +1075,9 @@ class ReviewApp(ReviewExtras, App):
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
         self.action_sort(event.column_index)
 
-    def sort_key(self, index: int, row: batch.Row):
-        """What the column ``index`` sorts by; ``None`` puts the row after the others, whatever the direction."""
-        import os
-
-        if index == 0:
-            return self.order.get(id(row), 0)
-        if index == 1:
-            return os.path.basename(row.path).casefold()
-        if index == 2:
-            return row.folder.casefold()
-        if index == 3:
-            return row.album.casefold() if row.album else None
-        if index == 4:
-            return int(page_number(row.album_url)) if page_number(row.album_url) else None
-        if index == 5:
-            return row.score
-        if index == 6:
-            return row.cover
-        if index == 8:
-            return row.dest.casefold() if row.dest else None
-        if index == 9:
-            return self.album_facts(row)[0] or None
-        if index == 10:
-            return self.album_facts(row)[1]
-        return DECIDED_ORDER.get(row.status) if row.status else STATE_ORDER.get(row.kind, 5)
-
     def action_sort(self, index: int) -> None:
         """Sort by the column ``index``; the same column again reverses it. ``#`` is the order of the batch."""
-        if not (0 <= index < len(COLUMNS)) or not self.rows:
+        if not (0 <= index < len(self.view)) or not self.rows:
             return
         self.sort_reverse = (not self.sort_reverse) if index == self.sort_column else False
         self.sort_column = index
@@ -1128,7 +1092,7 @@ class ReviewApp(ReviewExtras, App):
 
     def update_title(self) -> None:
         done = sum(1 for row in self.rows if row.status)
-        by = f" · by {COLUMNS[self.sort_column][0].lower()} {'▼' if self.sort_reverse else '▲'}" if self.sort_column is not None else ""
+        by = f" · by {COLUMN_TYPES[self.view[self.sort_column]][0].lower()} {'▼' if self.sort_reverse else '▲'}" if self.sort_column is not None else ""
         self.sub_title = f"batch {self.batch_of()} · {done}/{len(self.rows)} checked{by} · {self.timing}".rstrip(" ·") + self.progress_text()
         self.schedule_counts()
 
@@ -1137,47 +1101,6 @@ class ReviewApp(ReviewExtras, App):
         if not self.first_total:
             return str(self.number)
         return f"{self.number}/{max(self.number, -(-self.first_total // self.batch_size))}"
-
-    def cells(self, number: int, row: batch.Row) -> list:
-        import os
-
-        spin = SPINNER[int(time.monotonic() * 10) % len(SPINNER)]  # moves with every redraw: something is going on
-        if row.busy:
-            waited = f" {time.monotonic() - row.started_at:.0f}s" if row.busy_what and row.started_at else ""
-            state = Text(f"{spin} {row.busy_what or 'linking'}{waited}", style="bold yellow")
-        elif row.pending:
-            now = time.monotonic()
-            state = Text(f"{spin} linked · fetching {now - row.started_at:.0f}s" if row.started_at else
-                         f"linked · queued {now - row.queued_at:.0f}s", style="yellow")
-        elif row.status:
-            state = Text(row.status, style=STATUS_STYLE.get(row.status, ""))
-        elif row.message.startswith(("refused", "failed")):
-            state = Text(row.message.split(":")[0], style="bold red")
-        else:  # what is wrong with it, until it is decided
-            state = Text(KIND_WORD.get(row.kind, row.kind) + (f" (was {row.previous})" if row.previous else ""),
-                         style=KIND_STYLE.get(row.kind, ""))
-        match = Text("you", style="cyan") if row.status == "linked" else score_text(row.score)
-        return [Text(str(number), style="bold reverse magenta" if id(row) in self.marked else "cyan"), Text(os.path.basename(row.path), style="bold"),
-                Text(row.folder, style="dim"), album_text(row), page_text(row.album_url), match, score_text(row.cover), state,
-                Text(row.dest or ("…" if self.planned is None else "-"), style="dim" if row.dest != "?" and not row.dest.startswith("(") else "yellow"),
-                *self.kind_cells(row)]
-
-    def album_facts(self, row: batch.Row) -> tuple[str, Optional[int]]:
-        """``(series | oneshot | "", volume)`` of the row's album: from the row when a selection built it, else read once from the library."""
-        if row.album_kind:
-            return row.album_kind, row.volume
-        if row.album_id is None:
-            return "", None
-        cached = self.album_cache.get(row.album_id)
-        if cached is None:
-            album = self.library.get_album(row.album_id) or {}
-            cached = self.album_cache[row.album_id] = (album.get("kind") or "", album.get("volume"))
-        return cached
-
-    def kind_cells(self, row: batch.Row) -> list:
-        kind, volume = self.album_facts(row)
-        word = {"series": Text("series", style="cyan"), "oneshot": Text("1-shot", style="magenta")}.get(kind, Text("-", style="dim"))
-        return [word, Text("-" if volume is None else str(volume), style="dim" if volume is None else "")]
 
     def show_detail(self, index: int) -> None:
         if not (0 <= index < len(self.rows)):
@@ -1361,7 +1284,7 @@ class ReviewApp(ReviewExtras, App):
         with contextlib.suppress(Exception):
             file = self.library.get_file(row.path) or {}
             row.dest = batch.destination_of(self.library, self.settings, file, file.get("album_id"))
-            self.album_cache.clear()  # (its album may have changed kind or volume)
+            self.forget_cached()  # (its album may have changed kind or volume)
             row.album_kind = ""
             if file.get("album_id") is not None:
                 self.plan_dirty.add(file["album_id"])  # the second tree follows: where a move would put this album's files is worked out again

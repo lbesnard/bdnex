@@ -1,4 +1,4 @@
-"""``bdnex review``: go through the flagged matches one by one, with the file's cover and the album's side by side."""
+"""``bdnex review``: the review screen (folders, filters, the doubtful matches, duplicates, bulk edits); ``--no-tui`` asks one file at a time."""
 
 from __future__ import annotations
 
@@ -168,19 +168,22 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                              "flag; the ones something contradicts are switched to another album whose cover is clearly "
                              "the file's (see --candidates), else unlinked (`bdnex import --skipped --auto=all` decides "
                              "them again); the ones nothing confirms or contradicts are left as they are")
+    parser.add_argument("--no-tui", action="store_true",
+                        help="do not open the review screen: ask about the flagged files one at a time, in the terminal, with both covers "
+                             "side by side (the screen is the default in a terminal)")
     parser.add_argument("--batch", type=int, metavar="N",
-                        help="a table of the next N files to check (for example `--batch 50`): file, folder, album now, "
+                        help="the size of a batch in the review screen (default 50): the next N files to check: file, folder, album now, "
                              "match score, cover score; keep, unlink or pick another album from the album list. Every decision "
                              "is saved at once and the files checked are not shown again: run it again to continue; a query "
                              "limits the files, as in `bdnex ls --files`")
-    parser.add_argument("--unmatched", action="store_true", help="with --batch: also the files that have no album")
+    parser.add_argument("--unmatched", action="store_true", help="in the screen: also the files that have no album")
     parser.add_argument("--no-tree", action="store_true",
-                        help="with --batch: start with the folder tree hidden (`f` shows it; the screen remembers how you left it)")
+                        help="in the screen: start with the left panel hidden (`f` shows it; the screen remembers how you left it)")
     parser.add_argument("--all", action="store_true",
-                        help="with --batch: every file of the query, not only the doubtful ones (those come first, then the files "
+                        help="in the screen: every file of the query, not only the doubtful ones (those come first, then the files "
                              "without album, then the rest): to look through a series, e.g. `--batch 50 series:batman --all`")
     parser.add_argument("--again", action="store_true",
-                        help="with --batch: also the files already checked (the table says what you decided then)")
+                        help="in the screen: also the files already checked (the table says what you decided then)")
     add_candidate_options(parser)
     parser.add_argument("-y", "--yes", action="store_true", help="with --auto: do not ask for confirmation before unlinking or switching")
     add_pretend(parser, "be settled (with --auto)")
@@ -190,10 +193,18 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     settings = context.settings()
     if settings is None:
         return 1
-    if (args.unmatched or args.all or args.again or args.no_tree) and args.batch is None:
-        print("--unmatched, --all, --again and --no-tree go with --batch N (the table).", file=sys.stderr)
+    asked = args.unmatched or args.all or args.again or args.no_tree
+    screen = args.batch is not None or (not (args.list or args.auto or args.scan or args.no_tui or args.json) and prompter is None
+                                        and sys.stdin.isatty() and sys.stdout.isatty())  # in a terminal, `bdnex review` is the screen
+    if args.no_tui and (args.batch is not None or asked):
+        print("--no-tui asks one file at a time: --batch, --unmatched, --all, --again and --no-tree are for the screen.", file=sys.stderr)
         return 2
-    if args.batch is not None:  # (`--batch 0` is refused by the screen's own check: it used to be read as 'no batch' and start --auto)
+    if asked and not screen:
+        print("--unmatched, --all, --again and --no-tree are for the review screen (it needs a terminal).", file=sys.stderr)
+        return 2
+    if screen:  # (`--batch 0` is refused by the screen's own check: it used to be read as 'no batch' and start --auto)
+        if args.batch is None:
+            args.batch = 50
         return _batch(args, settings, out)
     if args.auto:
         return _auto(args, settings, out, prompter)
