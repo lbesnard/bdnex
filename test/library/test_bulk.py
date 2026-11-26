@@ -91,3 +91,19 @@ def test_a_hors_serie_is_a_number_less_tome_with_a_special_that_counts_up(lib, m
     assert [(a["volume"], a["alternate_number"]) for a in got] == [(1, None), (None, "HS 1"), (None, "HS 2")]
     out = bulk.apply(lib, targets[1:2], {}, volumes={targets[1].path: 4}, specials={targets[1].path: None})  # back to a number
     assert out.ok and (lib.get_album(targets[1].album_id)["volume"], lib.get_album(targets[1].album_id)["alternate_number"]) == (4, None)
+
+
+def test_a_dash_in_the_form_empties_a_collection_the_site_gives_on_every_album(tmp_path):
+    from bdnex.library import AlbumInfo, Library, SeriesInfo, bulk
+    from bdnex.organizer import template
+
+    with Library(tmp_path / "lib.sqlite") as lib:
+        ids = [lib.add_album(AlbumInfo("b", f"x{n}", f"Album {n}", series=SeriesInfo("b", "s", "S"), volume=n)) for n in (1, 2)]
+        with lib.conn:
+            lib.conn.execute("UPDATE albums SET extra = ? WHERE id = ?", ('{"edition_fields": {"Collection": "Pilote"}}', ids[0]))
+        lib.edit_album(ids[1], {"collection": "Other"})
+        assert bulk.shared(lib, ids)["collection"] is None  # they differ: the form says "(several values)"
+        out = bulk.apply(lib, [bulk.Target(f"/x/{n}.cbz", album_id=i) for n, i in enumerate(ids)], {"collection": ""}, mark=False)
+        assert out.ok and out.changed == 2
+        assert [template.fields_for(lib.get_album(i))["collection"] for i in ids] == ["", ""]  # none on both, whatever they had
+        assert bulk.shared(lib, ids)["collection"] == ""

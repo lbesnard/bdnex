@@ -580,6 +580,7 @@ class BulkScreen(ModalScreen):
     .fieldrow { height: 3; }
     .fieldname { width: 18; padding-top: 1; color: $text-muted; }
     .fieldrow Input { width: 1fr; }
+    .fieldrow Input.several > .input--placeholder { color: darkorange; text-style: bold; }
     #bulkkind { width: 30; }
     #bulkvolumes { height: 9; }
     #bulkproblem { color: $error; height: auto; }
@@ -600,7 +601,7 @@ class BulkScreen(ModalScreen):
         with Vertical(id="bulk"):
             yield Label(Text(self.heading, style="bold"))
             yield Label(Text("A field you leave as it is stays as it is on every file; one you type is set on all of them; "
-                             "`-` empties it. The grey text is what they already have in common.", style="dim"))
+                             "type `-` to empty it (none). Grey: what they all have; orange: they differ.", style="dim"))
             with Vertical(id="bulkfields"):
                 with Horizontal(classes="fieldrow"):
                     yield Label("Kind", classes="fieldname")
@@ -610,7 +611,7 @@ class BulkScreen(ModalScreen):
                     holder = "(several values)" if shared is None else (shared or self.hints.get(key) or hint)
                     with Horizontal(classes="fieldrow"):
                         yield Label(label, classes="fieldname")
-                        yield Input(value="", placeholder=holder, id=f"b-{key}")
+                        yield Input(value="", placeholder=holder, id=f"b-{key}", classes="several" if shared is None else "")
             yield Label(Text("Number and file, one line each: a number (5), or text for a tome with no number (HS 1, INT); the buttons fill them in",
                              style="dim"))
             yield TextArea("\n".join(f"{v}\t{os.path.basename(p)}  {note}" for p, v, note in self.files), id="bulkvolumes")
