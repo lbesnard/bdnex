@@ -730,7 +730,7 @@ class PageScreen(ModalScreen):
                 columns, rows = max(20, size.width - 2), max(8, size.height - 3)
                 image, fx, fy = crop(image, zoom, px, py, columns, rows)
                 self.step = (fx, fy)
-                how = getattr(getattr(getattr(self.app, "settings", None), "cover", None), "picture", "chafa")
+                how = getattr(getattr(getattr(self.app, "settings", None), "cover", None), "picture", "symbols")
                 if how in GRAPHICS:
                     sequence = graphic(image, columns, rows, how)
                     if sequence:
@@ -738,7 +738,7 @@ class PageScreen(ModalScreen):
                     else:
                         note = f"{how}: chafa is not installed or failed; drawn with text instead"
                 if made is None:
-                    made = picture(image, columns, rows)
+                    made = picture(image, columns, rows, use_chafa=how != "blocks")
             elif not note:
                 note = "this page could not be read"
         except Exception as err:  # a picture is a help: say why, never end the program

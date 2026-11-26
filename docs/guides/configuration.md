@@ -117,7 +117,14 @@ cover:
   dir: ~/.local/share/bdnex/covers       # where the cover files are kept
   check: auto                            # compare each file's cover with its album's: auto (when OpenCV is installed) | true | false
   match_percentage: 3                    # similarity (0-100) below which a cover is not the album's: a right match scores about 50, another series about 0 (measured)
-  picture: chafa                         # `bdnex review`, c then z: how a page is drawn: chafa (text, any terminal; needs chafa, else blocks) | blocks (text, nothing to install) | kitty | iterm2 | sixel (a real picture: sharp, but the terminal must show it; kitty is the best when it works; tmux needs `allow-passthrough on`, and nested tmux often blocks it)
+  # `bdnex review`, c then z: how a page is drawn. One of:
+  #   symbols  text drawn by chafa (any terminal, ssh, tmux; without chafa it falls back to blocks)
+  #   blocks   text drawn by bdnex itself (nothing to install, the coarsest)
+  #   kitty    a real picture (the sharpest, when your terminal shows it: kitty, Ghostty, WezTerm); needs chafa
+  #   iterm2   a real picture (iTerm2, WezTerm); needs chafa
+  #   sixel    a real picture (foot, WezTerm, Windows Terminal, tmux 3.4+...); needs chafa
+  # A real picture needs `set -g allow-passthrough on` in tmux, and a tmux inside a tmux usually blocks it.
+  picture: symbols
 
 api:
   host: 127.0.0.1                        # `bdnex serve` listens here; anything but this machine needs a password or a token

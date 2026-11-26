@@ -47,10 +47,10 @@ def chafa_installed() -> bool:
     return shutil.which("chafa") is not None
 
 
-def picture(image: bytes, columns: int, rows: int) -> tuple[Optional[Text], str]:
+def picture(image: bytes, columns: int, rows: int, use_chafa: bool = True) -> tuple[Optional[Text], str]:
     """``image`` as text as large as ``columns`` x ``rows`` cells allow, and the name of what drew it: ``chafa`` (when it is installed: it picks
     the best characters for each cell, much sharper than half blocks) or ``half blocks``. Works over SSH and in tmux: it is only text."""
-    if chafa_installed():
+    if use_chafa and chafa_installed():
         try:
             done = subprocess.run(["chafa", "--format=symbols", "--colors=full", "--work=9", f"--size={columns}x{rows}", "--animate=off", "-"],
                                   input=image, capture_output=True, timeout=15)

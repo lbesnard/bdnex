@@ -854,7 +854,7 @@ def test_the_picture_setting_draws_a_real_picture_over_the_page_and_falls_back_t
 
 def test_the_picture_option_is_in_the_config_with_chafa_as_the_default():
     settings = load_config().settings
-    assert settings.cover.picture == "chafa"
+    assert settings.cover.picture == "symbols"
 
 
 def test_a_collection_the_site_gives_is_the_value_in_the_form_and_any_value_you_type_is_the_one_used(env):
