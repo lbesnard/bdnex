@@ -100,10 +100,23 @@ class SourceHub:
         self.series_cache: dict = {}
         build = source if callable(source) and not hasattr(source, "candidates") else (lambda: source)
         self.ready = self.pool.submit(self._build, build)
+        self.loaded = None  # the album list loaded (`load_list`): a Future, once it is asked for
 
     def _build(self, build) -> None:
         made = build()
         self.source, self.close_it = made if isinstance(made, tuple) else (made, None)
+
+    def load_list(self):
+        """Load the album list (about three seconds of Python) now. Asked for once the table is on screen, not before: it used to run beside
+        the weighing of the first batch and both took a few times longer (two threads share one interpreter). A search queued behind it waits."""
+        if self.loaded is None:
+            def warm(_hub) -> None:
+                warm_it = getattr(self.source, "warm", None)
+                if warm_it:
+                    warm_it()
+
+            self.loaded = self.run(warm)
+        return self.loaded
 
     def run(self, function):
         """Run ``function(hub)`` in the thread of the album list (after it is built); returns a ``Future``."""
@@ -1130,14 +1143,12 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         self.ui_thread = threading.get_ident()
         self.ui_loop = asyncio.get_running_loop()
         self.started = time.monotonic()
-        self.hub.ready.add_done_callback(self.list_loaded)
         self.take_the_log()
         self.set_interval(0.15, self.tick_pending)
         self.query_one("#meta").display = bool(self.view_extra.get("meta", True))  # the album's metadata is shown unless `d` hid it
         self.restore_layout()
         self.start_tips()
-        self.start_folders()
-        self.load_batch()
+        self.load_batch()  # (the folders and the album list start once the table is there: see `start_background`)
 
     def on_unmount(self) -> None:
         self.give_back_the_log()
@@ -1239,8 +1250,20 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         panel = self.query_one("#log", RichLog)
         panel.display = not panel.display
 
+    background_started = False
+
+    def start_background(self) -> None:
+        """Once, as soon as the first batch is on screen (or failed): the folder tree and filters, and the album list for the search. They are
+        Python work that shares the interpreter with the weighing of the first batch, so they wait for it."""
+        if self.background_started:
+            return
+        self.background_started = True
+        self.start_folders()
+        self.hub.load_list().add_done_callback(self.list_loaded)
+
     def list_loaded(self, future) -> None:  # called in the thread of the album list
         self.albums_in = time.monotonic() - self.started
+        logger.info("the album list is loaded (%.1f s after the start)", self.albums_in)
 
     # -- the loading panel: what is being done, and for how long
     SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
@@ -1249,19 +1272,15 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         now = time.monotonic()
         frame = self.SPINNER[int(now * 10) % len(self.SPINNER)]
         weighing = self.weighed_in is None
-        listing = not self.hub.ready.done()
         text = Text()
-        text.append(f"{frame}  " if (weighing or listing) else "✓  ", style="bold cyan")
+        text.append(f"{frame}  " if weighing else "✓  ", style="bold cyan")
         text.append("Getting the batch ready\n\n", style="bold")
         text.append("   ")
         text.append(("✓ " if not weighing else f"{frame} "), style="green" if not weighing else "cyan")
         text.append("weighing the files: what each match says for and against, offline")
         text.append(f"   {self.weighed_in if not weighing else now - self.started:.1f} s\n", style="dim")
-        text.append("   ")
-        text.append(("✓ " if not listing else f"{frame} "), style="green" if not listing else "cyan")
-        text.append("loading the album list (for the search)")
-        text.append(f"   {self.albums_in if not listing and self.albums_in is not None else now - self.started:.1f} s\n", style="dim")
-        text.append("\nThe table opens as soon as the files are weighed; the search waits for the album list.", style="dim")
+        text.append("\nThe table opens as soon as the files are weighed. The folders, the filters and the album list (for the search) load right after, "
+                    "in the background.", style="dim")
         return text
 
     def show_loading(self, on: bool) -> None:
@@ -1359,6 +1378,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         if self.batches and self.at < len(self.batches):
             self.display(self.batches[self.at], "seen before")  # back to the batch that was there (`self.rows` was emptied for the new one)
         self.say(f"Could not weigh the files: {message}", "red")
+        self.start_background()
 
     def show_batch(self, rows: list[batch.Row], seconds: float) -> None:
         """A new batch: kept in ``batches`` (to come back to), shown, and the one after it is weighed in the background."""
@@ -1367,6 +1387,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         self.at = len(self.batches) - 1
         self.number = self.at + 1
         self.display(rows, f"weighed in {seconds:.1f} s")
+        self.call_after_refresh(self.start_background)  # (after the table was drawn)
         self.prefetch()
 
     def display(self, rows: list[batch.Row], timing: str) -> None:

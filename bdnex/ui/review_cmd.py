@@ -53,20 +53,18 @@ def _batch(args, settings, out) -> int:
     offline = offline_settings(settings)  # searching the list needs no request
 
     def build_source():
-        """In the thread of the album list: its own read-only library, the album list loaded (a few seconds)."""
+        """In the thread of the album list: its own read-only library. The album list is loaded later (`SourceHub.load_list`, once the table
+        is on screen)."""
         own = Library.for_settings(settings, readonly=True)
-        made = create_source(settings.source, own, offline)
-        warm = getattr(made, "warm", None)
-        if warm:
-            warm()
-        return made, own.close
+        return create_source(settings.source, own, offline), own.close
 
     with Library.for_settings(settings) as library:
         try:
             if not create_source(settings.source, library, offline).is_ready():
                 print("The album list is not downloaded yet: run `bdnex init` first.", file=sys.stderr)
                 return 1
-            library.query(args.query, files=True, limit=1)  # a bad query is said now, not from inside the screen
+            if args.query:  # a bad query is said now, not from inside the screen (no query: nothing to check, and the check reads the library)
+                library.query(args.query, files=True, limit=1)
         except QueryError as err:
             return context.bad_query(err)
         except Exception as err:
