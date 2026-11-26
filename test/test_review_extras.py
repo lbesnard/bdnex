@@ -854,3 +854,31 @@ def test_the_picture_setting_draws_a_real_picture_over_the_page_and_falls_back_t
 def test_the_picture_option_is_in_the_config_with_chafa_as_the_default():
     settings = load_config().settings
     assert settings.cover.picture == "chafa"
+
+
+def test_the_edit_form_says_what_the_site_gives_for_a_collection_you_did_not_set(env):
+    from bdnex.library import manual
+
+    db, root, paths = env
+    seen = {}
+    with Library(db, root=root) as lib:
+        album_id = lib.find_album("b", "t2")
+        with lib.conn:
+            lib.conn.execute("UPDATE albums SET extra = ? WHERE id = ?", ('{"edition_fields": {"Collection": "Collection Pilote"}}', album_id))
+        assert manual.site_values(lib, album_id) == {"collection": "Collection Pilote"}
+        lib.edit_album(album_id, {"collection": "Mine"})
+        assert manual.site_values(lib, album_id) == {}  # a value of your own: nothing to say about the site's
+
+        lib.edit_album(album_id, {"collection": None})
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("down")  # Tintin T2
+        await pilot.press("e")
+        await pilot.pause(0.5)
+        field = app.screen.query_one("#f-collection")
+        seen["value"], seen["holder"] = field.value, field.placeholder
+
+    drive(db, root, script)
+    assert seen["value"] == "" and "Collection Pilote" in seen["holder"]

@@ -96,6 +96,18 @@ def form_of(library: Library, album_id: int) -> dict[str, str]:
     return values
 
 
+def site_values(library: Library, album_id: int) -> dict[str, str]:
+    """What the site's own edition table says for the fields a hand-set value overrides (``Collection``, ``Cycle``): used by the paths when the
+    album has none of its own, so the form shows it (the form's field is empty then, and it is not what the paths use)."""
+    album = library.get_album(album_id) or {}
+    edition = (album.get("extra") or {}).get("edition_fields") or {}
+    found = {}
+    for key, name in (("collection", "Collection"), ("cycle", "Cycle")):
+        if not album.get(key) and edition.get(name):
+            found[key] = str(edition[name])
+    return found
+
+
 def is_manual(library: Library, album_id: Optional[int]) -> bool:
     return album_id is not None and (library.get_album(album_id) or {}).get("source") == MANUAL
 
