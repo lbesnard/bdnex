@@ -897,7 +897,7 @@ def test_a_collection_the_site_gives_is_the_value_in_the_form_and_any_value_you_
     assert seen["value"] == "Collection Pilote"
 
 
-def test_the_empty_button_clears_a_field_on_every_marked_file(env):
+def test_the_clear_button_clears_a_field_on_every_marked_file(env):
     db, root, paths = env
     seen = {}
     with Library(db, root=root) as lib:
@@ -921,5 +921,5 @@ def test_the_empty_button_clears_a_field_on_every_marked_file(env):
         seen["albums"] = [lib.get_album(lib.find_album("b", f"t{n}"))["collection"] for n in (1, 2, 3)]
 
     drive(db, root, script)
-    assert seen["holder"] == "(several values)" and "emptied" in seen["after"]
+    assert seen["holder"] == "(several values)" and "cleared" in seen["after"]
     assert all(value in ("", None) for value in seen["albums"])
