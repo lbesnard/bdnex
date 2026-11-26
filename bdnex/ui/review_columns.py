@@ -60,9 +60,9 @@ class ColumnsScreen(ModalScreen):
             yield Label(Text("space ticks or unticks one; double-click a header in the table to change that column's field", style="dim"))
             yield SelectionList(*[(f"{title}", key, key in self.shown) for key, (title, _) in COLUMN_TYPES.items()], id="columnlist")
             with Horizontal(id="columnbuttons"):
-                yield Button("Default", id="default")
-                yield Button("Save", id="ok", variant="success")
-                yield Button("Cancel", id="cancel")
+                yield Button("Default", id="default", tooltip="Go back to the columns bdnex shows when you have chosen nothing (nothing is saved until you press Save).")
+                yield Button("Save", id="ok", variant="success", tooltip="Keep these columns (they are remembered in the library).")
+                yield Button("Cancel", id="cancel", tooltip="Close without changing the columns.")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()

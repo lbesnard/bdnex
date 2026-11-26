@@ -1158,3 +1158,33 @@ def test_the_buttons_of_the_form_say_what_they_do_when_the_mouse_is_over_them(en
     drive(db, root, script)
     assert all(seen["tips"].values()), seen["tips"]
     assert "tome" in seen["tips"]["number"] and "hors-série" in seen["tips"]["hs"]
+
+
+def test_every_button_and_clickable_word_of_the_screen_has_a_tooltip(env):
+    from textual.widgets import Button, Checkbox, Input
+
+    from bdnex.ui import review_panels as panels
+
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        await settle(app, pilot)
+        found = [w for w in app.query("*") if isinstance(w, (Button, Checkbox, panels.PagerChip, panels.HelpChip, panels.Splitter))
+                 or getattr(w, "id", None) == "treefind"]
+        seen["missing"] = [w.id for w in found if not w.tooltip]
+        seen["count"] = len(found)
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("C")
+        await pilot.pause()
+        seen["columns"] = [b.id for b in app.screen.query(Button) if not b.tooltip]
+        await pilot.press("escape")
+        await pilot.pause()
+        await pilot.press("e")
+        await pilot.pause()
+        seen["edit"] = [b.id for b in app.screen.query(Button) if not b.tooltip]
+
+    drive(db, root, script)
+    assert seen["count"] >= 8
+    assert seen["missing"] == [] and seen["columns"] == [] and seen["edit"] == []

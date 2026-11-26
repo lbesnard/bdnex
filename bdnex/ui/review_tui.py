@@ -523,8 +523,10 @@ class AskScreen(ModalScreen):
             else:
                 yield Label(Text("y: yes · n: no", style="dim"))
             with Horizontal(id="askbuttons"):
-                yield Button("Save" if self.text is not None else "Yes", id="askok", variant="success")
-                yield Button("Cancel" if self.text is not None else "No", id="askno")
+                yield Button("Save" if self.text is not None else "Yes", id="askok", variant="success",
+                             tooltip="Keep what you typed." if self.text is not None else "Yes (the y key does the same).")
+                yield Button("Cancel" if self.text is not None else "No", id="askno",
+                             tooltip="Close without changing anything." if self.text is not None else "No (the n key does the same).")
 
     def on_mount(self) -> None:
         if self.text is not None:
@@ -987,10 +989,11 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         with Horizontal(id="main"):
             with Vertical(id="folderpane"):
                 with Horizontal(id="tickbar"):
-                    yield Button("Show ticked", id="show-ticked")
-                    yield Button("Clear ticks", id="clear-ticks")
-                yield Checkbox("Apply filters to folders (both)", id="narrow")
-                yield Input(placeholder="Find a folder or a file...  (words, any order)", id="treefind")
+                    yield Button("Show ticked", id="show-ticked", tooltip="Show the files of every folder and filter you ticked (space or ctrl-click), all together.")
+                    yield Button("Clear ticks", id="clear-ticks", tooltip="Untick every folder and filter.")
+                yield Checkbox("Apply filters to folders (both)", id="narrow",
+                               tooltip="Ticked: a click on a folder and a click on a filter work together (the files that match both). Not ticked: a click shows only what you clicked.")
+                yield Input(placeholder="Find a folder or a file...  (words, any order)", id="treefind", tooltip="Type part of a folder or file name: only the folders that match stay. Key F; Enter goes on to the tree.")
                 with TabbedContent(id="trees"):
                     with TabPane("Folders", id="tab-folders"):
                         with Vertical(id="folderslot"):
@@ -998,20 +1001,20 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
                     with TabPane("Organised", id="tab-moves"):
                         with Vertical(id="moveslot"):
                             yield Static("working out how `bdnex move` would organise the files...", id="movewait")
-                yield Splitter("#facetbox", "y", id="split-filters")
+                yield Splitter("#facetbox", "y", id="split-filters", tooltip="Drag up or down to resize the trees and the filters.")
                 yield Static(legend(), id="legend")
                 with Vertical(id="facetbox"):
                     with Vertical(id="facetslot"):
                         yield Static("Filters: reading...", id="facetwait")
-            yield Splitter("#folderpane", "x", id="split-left")
+            yield Splitter("#folderpane", "x", id="split-left", tooltip="Drag left or right to resize the left panel.")
             with Vertical(id="center"):
                 yield Static("", id="loading")
                 yield ReviewTable(id="table", cursor_type="row", zebra_stripes=True)
                 with Horizontal(id="pager"):
-                    yield PagerChip(" ◀  b  previous ", "action_previous_batch", id="pager-back")
+                    yield PagerChip(" ◀  b  previous ", "action_previous_batch", id="pager-back", tooltip="The previous 50 files (key b).")
                     yield Static("", id="pager-where")
-                    yield PagerChip(" next  n  ▶ ", "action_next_batch", id="pager-next")
-                yield Splitter("#detailrow", "y", id="split-detail")
+                    yield PagerChip(" next  n  ▶ ", "action_next_batch", id="pager-next", tooltip="The next 50 files (key n).")
+                yield Splitter("#detailrow", "y", id="split-detail", tooltip="Drag up or down to resize the album's metadata panel.")
                 with Horizontal(id="detailrow"):
                     yield Static("", id="detail")
                     yield Static("", id="meta")

@@ -60,8 +60,9 @@ class Splitter(Static):
     Splitter.y { height: 1; width: 100%; }
     """
 
-    def __init__(self, target: str, axis: str, minimum: int = 8, **kwargs) -> None:
+    def __init__(self, target: str, axis: str, minimum: int = 8, tooltip: str = "", **kwargs) -> None:
         super().__init__("", classes=axis, **kwargs)
+        self.tooltip = tooltip or None
         self.target, self.axis, self.minimum, self.dragging = target, axis, minimum, False
 
     def on_mouse_down(self, event) -> None:
@@ -549,8 +550,9 @@ def keys_text() -> Text:
 class PagerChip(Static):
     """A clickable word under the table (``◀ b  previous``): a click runs the action, like its key."""
 
-    def __init__(self, label: str, action: str, id: str) -> None:
+    def __init__(self, label: str, action: str, id: str, tooltip: str = "") -> None:
         super().__init__(Text(label, style="bold black on cyan"), id=id)
+        self.tooltip = tooltip or None
         self.action_name = action
 
     def on_click(self) -> None:
@@ -562,6 +564,7 @@ class HelpChip(Static):
 
     def __init__(self) -> None:
         super().__init__(Text(" ? Help ", style="bold black on yellow"), id="helpchip")
+        self.tooltip = "Open the help: a guide, and every key (the ? key does the same)."
 
     def on_click(self) -> None:
         self.app.action_help()
