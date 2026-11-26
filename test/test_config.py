@@ -45,7 +45,10 @@ def test_first_run_writes_commented_template_with_placeholder(conf_path):
 
 def test_first_run_template_is_not_a_full_copy_of_defaults(conf_path):
     load_config()
-    assert yaml.safe_load(conf_path.read_text()).keys() == {"config_version", "collection_path"}
+    written = yaml.safe_load(conf_path.read_text())
+    # the two path templates are the one thing a new file chooses for you (the packaged default is plainer and stays for older files)
+    assert written.keys() == {"config_version", "collection_path", "paths"}
+    assert written["paths"].keys() == {"series", "oneshot"}
 
 
 def test_library_directory_placeholder_is_refused(conf_path):

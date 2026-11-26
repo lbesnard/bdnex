@@ -33,6 +33,8 @@ duplicates:
   action: ask                           # ask | skip | keep_both | replace
   prefer: [cbz, cbr, pdf]               # when two files are the same book, the format suggested first
   versions_dir: _versions               # spare versions of an album go here, inside `collection_path`
+  versions_place: top                   # top: `_versions/<the album's path>`; beside: `_versions` inside the album's own folder (`Series/X/_versions/file.cbz`)
+  version_labels: [Dossier, Cahier, Noir et blanc, Croquis]  # the names the review screen offers (key `e`) for a version of an album; you can type another
 
 trash:
   dir: .bdnex-trash                     # replaced files wait here, inside `collection_path` (see `bdnex trash`)

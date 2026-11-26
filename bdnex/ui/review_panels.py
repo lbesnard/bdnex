@@ -744,6 +744,32 @@ class DuplicateScreen(Modal):
             self.dismiss((self.asking, self.found[self.at].path, event.value.strip()))
 
 
+OTHER_VERSION = "__other__"
+VERSION_TIP = ("Makes each file another version of its album (a dossier, a cahier, a black and white edition, sketches...): it gets an album of its own, "
+               "linked to the first, and its file goes to the spare versions folder. Leave it on the first choice to change nothing.")
+
+
+def version_options(labels) -> list[tuple[str, str]]:
+    """The choices of the Version dropdown: nothing, the configured names, and one that is typed."""
+    return [("(not a version: leave as it is)", ""), *[(label, label) for label in labels], ("another name (type it on the right)", OTHER_VERSION)]
+
+
+def chosen_version(screen) -> str:
+    """The name picked in a form's Version row (``""`` when none): the typed one when the choice is "another name"."""
+    pick = screen.query_one("#versionpick", Select).value or ""
+    if pick == OTHER_VERSION:
+        return screen.query_one("#versionname", Input).value.strip()
+    return pick
+
+
+def version_row(labels):
+    """The row of a form: a dropdown of names and a box for another one."""
+    with Horizontal(classes="fieldrow versionrow"):
+        yield Label("Version of the album", classes="fieldname")
+        yield Select(version_options(labels), value="", allow_blank=False, id="versionpick", tooltip=VERSION_TIP)
+        yield Input(value="", placeholder="the name, if you chose 'another name'", id="versionname", tooltip=VERSION_TIP)
+
+
 class BulkScreen(Modal):
     """One form for the marked files: the common fields (their shared value is shown; what you type is set on all of them), the kind
     (series or one-shot), and a volume for each file.
@@ -764,6 +790,8 @@ class BulkScreen(Modal):
     .fieldrow Input.emptied > .input--placeholder { color: red; text-style: bold; }
     .fieldrow Input.several > .input--placeholder { color: darkorange; text-style: bold; }
     #bulkkind { width: 30; }
+    .versionrow Select { width: 40; }
+    .versionrow Input { width: 1fr; margin-left: 1; }
     #bulkkind.several SelectCurrent { color: darkorange; text-style: bold; }
     #bulkvolumes { height: 9; }
     #volumebuttons { height: 3; width: 100%; }
@@ -776,8 +804,8 @@ class BulkScreen(Modal):
     KINDS = [("series", "series"), ("one-shot", "oneshot")]
 
     def __init__(self, heading: str, shared: dict, fields, files: list[tuple[str, str, str]], hints: Optional[dict] = None,
-                 restorable: bool = False) -> None:
-        """``fields``: ``manual.FIELDS``-like rows ``(key, label, hint)``; ``shared``: what the albums agree on (``None``: they differ);
+                 restorable: bool = False, versions: Optional[list[str]] = None) -> None:
+        """``versions``: the names offered for "another version of the album" (``None``: no such row). ``fields``: ``manual.FIELDS``-like rows ``(key, label, hint)``; ``shared``: what the albums agree on (``None``: they differ);
         ``files``: ``(path, number, note)`` for the list of numbers (``5``, or ``HS 1`` for a tome with no number); ``hints``: a grey text to suggest for a field the albums have no value for
         (a suggestion, never a value: nothing is set unless you type it)."""
         super().__init__()
@@ -785,6 +813,7 @@ class BulkScreen(Modal):
         self.cleared: set[str] = set()  # fields to empty on every file (the Clear button)
         self.restorable = restorable  # some albums come from the site: a field can go back to what the site says
         self.restored: set[str] = set()  # fields to put back to the site's value, each album its own (the Restore button)
+        self.versions = versions
 
     def compose(self) -> ComposeResult:
         with Vertical(id="bulk"):
@@ -809,6 +838,8 @@ class BulkScreen(Modal):
                             yield Button("Clear", id=f"clear-{key}", classes="emptier")
                         if self.restorable and key not in ("series", "volume"):
                             yield Button("Restore", id=f"restore-{key}", classes="restorer")
+                if self.versions is not None:
+                    yield from version_row(self.versions)
                 yield Label(Text("Volume of each file, one line each: its number in the series (5), or a word for a book with no number "
                                  "(HS 1 = hors-série, INT = intégrale). Fill the lines with:", style="dim"))
                 with Horizontal(id="volumebuttons"):
@@ -953,5 +984,10 @@ class BulkScreen(Modal):
             self.query_one("#bulkproblem", Label).update("Type the name of the series (above), or choose another kind")
             self.query_one("#b-series", Input).focus()
             return
-        self.dismiss({"values": values, "kind": kind or None, "volumes": volumes, "specials": specials,
+        version = chosen_version(self) if self.versions is not None else ""
+        if self.versions is not None and (self.query_one("#versionpick", Select).value or "") == OTHER_VERSION and not version:
+            self.query_one("#bulkproblem", Label).update("Type the name of the version (on the right of 'Version of the album')")
+            self.query_one("#versionname", Input).focus()
+            return
+        self.dismiss({"values": values, "kind": kind or None, "volumes": volumes, "specials": specials, "version": version,
                       "restore": sorted(key for key in self.restored if key not in values)})

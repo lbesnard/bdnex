@@ -815,7 +815,7 @@ class Organizer:
         *folders, name = rendered.parts
         extension = f".{fmt}" if as_is or tagged_pdf else ".cbz"  # an untouched file keeps what it is
         if spare or album.get("relation") == "version":  # an extra version of the album (or an album that is a version of another): in the spare versions folder
-            return str(root.joinpath(self.settings.duplicates.versions_dir, *folders, name + extension))
+            return self._spare_path(root, folders, name + extension)
         return str(root.joinpath(*folders, name + extension))
 
     def _missing(self, field: str, album_id: int, album: dict) -> Optional[str]:
@@ -899,7 +899,15 @@ class Organizer:
             relative = Path(dest).relative_to(root)
         except ValueError:
             return dest
-        return str(root / self.settings.duplicates.versions_dir / relative)
+        return self._spare_path(root, list(relative.parts[:-1]), relative.name)
+
+    def _spare_path(self, root: Path, folders: list[str], name: str) -> str:
+        """Where a spare version goes: ``<root>/_versions/<folders>/<name>``, or (``duplicates.versions_place: beside``) ``_versions`` inside the
+        album's own folder, ``<root>/<folders>/_versions/<name>``."""
+        spare = self.settings.duplicates.versions_dir
+        if self.settings.duplicates.versions_place == "beside":
+            return str(root.joinpath(*folders, spare, name))
+        return str(root.joinpath(spare, *folders, name))
 
     def _resolve_collision(self, dest: str, src: str, mode: str, spare: bool) -> tuple[Optional[str], bool]:
         """The name ``dest`` is taken. Returns (the path to write, whether the file becomes a spare

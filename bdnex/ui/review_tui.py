@@ -35,13 +35,14 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from bdnex.ui.review_modal import Modal
-from textual.widgets import TabbedContent, TabPane, Button, Checkbox, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
+from textual.widgets import TabbedContent, TabPane, Button, Checkbox, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Select, Static, TextArea
 from textual.widgets.option_list import Option
 
 from bdnex.library import browse, review_batch as batch
 from bdnex.ui import color
 from bdnex.ui.review_extras import ReviewExtras
 from bdnex.ui.cover_text import GRAPHICS, graphic
+from bdnex.ui import review_panels as panels
 from bdnex.ui.review_panels import FacetCommands, HelpChip, PagerChip, Splitter, legend
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "green", "skipped": "yellow"}
@@ -567,6 +568,10 @@ class EditScreen(Modal):
     #edit Input { margin-bottom: 0; }
     .editrow { height: 3; }
     .editrow Input { width: 1fr; }
+    .versionrow { height: 3; }
+    .versionrow Select { width: 40; }
+    .versionrow Input { width: 1fr; margin-left: 1; }
+    .fieldname { width: 22; padding-top: 1; color: $text-muted; }
     .editrow Button { margin-left: 1; min-width: 9; }
     #volumes { height: 8; }
     #problem { color: $error; height: auto; }
@@ -575,9 +580,12 @@ class EditScreen(Modal):
     #edithelp { height: 1; }
     """
 
-    def __init__(self, heading: str, values: dict, fields, volumes=None, originals: Optional[dict] = None):
-        """``originals``: what the site says (the form's keys), for the Restore button of each field that has one."""
+    def __init__(self, heading: str, values: dict, fields, volumes=None, originals: Optional[dict] = None,
+                 versions: Optional[list[str]] = None):
+        """``originals``: what the site says (the form's keys), for the Restore button of each field that has one. ``versions``: the names the
+        Version dropdown offers (``None``: the form has no such row)."""
         super().__init__()
+        self.versions = versions
         self.heading, self.values, self.fields, self.volumes = heading, values, fields, volumes
         self.originals = originals or {}
         self.restored: set[str] = set()  # fields put back to the site's value (the box still says so when Save is pressed)
@@ -593,6 +601,8 @@ class EditScreen(Modal):
                         yield Button("Clear", id=f"clear-{key}", classes="emptier")  # the same button as in the form for many files
                         if key in self.originals and key not in ("series", "volume"):
                             yield Button("Restore", id=f"restore-{key}", classes="emptier")
+                if self.versions is not None:
+                    yield from panels.version_row(self.versions)
                 if self.volumes is not None:
                     yield Label(Text("Volume and file (change a number if it was read wrong)", style="dim"))
                     yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}" for p, v in self.volumes), id="volumes")
@@ -668,6 +678,14 @@ class EditScreen(Modal):
         except manual.FormError as err:
             self.query_one("#problem", Label).update(str(err))
             return
+        if self.versions is not None:
+            if (self.query_one("#versionpick", Select).value or "") == panels.OTHER_VERSION and not panels.chosen_version(self):
+                self.query_one("#problem", Label).update("Type the name of the version (on the right of 'Version of the album')")
+                self.query_one("#versionname", Input).focus()
+                return
+            version = panels.chosen_version(self)
+            if version:
+                values["__version__"] = version
         self.dismiss({**values, "__restore__": back} if back else values)
 
     def action_back(self) -> None:
@@ -1811,7 +1829,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
             self.edit_metadata(row, album_id)  # an album of the site: its fields can be changed (kept when it is read again), not rebuilt
             return
         values = manual.form_of(self.library, album_id) if album_id is not None else {**manual.guess(row.path), "title": ""}
-        self.push_screen(EditScreen(f"Metadata of {os.path.basename(row.path)}", values, manual.FIELDS),
+        versions = self.settings.duplicates.version_labels if album_id is not None else None  # (a file with no album has nothing to be a version of)
+        self.push_screen(EditScreen(f"Metadata of {os.path.basename(row.path)}", values, manual.FIELDS, versions=versions),
                          lambda got: self.save_one(row, album_id, got) if got else None)
 
     def edit_metadata(self, row: batch.Row, album_id: int) -> None:
@@ -1827,7 +1846,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         if in_series:
             heading += " · the series name renames it for all its albums"
         originals = manual.site_form(self.settings, self.library, album_id) or {}
-        self.push_screen(EditScreen(heading, values, fields, originals=originals), lambda got: self.save_metadata(row, album_id, got) if got else None)
+        self.push_screen(EditScreen(heading, values, fields, originals=originals, versions=self.settings.duplicates.version_labels),
+                         lambda got: self.save_metadata(row, album_id, got) if got else None)
 
     def save_metadata(self, row: batch.Row, album_id: int, values: dict) -> None:
         album = self.library.get_album(album_id) or {}
@@ -1852,6 +1872,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         from bdnex.library import manual
 
         back = values.pop("__restore__", [])
+        version = values.pop("__version__", "")
         try:
             manual.update(self.library, album_id, values)
             if back:
@@ -1863,6 +1884,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
             self.notify(f"Not saved ({err}): try again", severity="error", timeout=8)
             return
         self.refresh_album_rows(set(self.library.series_albums(album_id)) | {album_id})  # (a renamed series changes every album of it)
+        if version:
+            self.make_versions([row], version)
         self.show_meta(row)
         logger.info("%s: metadata of the album %s changed by hand", os.path.basename(row.path), album_id)
         self.notify("Saved: kept when the album is read again. `bdnex write` puts it in the file.", timeout=6)
@@ -1898,6 +1921,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     def save_one(self, row: batch.Row, album_id, values: dict) -> None:
         from bdnex.library import manual
 
+        values = dict(values)
+        version = values.pop("__version__", "")
         try:
             if album_id is not None:
                 manual.update(self.library, album_id, values)
@@ -1912,6 +1937,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         except Exception as err:
             self.link_failed(row, err)
             return
+        if version:
+            self.make_versions([row], version)
         self.refresh_dest(row)
         self.decided["linked"] = self.decided.get("linked", 0) + 1
         logger.info("%s: %s", os.path.basename(row.path), row.message)

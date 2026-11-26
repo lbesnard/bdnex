@@ -48,6 +48,12 @@ config_version: {version}
 
 # REQUIRED before `bdnex import`: the folder that holds (or will hold) your comics.
 collection_path: {placeholder}
+
+# Where the files go (a new file starts with these; the packaged default is the plainer `Series/$series/...`, which a config without
+# this section keeps). A collection and a cycle get a folder only when the album has one; a special number (HS, INT) replaces T01.
+paths:
+  series: 'Series/%ifdef{{collection,$collection}}/$series%ifdef{{cycle, - Cycle $cycle:02}}/$series - %if{{$special,$special,T$volume:02}} - $title'
+  oneshot: 'OneShot/$title ($authors) [$year]/$title ($authors) [$year]'
 """
 
 
@@ -132,6 +138,8 @@ class Duplicates(_Section):
     action: Literal["ask", "skip", "keep_both", "replace"]
     prefer: list[Literal["cbz", "cbr", "pdf"]] = Field(min_length=1)
     versions_dir: str = Field(min_length=1)
+    versions_place: Literal["top", "beside"] = "top"  # top: `<collection>/_versions/<the album's path>`; beside: a `_versions` folder inside the album's own folder
+    version_labels: list[str] = ["Dossier", "Cahier", "Noir et blanc", "Croquis"]  # the names the review screen offers for a version of an album
 
 
 class Trash(_Section):
