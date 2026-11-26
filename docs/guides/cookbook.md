@@ -460,6 +460,25 @@ bdnex move staged:true          # place them whenever you like
 
 If the album already has a file, you are shown both before anything moves: see the next entry.
 
+## …find the files that are low quality, to get them again?
+
+```{how} cli tui
+```
+
+Every file has a resolution in dots per inch (dpi), measured when it is imported. The ones already in your library are measured once with
+`bdnex check --quality` (several at a time: `--workers`, or `write.workers`; it only does the files with no number yet, so it can be stopped
+and run again).
+
+```bash
+bdnex check --quality                  # fill in the files that were there before
+bdnex ls --files dpi:..120             # the soft ones (under 120 dpi)
+bdnex ls --files dpi:..120 series:nains
+```
+
+In the review screen, open **Filters, Quality, low** (or *fair*, *good*, *high*, *not measured*), and add the **DPI** column (`C`). A PDF's number is
+real; a CBZ's or CBR's is an estimate (shown with a `~`). When a new file arrives for an album you already have, the question shows both
+numbers and suggests the sharper one. See [Quality](checking-matches.md#quality-how-sharp-a-file-is).
+
 ## …keep two versions of a book, or replace one?
 
 ```{how} cli tui

@@ -1572,3 +1572,28 @@ def saved_place_of(db, root):
 
     with Library(db, root=root) as lib:
         return saved_place(lib)
+
+
+def test_the_dpi_column_and_the_quality_filter_tell_how_sharp_the_files_are(env):
+    db, root, paths = env
+    seen = {}
+    with Library(db, root=root) as lib:  # (measured before the screen opens: a soft scan, a sharp one, and three nobody measured)
+        with lib.conn:
+            lib.conn.execute("UPDATE files SET dpi = NULL")  # (the test pictures are tiny: registering them measured a few dpi)
+        lib.set_dpi(paths["t1"], 90)
+        lib.set_dpi(paths["t2"], 210)
+
+    async def script(app, pilot, lib):
+        app.view = [*app.view, "dpi"]
+        app.open_selection("facet", ("Quality", "low"), "Quality: low")
+        await settle(app, pilot)
+        seen["low"] = [os.path.basename(r.path) for r in app.rows]
+        row = app.rows[0]
+        seen["cell"] = app.cells(1, row)[-1].plain
+        from bdnex.library import browse
+
+        seen["found"] = dict(browse.facets(lib)["Quality"])
+
+    drive(db, root, script)
+    assert seen["low"] == ["Tintin T1.cbz"] and seen["cell"] == "~90"
+    assert seen["found"]["low"] == 1 and seen["found"]["good"] == 1 and seen["found"]["not measured"] == 3

@@ -254,3 +254,26 @@ def test_trash_place_and_reimport_need_restore():
     for flag in ("--place", "--reimport"):
         with pytest.raises(SystemExit):
             trash_cmd.run([flag])
+
+
+def test_the_table_says_how_sharp_each_file_is_and_a_sharper_scan_wins_a_tie():
+    from bdnex.versions import KEEP_NEW
+
+    old = facts(path="/lib/a.cbz", pages=20, dpi=100)
+    new = facts(path="/dl/a.cbz", pages=20, dpi=210)
+    comparison = compare([old], new, ["cbz", "cbr", "pdf"])
+    text = table(comparison)
+    assert "~100 dpi (low)" in text and "~210 dpi (good)" in text
+    assert comparison.suggestion == KEEP_NEW and "sharper" in comparison.reason and "~210 dpi" in comparison.reason
+
+
+def test_a_file_nobody_measured_never_loses_to_one_that_was():
+    from bdnex.versions import KEEP_EXISTING
+
+    comparison = compare([facts(path="/lib/a.cbz", pages=20)], facts(path="/dl/a.cbz", pages=20, dpi=300), ["cbz", "cbr", "pdf"])
+    assert comparison.suggestion == KEEP_EXISTING and "sharper" not in comparison.reason  # (an old library has no numbers yet)
+
+
+def test_a_few_dpi_more_is_no_difference_but_a_tier_is():
+    same = compare([facts(path="/lib/a.cbz", pages=20, dpi=190)], facts(path="/dl/a.cbz", pages=20, dpi=240), ["cbz"])
+    assert "sharper" not in same.reason  # both are in the same tier (180 to 260)

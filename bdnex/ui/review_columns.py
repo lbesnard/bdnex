@@ -30,7 +30,7 @@ COLUMN_TYPES = {
     "series": ("Series", 24), "title": ("Title", 28), "category": ("Category", 9), "collection": ("Collection", 16),
     "publisher": ("Publisher", 14), "year": ("Year", 5), "authors": ("Authors", 22), "genres": ("Genres", 18), "language": ("Lang", 5),
     "format": ("Format", 6), "size": ("Size", 8), "pages": ("Pages", 6), "reviewed": ("Reviewed", 9), "spare": ("Spare", 5),
-    "relation": ("Relation", 9),
+    "relation": ("Relation", 9), "dpi": ("DPI", 6),
 }
 DEFAULT_VIEW = ("num", "file", "folder", "album", "page", "match", "cover", "link", "review", "dest", "kind", "vol", "series")
 COLUMNS = tuple(COLUMN_TYPES[key] for key in DEFAULT_VIEW)  # (title, width) of the default view: what the tests and the number keys know
@@ -244,6 +244,13 @@ class ColumnsMixin:
             text = "spare" if (row.spare or file.get("spare")) else ""
         elif key == "relation":
             text = (f"{album['relation']} of {album['parent_id']}" if album.get("parent_id") is not None else "") if album else ""
+        if key == "dpi":
+            from bdnex import quality
+
+            dpi = file.get("dpi")
+            if not dpi:
+                return Text("-", style="dim")
+            return Text(f"{'' if file.get('format') == 'pdf' else '~'}{dpi}", style={"low": "red", "fair": "dark_orange"}.get(quality.tier_of(dpi), ""))
         return Text(text or "-", style="" if text else "dim")
 
     LINK_STYLE = {"auto matched": "cyan", "manual": "cyan", "medium match": "dark_orange", "doubtful": "red", "no album": "red"}
@@ -319,7 +326,7 @@ class ColumnsMixin:
         album, file = self.album_dict(row), self.file_dict(row)
         value = {"series": album.get("series"), "title": album.get("title"), "category": album.get("category"),
                  "collection": album.get("collection"), "publisher": album.get("publisher"), "year": album.get("year"),
-                 "language": album.get("language"), "format": file.get("format"), "size": file.get("size"), "pages": file.get("page_count"),
+                 "language": album.get("language"), "format": file.get("format"), "size": file.get("size"), "dpi": file.get("dpi"), "pages": file.get("page_count"),
                  "reviewed": row.status or row.previous or None, "spare": 1 if (row.spare or file.get("spare")) else None,
                  "relation": album.get("relation"), "authors": ", ".join((album.get("credits") or {}).get("Writer", [])) or None,
                  "genres": ", ".join(album.get("genres") or []) or None}.get(key)
