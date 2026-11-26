@@ -51,6 +51,16 @@ cover:
   dir: ~/.local/share/bdnex/covers      # where the cover files are kept
   check: auto                           # compare each file's cover with its album's: auto (when OpenCV is installed) | true | false
   match_percentage: 3                   # similarity (0-100) below which a cover is not the album's: a right match scores about 50, another series about 0 (measured)
+  # `bdnex review`, c then z: how a page is drawn. One of:
+  #   symbols  text drawn by chafa (any terminal, ssh, tmux; without chafa it falls back to blocks)
+  #   blocks   text drawn by bdnex itself (nothing to install, the coarsest)
+  #   kitty    a real picture (the sharpest, when your terminal shows it: kitty, Ghostty, WezTerm); needs chafa
+  #   iterm2   a real picture (iTerm2, WezTerm); needs chafa
+  #   sixel    a real picture (foot, WezTerm, Windows Terminal, tmux 3.4+...); needs chafa
+  # A real picture needs `set -g allow-passthrough on` in tmux, and a tmux inside a tmux usually blocks it.
+  picture: symbols
+  # tmux can leave a real picture on the screen after it is closed (tmux issues 5126, 5894): a temporary workaround, see the next option.
+  redraw_after_picture: false           # true: clear the terminal and redraw the whole screen when a real picture is closed; try it if pictures stay on screen
 
 api:
   host: 127.0.0.1                       # `bdnex serve` listens here; anything but this machine needs a token

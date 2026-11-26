@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+
+from bdnex.library.models import effective
 from typing import Any, Optional
 
 ROLE_ORDER = ("Writer", "Penciller", "Inker", "Colorist", "Letterer", "CoverArtist")
@@ -70,6 +72,9 @@ def long(album: dict[str, Any], files: list[dict[str, Any]]) -> str:
     add("volume", album.get("volume") if album.get("volume") is not None else album.get("alternate_number"))
     add("title", album["title"])
     add("subfolder", album.get("subseries"))
+    add("category", album.get("category"))
+    if album.get("parent_id") is not None:
+        add(album.get("relation") or "related", f"album {album['parent_id']}")
     credits = album.get("credits") or {}
     for role in [*ROLE_ORDER, *sorted(set(credits) - set(ROLE_ORDER))]:  # standard roles, then Translator, Other...
         add(role.lower(), ", ".join(credits.get(role, [])))
@@ -82,8 +87,8 @@ def long(album: dict[str, Any], files: list[dict[str, Any]]) -> str:
     add("format", album.get("format"))
     extra = album.get("extra") or {}
     edition = extra.get("edition_fields") or {}
-    add("collection", album.get("collection") or edition.get("Collection"))
-    add("cycle", album.get("cycle") or edition.get("Cycle"))
+    add("collection", effective(album, "collection"))
+    add("cycle", effective(album, "cycle"))
     add("weight", edition.get("Poids"))
     add("printed", edition.get("Achevé impr."))
     add("edition", extra.get("edition_info"))

@@ -145,3 +145,23 @@ def test_list_as_json_gives_the_reason_for_a_script(matched):
 def test_a_batch_of_zero_is_refused_not_read_as_no_batch(flagged):
     out = io.StringIO()
     assert review_cmd.run(["--batch", "0"], out=out) == 2  # it used to fall through to `--auto`-less single review
+
+
+def test_review_opens_the_screen_in_a_terminal_and_no_tui_asks_one_file_at_a_time(matched, monkeypatch):
+    import sys
+
+    seen = []
+    monkeypatch.setattr(review_cmd, "_batch", lambda args, settings, out: seen.append(args.batch) or 0)
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(sys.stdout, "isatty", lambda: True)
+    assert review_cmd.run([], out=io.StringIO()) == 0 and seen == [50]  # the screen, 50 files a batch
+    assert review_cmd.run(["--batch", "20"], out=io.StringIO()) == 0 and seen == [50, 20]
+    out = io.StringIO()
+    assert review_cmd.run(["--no-tui", "--list"], out=out) == 0 and seen == [50, 20]  # --list and --auto never open it
+    assert review_cmd.run(["--no-tui", "--batch", "5"], out=io.StringIO()) == 2 and seen == [50, 20]
+    assert review_cmd.run(["--list"], out=io.StringIO()) == 0 and seen == [50, 20]
+
+
+def test_the_screen_options_need_a_terminal(matched, capsys):
+    assert review_cmd.run(["--unmatched"], out=io.StringIO()) == 2  # pytest has no terminal: not the screen
+    assert "review screen" in capsys.readouterr().err

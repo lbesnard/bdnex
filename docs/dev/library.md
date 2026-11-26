@@ -10,7 +10,7 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 | Table | Purpose |
 |---|---|
 | `files` | one row per comic file: path (relative to `collection_path` when under it, `@alias/…` under an import source, absolute otherwise; the `Library` API always takes and returns absolute paths), md5, size, format, page count, `corrupted`, `has_metadata`, `review` (why the match waits for `bdnex review`; empty: nothing to review), `embedded` (the simple fields of the file's own ComicInfo.xml, JSON), link to an album, `spare` (an extra version of its album), `cover_hash` (64-bit hash of the first page), `cover_score` (similarity with the album cover) |
-| `albums` | `kind` is `series` or `oneshot`; a series album has a `series_id`, a one-shot has none (enforced by a `CHECK`); `cover_file` (the saved cover, a path below `cover.dir`; `cover_url` is where it came from); `subseries` (schema v14: a hand-set subfolder inside the series, `bdnex edit`, for an album the site does not list; `$subseries` in path templates); `collection`, `cycle` (schema v15: a hand-set override, `bdnex edit`, of the site's own "Collection"/"Cycle" in `extra.edition_fields`; wins over a `paths.collections` rule and the site's value in path templates) |
+| `albums` | `kind` is `series` or `oneshot`; a series album has a `series_id`, a one-shot has none (enforced by a `CHECK`); `cover_file` (the saved cover, a path below `cover.dir`; `cover_url` is where it came from); `subseries` (schema v14: a hand-set subfolder inside the series, `bdnex edit`, for an album the site does not list; `$subseries` in path templates); `collection`, `cycle` (schema v15: a hand-set override, `bdnex edit`, of the site's own "Collection"/"Cycle" in `extra.edition_fields`; wins over a `paths.collections` rule and the site's value in path templates); `category` (schema v16: a hand-set kind of publication, BD / Manga / Comics, `$category` in path templates); `parent_id` + `relation` (schema v16: this album is a `version` of, or a `child` of, album `parent_id`; a `version` is placed in the spare versions folder; `ON DELETE SET NULL`, so a child never takes its parent down) |
 | `series` | name, summary, address, source id, and `extra` (JSON): the albums the series page lists (`albums`), everything else it carries (`meta`, `microdata`, `jsonld`, `fields`) and a few normalised values (`genres`, `status`, `origin`, `language`, `rating`, `image`) |
 | `people`, `album_credits` | authors with a role (`Writer`, `Penciller`, `Colorist`, `Inker`, `Letterer`, `CoverArtist`) |
 | `genres`, `album_genres` | many-to-many |
@@ -26,6 +26,15 @@ The library is a single SQLite file (`library:` in the configuration). It is an
 | `series_index` | the letter index of a source (`bdnex init`, schema v12): every series by its site number (`series_id`, the number of its page and of `series.source_id`), its name as listed (the article put in front: `Les Nains`), the same folded for searching (without the disambiguation `(Marvel - 2008)`), its address, the country flag and the letter page. It lists names only; a series page is read on demand |
 | `bdtheque_pages` | the series pages of bdtheque.com (a second site, read for the albums you give by address), by canonical address, zlib-compressed (schema v13), apart from `source_cache` |
 | `meta` | small values: that paths are stored relative, when the album list last grew |
+
+### Indexes
+
+SQLite indexes are B-trees, like PostgreSQL's default, and can be partial (`WHERE ...`). Schema v17 adds the ones the review screen's filters
+and folder views need, so that a facet or a folder is a lookup and not a scan of every file: `albums(category)`, `albums(collection)` (only the
+rows that have one), `albums(kind)`, `albums(publisher_id)`, `albums(relation)`, `album_genres(genre_id, album_id)`, and one-value partial
+indexes on `files` for spare versions, flagged files and damaged files. The files of a folder are found by a range on the unique index of
+`files.path` (`folder/` up to `folder0`). Where a move would put each file is not stored: it is worked out in memory (about 0.1 ms a file)
+and kept up to date from the albums that change.
 
 The schema version is stored in `PRAGMA user_version`; migrations live in
 `bdnex/library/schema.py` and are append-only. Schema v11 changes data, not tables: the `album` and `series` pages of `source_cache` are

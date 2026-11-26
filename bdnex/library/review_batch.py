@@ -42,6 +42,27 @@ class Row:
     facts: str = ""  # what the album says (year, credits, pages) next to what the file is: to judge a match by eye
     previous: str = ""  # an earlier decision (the ``checked`` mark), shown when files already checked are asked for again
     dest: str = ""  # where `bdnex move` would put the file, relative to the collection (``""``: no album, or not worked out)
+    album_kind: str = ""  # ``series`` | ``oneshot`` ("" = not read yet: the screen asks the library when it draws the row)
+    volume: Optional[int] = None
+    category: str = ""
+    spare: bool = False
+    link: str = ""  # how it was linked: auto matched | medium match | doubtful | no album | manual ("" = worked out by the screen from `kind`)
+
+
+def is_confirmed(row: "Row") -> bool:
+    """Did you confirm the file (kept its match, linked it, or said it has no album online): this session, or in an earlier run. An unlink is not one."""
+    if row.status:
+        return row.status in ("keep", "linked", "left")
+    return (row.previous or "").split(":")[0] in ("keep", "leave", "other")
+
+
+def unconfirm(library: Library, row: "Row") -> None:
+    """Take your confirmation back: the file is as it was before you decided (its link and flag are left as they are)."""
+    if row.file_id is None:
+        row.file_id = (library.get_file(row.path) or {}).get("id")
+    if row.file_id is not None:
+        library.remove_attr("file", row.file_id, CHECKED)
+    row.status, row.previous = "", ""
 
 
 def destination_of(library: Library, settings, file: dict, album_id: Optional[int]) -> str:
@@ -157,6 +178,10 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
                             dest=destination_of(library, settings, file, found["id"])))
             if len(rows) >= size:
                 break
+    strong = float(getattr(getattr(settings, "match", None), "strong_threshold", 90))
+    for row in rows:  # how each was linked, in the words of the Link column
+        row.link = ("no album" if row.kind == "unmatched" else "doubtful" if row.kind == "wrong" else "medium match" if row.kind == "unconfirmed"
+                    else "manual" if row.score is None else "auto matched" if row.score >= strong else "medium match")
     rank = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # in one folder, the files in most doubt first
     rows.sort(key=lambda row: (row.folder.casefold(), rank.get(row.kind, 4), row.cover if row.cover is not None else 101.0, row.path))
     return rows
@@ -178,9 +203,12 @@ def decide(library: Library, row: Row, action: str, album_id: Optional[int] = No
     if action == "keep":
         settle(library, {"path": row.path}, "keep")
         value, row.status = "keep", "keep"
-    elif action == "unlink":
+    elif action == "unlink":  # an unlink is not a confirmation: the file waits for an album (or for `l`: no album online)
         settle(library, {"path": row.path, "cover_score": row.cover}, "unlink")
-        value, row.status = "unlink", "unlinked"
+        row.status = "unlinked"
+        if row.file_id is not None:
+            library.remove_attr("file", row.file_id, CHECKED)
+        return
     elif action == "other":
         value, row.status = f"other:{album_id}", "linked"
     elif action == "leave":
@@ -227,7 +255,7 @@ def link_info(library: Library, row: Row, info, url: Optional[str] = None) -> in
     album = library.get_album(album_id) or {}
     row.album, row.album_id, row.album_url = label(album), album_id, album.get("url") or url or info.url
     row.facts = facts_of(album, library.get_file(row.path))
-    row.cover, row.score, row.kind, row.why = None, None, "ok", ["+ chosen by you"]
+    row.cover, row.score, row.kind, row.why, row.link = None, None, "ok", ["+ chosen by you"], "manual"
     decide(library, row, "other", album_id)
     row.message = f"linked to {row.album}" + (" (a spare version: it has another file)" if others else "")
     return album_id
@@ -250,7 +278,7 @@ def record_manual(library: Library, row: Row, album_id: int) -> None:
     album = library.get_album(album_id) or {}
     row.album, row.album_id, row.album_url = label(album), album_id, None
     row.facts = facts_of(album, library.get_file(row.path))
-    row.cover, row.score, row.kind, row.why = None, None, "ok", ["+ written by you"]
+    row.cover, row.score, row.kind, row.why, row.link = None, None, "ok", ["+ written by you"], "manual"
     decide(library, row, "other", album_id)
     row.message = f"linked to {row.album} (written by hand)"
 
@@ -267,6 +295,7 @@ def finish_link(library: Library, row: Row, before: Optional[int], url: Optional
     album = library.get_album(now) or {}
     row.album, row.album_id, row.album_url = label(album), now, album.get("url")
     row.facts = facts_of(album, library.get_file(row.path))
+    row.score, row.kind, row.link = None, "ok", "manual"  # chosen by you: the old doubt is not this link
     decide(library, row, "other", now)
     row.message = f"linked to {row.album}"
     return True, row.message
@@ -399,3 +428,40 @@ def propose_for_series(source, candidate, paths: list[str]):
     if series is None:
         return None
     return folders.propose_for_series(source, series.source_id, series.name, paths, {})
+
+
+def refresh_link(library: Library, row: Row, strong: float) -> None:
+    """After the page and cover came: the score and the Link word as the library has them now (the import may have recorded a score, or doubted the link again)."""
+    row.file_id = row.file_id or (library.get_file(row.path) or {}).get("id")
+    if row.file_id is None:
+        return
+    from bdnex.library import browse
+
+    row.link, score = browse.link_of_file(library, row.file_id, strong)
+    row.score = score
+    if row.link == "doubtful":
+        row.kind = "wrong"
+
+
+AUTHOR_ROLES = ("Writer", "Scénario", "Artist", "Penciller", "Dessin")
+
+
+def known_about(library, source: str, source_id: str, series: bool = False) -> tuple[str, str]:
+    """``(author, year)`` of an album (or, for a series, of its first fetched album) when the library already has its page, else ``("", "")``:
+    what the search list of the review screen shows beside a name. No request: the library only."""
+    try:
+        if series:
+            row = library.conn.execute(
+                "SELECT a.id, (SELECT MIN(year) FROM albums WHERE series_id = s.id) AS first FROM series s JOIN albums a ON a.series_id = s.id "
+                "WHERE s.source = ? AND s.source_id = ? ORDER BY a.volume LIMIT 1", (source, source_id)).fetchone()
+            album_id, year = (row["id"], row["first"]) if row else (None, None)
+        else:
+            album_id, year = library.find_album(source, source_id), None
+        album = library.get_album(album_id) if album_id is not None else None
+    except Exception:  # a help beside a name: never a reason for the list to fail
+        return "", ""
+    if not album:
+        return "", ""
+    credits = album.get("credits") or {}
+    names = next((credits[role] for role in AUTHOR_ROLES if credits.get(role)), None) or next((v for v in credits.values() if v), [])
+    return (names[0] if names else ""), str(year or album.get("year") or "")

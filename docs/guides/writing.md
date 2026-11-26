@@ -245,7 +245,7 @@ paths:
 
 - `$field` or `${field}`; `$volume:02` zero-pads a number. A special such as *Hors-série* is used
   as `$volume` when there is no number.
-- Fields: `kind series title volume special language year publisher isbn genre authors writer penciller colorist collection cycle subseries`.
+- Fields: `kind series title volume special language year publisher isbn genre authors writer penciller colorist collection cycle subseries category`.
 - **Functions**, written `%name{argument,argument}`; arguments can hold `$fields` and other functions:
   `%upper{}` `%lower{}` `%title{}` `%capitalize{}`, `%left{text,n}` and `%right{text,n}` (the first or last `n`
   characters), `%asciify{text}` (no accents), `%first{text,count,skip,sep,join}` (some of the items of a list such as
@@ -255,6 +255,7 @@ paths:
   field never asks for it when it is empty (`paths.missing_field`). Example: `Series/$series/%if{$year,($year) }$title`.
   `$special` is what the site calls the tome when it is no number: `INT` (an intégrale), `HS`, `16B6`; empty otherwise (`bdnex edit` changes it:
   `alternate_number`). To put it in the name: `Series/$series/$series - %if{$special,$special,T$volume:02} - $title`.
+  **Hors-série**: in `bdnex review`, the form for the marked files (`E`) has a **Hors-série HS 1, HS 2...** button that numbers the files `HS 1`, `HS 2`...: no volume, a special that counts up (one file: `V`, then `HS 2`). With the template above they are named `Series - HS 1 - Title`, next to the numbered tomes.
   A function can not contain a `/` (a folder separator), and a typo in a function name is refused when the configuration is read.
 - The site names some series with the year of their first album, to tell them from another series of the same name (`Batman: Dark Victory (1999)`): `$series` has it too. `paths.series_year: strip` leaves a trailing `(year)` out of `$series` in paths (two series told apart only by their year then share a folder).
 - **`$collection` and `$cycle`**: some editions carry the site's own "Collection" and "Cycle" (its edition table, e.g. *Les mondes d'Aldébaran*,
@@ -283,6 +284,11 @@ paths:
   should still sit next to the series it belongs to, instead of in the main series folder (or being treated as a spare version of
   another album it has nothing to do with). It has no rule: set it on the album by hand, with `e` in `bdnex review --batch` or
   `bdnex edit --set subseries=... id:ID`. Typically paired with `%ifdef`: `Series/$series/%ifdef{subseries,$subseries}/$title`.
+- **`$category`**: a hand-set kind of publication (BD, Manga, Comics...), apart from `kind` (series or one-shot): it lets Manga and Comics have
+  their own top folders, `$category/$series/$series - T$volume:02 - $title`. Set it by hand (the bulk form of `bdnex review --batch`, or
+  `bdnex edit --set category=Manga series:naruto`); it is empty until you do, so pair it with `%ifdef` while you are still sorting.
+- **An album that is a `version` of another** (a black and white scan, an older edition the site does not list: `bdnex review --batch`, key `D`)
+  is always placed in the spare versions folder (`duplicates.versions_dir`), with the path of its own album.
 - **`paths.rewrite`** (beets' `rewrite`) changes the value of a field *in the paths only* (the library keeps what it has): `'series .*Hors Série.*': Hors Série`.
   The first rule of a field whose regex is found in its value wins; the collection is worked out before the rewrites.
 - **`paths.replace`** (beets' `replace`) applies `REGEX: replacement` in order to every folder and file name, before bdnex's own safety rules (which stay):

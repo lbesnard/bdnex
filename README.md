@@ -56,9 +56,10 @@ based on metadata and not an obscure filename.
 - files imported from outside your library folder (a download folder) are moved or copied in, or left and placed later
 - a **web page** (`bdnex serve`): browse the library as a wall of covers, see which volumes of a series are missing,
   review doubtful matches, and, if you allow it, run the same tasks as the command line without a terminal
-- `bdnex review --batch 50`: a table (a terminal screen) of the doubtful matches, 50 at a time, folder by folder: file, album now, page link, match and cover
-  scores; keep, unlink, search another album, see both covers, give a whole series its albums at once; every decision is saved
-  ![The review table](docs/_static/screens/review-table.svg)
+- `bdnex review`: the review screen (a terminal screen). On the left, your folders coloured by what they need (green confirmed, cyan auto matched, orange medium match, red doubtful or no album), the folders as `bdnex move` would organise them, and
+  filters (colour, link, review, kind, category, collection, genre, author, series...): click or tick any of them to see all its files in the table. Choose the table's columns (Link says how bdnex linked a file, Review what you decided),
+  see the album's metadata beside each file, confirm, unlink, search another album, compare duplicates, edit many files at once (series or one-shot, collection, volumes, hors-séries...); every decision is saved and the screen opens as you left it
+  ![The review screen](docs/_static/screens/review-screen.png)
 - `bdnex mirror`: keep the whole Bédéthèque catalogue (album pages, series pages, covers) in your library, through several endpoints at once
 - cover check: the file's cover against the album's, with SIFT (OpenCV, installed with bdnex)
 - `bdnex edit`, `import --reparse`, `reset`, `relocate`: fix, rebuild offline, start over, move your collection
@@ -115,6 +116,8 @@ Requires Python 3.10 to 3.13. [uv](https://docs.astral.sh/uv/) is the recommende
 | reading `.cbr` files (match, covers, `write`, `move`, `repair`) | `unrar`, or `unar`, or `bsdtar` (a `7z` only if it has the RAR codec: many builds do not) | every CBR fails with `Failed the read enough data` in the log |
 | the cover check (`cover.check`, `candidates --cover`) | OpenCV (installed with bdnex; a build without it, e.g. an unusual platform, degrades) | covers are still downloaded, but not compared |
 | fetching pages (the default fetcher) | a [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) address in `fetch.endpoint`, or your own fetcher | no page can be fetched (see [Album pages](#album-pages-read-this-first)) |
+| *optional:* a sharp full-size cover in `bdnex review` (`c`, then `z`) | [`chafa`](https://hpjansson.org/chafa/) (`sudo apt install chafa`, `brew install chafa`) | the picture is drawn with plain half blocks: coarser, but it works |
+| *optional:* the fuzzy album search `O` in `bdnex review` | [`fzf`](https://github.com/junegunn/fzf) | the built-in search (`o`) is used |
 
 On Debian or Ubuntu: `sudo apt install unrar` (it needs the `non-free` / `multiverse` repository), or `sudo apt install libarchive-tools` for `bsdtar` (the package is called `bsdtar` on the newest releases).
 

@@ -1,0 +1,957 @@
+"""The extra panels of ``bdnex review --batch``: the folder tree, the duplicate screen, the form for many files.
+
+Each is a thin widget over a library module (``library/folders``, ``library/twins``, ``library/bulk``): the screen shows, the library decides.
+"""
+
+from __future__ import annotations
+
+import dataclasses
+import re
+import os
+from functools import partial
+from typing import Optional
+
+from rich.text import Text
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.message import Message
+from textual.command import DiscoveryHit, Hit, Provider
+from textual.containers import Horizontal, Vertical
+from bdnex.ui.review_modal import Modal
+from textual.widgets import Button, Input, Label, Select, Static, TextArea, Tree
+
+from bdnex.library import folders
+
+STATUS_STYLE = {folders.DONE: "green", folders.AUTO: "cyan", folders.MEDIUM: "dark_orange", folders.PROBLEM: "red"}
+STATUS_MARK = {folders.DONE: "●", folders.AUTO: "○", folders.MEDIUM: "◐", folders.PROBLEM: "✖"}  # (the shape says it too: a colour is not the only sign)
+def legend() -> Text:
+    """What the colours of the folders (and of the Colour filter) mean, in their own colours (two lines: the panel is narrow)."""
+    text = Text()
+    for number, (mark, word, style) in enumerate((("●", "confirmed", "green"), ("○", "auto matched", "cyan"), ("◐", "medium match", "dark_orange"),
+                                                  ("✖", "doubtful/no album", "red"))):
+        text.append(f"{mark} {word}", style=style)
+        text.append("\n" if number == 1 else " ")
+    return text
+
+
+def node_label(node: "folders.FolderNode", ticked: bool = False) -> Text:
+    """``☐ ● Tintin  41/60`` in the colour of what it needs (red: files to look at; orange: partly reviewed; yellow: matched, not reviewed
+    yet; green: reviewed); ``!3`` when 3 files wait for a look (no album, or a doubtful match). The box is the tick (space, or ctrl-click)."""
+    issues = f"  !{node.below_issues}" if node.below_issues else ""
+    return Text(f"{'☑' if ticked else '☐'} {STATUS_MARK[node.status]} {node.name or 'collection'}  {node.below_checked}/{node.total}{issues}",
+                style=STATUS_STYLE[node.status])
+
+
+class Splitter(Static):
+    """A handle between two panes: press on it and drag with the mouse to resize them (the pane the handle is next to takes the new size).
+
+    ``target``: the selector of the pane that grows or shrinks; ``axis`` ``"x"``: the pane is to the left of the handle (its width follows the
+    mouse); ``"y"``: the pane is below the handle (its height follows the mouse). The sizes are kept in the saved view."""
+
+    class Moved(Message):
+        def __init__(self, splitter: "Splitter") -> None:
+            super().__init__()
+            self.splitter = splitter
+
+    DEFAULT_CSS = """
+    Splitter { background: $accent 35%; }
+    Splitter:hover { background: $accent; }
+    Splitter.x { width: 1; height: 100%; }
+    Splitter.y { height: 1; width: 100%; }
+    """
+
+    def __init__(self, target: str, axis: str, minimum: int = 8, tooltip: str = "", **kwargs) -> None:
+        super().__init__("", classes=axis, **kwargs)
+        self.tooltip = tooltip or None
+        self.target, self.axis, self.minimum, self.dragging = target, axis, minimum, False
+
+    def on_mouse_down(self, event) -> None:
+        self.dragging = True
+        self.capture_mouse()
+        event.stop()
+
+    def on_mouse_move(self, event) -> None:
+        if self.dragging:
+            self.drag_to(event.screen_x, event.screen_y)
+            event.stop()
+
+    def on_mouse_up(self, event) -> None:
+        if self.dragging:
+            self.dragging = False
+            self.release_mouse()
+            self.post_message(self.Moved(self))
+            event.stop()
+
+    def drag_to(self, x: int, y: int) -> None:
+        """Resize the pane so that the handle is at screen position ``(x, y)`` (never smaller than ``minimum``, nor larger than the screen less room)."""
+        pane = self.app.query_one(self.target)
+        if self.axis == "x":
+            width = max(self.minimum, min(x - pane.region.x, self.app.size.width - 30))
+            pane.styles.width = width
+        else:
+            height = max(self.minimum // 2, min(pane.region.bottom - y, self.app.size.height - 12))
+            pane.styles.height = height
+
+
+class TickTree(Tree):
+    """A tree whose entries can be ticked (space, or ctrl-click: like the marks of the table); the app shows the files of all the ticked ones.
+
+    Enter or a plain click shows the files of the one entry, as before. A group (a letter) ticks everything it holds."""
+
+    BINDINGS = [Binding("space", "tick", "Tick", show=False)]
+
+    class Ticked(Message):
+        """The ticks changed (``count`` of them in this tree)."""
+
+        def __init__(self, tree: "TickTree", count: int) -> None:
+            super().__init__()
+            self.tree, self.count = tree, count
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.ticked: set = set()
+
+    # what the subclasses say
+    def keys_under(self, node) -> list:
+        """The keys a tick on ``node`` sets (a folder: itself; a group: everything in it)."""
+        raise NotImplementedError
+
+    def label_of(self, node) -> Text:
+        raise NotImplementedError
+
+    def selections(self) -> list[tuple[str, object]]:
+        raise NotImplementedError
+
+    def toggle(self, node) -> None:
+        keys = self.keys_under(node)
+        if not keys:
+            return
+        if all(key in self.ticked for key in keys):
+            self.ticked.difference_update(keys)
+        else:
+            self.ticked.update(keys)
+        self.relabel()
+        self.post_message(self.Ticked(self, len(self.ticked)))
+
+    def clear_ticks(self) -> None:
+        self.ticked.clear()
+        self.relabel()
+        self.post_message(self.Ticked(self, 0))
+
+    def relabel(self) -> None:
+        def walk(tree_node) -> None:
+            for child in tree_node.children:
+                label = self.label_of(child)
+                if label is not None:
+                    child.set_label(label)
+                walk(child)
+
+        walk(self.root)
+
+    def action_tick(self) -> None:
+        if self.cursor_node is not None:
+            self.toggle(self.cursor_node)
+
+    anchor_line = -1  # the entry last ticked: a shift-click ticks from it to the one clicked
+
+    def tick_range(self, first: int, last: int) -> None:
+        """Tick every entry shown from line ``first`` to line ``last`` (a list of entries, as in a file manager)."""
+        keys = []
+        for line in range(min(first, last), max(first, last) + 1):
+            node = self.get_node_at_line(line)
+            if node is not None:
+                keys.extend(self.keys_under(node))
+        self.ticked.update(keys)
+        self.relabel()
+        self.post_message(self.Ticked(self, len(self.ticked)))
+
+    async def _on_click(self, event) -> None:
+        """Ctrl-click ticks the entry under the mouse (and does not open it); shift-click ticks everything from the last ticked entry to this one."""
+        if not (event.ctrl or event.shift):
+            return  # (the tree's own click handler runs after this one: calling it here too would open a folder and shut it again)
+        line = event.style.meta.get("line", -1)
+        node = self.get_node_at_line(line) if line >= 0 else None
+        if node is not None:
+            self.move_cursor(node)
+            if event.shift and self.anchor_line >= 0:
+                self.tick_range(self.anchor_line, line)
+            else:
+                self.toggle(node)
+            self.anchor_line = line
+        event.stop()
+        event.prevent_default()
+
+
+class FolderTree(TickTree):
+    """The folders of the library (as they are, or as `bdnex move` would organise them), coloured by what they need; selecting one asks the screen
+    to show its files, everything below it.
+
+    Children are added when a folder is opened (a library of 6000 folders is not built at once); a folder with very many children shows
+    them in groups by first letter, and a group shows (or ticks) all the folders it holds."""
+
+    def __init__(self, root: "folders.FolderNode", **kwargs) -> None:
+        super().__init__(node_label(root), data=root, **kwargs)
+        self.show_root = True
+        self.guide_depth = 3
+        self.full_root = root
+        self.words: list[str] = []  # what the find box says: the tree shows only the folders that match (and the ones leading to them)
+        self.file_names: dict[str, str] = {}  # folder -> its file names, lower case, one string (for the find box)
+        self.fill(self.root, root)
+        self.root.expand()
+
+    def find(self, text: str, file_names: Optional[dict] = None) -> int:
+        """Show only the folders whose name, or the name of a file in them, has every word of ``text`` (blank: everything again).
+        A folder that matches keeps all it holds; the folders leading to a match stay open. Returns the folders that matched."""
+        if file_names is not None:
+            self.file_names = file_names
+        self.words = text.casefold().split()
+        if not self.words:
+            self.root.data = self.full_root
+            self.fill(self.root, self.full_root)
+            self.root.expand()
+            return 0
+        count = [0]
+        shown = self.pruned(self.full_root, count)
+        shown = shown or dataclasses.replace(self.full_root, children={})
+        self.root.data = shown
+        self.expand_all_of(self.root, shown)
+        return count[0]
+
+    def matches(self, folder: "folders.FolderNode") -> bool:
+        if not folder.path and not folder.name:
+            return False
+        hay = f"{folder.name.casefold()} {self.file_names.get(folder.path, '')}"
+        return all(word in hay for word in self.words)
+
+    def pruned(self, folder: "folders.FolderNode", count: list) -> Optional["folders.FolderNode"]:
+        """A copy of ``folder`` with only what matches below it (None: nothing here matches)."""
+        if self.matches(folder):
+            count[0] += 1
+            return folder  # the whole folder, as it is
+        kept = {name: node for name, child in folder.children.items() if (node := self.pruned(child, count)) is not None}
+        return dataclasses.replace(folder, children=kept) if kept else None
+
+    def expand_all_of(self, tree_node, folder: "folders.FolderNode", depth: int = 0) -> None:
+        """Fill and open the entries on the way to the matches (a folder that matched stays closed: it is the answer)."""
+        self.fill(tree_node, folder)
+        tree_node.expand()
+        for child in tree_node.children:
+            data = child.data
+            if data is not None and data.children and depth < 8 and not self.matches(data):
+                self.expand_all_of(child, data, depth + 1)
+
+    def fill(self, tree_node, folder: "folders.FolderNode") -> None:
+        tree_node.remove_children()
+        for child in folder.shown_children():
+            node = tree_node.add(self.label_of_folder(child), data=child, allow_expand=bool(child.children))
+            if child.children:
+                node.data = child
+
+    def label_of_folder(self, folder) -> Text:
+        return node_label(folder, all(key in self.ticked for key in self.folder_keys(folder)))
+
+    @staticmethod
+    def folder_keys(folder) -> list[str]:
+        if folder.group:
+            return [child.path for child in folder.children.values()]
+        return [folder.path]
+
+    def keys_under(self, node) -> list:
+        return self.folder_keys(node.data) if node.data is not None else []
+
+    def label_of(self, node) -> Text:
+        return self.label_of_folder(node.data) if node.data is not None else None
+
+    def selections(self) -> list[tuple[str, object]]:
+        kind = "planned" if self.id == "movetree" else "folder"
+        return [(kind, path) for path in sorted(self.ticked)]
+
+    def on_tree_node_expanded(self, event: Tree.NodeExpanded) -> None:
+        node = event.node
+        if not node.children and node.data is not None and node.data.children:
+            self.fill(node, node.data)
+
+    def refresh_counts(self, root: "folders.FolderNode") -> None:
+        """New counts from the library, the tree otherwise left as it is (what is expanded stays expanded)."""
+        self.full_root = root
+        if self.words:  # the find box is in use: the tree is built again from the new counts with the same words
+            self.find(" ".join(self.words))
+            return
+
+        def walk(tree_node, folder: Optional["folders.FolderNode"]) -> None:
+            if folder is None:
+                return
+            tree_node.data = folder
+            tree_node.set_label(self.label_of_folder(folder) if tree_node is not self.root else node_label(folder))
+            by_name = {child.name: child for child in folder.shown_children()}
+            for child in tree_node.children:
+                walk(child, by_name.get(child.data.name if child.data is not None else None))
+
+        walk(self.root, root)
+
+    def select_path(self, folder: str) -> None:
+        """Move the cursor to the node of ``folder`` when the tree has it open."""
+        def search(tree_node) -> Optional[object]:
+            data = tree_node.data
+            if data is not None and not data.group and data.path == folder:
+                return tree_node
+            for child in tree_node.children:
+                found = search(child)
+                if found is not None:
+                    return found
+            return None
+
+        node = search(self.root)
+        if node is not None:
+            self.move_cursor(node)
+
+
+class FacetTree(TickTree):
+    """The filters: groups (state, kind, category, collection, genre, author, series...) and their values with the number of files.
+    Selecting a value shows its files; a letter shows (or ticks) all the values under it. Ticks of one group are alternatives (genre
+    Fantasy OR Humour); ticks of different groups go together (genre Fantasy AND not reviewed yet)."""
+
+    def __init__(self, found: dict, **kwargs) -> None:
+        super().__init__("Filters", **kwargs)
+        self.show_root = False
+        self.guide_depth = 3
+        self.words: list[str] = []  # what the find box says: only the values that match (the group's name counts: `author herg`)
+        self.found: dict = found
+        self.opened_before: Optional[set] = None  # what was open before the find box was used
+        self.fill(found)
+
+    SHOWN_MAX = 200  # a find shows at most this many values of a group
+
+    def find(self, text: str) -> int:
+        """Show only the filter values that have every word of ``text`` (in the group's name or the value's); blank: everything again."""
+        words = text.casefold().split()
+        if words and not self.words:
+            self.opened_before = self.open_keys()
+        self.words = words
+        if not words and self.opened_before is not None:
+            self.fill(self.found, opened=self.opened_before)
+            self.opened_before = None
+            return 0
+        self.fill(self.found)
+        return sum(1 for node in self.all_nodes() if node.data and node.data[0] == "facet")
+
+    def matching(self, group: str, values: list) -> list:
+        if not self.words:
+            return values
+        found = [(value, count) for value, count in values if all(word in f"{group} {value}".casefold() for word in self.words)]
+        return found
+
+    def fill(self, found: dict, opened: Optional[set] = None) -> None:
+        from bdnex.library import browse
+
+        self.found = found
+        first = not any(True for _ in self.all_nodes())
+        if opened is None:
+            opened = self.open_keys() or ({("group", "Colour")} if first else set())  # the counts are read again after a decision: what you had opened stays open; Colour starts open
+        self.clear()
+        self.described = browse.DESCRIBED
+        for group in browse.GROUPS:
+            values = self.matching(group, found.get(group) or [])
+            if not values:
+                continue
+            if self.words:  # a find: the groups that have a match open, a flat list, never the letters
+                node = self.root.add(Text(f"{group}  ({len(values)})", style="bold"), data=("group", group), allow_expand=True)
+                for value, count in values[:self.SHOWN_MAX]:
+                    node.add_leaf(self.value_label(group, value, count), data=("facet", (group, value), count))
+                if len(values) > self.SHOWN_MAX:
+                    node.add_leaf(Text(f"  ... {len(values) - self.SHOWN_MAX} more: type more letters", style="dim"))
+                node.expand()
+                continue
+            node = self.root.add(Text(f"{group}  ({len(values)})" if group not in ("Colour", "Link", "Review", "Other") else group, style="bold"), data=("group", group),
+                                 allow_expand=True)
+            if len(values) > folders.MANY:
+                letters: dict[str, list] = {}
+                for value, count in values:
+                    letter = (value[:1] or "#").upper()
+                    letters.setdefault(letter if letter.isalpha() else "#", []).append((value, count))
+                for letter in sorted(letters):
+                    sub = node.add(Text(f"{letter}  ({len(letters[letter])})", style="dim"), data=("letter", group, letter), allow_expand=True)
+                    for value, count in letters[letter]:
+                        sub.add_leaf(self.value_label(group, value, count), data=("facet", (group, value), count))
+            else:
+                for value, count in values:
+                    node.add_leaf(self.value_label(group, value, count), data=("facet", (group, value), count))
+        self.root.expand()
+        for node in self.all_nodes():
+            if self.node_key(node) in opened:
+                node.expand()
+
+    @staticmethod
+    def node_key(node) -> Optional[tuple]:
+        return tuple(node.data[:3]) if node.data and node.data[0] in ("group", "letter") else None
+
+    def all_nodes(self):
+        stack = list(self.root.children)
+        while stack:
+            node = stack.pop()
+            yield node
+            stack.extend(node.children)
+
+    def open_keys(self) -> set:
+        return {self.node_key(node) for node in self.all_nodes() if node.is_expanded and self.node_key(node)}
+
+    def value_label(self, group: str, value: str, count: int) -> Text:
+        label = Text(f"{'☑' if (group, value) in self.ticked else '☐'} {value}  {count}")
+        if group == "Colour":
+            label.stylize({"green": "green", "cyan": "cyan", "orange": "dark_orange", "red": "red"}.get(value, ""))
+        if group in ("Colour", "Link", "Review", "Other") and value in getattr(self, "described", {}):
+            label.append(f"   {self.described[value]}", style="dim")
+        return label
+
+    def leaves(self, node) -> list:
+        if node.data and node.data[0] == "facet":
+            return [node.data]
+        return [leaf for child in node.children for leaf in self.leaves(child)]
+
+    def keys_under(self, node) -> list:
+        return [data[1] for data in self.leaves(node)]
+
+    def label_of(self, node) -> Optional[Text]:
+        if node.data and node.data[0] == "facet":
+            (group, value), count = node.data[1], node.data[2]
+            return self.value_label(group, value, count)
+        return None
+
+    def selections(self) -> list[tuple[str, object]]:
+        return [("facet", key) for key in sorted(self.ticked)]
+
+
+TIPS = (
+    "Double-click a column header to change what it shows · C picks all the columns",
+    "Drag the thin bars between the panes to resize them (the sizes are remembered)",
+    "Space or ctrl-click ticks a folder or a filter · 'Show ticked' shows them together",
+    "Ctrl-click a row marks it · E edits all the marked files at once (series, collection, volumes...)",
+    "n and b turn the pages · f hides the left panel · d hides the album's metadata",
+    "Ctrl+P finds any action or filter: try 'series tintin' or 'state duplicates'",
+    "D shows the other files of an album: trash a duplicate, keep a version · K series or one-shot · V volume",
+    "k confirms a match (green) and again unconfirms it · l says there is no album online for a file · u unlink is not a confirmation",
+    "Shift-click, or shift with the arrows, marks a list of rows · shift-click ticks a list of folders",
+    "A hors-série: E, then the button Hors-série HS 1, HS 2... (or V and type HS 2)",
+    "Red folders have a file with no album or a doubtful match: start there · green means you confirmed everything",
+    "? lists every key",
+)
+
+# What the help says: ("heading", [lines]); in a line, `[key]` is a key, `{green:...}` a word in that colour (the colours of the folders and columns)
+HELP_SECTIONS = (
+    ("LOOKING", (
+        "Left panel: [Folders] (on disk), [Organised] (where `bdnex move` would put them), [Filters] (Colour, Link, Review, series, author...). Click or Enter: all the files below it, 50 a page",
+        "[n] / [b]  next / previous page    [f]  left panel on/off    [d]  album's metadata on/off    drag the thin bars between panes to resize",
+        "[space] or ctrl-click ticks a folder or a filter, shift-click a list · [T] shows all the ticked together",
+        "The box {bold:Apply filters to folders} makes a click on a folder and a click on a filter work together (the files that match both)",
+        "Under the table, the arrows ◀ ▶ (click) or [b] / [n] turn the pages",
+        "[C] columns (saved) · double-click a header: change its field · click a header: sort · [1]-[9] sort by that column",
+    )),
+    ("SEARCH", (
+        "[/] searches this page (file, folder, album, destination, state); then `]` and `[` go to the next / previous hit",
+        "[F] types in the box above the tree: only the folders with that name, or holding a file with that name, stay (words in any order)",
+        "[S] types in the box above the filters: `herg` shows the authors and series with that in their name (the group counts too: `author herg`)",
+        "[Ctrl+P] finds any action or filter by name: `series tintin`, `author hergé`, `link doubtful`",
+        "[o] searches all the albums of the library (offline) to link the file to one",
+    )),
+    ("LINKING A FILE TO AN ALBUM", (
+        "[t] the candidates bdnex found · [o] search every known album · [i] type an id or a bédéthèque address · [p] open the album page · [c] compare covers, then [z] full size: [+] [-] zoom to read the writing, ↑ ↓ h l move, ← → turn the pages, Tab the album's cover",
+        "[k] this match is right: confirm (again: unconfirm) · [l] there is no album online · [u] unlink (it waits for an album) · [s] skip",
+        "[a] gives the marked files the albums of a series (a number each) · [D] the other files of an album: trash a duplicate, make main, keep a version or child",
+    )),
+    ("EDITING", (
+        "[space] or ctrl-click marks a row, shift-click or shift+arrows a list, [m] all, [x] none · [k] confirms all the marked",
+        "[e] one file by hand · [E] (or [e] on several) one form for the marked: any field, series or one-shot, a number each (`5`, or `HS 1`; buttons number them for you)",
+        "[K] series or one-shot · [V] volume · [R] the folder on the screen is all confirmed",
+    )),
+    ("COLOURS (a file you confirmed is green, the others by how bdnex linked them; a folder takes its worst file)", (
+        "{green:● green}  confirmed by you      {cyan:○ cyan}  auto matched (a strong score) or an album you wrote",
+        "{dark_orange:◐ orange}  medium match: look at it      {red:✖ red}  doubtful (flagged) or no album: start here",
+        "The shape says it too, for a screen without colours. `!3` after a folder: 3 files wait for a look.",
+    )),
+    ("WORDS", (
+        "{bold:Link} column: how bdnex linked the file ({cyan:auto matched}, {dark_orange:medium match}, {red:doubtful}, {red:no album}, manual). {bold:Review} column: what you decided ({green:confirmed}, kept, linked, no album online, unlinked)",
+        "{bold:Series} / {bold:one-shot}: an album with a number in a series, or a stand-alone one · {bold:Category}: Series, Mangas, Comics... (a folder in the destination)",
+        "{bold:HS 1}: a hors-série, a tome with no number · {bold:Version}: another edition of an album (kept in `_versions`) · {bold:Child}: an album that belongs to another",
+        "{bold:Score}: how well the title matched, 0-100; at or above {bold:match.strong_threshold} (90) it is auto matched",
+    )),
+    ("CONFIG", (
+        "The columns, pane sizes, tab and panels are remembered in the library. The matching threshold, the destination templates (`paths`) and the sources are in your",
+        "configuration file: `bdnex config` shows it, `bdnex config --edit` opens it. `bdnex review --help` lists the options of this screen.",
+        "Nothing here moves or writes a comic file: `bdnex write` and `bdnex move` do, after you checked.",
+    )),
+)
+# The second page of the help: every key, one line each ("keys", "what it does"); a key with a space in it is several keys
+KEY_SECTIONS = (
+    ("MOVING AND LOOKING", (
+        ("n  b", "next / previous page of 50 files (the arrows ◀ ▶ under the table too)"),
+        ("f", "left panel (folders, organised, filters) on / off"),
+        ("S", "find a filter: type part of an author, a series, a genre... above the filters, only the values that match stay (Enter: on to the list)"),
+        ("F", "find: type part of a folder or file name above the tree, only the folders that match stay (Enter: on to the tree)"),
+        ("d", "album's metadata panel on / off"),
+        ("C", "choose the columns (double-click a header changes one; click a header sorts)"),
+        ("1-9", "sort by that column (again: the other way)"),
+        ("/", "search this page"),
+        ("]  [", "next / previous search hit"),
+        ("Ctrl+P", "find any action or filter by name: `series tintin`, `link doubtful`"),
+        ("T", "show everything ticked in the left panel together (space on a folder or filter ticks it)"),
+        ("v  y", "log panel on / off · copy the log"),
+        ("w", "questions that are waiting for you (a download that needs a choice)"),
+        ("? ", "this help (Tab or ← → switch the page) · Esc closes"),
+        ("q", "quit"),
+    )),
+    ("LINKING A FILE TO AN ALBUM", (
+        ("t", "the candidates bdnex found for this file"),
+        ("o  O", "search every known album of the library (O: with fzf)"),
+        ("i", "type an album id or a bédéthèque address"),
+        ("p", "open the album's page in the browser"),
+        ("c", "compare the file's cover with the album's; then z for the full size (+ - zoom, arrows move, Tab file / album)"),
+        ("k", "this match is right: confirm it (green); again: unconfirm"),
+        ("l", "there is no album online for this file"),
+        ("u", "unlink: the file waits for an album (never a confirmation)"),
+        ("s", "skip for now"),
+        ("a", "give the marked files the albums of a series, one number each"),
+        ("D", "the other files of the same album: trash a duplicate, make main, keep as version"),
+    )),
+    ("MARKING AND EDITING", (
+        ("space", "mark / unmark this row (a ✔ shows in the file column)"),
+        ("Shift+↑ ↓", "mark a list of rows (shift-click too, ctrl-click one)"),
+        ("m  x", "mark every file on screen (again: none) · unmark all"),
+        ("e", "edit this file's album by hand; with several marked: one form for all of them"),
+        ("E", "the form for the marked files: any field, 'several values' when they differ, Clear to empty one"),
+        ("K", "series or one-shot (the marked files)"),
+        ("V", "volume: a number, or `HS 2` for a hors-série"),
+        ("R", "the folder on the screen is all reviewed: confirm every file in it"),
+    )),
+    ("IN A FORM OR A POPUP", (
+        ("Tab  Shift+Tab", "next / previous field or button"),
+        ("Enter", "press the focused button"),
+        ("Esc", "cancel and close"),
+        ("Ctrl+S", "Save (if your terminal passes it; tmux keeps it: use the Save button)"),
+    )),
+    ("IN THE COVER AND THE FULL-SIZE PAGE", (
+        ("c", "open / close the cover comparison"),
+        ("z  Enter", "from the cover comparison: the file's pages at full size"),
+        ("← →", "previous / next page of the file"),
+        ("+  -", "zoom in / out to read the writing"),
+        ("↑ ↓ h l", "move around when zoomed (j k work too)"),
+        ("Tab", "swap between the file's page and the album's cover"),
+        ("Esc  z  q", "back"),
+    )),
+)
+KEY = re.compile(r"\[([^\[\]]+)\]|\{(\w+):([^}]*)\}")
+HELP = "\n".join(f"{head}\n" + "\n".join(lines) for head, lines in HELP_SECTIONS)  # plain, for a test and for a screen without styles
+
+
+def help_text() -> Text:
+    """The help in colour: headings, keys, and the colours of the folders in their own colour."""
+    text = Text()
+    for head, lines in HELP_SECTIONS:
+        text.append(f"{head.split(' (')[0]}", style="bold reverse")
+        if " (" in head:
+            text.append(" (" + head.split(" (", 1)[1], style="dim")
+        text.append("\n")
+        for line in lines:
+            at = 0
+            text.append("  ")
+            for hit in KEY.finditer(line):
+                text.append(line[at:hit.start()])
+                if hit.group(1) is not None:
+                    text.append(f" {hit.group(1)} ", style="bold black on yellow")
+                else:
+                    text.append(hit.group(3), style="bold" if hit.group(2) == "bold" else f"bold {hit.group(2)}")
+                at = hit.end()
+            text.append(line[at:] + "\n")
+        text.append("\n")
+    return text
+
+
+def keys_text() -> Text:
+    """Page 2 of the help: every key and what it does, the keys in yellow, one aligned column."""
+    text = Text()
+    for head, lines in KEY_SECTIONS:
+        text.append(head, style="bold reverse")
+        text.append("\n")
+        for keys, what in lines:
+            at = 0
+            for key in keys.split("  "):
+                chip = f" {key.strip()} "
+                text.append(chip, style="bold black on yellow")
+                text.append(" ")
+                at += len(chip) + 1
+            text.append(" " * max(2, 22 - at) + what + "\n")
+        text.append("\n")
+    return text
+
+
+class PagerChip(Static):
+    """A clickable word under the table (``◀ b  previous``): a click runs the action, like its key."""
+
+    def __init__(self, label: str, action: str, id: str, tooltip: str = "") -> None:
+        super().__init__(Text(label, style="bold black on cyan"), id=id)
+        self.tooltip = tooltip or None
+        self.action_name = action
+
+    def on_click(self) -> None:
+        getattr(self.app, self.action_name)()
+
+
+class HelpChip(Static):
+    """``? Help`` at the top right: a click opens the help (the ``?`` key does too)."""
+
+    def __init__(self) -> None:
+        super().__init__(Text(" ? Help ", style="bold black on yellow"), id="helpchip")
+        self.tooltip = "Open the help: a guide, and every key (the ? key does the same)."
+
+    def on_click(self) -> None:
+        self.app.action_help()
+
+
+class HelpScreen(Modal):
+    """Every key of the screen, in a few lines."""
+
+    BINDINGS = [Binding("escape", "close", "Close"), Binding("question_mark", "close", "Close", show=False), Binding("q", "close", "Close", show=False),
+                Binding("tab", "swap", "Other page", show=False), Binding("right", "swap", show=False), Binding("left", "swap", show=False)]
+    CSS = """
+    HelpScreen { align: center middle; }
+    #help { width: 96%; height: auto; max-height: 94%; border: round $accent; padding: 1 2; background: $surface; overflow-y: auto; }
+    """
+
+    page = 0  # 0: the guide, 1: every key
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="help"):
+            yield Static(self.bar(), id="helpbar")
+            yield Static(help_text(), markup=False, id="helpbody")
+            yield Label(Text("Esc closes · Tab or ← → : the other page", style="dim"))
+
+    def bar(self) -> Text:
+        on, off = "bold black on yellow", "dim"
+        return Text.assemble((" 1  Guide ", on if self.page == 0 else off), "  ", (" 2  Every key ", on if self.page == 1 else off), "\n")
+
+    def action_swap(self) -> None:
+        self.page = 1 - self.page
+        self.query_one("#helpbar", Static).update(self.bar())
+        self.query_one("#helpbody", Static).update(keys_text() if self.page else help_text())
+        self.query_one("#help").scroll_home(animate=False)
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+
+class FacetCommands(Provider):
+    """Ctrl+P: type a few letters of a filter value (`genre fantasy`, `author hergé`, `series tintin`, `state duplicates`): its files are shown."""
+
+    async def search(self, query: str):
+        matcher = self.matcher(query)
+        for group, value, count in self.app.facet_choices:
+            text = f"{group}: {value}"
+            score = matcher.match(text)
+            if score > 0:
+                yield Hit(score, matcher.highlight(text), partial(self.app.open_facet, group, value), help=f"{count} file(s)")
+
+    async def discover(self):
+        for group, value, count in self.app.facet_choices:
+            if group in ("Colour", "Review"):
+                yield DiscoveryHit(f"State: {value}", partial(self.app.open_facet, group, value), help=f"{count} file(s)")
+
+
+class DuplicateScreen(Modal):
+    """Two or more files hold one album: them side by side, and what each one is (the answer is a letter, the library does the rest).
+
+    Dismisses with ``(action, path, extra)``: ``trash`` the file, ``main`` make it the main one, ``version`` / ``child`` give it an album of
+    its own (``extra`` is the note, ``"first"`` flips who is the parent), ``relink`` (it belongs to another album), or ``None``."""
+
+    BINDINGS = [Binding("escape", "close", "Close"), Binding("q", "close", "Close", show=False),
+                Binding("t", "choose('trash')", "Trash this file"), Binding("m", "choose('main')", "Make it the main file"),
+                Binding("v", "choose('version')", "A different version"), Binding("c", "choose('child')", "A child of the album"),
+                Binding("r", "choose('relink')", "Wrong album: link elsewhere"), Binding("b", "close", "Keep both as they are"),
+                Binding("down", "step(1)", show=False, priority=True), Binding("up", "step(-1)", show=False, priority=True)]
+    CSS = """
+    DuplicateScreen { align: center middle; }
+    #dup { width: 92%; height: auto; max-height: 92%; border: round $accent; padding: 1 2; background: $surface; }
+    #dupfiles { height: auto; margin-bottom: 1; }
+    #dupnote { height: 3; }
+    """
+
+    def __init__(self, album: str, found: list, lines: list[str], keys_hint: str = "") -> None:
+        super().__init__()
+        self.album, self.found, self.lines, self.at = album, found, lines, 0
+        self.asking: Optional[str] = None
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="dup"):
+            yield Label(Text(f"{len(self.found)} files for  {self.album}", style="bold"))
+            yield Static("", id="dupfiles")
+            yield Static("", id="dupverdict")
+            yield Label(Text("Note for a version (N&B, 1st edition...), then Enter:", style="dim"), id="dupask")
+            yield Input(value="", id="dupnote", placeholder="N&B")
+            yield Label(Text("↑↓ pick a file · [T]rash it (restorable) · [M]ake it the main file · [V]ersion: it keeps its own album · "
+                             "[C]hild · [R] wrong album: link it elsewhere · [B]oth stay · Esc closes", style="dim"))
+
+    def on_mount(self) -> None:
+        self.query_one("#dupask").display = False
+        note = self.query_one("#dupnote", Input)
+        note.display = False
+        note.disabled = True  # (a hidden box would still take the focus, and the letters typed for the keys)
+        self.set_focus(None)
+        self.draw()
+
+    def draw(self) -> None:
+        text = Text()
+        for index, twin in enumerate(self.found):
+            lines = self.lines_of(twin)
+            text.append(("▶ " if index == self.at else "  ") + lines[0] + "\n", style="bold reverse" if index == self.at else "bold")
+            text.append("  " + lines[1] + "\n")
+        self.query_one("#dupfiles", Static).update(text)
+        self.query_one("#dupverdict", Static).update(Text("\n".join(self.lines), style="yellow"))
+
+    @staticmethod
+    def lines_of(twin) -> list[str]:
+        from bdnex.library import twins
+
+        return twins.facts_lines(twin)
+
+    def action_step(self, step: int) -> None:
+        if self.asking is None:
+            self.at = (self.at + step) % len(self.found)
+            self.draw()
+
+    def action_close(self) -> None:
+        if self.asking is not None:
+            self.asking = None
+            self.query_one("#dupask").display = False
+            note = self.query_one("#dupnote", Input)
+            note.display, note.disabled = False, True
+            self.set_focus(None)
+            return
+        self.dismiss(None)
+
+    def action_choose(self, action: str) -> None:
+        if self.asking is not None:
+            return
+        path = self.found[self.at].path
+        if action in ("version", "child"):
+            self.asking = action  # a note is asked first (it tells the two albums apart)
+            self.query_one("#dupask").display = True
+            box = self.query_one("#dupnote", Input)
+            box.disabled, box.display = False, True
+            box.focus()
+            return
+        self.dismiss((action, path, ""))
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if self.asking:
+            self.dismiss((self.asking, self.found[self.at].path, event.value.strip()))
+
+
+class BulkScreen(Modal):
+    """One form for the marked files: the common fields (their shared value is shown; what you type is set on all of them), the kind
+    (series or one-shot), and a volume for each file.
+
+    Dismisses with ``{"values": {field: text}, "kind": None | "series" | "oneshot", "volumes": {path: int | None}}`` (only the fields
+    that were changed), or ``None``."""
+
+    BINDINGS = [Binding("escape", "back", "Cancel"), Binding("ctrl+s", "accept", "Save")]
+    CSS = """
+    BulkScreen { align: center middle; }
+    #bulk { width: 96%; height: 96%; border: round $accent; padding: 0 2; background: $surface; }
+    #bulkfields { height: 1fr; overflow-y: auto; }  /* everything but the buttons scrolls: Save is always in view */
+    .fieldrow { height: 3; }
+    .fieldname { width: 18; padding-top: 1; color: $text-muted; }
+    .fieldrow Input { width: 1fr; }
+    .fieldrow .emptier, .fieldrow .restorer { min-width: 9; margin-left: 1; }
+    .fieldrow Input.restoring > .input--placeholder { color: green; text-style: bold; }
+    .fieldrow Input.emptied > .input--placeholder { color: red; text-style: bold; }
+    .fieldrow Input.several > .input--placeholder { color: darkorange; text-style: bold; }
+    #bulkkind { width: 30; }
+    #bulkkind.several SelectCurrent { color: darkorange; text-style: bold; }
+    #bulkvolumes { height: 9; }
+    #volumebuttons { height: 3; width: 100%; }
+    #volumebuttons Button { margin-right: 1; }
+    #bulkproblem { color: $error; height: auto; }
+    #bulkbuttons { height: 3; align-horizontal: right; }
+    #bulkbuttons Button { margin-left: 2; }
+    """
+
+    KINDS = [("series", "series"), ("one-shot", "oneshot")]
+
+    def __init__(self, heading: str, shared: dict, fields, files: list[tuple[str, str, str]], hints: Optional[dict] = None,
+                 restorable: bool = False) -> None:
+        """``fields``: ``manual.FIELDS``-like rows ``(key, label, hint)``; ``shared``: what the albums agree on (``None``: they differ);
+        ``files``: ``(path, number, note)`` for the list of numbers (``5``, or ``HS 1`` for a tome with no number); ``hints``: a grey text to suggest for a field the albums have no value for
+        (a suggestion, never a value: nothing is set unless you type it)."""
+        super().__init__()
+        self.heading, self.shared, self.fields, self.files, self.hints = heading, shared, fields, files, hints or {}
+        self.cleared: set[str] = set()  # fields to empty on every file (the Clear button)
+        self.restorable = restorable  # some albums come from the site: a field can go back to what the site says
+        self.restored: set[str] = set()  # fields to put back to the site's value, each album its own (the Restore button)
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="bulk"):
+            yield Label(Text(self.heading, style="bold"))
+            yield Label(Text("A field you leave as it is stays as it is on every file; one you type is set on all of them; "
+                             "press Clear to clear a field on all of them. Grey: what they all have; orange: they differ.", style="dim"))
+            with Vertical(id="bulkfields"):
+                with Horizontal(classes="fieldrow"):
+                    yield Label("Kind", classes="fieldname")
+                    # a field like the others: the kind they all have, or "(several values)" (a blank choice that changes nothing)
+                    blank = "(several values)" if "kind" in self.shared else "(no album yet)"
+                    options = [*self.KINDS] if self.shared.get("kind") else [(blank, ""), *self.KINDS]
+                    yield Select(options, value=self.shared.get("kind") or "", allow_blank=False, id="bulkkind",
+                                 classes="" if self.shared.get("kind") else "several")
+                for key, label, hint in self.fields:
+                    shared = self.shared.get(key)
+                    holder = "(several values)" if shared is None else (shared or self.hints.get(key) or hint)
+                    with Horizontal(classes="fieldrow"):
+                        yield Label(label, classes="fieldname")
+                        yield Input(value="", placeholder=holder, id=f"b-{key}", classes="several" if shared is None else "")
+                        if shared != "":  # (when they all have none already, there is nothing to empty)
+                            yield Button("Clear", id=f"clear-{key}", classes="emptier")
+                        if self.restorable and key not in ("series", "volume"):
+                            yield Button("Restore", id=f"restore-{key}", classes="restorer")
+                yield Label(Text("Volume of each file, one line each: its number in the series (5), or a word for a book with no number "
+                                 "(HS 1 = hors-série, INT = intégrale). Fill the lines with:", style="dim"))
+                with Horizontal(id="volumebuttons"):
+                    yield Button("Number them 1, 2, 3...", id="number")
+                    yield Button("Hors-série HS 1, HS 2...", id="hs")
+                    yield Button("Read from file names", id="names")
+                yield TextArea("\n".join(f"{v}\t{os.path.basename(p)}  {note}" for p, v, note in self.files), id="bulkvolumes")
+            yield Label("", id="bulkproblem")
+            with Horizontal(id="bulkbuttons"):
+                yield Button("Save", id="ok", variant="success")
+                yield Button("Cancel", id="cancel")
+
+    TIPS = {
+        "number": "Fills the volume list with 1, 2, 3... in the order shown: the first file is tome 1, the second tome 2. Nothing is saved until you press Save.",
+        "hs": "Fills the volume list with HS 1, HS 2, HS 3... (hors-série: special issues that have no tome number). Nothing is saved until you press Save.",
+        "names": "Reads each tome number from the file name ('Tintin - 05 - Le Lotus bleu.cbz' gives 5) and fills the volume list. Nothing is saved until you press Save.",
+        "ok": "Write these values on every file listed (only the fields you changed). Everything is checked first: one bad value writes nothing.",
+        "cancel": "Close without changing anything.",
+    }
+
+    def on_mount(self) -> None:
+        for button in self.query(Button):
+            tip = self.TIPS.get(button.id or "")
+            if tip is None and (button.id or "").startswith("restore-"):
+                tip = "Put this field back to what the site (Bédéthèque) says, for each album its own (click again to keep what they have)."
+            if tip is None and (button.id or "").startswith("clear-"):
+                tip = "Empty this field on every file (click again to keep what they have). Typing a value instead sets that value."
+            if tip:
+                button.tooltip = tip
+        self.query_one(f"#b-{self.fields[0][0]}", Input).focus()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "ok":
+            self.action_accept()
+        elif event.button.id == "cancel":
+            self.dismiss(None)
+        elif (event.button.id or "").startswith("clear-"):
+            self.toggle_clear(event.button.id[len("clear-"):])
+        elif (event.button.id or "").startswith("restore-"):
+            self.toggle_restore(event.button.id[len("restore-"):])
+        elif event.button.id == "number":
+            self.set_volumes([str(n) for n in range(1, len(self.files) + 1)])
+        elif event.button.id == "hs":  # hors-série: no volume, a special that counts up
+            self.set_volumes([f"HS {n}" for n in range(1, len(self.files) + 1)])
+        elif event.button.id == "names":
+            from bdnex.library import manual
+
+            self.set_volumes([str(manual.guess(path)["volume"]) for path, _, _ in self.files])
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Choosing "series" asks for its name: the box is filled with the folder's name (change it if it is not the series) and gets the focus."""
+        if event.select.id != "bulkkind" or event.value != "series" or event.value == (self.shared.get("kind") or "") or not self.fields or not any(k == "series" for k, _, _ in self.fields):
+            return
+        box = self.query_one("#b-series", Input)
+        if not box.value.strip():
+            shared = self.shared.get("series")
+            box.value = shared or self.hints.get("series") or ""
+        box.focus()
+        self.query_one("#bulkproblem", Label).update("The series name: change it if it is not the one these albums belong to")
+
+    def toggle_restore(self, key: str) -> None:
+        """Put this field back to the site's value on every album (or take it back): the box says so in green."""
+        box, button = self.query_one(f"#b-{key}", Input), self.query_one(f"#restore-{key}", Button)
+        if key in self.restored:
+            self.restored.discard(key)
+            box.remove_class("restoring")
+            box.placeholder = self.holder(key)
+            button.label = "Restore"
+            return
+        if key in self.cleared:
+            self.toggle_clear(key)
+        self.restored.add(key)
+        box.value = ""
+        box.add_class("restoring")
+        box.placeholder = "(will go back to the site's value, each album its own)"
+        button.label = "Keep"
+
+    def toggle_clear(self, key: str) -> None:
+        """Clear this field on every file (or take it back): the box says so in red, and typing a value instead is the other choice."""
+        box, button = self.query_one(f"#b-{key}", Input), self.query_one(f"#clear-{key}", Button)
+        if key in self.restored:
+            self.toggle_restore(key)
+        if key in self.cleared:
+            self.cleared.discard(key)
+            box.remove_class("emptied")
+            box.placeholder = self.holder(key)
+            button.label = "Clear"
+        else:
+            self.cleared.add(key)
+            box.value = ""
+            box.add_class("emptied")
+            box.placeholder = "(will be cleared on every file)"
+            button.label = "Keep"
+
+    def holder(self, key: str) -> str:
+        shared = self.shared.get(key)
+        hint = next((h for k, _, h in self.fields if k == key), "")
+        return "(several values)" if shared is None else (shared or self.hints.get(key) or hint)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        key = (event.input.id or "")[2:]
+        if event.value and key in self.cleared:  # typing a value is the other choice
+            self.toggle_clear(key)
+        if event.value and key in self.restored:
+            self.toggle_restore(key)
+
+    def set_volumes(self, numbers: list[str]) -> None:
+        self.query_one("#bulkvolumes", TextArea).text = "\n".join(
+            f"{number}\t{os.path.basename(path)}  {note}" for number, (path, _, note) in zip(numbers, self.files))
+
+    def action_back(self) -> None:
+        self.dismiss(None)
+
+    def action_accept(self) -> None:
+        values = {}
+        for key, _, _ in self.fields:
+            typed = self.query_one(f"#b-{key}", Input).value.strip()
+            if typed:
+                values[key] = "" if typed == "-" else typed
+            elif key in self.cleared:
+                values[key] = ""
+        lines = self.query_one("#bulkvolumes", TextArea).text.split("\n")
+        while len(lines) > len(self.files) and not lines[-1].strip():
+            lines.pop()
+        if len(lines) != len(self.files):
+            self.query_one("#bulkproblem", Label).update("keep one line per file")
+            return
+        volumes: dict[str, Optional[int]] = {}
+        specials: dict[str, Optional[str]] = {}
+        for (path, old, _), line in zip(self.files, lines):
+            first = line.split("\t", 1)[0].strip()
+            if first == old:
+                continue  # only the files whose number was changed
+            if first.isascii() and first.isdigit():
+                volumes[path], specials[path] = int(first), None
+            else:  # text: a tome with no number (HS 1, INT, 16B6)
+                volumes[path], specials[path] = None, first or None
+        chosen = self.query_one("#bulkkind", Select).value or ""
+        kind = None if chosen == (self.shared.get("kind") or "") else (chosen or None)  # (the kind they have already is no change)
+        if kind == "series" and not (values.get("series") or "").strip():
+            self.query_one("#bulkproblem", Label).update("Type the name of the series (above), or choose another kind")
+            self.query_one("#b-series", Input).focus()
+            return
+        self.dismiss({"values": values, "kind": kind or None, "volumes": volumes, "specials": specials,
+                      "restore": sorted(key for key in self.restored if key not in values)})

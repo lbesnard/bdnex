@@ -7,8 +7,12 @@ description: Add or change a bdnex command, flag, config option, query field or 
 
 - **Flag**: add it in the command's parser in `bdnex/ui/<cmd>_cmd.py`, then mention `--flag` in a `docs/guides/*.md`
   page (importing.md for `import`). Completion scripts follow automatically (read from `--help`).
-- **New command**: dispatch in `bdnex/ui/__init__.py` (+ a line in `USAGE`), add it to `COMMANDS` in
-  `test/test_docs_in_sync.py`, and write "bdnex <command>" in the docs.
+- **New command**: a row in `bdnex/ui/commands.py` (name, module, summary, group; the usage text, dispatch and tab completion read
+  it), its `bdnex/ui/<cmd>_cmd.py` with `run(argv)` (start with `ui/context.py`), rows in `bdnex/ui/examples.py`, `bdnex <command>`
+  in `docs/guides/*.md`, and a name in `COMMANDS` of `test/test_docs_in_sync.py`.
+- **Any option change**: regenerate the reference, `uv run python -m bdnex.ui.cli_reference > docs/reference/commands.md`
+  (a test fails when it is stale). An example in `examples.py` that uses a removed flag fails `test/test_examples.py`.
+- **A web task** that runs the command: its row in `jobs.SPECS`, `test/api/test_jobs_match_the_cli.py`, `docs/guides/api.md`.
 - **Config option**: `bdnex/conf/bdnex.yaml` (default), the pydantic model in `bdnex/config.py`, and
   `docs/guides/configuration.md` (the dotted name, e.g. `import.thumbnails`). Give the option a `# comment` in
   `bdnex/conf/bdnex.yaml`: that line is what `bdnex config --update` copies, commented out, into users' files

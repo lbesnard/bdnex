@@ -14,9 +14,11 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from functools import partial
 import io
 import logging
 import os
+import subprocess
 import re
 import shutil
 import sys
@@ -31,23 +33,26 @@ from rich.style import Style
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
+from textual.containers import Horizontal, Vertical, VerticalScroll
+from bdnex.ui.review_modal import Modal
+from textual.widgets import TabbedContent, TabPane, Button, Checkbox, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
-from bdnex.library import review_batch as batch
+from bdnex.library import browse, review_batch as batch
 from bdnex.ui import color
+from bdnex.ui.review_extras import ReviewExtras
+from bdnex.ui.cover_text import GRAPHICS, graphic
+from bdnex.ui.review_panels import FacetCommands, HelpChip, PagerChip, Splitter, legend
 
-STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "dim", "skipped": "yellow"}
+STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "green", "skipped": "yellow"}
+STATUS_WORD = {"keep": "kept", "linked": "linked", "unlinked": "unlinked", "left": "no album online", "skipped": "skipped"}  # what a decision of this session is called
 KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "ok": "green"}
-KIND_WORD = {"wrong": "contradicted", "unconfirmed": "unconfirmed", "unmatched": "no album", "ok": "nothing against"}
+KIND_COLOUR = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "ok": "green"}  # (the badge: dark text on this colour)
+KIND_WORD = {"wrong": "looks wrong", "unconfirmed": "to check", "unmatched": "no album", "ok": "looks right"}  # (what bdnex thinks of the match; `reviewed` is what you did)
 EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 SEARCH_LIMIT = 60
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # braille dots turning: a state that is waiting for the site
-COLUMNS = (("#", 3), ("File", 40), ("Folder", 22), ("Album now", 40), ("Page", 8), ("Match", 8), ("Cover", 8), ("State", 14),
-           ("Would go to", 44))  # (last: the numbers of the columns before it, which the keys and the tests know, stay as they were)
-STATE_COLUMN = 7
+from bdnex.ui.review_columns import COLUMN_TYPES, COLUMNS, DEFAULT_VIEW, FLEX_COLUMN, ColumnsMixin, ReviewTable  # noqa: E402,F401
 STATE_ORDER = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # the state column sorts by how doubtful, then by decision
 DECIDED_ORDER = {"keep": 10, "linked": 11, "unlinked": 12, "left": 13, "skipped": 14}
 
@@ -233,7 +238,7 @@ class Waiting:
     callback: Callable
 
 
-class CandidatesScreen(ModalScreen):
+class CandidatesScreen(Modal):
     """The albums this one file could be, best first, with where each score comes from: Enter links the highlighted one.
     Few and quick (the matcher's own list); `o` goes on to the search of the whole album list."""
 
@@ -330,7 +335,7 @@ class Tick(Checkbox):
     can_focus = False
 
 
-class FuzzyScreen(ModalScreen):
+class FuzzyScreen(Modal):
     """Search the whole album list as you type (like ``fzf``): Enter picks, Ctrl-O opens the page, Esc goes back."""
 
     BINDINGS = [Binding("escape", "back", "Back"), Binding("ctrl+o", "open", "Open the page"),
@@ -349,6 +354,7 @@ class FuzzyScreen(ModalScreen):
         self.hub, self.start, self.heading, self.series_ok = hub, start, title, series_ok
         self.about = about or []  # the folder and name of the file(s) this is for: they help to find the album, and are not on this screen otherwise
         self.hits: list = []
+        self.knowledge: dict = {}  # (id, is a series) -> (author, year) the library has
         self.show_series = self.show_albums = True  # the two tick boxes (only when series can be picked)
         self.text = start
 
@@ -365,7 +371,7 @@ class FuzzyScreen(ModalScreen):
                     yield Tick("Albums  (F3)", True, id="show-albums")
             yield Label("", id="count")
             if self.series_ok:
-                yield Label(Text("score  type    name   (a SERIES gives each file its volume; an album is just that one book)", style="dim"))
+                yield Label(Text("score  type    year  author                  name   (a SERIES gives each file its volume; an album is just that one book)", style="dim"))
             yield OptionList(id="hits")
             yield Static("", id="preview")
             yield Label(Text("Enter picks the album · Ctrl-O opens its page · ↑↓ move · Ctrl-U clears · Esc goes back", style="dim"))
@@ -420,15 +426,28 @@ class FuzzyScreen(ModalScreen):
         from bdnex.ui.prompts import display_name
 
         line = Text(f"{score:>3.0f}  ")
-        if is_series_address(candidate.url):
-            if self.series_ok:
-                line.append("SERIES  ", style="bold cyan")
-            line.append(candidate.name, style="bold")
-        else:
-            if self.series_ok:
-                line.append("album   ", style="dim")
-            line.append(display_name(candidate))
+        series = is_series_address(candidate.url)
+        if series and self.series_ok:
+            line.append("SERIES  ", style="bold cyan")
+        elif self.series_ok:
+            line.append("album   ", style="dim")
+        author, year = self.known(candidate, series)
+        line.append(f"{year:<4}  ", style="dim")  # only what the library already has: an album not fetched yet shows nothing here
+        line.append(f"{author[:22]:<22}  ", style="cyan")
+        line.append(candidate.name if series else display_name(candidate), style="bold" if series else "")
         return line
+
+    def known(self, candidate, series: bool) -> tuple[str, str]:
+        try:
+            library = getattr(self.app, "library", None)
+        except Exception:  # (a screen not shown yet has no app)
+            library = None
+        if library is None:
+            return "", ""
+        key = (candidate.source_id, series)
+        if key not in self.knowledge:
+            self.knowledge[key] = batch.known_about(library, getattr(self.hub.source, "name", "bedetheque"), candidate.source_id, series)
+        return self.knowledge[key]
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self.text = event.value
@@ -483,13 +502,15 @@ class FuzzyScreen(ModalScreen):
         self.dismiss(None)
 
 
-class AskScreen(ModalScreen):
+class AskScreen(Modal):
     """One line of text (an album address or number), or a yes/no question when ``text`` is ``None``."""
 
     BINDINGS = [Binding("escape", "back", "Back")]
     CSS = """
     AskScreen { align: center middle; }
     #ask { width: 80%; height: auto; border: round $accent; padding: 1 2; background: $surface; }
+    #askbuttons { height: 3; align-horizontal: right; }
+    #askbuttons Button { margin-left: 2; }
     """
 
     def __init__(self, question: str, text: Optional[str] = ""):
@@ -503,6 +524,11 @@ class AskScreen(ModalScreen):
                 yield Input(value=self.text, id="line")
             else:
                 yield Label(Text("y: yes · n: no", style="dim"))
+            with Horizontal(id="askbuttons"):
+                yield Button("Save" if self.text is not None else "Yes", id="askok", variant="success",
+                             tooltip="Keep what you typed." if self.text is not None else "Yes (the y key does the same).")
+                yield Button("Cancel" if self.text is not None else "No", id="askno",
+                             tooltip="Close without changing anything." if self.text is not None else "No (the n key does the same).")
 
     def on_mount(self) -> None:
         if self.text is not None:
@@ -510,6 +536,13 @@ class AskScreen(ModalScreen):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.dismiss(event.value.strip() or None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "askok":
+            self.dismiss(self.query_one(Input).value.strip() or None if self.text is not None else True)
+        else:
+            self.dismiss(None if self.text is not None else False)
 
     def on_key(self, event) -> None:
         if self.text is None and event.key in ("y", "n"):
@@ -520,8 +553,8 @@ class AskScreen(ModalScreen):
         self.dismiss(None)
 
 
-class EditScreen(ModalScreen):
-    """A form for an album written by hand (one file), or for the series of several files: the OK button (or Ctrl-S) accepts, Cancel (Esc, or `x` outside a text field) cancels.
+class EditScreen(Modal):
+    """A form for an album written by hand (one file), or for the series of several files: the Save button (or Ctrl-S) accepts, Cancel (Esc, or `x` outside a text field) cancels.
 
     ``volumes``: for several files, ``[(path, volume or None)]``: one line each, ``volume  file name``, the numbers can be changed."""
 
@@ -529,34 +562,57 @@ class EditScreen(ModalScreen):
                 Binding("ctrl+s", "accept", "Save")]  # Ctrl-S stays for who can use it; tmux takes it, hence the buttons
     CSS = """
     EditScreen { align: center middle; }
-    #edit { width: 90%; height: auto; max-height: 95%; border: round $accent; padding: 1 2; background: $surface; overflow-y: auto; }
+    #edit { width: 90%; height: 95%; border: round $accent; padding: 1 2; background: $surface; }
+    #editfields { height: 1fr; }
     #edit Input { margin-bottom: 0; }
+    .editrow { height: 3; }
+    .editrow Input { width: 1fr; }
+    .editrow Button { margin-left: 1; min-width: 9; }
     #volumes { height: 8; }
-    #problem { color: $error; }
-    #buttons { height: auto; align-horizontal: right; }
+    #problem { color: $error; height: auto; }
+    #buttons { height: 3; align-horizontal: right; }
     #buttons Button { margin-left: 2; }
+    #edithelp { height: 1; }
     """
 
-    def __init__(self, heading: str, values: dict, fields, volumes=None):
+    def __init__(self, heading: str, values: dict, fields, volumes=None, originals: Optional[dict] = None):
+        """``originals``: what the site says (the form's keys), for the Restore button of each field that has one."""
         super().__init__()
         self.heading, self.values, self.fields, self.volumes = heading, values, fields, volumes
+        self.originals = originals or {}
+        self.restored: set[str] = set()  # fields put back to the site's value (the box still says so when Save is pressed)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="edit"):
             yield Label(Text(self.heading, style="bold"))
-            for key, label, hint in self.fields:
-                yield Label(Text(f"{label}" + (f"  ({hint})" if hint else ""), style="dim"))
-                yield Input(value=self.values.get(key, ""), id=f"f-{key}")
-            if self.volumes is not None:
-                yield Label(Text("Volume and file (change a number if it was read wrong)", style="dim"))
-                yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}" for p, v in self.volumes), id="volumes")
-            yield Label("", id="problem")
+            with VerticalScroll(id="editfields"):  # the fields scroll; Save and Cancel stay at the bottom of the window
+                for key, label, hint in self.fields:
+                    yield Label(Text(f"{label}" + (f"  ({hint})" if hint else ""), style="dim"))
+                    with Horizontal(classes="editrow"):
+                        yield Input(value=self.values.get(key, ""), id=f"f-{key}")
+                        yield Button("Clear", id=f"clear-{key}", classes="emptier")  # the same button as in the form for many files
+                        if key in self.originals and key not in ("series", "volume"):
+                            yield Button("Restore", id=f"restore-{key}", classes="emptier")
+                if self.volumes is not None:
+                    yield Label(Text("Volume and file (change a number if it was read wrong)", style="dim"))
+                    yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}" for p, v in self.volumes), id="volumes")
+                yield Label("", id="problem")
+            yield Label(Text("Tab moves · Save (or Ctrl-S) saves · Cancel, Esc or x (outside a text field) closes", style="dim"), id="edithelp")
             with Horizontal(id="buttons"):
-                yield Button("OK", id="ok", variant="success")
+                yield Button("Save", id="ok", variant="success")
                 yield Button("Cancel", id="cancel")
-            yield Label(Text("Tab moves · OK (or Ctrl-S) saves and links · Cancel, Esc or x (outside a text field) closes", style="dim"))
 
     def on_mount(self) -> None:
+        for button in self.query(Button):
+            if (button.id or "").startswith("clear-"):
+                button.tooltip = "Empty this field (it is saved as none)."
+            elif (button.id or "").startswith("restore-"):
+                site = self.originals.get(button.id[len("restore-"):], "")
+                button.tooltip = "Put back what the site (Bédéthèque) says: " + (f"{site[:80]!r}" if site else "nothing (it has no value)") + "."
+            elif button.id == "ok":
+                button.tooltip = "Save the changes (they are checked first)."
+            elif button.id == "cancel":
+                button.tooltip = "Close without changing anything."
         self.query_one(f"#f-{self.fields[0][0]}", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -574,11 +630,22 @@ class EditScreen(ModalScreen):
         event.stop()
         if event.button.id == "ok":
             self.action_accept()
+        elif (event.button.id or "").startswith("clear-"):
+            box = self.query_one("#f-" + event.button.id[len("clear-"):], Input)
+            box.value = ""  # an empty field is saved as none
+            box.focus()
+        elif (event.button.id or "").startswith("restore-"):
+            box = self.query_one("#f-" + event.button.id[len("restore-"):], Input)
+            key = event.button.id[len("restore-"):]
+            box.value = self.originals.get(key, "")  # the site's value; your edit of it is forgotten on Save
+            self.restored.add(key)
+            box.focus()
         else:
             self.dismiss(None)
 
     def action_accept(self) -> None:
         values = {key: self.query_one(f"#f-{key}", Input).value.strip() for key, _, _ in self.fields}
+        back = [key for key in self.restored if key in values and values[key] == self.originals.get(key, "").strip()]  # (typed over since: not a restore)
         if self.volumes is not None:
             lines = self.query_one("#volumes", TextArea).text.split("\n")
             while len(lines) > len(self.volumes) and not lines[-1].strip():
@@ -601,17 +668,211 @@ class EditScreen(ModalScreen):
         except manual.FormError as err:
             self.query_one("#problem", Label).update(str(err))
             return
-        self.dismiss(values)
+        self.dismiss({**values, "__restore__": back} if back else values)
 
     def action_back(self) -> None:
         self.dismiss(None)
 
 
-class CoverScreen(ModalScreen):
+class Pane(VerticalScroll):
+    """A panel of text that scrolls (a Static does not): its text is in ``body``; ``update`` replaces it and goes back to the top."""
+
+    def __init__(self, id: str) -> None:
+        super().__init__(id=id)
+        self.body = Static("", id=f"{id}-body")
+
+    def compose(self) -> ComposeResult:
+        yield self.body
+
+    def update(self, content) -> None:
+        self.body.update(content)
+        self.scroll_home(animate=False)
+
+
+class Pictures:
+    """What a screen needs to draw a real picture (kitty, iTerm2, sixel) straight on the terminal, past Textual, and to take it away."""
+
+    deletes_kitty = False  # set when the kitty mode draws (its pictures stay on the terminal until deleted)
+
+    def picture_mode(self) -> str:
+        return getattr(getattr(getattr(self.app, "settings", None), "cover", None), "picture", "symbols")
+
+    def write_raw(self, data: bytes) -> None:
+        """Straight to the terminal, past Textual (it knows nothing of pictures): used only for the real-picture modes."""
+        driver = getattr(self.app, "_driver", None)
+        if driver is not None:
+            driver.write(data.decode("utf-8", "replace"))
+            flush = getattr(driver, "flush", None)
+            if flush:
+                flush()
+
+    def place(self, sequence: bytes, x: int, y: int) -> None:
+        """The picture goes at screen cell ``(x, y)``, its top left; the cursor is put back where it was."""
+        self.write_raw(b"\x1b7" + f"\x1b[{y + 1};{x + 1}H".encode() + sequence + b"\x1b8")
+
+    def clear_graphic(self) -> None:
+        """A kitty picture stays until it is deleted (sixel and iTerm2 pictures are painted over by the next draw)."""
+        if self.deletes_kitty:
+            delete = b"\x1b_Ga=d,d=A\x1b\\"  # every picture, and its data
+            self.write_raw(delete)  # as it is: a tmux that keeps the pictures itself (recent versions) takes this one
+            if os.environ.get("TMUX"):  # and wrapped, for the terminal behind a tmux that only passes it on
+                self.write_raw(b"\x1bPtmux;\x1b" + delete.replace(b"\x1b", b"\x1b\x1b") + b"\x1b\\")
+
+
+    def redraw_after(self) -> None:
+        """A real picture was shown: once it is closed the terminal is cleared and the whole screen drawn again. Textual only sends the cells
+        that changed, so it never touches the ones a picture sits on, and tmux (or the terminal) keeps the picture there; clearing the
+        terminal (ESC [ 2 J) takes it away, and the full repaint puts the app back. ``cover.redraw_after_picture: false`` (the default) turns it
+        off. Never an error: it is only a help."""
+        from bdnex.ui.cover_text import GRAPHICS
+
+        if self.picture_mode() not in GRAPHICS or not getattr(getattr(getattr(self.app, "settings", None), "cover", None), "redraw_after_picture", False):
+            return
+        app = self.app
+
+        def repaint() -> None:
+            with contextlib.suppress(Exception):
+                self.write_raw(b"\x1b[2J")
+                app.refresh(layout=True)
+                app.screen.refresh(layout=True)
+            if os.environ.get("TMUX"):
+                with contextlib.suppress(Exception):
+                    subprocess.Popen(["tmux", "refresh-client"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        app.set_timer(0.15, repaint)  # (after the screen under the popup is ready)
+
+
+class PageScreen(Pictures, Modal):
+    """One picture as large as the terminal allows, to read the credits: the pages of the file (left / right), or the album's saved cover (Tab).
+    It is text (chafa when installed, else half blocks), so it works over SSH and in tmux."""
+
+    BINDINGS = [Binding("escape", "close", "Back"), Binding("z", "close", "Back", show=False), Binding("q", "close", "Back", show=False),
+                Binding("right", "turn(1)", "Next page"), Binding("left", "turn(-1)", "Previous page"),
+                Binding("tab", "swap", "File / album cover"),
+                Binding("plus", "zoom(1)", "Zoom in"), Binding("equals_sign", "zoom(1)", "Zoom in", show=False), Binding("minus", "zoom(-1)", "Zoom out"),
+                Binding("up", "pan(0, -1)", "Up", show=False), Binding("down", "pan(0, 1)", "Down", show=False),
+                Binding("h", "pan(-1, 0)", "Left", show=False), Binding("l", "pan(1, 0)", "Right", show=False),
+                Binding("k", "pan(0, -1)", "Up", show=False), Binding("j", "pan(0, 1)", "Down", show=False)]
+    CSS = """
+    PageScreen { align: center middle; background: $surface; }
+    #pageview { width: 100%; height: 100%; }
+    #picture { width: 100%; height: 1fr; content-align: center middle; }
+    #pagehead, #pagefoot { height: 1; padding: 0 1; }
+    """
+
+    def __init__(self, title: str, files) -> None:
+        super().__init__()
+        self.title_text, self.files = title, files  # files: (path, format, saved cover or None)
+        self.index, self.total, self.which, self.token = 0, 0, "file", 0
+        self.deletes_kitty = False  # set when the kitty mode draws (its pictures stay on the terminal until deleted)
+        self.zoom, self.px, self.py, self.step = 1, 0.0, 0.0, (0.0, 0.0)  # zoom 1 is the whole page; above it a part of the page, moved with the arrows
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="pageview"):
+            yield Label(Text(self.title_text, style="bold"), id="pagehead")
+            yield Static(Text("reading...", style="dim"), id="picture")
+            yield Label("", id="pagefoot")
+
+    def on_mount(self) -> None:
+        self.deletes_kitty = self.picture_mode() == "kitty"
+        self.show()
+
+    def draw_graphic(self, sequence: bytes) -> None:
+        """The picture goes over the (blank) area of the screen, at its top left."""
+        if not self.is_attached:
+            return
+        region = self.query_one("#picture", Static).region
+        self.place(sequence, region.x, region.y)
+
+    def action_close(self) -> None:
+        self.clear_graphic()
+        self.dismiss(None)
+        self.redraw_after()
+
+    def action_turn(self, step: int) -> None:
+        if self.which == "file":
+            self.index = max(0, min(self.index + step, max(0, self.total - 1)))
+            self.px = self.py = 0.0
+            self.show()
+
+    def action_zoom(self, step: int) -> None:
+        from bdnex.ui.cover_text import ZOOMS
+
+        at = max(0, min(len(ZOOMS) - 1, ZOOMS.index(self.zoom) + step))
+        if ZOOMS[at] != self.zoom:
+            self.zoom, self.px, self.py = ZOOMS[at], 0.0, 0.0
+            self.show()
+
+    def action_pan(self, across: int, down: int) -> None:
+        if self.zoom > 1:
+            self.px = min(1.0, max(0.0, self.px + across * self.step[0]))
+            self.py = min(1.0, max(0.0, self.py + down * self.step[1]))
+            self.show()
+
+    def action_swap(self) -> None:
+        self.which = "album" if self.which == "file" else "file"
+        self.show()
+
+    def show(self) -> None:
+        self.token += 1
+        self.run_worker(partial(self.load, self.token, self.which, self.index, self.zoom, self.px, self.py), thread=True, group="page", exclusive=True)
+
+    def load(self, token: int, which: str, index: int, zoom: int = 1, px: float = 0.0, py: float = 0.0) -> None:
+        from bdnex.importer import covers
+        from bdnex.ui.cover_text import crop, picture
+
+        path, fmt, saved = self.files
+        note, total, made = "", self.total, None
+        try:
+            if which == "file":
+                image, total = covers.page_image(path, fmt, index)
+            else:
+                image = saved.read_bytes() if saved is not None else None
+                note = "" if image else "the album's cover is not saved (`bdnex import --fetch` saves it)"
+            if image:
+                size = self.app.size
+                columns, rows = max(20, size.width - 2), max(8, size.height - 3)
+                image, fx, fy = crop(image, zoom, px, py, columns, rows)
+                self.step = (fx, fy)
+                how = getattr(getattr(getattr(self.app, "settings", None), "cover", None), "picture", "symbols")
+                if how in GRAPHICS:
+                    sequence = graphic(image, columns, rows, how)
+                    if sequence:
+                        made = (Text("\n".join(" " * columns for _ in range(rows))), "graphic", sequence)
+                    else:
+                        note = f"{how}: chafa is not installed or failed; drawn with text instead"
+                if made is None:
+                    made = picture(image, columns, rows, use_chafa=how != "blocks")
+            elif not note:
+                note = "this page could not be read"
+        except Exception as err:  # a picture is a help: say why, never end the program
+            note = f"could not read the picture: {err}"
+        try:
+            self.app.call_from_thread(self.shown, token, which, total, made, note)
+        except Exception:
+            pass
+
+    def shown(self, token: int, which: str, total: int, made, note: str) -> None:
+        if token != self.token or not self.is_attached:
+            return
+        self.total = total
+        sequence = made[2] if made and len(made) > 2 else None
+        text, by = made[:2] if made else (Text(note or "(none)", style="yellow"), "")
+        self.query_one("#picture", Static).update(text)
+        self.clear_graphic()
+        if sequence:
+            self.call_after_refresh(self.draw_graphic, sequence)
+        where = f"page {self.index + 1}/{total}" if which == "file" and total else "the album's saved cover"
+        self.query_one("#pagefoot", Label).update(Text(
+            f"the {'file' if which == 'file' else 'album'}: {where} · zoom {self.zoom}x   ·   ← → pages   ·   + - zoom (to read the writing)   ·   ↑ ↓ h l move   ·   Tab file / album   ·   Esc back"
+            + ("" if by != "half blocks" else "   ·   (install chafa for a sharper picture)") + (f"   ·   {note}" if note else ""), style="dim"))
+
+
+class CoverScreen(Pictures, Modal):
     """The file's first page next to the album's saved cover, drawn with text (works over SSH). Any key closes it."""
 
     BINDINGS = [Binding("escape", "close", "Close"), Binding("c", "close", "Close", show=False),
-                Binding("q", "close", "Close", show=False)]
+                Binding("q", "close", "Close", show=False), Binding("z", "zoom", "Full size"), Binding("enter", "zoom", "Full size", show=False)]
     CSS = """
     CoverScreen { align: center middle; }
     #covers { width: 90%; height: auto; max-height: 95%; border: round $accent; padding: 1 2; background: $surface; }
@@ -629,19 +890,34 @@ class CoverScreen(ModalScreen):
             with Horizontal(id="pair"):
                 yield Static(Text("reading the file...", style="dim"), id="left")
                 yield Static(Text(""), id="right")
-            yield Label(Text("c / Esc: close", style="dim"), id="foot")
+            yield Label(Text("z: full size (zoom with + and -, read the credits, turn the pages) · c / Esc: close", style="dim"), id="foot")
 
     def on_mount(self) -> None:
+        self.deletes_kitty = self.picture_mode() == "kitty"
         self.run_worker(self.load, thread=True, exclusive=True)
 
     def load(self) -> None:
-        from bdnex.ui.cover_text import half_blocks
+        """Both pictures drawn the way ``cover.picture`` says (the same as the full-size page): chafa symbols, half blocks, or a real picture."""
+        from bdnex.ui.cover_text import GRAPHICS, graphic, picture
 
+        how = self.picture_mode()
+        left = right = None
+        notes = ""
         try:
             local, online, notes = batch.read_covers(*self.files)
-            width = max(20, min(40, (self.app.size.width * 9 // 10 - 12) // 2))
-            left = half_blocks(local, width) if local else None
-            right = half_blocks(online, width) if online else None
+            columns = max(20, min(40, (self.app.size.width * 9 // 10 - 12) // 2))
+            rows = max(10, min(30, self.app.size.height - 10))
+
+            def draw(image):
+                if not image:
+                    return None
+                if how in GRAPHICS:
+                    sequence = graphic(image, columns, rows, how)
+                    if sequence:
+                        return (Text("\n".join(" " * columns for _ in range(rows))), "graphic", sequence)
+                return picture(image, columns, rows, use_chafa=how != "blocks")
+
+            left, right = draw(local), draw(online)
         except Exception as err:  # a picture is a help: its failure is said on the screen, never the end of the program
             left = right = None
             notes = f"could not read the pictures: {err}"
@@ -654,43 +930,78 @@ class CoverScreen(ModalScreen):
         if not self.is_attached or not self.query("#left"):
             return
 
-        def side(heading: str, picture) -> Text:
+        def side(heading: str, made) -> Text:
             text = Text(heading + "\n", style="bold")
-            text.append_text(picture if picture is not None else Text("(none)", style="dim"))
+            text.append_text(made[0] if made is not None else Text("(none)", style="dim"))
             return text
 
         self.query_one("#left", Static).update(side("the file", left))
         self.query_one("#right", Static).update(side("the album (saved cover)", right))
+        self.clear_graphic()
+        for made, where in ((left, "#left"), (right, "#right")):
+            if made is not None and len(made) > 2 and made[2]:
+                self.call_after_refresh(self.draw_in, made[2], where)
         if notes:
-            self.query_one("#foot", Label).update(Text(notes + "   ·   c / Esc: close", style="yellow"))
+            self.query_one("#foot", Label).update(Text(notes + "   ·   z: full size · c / Esc: close", style="yellow"))
+
+    def draw_in(self, sequence: bytes, where: str) -> None:
+        if self.is_attached and self.query(where):
+            region = self.query_one(where, Static).region
+            self.place(sequence, region.x, region.y + 1)  # (under the heading line)
+
+    def action_zoom(self) -> None:
+        self.clear_graphic()
+        self.app.push_screen(PageScreen(self.title_text, self.files))
 
     def action_close(self) -> None:
+        self.clear_graphic()
         self.dismiss(None)
+        self.redraw_after()
 
 
 # ----------------------------------------------------------------------------- the table
-class ReviewApp(App):
+class ReviewApp(ColumnsMixin, ReviewExtras, App):
     """The table of one batch, the detail of the row under the cursor, and the keys that decide."""
 
     TITLE = "bdnex review"
+    COMMANDS = App.COMMANDS | {FacetCommands}
     CSS = """
+    #topbar { dock: top; height: 1; }
+    #topbar Header { dock: none; width: 1fr; }
+    #helpchip { width: 8; height: 1; }
     #queue-badge { dock: right; width: auto; height: 1; padding: 0 1; background: red; color: white; text-style: bold; display: none; }
     #loading { height: 2fr; min-height: 8; content-align: center middle; text-align: left; }
+    #main { height: 1fr; }
+    #folderpane { width: 38; border-right: solid $accent; }
+    #tickbar { height: 3; }
+    #tickbar Button { min-width: 8; margin-right: 1; }
+    #pager { height: 1; }
+    #pager PagerChip { width: auto; }
+    #pager-where { width: 1fr; content-align: center middle; color: $text-muted; }
+    #narrow { height: 1; border: none; padding: 0 1; background: transparent; }
+    #trees { height: 1fr; }
+    #legend { height: 2; padding: 0 1; }
+    #folderslot, #moveslot, #facetslot { height: 1fr; }
+    #facetbox { height: 1fr; border-top: solid $accent; }
+    #foldertree, #movetree, #facettree { width: 100%; height: 100%; }
+    #center { width: 1fr; }
     #table { height: 2fr; min-height: 8; }
     #detailrow { height: 1fr; min-height: 8; border-top: solid $accent; }
-    #detail { width: 1fr; height: 100%; padding: 0 1; overflow-y: auto; }
-    #meta { width: 45%; height: 100%; border-left: solid $accent; padding: 0 1; overflow-y: auto; display: none; }
+    #detail { width: 1fr; height: 100%; padding: 0 1; }
+    #meta { width: 45%; height: 100%; border-left: solid $accent; padding: 0 1; }
+    #detail-body, #meta-body { width: 100%; height: auto; }
+    #tips { height: 1; padding: 0 1; color: $text-muted; background: $boost; }
     #log { height: 7; border-top: solid $accent; padding: 0 1; color: $text-muted; }
     """
     BINDINGS = [
-        Binding("k", "keep", "Keep"),
+        Binding("k", "keep", "Confirm / unconfirm"),
         Binding("u", "unlink", "Unlink"),
         Binding("t", "top", "This file's candidates"),
         Binding("o", "other", "Other album (search)"),
         Binding("O", "other_fzf", "Search with fzf", show=False),
         Binding("i", "ident", "Id / address"),
         Binding("s", "skip", "Skip"),
-        Binding("l", "leave", "Leave"),
+        Binding("l", "leave", "No album online"),
         Binding("p", "page", "Open page"),
         Binding("c", "cover", "Covers"),
         Binding("space", "mark", "Mark"),
@@ -702,18 +1013,32 @@ class ReviewApp(App):
         Binding("d", "metadata", "Album metadata panel"),
         Binding("w", "waiting", "Waiting questions"),
         Binding("e", "edit", "Edit by hand"),
+        Binding("C", "columns", "Columns"),
+        Binding("shift+down", "extend_mark(1)", "Mark more", show=False),
+        Binding("shift+up", "extend_mark(-1)", "Mark more", show=False),
+        Binding("question_mark", "help", "Help"),
+        Binding("f", "folders", "Folders on/off"),
+        Binding("F", "find_folder", "Find a folder or file"),
+        Binding("S", "find_filter", "Find a filter"),
+        Binding("R", "reviewed_folder", "Folder reviewed"),
+        Binding("T", "show_ticked", "Show the ticked"),
+        Binding("D", "duplicates", "Duplicates"),
+        Binding("E", "bulk", "Edit the marked files"),
+        Binding("K", "kind", "Series / one-shot"),
+        Binding("V", "volume", "Volume"),
         Binding("b", "previous_batch", "Previous batch"),
         Binding("n", "next_batch", "Next batch"),
         Binding("q", "quit", "Quit"),
         Binding("/", "find", "Search"),
         Binding("]", "find_next", "Next match", show=False),
         Binding("[", "find_prev", "Previous match", show=False),
-        *[Binding(str(number), f"sort({number - 1})", f"Sort by {name}", show=False) for number, (name, _) in enumerate(COLUMNS, start=1)],
+        *[Binding(str(number), f"sort({number - 1})", f"Sort by {name}", show=False) for number, (name, _) in enumerate(COLUMNS[:9], start=1)],
     ]
 
     def __init__(self, library, settings, source, size: int = 50, terms=(), unmatched: bool = False,
-                 everything: bool = False, again: bool = False, verbose: int = 0):
+                 everything: bool = False, again: bool = False, verbose: int = 0, tree: Optional[bool] = None):
         super().__init__()
+        self.tree_pref = tree  # None: as it was left last time (``f`` toggles)
         self.verbose = verbose
         self.ui_thread = None
         self.ui_loop = None
@@ -729,6 +1054,11 @@ class ReviewApp(App):
         self.batch_size, self.terms, self.unmatched = size, list(terms), unmatched
         self.everything, self.again = everything, again
         self.rows: list[batch.Row] = []
+        self.album_data: dict = {}  # album id -> the album, for the cells a selection did not build
+        self.file_data: dict = {}  # path -> the file's record, the same
+        self.load_view()  # the columns as they were left (saved in the library)
+        self.view_places: list = []  # the folders on the screen and the filters on it, for the "Apply filters to folders" box
+        self.view_facets: list = []
         self.shown: set[str] = set()  # every file of every batch of this run: the next batch never repeats one
         self.number = 0
         self.terminal_stderr = sys.stderr  # the real one, before any fetch redirects it
@@ -752,14 +1082,46 @@ class ReviewApp(App):
 
     # -- layout
     def compose(self) -> ComposeResult:
-        yield Header()
+        with Horizontal(id="topbar"):
+            yield Header()
+            yield HelpChip()
         yield Static("", id="queue-badge")
-        yield Static("", id="loading")
-        yield DataTable(id="table", cursor_type="row", zebra_stripes=True)
-        with Horizontal(id="detailrow"):
-            yield Static("", id="detail")
-            yield Static("", id="meta")
+        with Horizontal(id="main"):
+            with Vertical(id="folderpane"):
+                with Horizontal(id="tickbar"):
+                    yield Button("Show ticked", id="show-ticked", tooltip="Show the files of every folder and filter you ticked (space or ctrl-click), all together.")
+                    yield Button("Clear ticks", id="clear-ticks", tooltip="Untick every folder and filter.")
+                yield Checkbox("Apply filters to folders (both)", id="narrow",
+                               tooltip="Ticked: a click on a folder and a click on a filter work together (the files that match both). Not ticked: a click shows only what you clicked.")
+                yield Input(placeholder="Find a folder or a file...  (words, any order)", id="treefind", tooltip="Type part of a folder or file name: only the folders that match stay. Key F; Enter goes on to the tree.")
+                with TabbedContent(id="trees"):
+                    with TabPane("Folders", id="tab-folders"):
+                        with Vertical(id="folderslot"):
+                            yield Static("reading the folders...", id="foldersloading")
+                    with TabPane("Organised", id="tab-moves"):
+                        with Vertical(id="moveslot"):
+                            yield Static("working out how `bdnex move` would organise the files...", id="movewait")
+                yield Splitter("#facetbox", "y", id="split-filters", tooltip="Drag up or down to resize the trees and the filters.")
+                yield Static(legend(), id="legend")
+                with Vertical(id="facetbox"):
+                    yield Input(placeholder="Find a filter: author, series, genre...", id="facetfind",
+                                tooltip="Type part of an author, a series, a genre...: only the filter values that match stay. Key S; Enter goes on to the list.")
+                    with Vertical(id="facetslot"):
+                        yield Static("Filters: reading...", id="facetwait")
+            yield Splitter("#folderpane", "x", id="split-left", tooltip="Drag left or right to resize the left panel.")
+            with Vertical(id="center"):
+                yield Static("", id="loading")
+                yield ReviewTable(id="table", cursor_type="row", zebra_stripes=True)
+                with Horizontal(id="pager"):
+                    yield PagerChip(" ◀  b  previous ", "action_previous_batch", id="pager-back", tooltip="The previous 50 files (key b).")
+                    yield Static("", id="pager-where")
+                    yield PagerChip(" next  n  ▶ ", "action_next_batch", id="pager-next", tooltip="The next 50 files (key n).")
+                yield Splitter("#detailrow", "y", id="split-detail", tooltip="Drag up or down to resize the album's metadata panel.")
+                with Horizontal(id="detailrow"):
+                    yield Pane("detail")
+                    yield Pane("meta")
         yield RichLog(id="log", max_lines=500, wrap=True, markup=False, highlight=False)
+        yield Static("", id="tips")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -771,6 +1133,10 @@ class ReviewApp(App):
         self.hub.ready.add_done_callback(self.list_loaded)
         self.take_the_log()
         self.set_interval(0.15, self.tick_pending)
+        self.query_one("#meta").display = bool(self.view_extra.get("meta", True))  # the album's metadata is shown unless `d` hid it
+        self.restore_layout()
+        self.start_tips()
+        self.start_folders()
         self.load_batch()
 
     def on_unmount(self) -> None:
@@ -834,7 +1200,9 @@ class ReviewApp(App):
         with contextlib.suppress(Exception):
             table = self.query_one(DataTable)  # once, and the index from the loop: not a search of the list per row
             for index, row in waiting:
-                table.update_cell_at((index, STATE_COLUMN), self.cells(index + 1, row)[STATE_COLUMN])
+                cells = self.cells(index + 1, row)
+                for position in (self.view.index("link"), self.view.index("review")) if "link" in self.view and "review" in self.view else ():
+                    table.update_cell_at((index, position), cells[position])
 
     def log_from_anywhere(self, text: str) -> None:
         import threading
@@ -909,7 +1277,7 @@ class ReviewApp(App):
 
     # -- the batch: weighed in a thread, so the table is there at once
     def say(self, text: str, style: str = "") -> None:
-        self.query_one("#detail", Static).update(Text(text, style=style))
+        self.query_one("#detail", Pane).update(Text(text, style=style))
 
     def load_batch(self) -> None:
         if self.loading:
@@ -1015,21 +1383,34 @@ class ReviewApp(App):
         self.sort_column, self.sort_reverse = None, False
         self.timing = timing
         self.render_table()
+        self.update_pager()
         if not self.rows:
-            self.sub_title = "nothing left to check"
+            self.sub_title = "nothing left to check" + self.progress_text()
             self.say("Nothing left to check: every doubtful file has been looked at. "
                      "`bdnex import --skipped --auto=all` decides the unlinked ones again.", "green")
 
-    def add_columns(self) -> None:
-        """The columns, with an arrow on the sorted one. Every column has a width of its own: a Textual ``DataTable`` measures
-        auto-width columns late (Textualize/textual#6759), so a table that is rebuilt (here: by a sort) could paint its first rows
-        with stale widths. Long names are cut, so the scores and the state are always on screen."""
-        table = self.query_one(DataTable)
-        for index, (name, width) in enumerate(COLUMNS):
-            arrow = (" ▼" if self.sort_reverse else " ▲") if index == self.sort_column else ""
-            if index == len(COLUMNS) - 1:  # where a move would put the file: a path is long, so it takes what the screen has left (at least `width`)
-                width = max(width, self.size.width - sum(w for _, w in COLUMNS[:-1]) - 2 * len(COLUMNS) - 2)
-            table.add_column(f"{name}{arrow}", width=width, key=str(index))  # (a fixed width: the table never has to measure its cells)
+    def update_pager(self) -> None:
+        """The bar under the table: where you are in the pages (or batches) and the two arrows that turn them (`b` and `n` do the same)."""
+        selection = getattr(self.rows, "selection", None)
+        if selection:
+            total = getattr(self.rows, "total", len(self.rows))
+            pages = max(1, -(-total // self.batch_size))
+            page = selection[2]
+            where = f"page {page + 1} of {pages} · {total} files"
+            more_back, more_next = page > 0 or self.at > 0, page + 1 < pages or self.at < len(self.batches) - 1
+        else:
+            where = f"batch {self.at + 1}"
+            more_back, more_next = self.at > 0, True
+        with contextlib.suppress(Exception):
+            self.query_one("#pager-where", Static).update(where)
+            self.query_one("#pager-back").display = more_back
+            self.query_one("#pager-next").display = more_next
+
+    def table_width(self) -> int:
+        """The room the table has: the screen less the folder tree, when it is shown."""
+        with contextlib.suppress(Exception):
+            return self.query_one("#center").size.width or self.size.width
+        return self.size.width
 
     def render_table(self) -> None:
         table = self.query_one(DataTable)
@@ -1044,40 +1425,23 @@ class ReviewApp(App):
 
     # -- sorting: a click on a header, or the number of the column
     def on_data_table_header_selected(self, event: DataTable.HeaderSelected) -> None:
+        if getattr(self, "double_header", False):  # a double-click opens the column's field chooser: it is not a sort
+            self.double_header = False
+            return
         self.action_sort(event.column_index)
-
-    def sort_key(self, index: int, row: batch.Row):
-        """What the column ``index`` sorts by; ``None`` puts the row after the others, whatever the direction."""
-        import os
-
-        if index == 0:
-            return self.order.get(id(row), 0)
-        if index == 1:
-            return os.path.basename(row.path).casefold()
-        if index == 2:
-            return row.folder.casefold()
-        if index == 3:
-            return row.album.casefold() if row.album else None
-        if index == 4:
-            return int(page_number(row.album_url)) if page_number(row.album_url) else None
-        if index == 5:
-            return row.score
-        if index == 6:
-            return row.cover
-        if index == 8:
-            return row.dest.casefold() if row.dest else None
-        return DECIDED_ORDER.get(row.status) if row.status else STATE_ORDER.get(row.kind, 5)
 
     def action_sort(self, index: int) -> None:
         """Sort by the column ``index``; the same column again reverses it. ``#`` is the order of the batch."""
-        if not (0 <= index < len(COLUMNS)) or not self.rows:
+        if not (0 <= index < len(self.view)) or not self.rows:
             return
         self.sort_reverse = (not self.sort_reverse) if index == self.sort_column else False
         self.sort_column = index
         keep = self.current()
         keys = [(self.sort_key(index, row), row) for row in self.rows]
         present = sorted((pair for pair in keys if pair[0] is not None), key=lambda pair: pair[0], reverse=self.sort_reverse)
-        self.rows = [row for _, row in present] + [row for key, row in keys if key is None]  # without a value: last
+        sorted_rows = batch.Batch([row for _, row in present] + [row for key, row in keys if key is None])  # without a value: last
+        sorted_rows.__dict__.update(getattr(self.rows, "__dict__", {}))  # (the total, the page of a selection)
+        self.rows = sorted_rows
         self.batches[self.at] = self.rows
         self.render_table()
         if keep is not None:
@@ -1085,8 +1449,9 @@ class ReviewApp(App):
 
     def update_title(self) -> None:
         done = sum(1 for row in self.rows if row.status)
-        by = f" · by {COLUMNS[self.sort_column][0].lower()} {'▼' if self.sort_reverse else '▲'}" if self.sort_column is not None else ""
-        self.sub_title = f"batch {self.batch_of()} · {done}/{len(self.rows)} checked{by} · {self.timing}".rstrip(" ·")
+        by = f" · by {COLUMN_TYPES[self.view[self.sort_column]][0].lower()} {'▼' if self.sort_reverse else '▲'}" if self.sort_column is not None else ""
+        self.sub_title = f"batch {self.batch_of()} · {done}/{len(self.rows)} checked{by} · {self.timing}".rstrip(" ·") + self.progress_text()
+        self.schedule_counts()
 
     def batch_of(self) -> str:
         """``3/53``: this batch and about how many there are (files to check when the run began, by the batch size)."""
@@ -1094,60 +1459,87 @@ class ReviewApp(App):
             return str(self.number)
         return f"{self.number}/{max(self.number, -(-self.first_total // self.batch_size))}"
 
-    def cells(self, number: int, row: batch.Row) -> list:
-        import os
+    LABEL_WIDTH = 9
 
-        spin = SPINNER[int(time.monotonic() * 10) % len(SPINNER)]  # moves with every redraw: something is going on
-        if row.busy:
-            waited = f" {time.monotonic() - row.started_at:.0f}s" if row.busy_what and row.started_at else ""
-            state = Text(f"{spin} {row.busy_what or 'linking'}{waited}", style="bold yellow")
-        elif row.pending:
-            now = time.monotonic()
-            state = Text(f"{spin} linked · fetching {now - row.started_at:.0f}s" if row.started_at else
-                         f"linked · queued {now - row.queued_at:.0f}s", style="yellow")
-        elif row.status:
-            state = Text(row.status, style=STATUS_STYLE.get(row.status, ""))
-        elif row.message.startswith(("refused", "failed")):
-            state = Text(row.message.split(":")[0], style="bold red")
-        else:  # what is wrong with it, until it is decided
-            state = Text(KIND_WORD.get(row.kind, row.kind) + (f" (was {row.previous})" if row.previous else ""),
-                         style=KIND_STYLE.get(row.kind, ""))
-        match = Text("you", style="cyan") if row.status == "linked" else score_text(row.score)
-        return [Text(str(number), style="bold reverse magenta" if id(row) in self.marked else "cyan"), Text(os.path.basename(row.path), style="bold"),
-                Text(row.folder, style="dim"), album_text(row), page_text(row.album_url), match, score_text(row.cover), state,
-                Text(row.dest or "-", style="dim" if row.dest != "?" and not row.dest.startswith("(") else "yellow")]
+    def detail_text(self, row: batch.Row) -> Text:
+        """The pane under the table: one block per thing (the file, the album it is linked to, what bdnex thinks, where a move would put it),
+        each with its label in the same column, so the eye finds the block before it reads."""
+        text = Text()
+        pad = " " * self.LABEL_WIDTH
+
+        def block(label: str, style: str = "bold cyan") -> None:
+            text.append(f"{label:<{self.LABEL_WIDTH}}", style=style)
+
+        def more(value, style: str = "") -> None:  # a further line of the same block (the pad is styled: an unstyled blank is dropped when drawn)
+            text.append(pad, style="dim")
+            text.append(value if isinstance(value, Text) else Text(str(value), style=style))
+            text.append("\n")
+
+        album_facts = [line for line in (row.facts or "").split("\n") if line and not line.startswith("file:")]
+        file_facts = [line[len("file:"):].strip() for line in (row.facts or "").split("\n") if line.startswith("file:")]
+        folder, name = os.path.split(row.path)
+        block("FILE")
+        text.append(name + "\n", style="bold")
+        if folder:
+            more(folder, "dim")
+        for line in file_facts:
+            more(line, "cyan")
+
+        block("ALBUM", "bold magenta")
+        text.append_text(album_text(row))
+        text.append("   ")
+        text.append(f" {KIND_WORD.get(row.kind, row.kind)} ", style=f"bold black on {KIND_COLOUR.get(row.kind, 'white')}")
+        text.append("\n")
+        for line in album_facts:  # the year and pages on one line, the authors on the next (the other credits are in the metadata panel, `d`)
+            parts = line.split(" · ")
+            plain = " · ".join(part for part in parts if ": " not in part)
+            if plain:
+                more(plain, "")
+            authors = []
+            for part in parts:
+                role, _, names = part.partition(": ")
+                if names and role in ("Writer", "Scénario", "Penciller", "Artist", "Dessin"):
+                    authors += [n for n in names.split("; ") if n not in authors]
+            if authors:
+                more(Text.assemble(("by ", "dim"), "  ·  ".join(authors[:4])))
+        if row.album_url:  # a link: ctrl/cmd-click in most terminals, or `p`
+            more(Text(row.album_url, style=Style(color="cyan", underline=True, link=row.album_url)))
+        if row.why:
+            block("WHY", "bold yellow")
+            first = True
+            for line in row.why[:5]:
+                if not first:
+                    text.append(pad, style="dim")
+                first = False
+                text.append(line + "\n", style=EVIDENCE_STYLE.get(line[:1], ""))
+        if row.dest and row.dest != "?":
+            block("GOES TO", "bold green")  # where `bdnex move` would put it (the template of your config): folder, then the new name
+            where, new_name = os.path.split(row.dest)
+            text.append((where + "/" if where else "") + "\n", style="dim")
+            more(new_name, "bold")
+        if row.message:
+            block("NOW", "bold yellow")
+            text.append(row.message + "\n", style="bold yellow" if row.busy else "yellow")
+        return text
 
     def show_detail(self, index: int) -> None:
         if not (0 <= index < len(self.rows)):
             return
         row = self.rows[index]
-        text = Text()
-        text.append(row.path + "\n", style="dim")
-        if row.dest and row.dest != "?":
-            text.append("would go to  ", style="dim").append(row.dest + "\n")  # where `bdnex move` would put it (the template of your config)
-        text.append(KIND_WORD.get(row.kind, row.kind), style=KIND_STYLE.get(row.kind, "")).append("   now: ").append(album_text(row))
-        text.append("\n")
-        if row.album_url:  # a link: ctrl/cmd-click in most terminals, or `p`
-            text.append(f"  {row.album_url}\n", style=Style(color="cyan", link=row.album_url))
-        if row.facts:
-            text.append("".join(f"  {line}\n" for line in row.facts.split("\n")))
-        for line in row.why[:5]:
-            text.append(f"  {line}\n", style=EVIDENCE_STYLE.get(line[:1], ""))
-        if row.message:
-            text.append(f"  {row.message}\n", style="bold yellow" if row.busy else "yellow")
-        self.query_one("#detail", Static).update(text)
+        self.query_one("#detail", Pane).update(self.detail_text(row))
         self.show_meta(row)
 
     # -- the metadata the library holds for the album of the file under the cursor (`d`), which `e` can change
     def action_metadata(self) -> None:
-        panel = self.query_one("#meta", Static)
+        panel = self.query_one("#meta", Pane)
         panel.display = not panel.display
+        self.remember(meta=panel.display)
         row = self.current()
         if panel.display and row is not None:
             self.show_meta(row)
 
     def show_meta(self, row: batch.Row) -> None:
-        panel = self.query_one("#meta", Static)
+        panel = self.query_one("#meta", Pane)
         if not panel.display:
             return
         file = self.library.get_file(row.path) or {}
@@ -1162,25 +1554,37 @@ class ReviewApp(App):
         def line(name: str, value) -> None:
             if value in (None, "", [], {}):
                 return
-            text.append(f"{name:<11}", style="dim")
+            text.append(f"{name:<12}", style="dim")
             text.append(f"{value}", style="bold yellow" if name.strip().lower() in {k.lower() for k in edits} else "")
             text.append("\n")
 
-        text.append(album["title"] + "\n", style="bold")
+        def heading(word: str, colour: str) -> None:
+            if text.plain and not text.plain.endswith("\n\n"):
+                text.append("\n")
+            text.append(f" {word} ", style=f"bold black on {colour}")
+            text.append("\n")
+
+        text.append(album["title"] + "\n", style="bold underline")
+        heading("ALBUM", "magenta")
         line("series", album.get("series"))
         line("volume", album.get("volume") if album.get("volume") is not None else album.get("alternate_number"))
         date = "-".join(f"{album[k]:02d}" if k != "year" else str(album[k]) for k in ("year", "month", "day") if album.get(k))
         line("date", date)
+        credits = album.get("credits") or {}
+        if credits or album.get("genres"):
+            heading("PEOPLE", "cyan")
+            for role, names in credits.items():
+                line(role.lower(), "; ".join(names))
+            line("genres", "; ".join(album.get("genres") or []))
+        heading("EDITION", "yellow")
         line("publisher", album.get("publisher"))
         line("language", album.get("language"))
         line("pages", album.get("pages"))
         line("isbn", album.get("isbn"))
-        for role, names in (album.get("credits") or {}).items():
-            line(role.lower(), "; ".join(names))
-        line("genres", "; ".join(album.get("genres") or []))
         line("source", f"{album.get('source')} {album.get('source_id')}")
         if album.get("summary"):
-            text.append("\n" + album["summary"] + "\n", style="italic")
+            heading("SUMMARY", "green")
+            text.append(album["summary"] + "\n", style="italic")
         if edits:
             text.append("\nchanged by you (kept when the album is read again): " + ", ".join(sorted(edits)) + "\n", style="yellow")
         text.append("\ne edits these · d closes", style="dim")
@@ -1299,6 +1703,10 @@ class ReviewApp(App):
         with contextlib.suppress(Exception):
             file = self.library.get_file(row.path) or {}
             row.dest = batch.destination_of(self.library, self.settings, file, file.get("album_id"))
+            self.forget_cached()  # (its album may have changed kind or volume)
+            row.album_kind = ""
+            if file.get("album_id") is not None:
+                self.plan_dirty.add(file["album_id"])  # the second tree follows: where a move would put this album's files is worked out again
 
     def record(self, action: str) -> None:
         row = self.idle()
@@ -1317,11 +1725,37 @@ class ReviewApp(App):
         self.advance()
 
     def action_keep(self) -> None:
-        row = self.current()
-        if row is not None and row.album_id is not None:
-            self.record("keep")
-        elif row is not None:
-            self.notify("This file has no album to keep: `o` searches one, `l` leaves it.", severity="warning")
+        """Confirm the file (the match is right: it turns green), or take the confirmation back when it is confirmed already. With files marked
+        (space), all of them: the confirmed ones are unconfirmed only when every marked file is confirmed. A file with no album is confirmed as
+        having no album online."""
+        rows = [r for r in self.rows if id(r) in self.marked and not r.busy] or ([self.idle()] if self.idle() is not None else [])
+        if not rows:
+            return
+        if all(batch.is_confirmed(r) for r in rows):
+            for row in rows:
+                self.supersede(row)
+                batch.unconfirm(self.library, row)
+                self.refresh_row(row)
+            self.notify(f"{len(rows)} file(s) not confirmed any more", timeout=3)
+            self.schedule_counts()
+            return
+        todo = [r for r in rows if not batch.is_confirmed(r)]
+        for row in todo:
+            self.supersede(row)
+            try:
+                batch.decide(self.library, row, "keep" if row.album_id is not None else "leave")
+            except Exception as err:
+                logger.warning("%s: decision not saved: %s", os.path.basename(row.path), err, exc_info=True)
+                self.notify(f"Not saved ({err}): try again", severity="error", timeout=8)
+                return
+            self.refresh_dest(row)
+            self.decided[row.status] = self.decided.get(row.status, 0) + 1
+            self.marked.discard(id(row))
+            self.refresh_row(row)
+        if len(todo) == 1:
+            self.advance()
+        else:
+            self.notify(f"{len(todo)} file(s) confirmed", timeout=3)
 
     def action_unlink(self) -> None:
         row = self.current()
@@ -1331,13 +1765,18 @@ class ReviewApp(App):
             self.notify("This file has no album to unlink.", severity="warning")
 
     def action_leave(self) -> None:
+        """No album online: you looked, nothing exists for the file, so it stays without an album, and is confirmed."""
+        row = self.current()
+        if row is not None and row.album_id is not None:
+            self.notify("This file has an album: `k` confirms it, `u` unlinks it first.", severity="warning")
+            return
         self.record("leave")
 
     def action_skip(self) -> None:
         row = self.idle()
         if row is not None:
             if row.status not in ("", "skipped"):  # decided already (and saved): skipping would only change what the table says
-                self.notify("This file is decided already: `k` keeps, `u` unlinks, `l` leaves, `o` picks another album.", severity="warning")
+                self.notify("This file is decided already: `k` confirms (again: unconfirms), `u` unlinks, `l` says there is no album online, `o` picks another album.", severity="warning")
                 return
             row.status = "skipped"  # nothing is saved: it is in the next batch again
             self.refresh_row(row)
@@ -1349,6 +1788,7 @@ class ReviewApp(App):
         if row is None or row.busy:
             return
         self.marked.symmetric_difference_update({id(row)})
+        self.mark_anchor = self.query_one(DataTable).cursor_row  # (a shift-click marks from here)
         self.refresh_row(row)
         self.notify(f"{len(self.marked)} file(s) marked: `a` attaches them to a series", timeout=3)
         table = self.query_one(DataTable)
@@ -1362,8 +1802,8 @@ class ReviewApp(App):
         if row is None or row.busy:
             return
         marked = [r for r in self.rows if id(r) in self.marked and not r.busy]
-        if len(marked) >= 2:
-            self.edit_series(marked)
+        if len(marked) >= 2:  # several files: the form that shows what they share and what differs (never one file's name for all of them)
+            self.action_bulk()
             return
         file = self.library.get_file(row.path) or {}
         album_id = file.get("album_id")
@@ -1386,10 +1826,12 @@ class ReviewApp(App):
         heading = f"Metadata of {values.get('title') or 'the album'} (saved as your own edits)"
         if in_series:
             heading += " · the series name renames it for all its albums"
-        self.push_screen(EditScreen(heading, values, fields), lambda got: self.save_metadata(row, album_id, got) if got else None)
+        originals = manual.site_form(self.settings, self.library, album_id) or {}
+        self.push_screen(EditScreen(heading, values, fields, originals=originals), lambda got: self.save_metadata(row, album_id, got) if got else None)
 
     def save_metadata(self, row: batch.Row, album_id: int, values: dict) -> None:
         album = self.library.get_album(album_id) or {}
+        values = dict(values)
         old, new = album.get("series") or "", (values.get("series") or "").strip()
         if album.get("kind") != "series":
             values = {**values, "series": old}  # a one-shot has none
@@ -1409,8 +1851,11 @@ class ReviewApp(App):
     def apply_metadata(self, row: batch.Row, album_id: int, values: dict) -> None:
         from bdnex.library import manual
 
+        back = values.pop("__restore__", [])
         try:
             manual.update(self.library, album_id, values)
+            if back:
+                manual.forget_edits(self.library, album_id, back)
         except manual.FormError as err:
             self.notify(str(err), severity="error")
             return
@@ -1427,6 +1872,7 @@ class ReviewApp(App):
         series name changed), so the table says what the library holds."""
         from bdnex.ui.describe import label
 
+        self.plan_dirty.update(album_ids)
         for other in self.rows:
             file = self.library.get_file(other.path) or {}
             if file.get("album_id") in album_ids:
@@ -1499,9 +1945,11 @@ class ReviewApp(App):
         self.advance()
 
     def action_mark_all(self) -> None:
-        """Mark every file not decided yet (and not being linked); when they are all marked already, unmark them."""
-        free = [r for r in self.rows if not r.status and not r.busy]
+        """Mark every file on the screen (decided or not: a folder you are editing is full of decided ones; only a file being linked is left out);
+        when they are all marked already, unmark them."""
+        free = [r for r in self.rows if not r.busy]
         if not free:
+            self.notify("Nothing to mark here.", timeout=3)
             return
         if all(id(r) in self.marked for r in free):
             self.action_mark_none()
@@ -1527,7 +1975,7 @@ class ReviewApp(App):
 
     def action_attach(self) -> None:
         """Pick an album of a series: each marked file (without a mark: the file under the cursor) gets the album of that series with
-        the volume number in its name. `m` marks every file not decided yet, for a whole folder of one series."""
+        the volume number in its name. `m` marks every file on the screen, for a whole folder of one series."""
         chosen = self.files_to_attach()
         if not chosen:
             return
@@ -1871,6 +2319,7 @@ class ReviewApp(App):
         else:
             file = self.library.get_file(row.path) or {}
             row.cover = file.get("cover_score")
+            batch.refresh_link(self.library, row, browse.strong_of(self.settings))
             row.message = f"linked to {row.album} · page and cover fetched" + (
                 f" · its cover is {row.cover:.0f}% like the file's" if row.cover is not None else "")
             logger.info("%s: %s", os.path.basename(row.path), row.message)
@@ -1878,7 +2327,7 @@ class ReviewApp(App):
             self.refresh_row(row)
 
     def action_next_batch(self) -> None:
-        if self.loading:
+        if self.loading or self.page_step(1):
             return
         if self.at < len(self.batches) - 1:  # came back with `b`: the batch after this one is already known
             self.go_to(self.at + 1)
@@ -1886,7 +2335,7 @@ class ReviewApp(App):
             self.load_batch()
 
     def action_previous_batch(self) -> None:
-        if self.loading:
+        if self.loading or self.page_step(-1):
             return
         if self.at <= 0:
             self.notify("This is the first batch.", timeout=3)
@@ -1903,9 +2352,9 @@ class ReviewApp(App):
 
 
 def run(library, settings, source, size: int = 50, terms=(), unmatched: bool = False, everything: bool = False,
-        again: bool = False, verbose: int = 0) -> dict[str, int]:
+        again: bool = False, verbose: int = 0, tree: Optional[bool] = None) -> dict[str, int]:
     """Run the table until the person quits; returns how many files were decided, by decision."""
-    app = ReviewApp(library, settings, source, size, terms, unmatched, everything, again, verbose)
+    app = ReviewApp(library, settings, source, size, terms, unmatched, everything, again, verbose, tree)
     app.finish_fetches = True
     app.run()
     run.unfetched = app.finish_pending_fetches()  # the caller says what is left for `bdnex import --fetch`

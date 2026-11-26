@@ -803,7 +803,8 @@ class Organizer:
         paths = self.settings.paths
         # a hand-set $collection (`bdnex edit`) always wins; else a `paths.collections` rule; else the site's own value, already in fields["collection"]
         rule_collection = template.collection_of(fields, path, template.parse_rules(paths.collections))
-        fields["collection"] = album.get("collection") or rule_collection or fields["collection"]
+        if album.get("collection") is None:  # (a hand-set value, even an empty one, is the one used)
+            fields["collection"] = rule_collection or fields["collection"]
         fields = template.apply_rewrites(fields, template.parse_rules(paths.rewrite))
         rendered = template.render(tpl, fields, lambda name: self._missing(name, album_id, album),
                                    template.parse_replacements(paths.replace))
@@ -813,7 +814,7 @@ class Organizer:
             return FileResult(path, SKIPPED, note="the path template is empty")
         *folders, name = rendered.parts
         extension = f".{fmt}" if as_is or tagged_pdf else ".cbz"  # an untouched file keeps what it is
-        if spare:  # an extra version of the album: same name, in the spare versions folder
+        if spare or album.get("relation") == "version":  # an extra version of the album (or an album that is a version of another): in the spare versions folder
             return str(root.joinpath(self.settings.duplicates.versions_dir, *folders, name + extension))
         return str(root.joinpath(*folders, name + extension))
 

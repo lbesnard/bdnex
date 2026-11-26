@@ -13,7 +13,7 @@ import uuid
 from typing import Any, Optional
 
 from bdnex.library import AlbumInfo, Library, SeriesInfo
-from bdnex.library.models import CREDIT_ROLES
+from bdnex.library.models import CREDIT_ROLES, SITE_KEYS, effective, to_store
 from bdnex.library.query import fold
 
 MANUAL = "manual"
@@ -29,8 +29,9 @@ FIELDS = (
     ("alternate_number", "Special", "Hors-série, Intégrale... when there is no number"),
     ("title", "Title", "empty = the series and the volume"),
     ("subseries", "Subfolder", "a subfolder inside the series, for an album the site does not list"),
-    ("collection", "Collection", "overrides the site's own Collection, and any paths.collections rule"),
-    ("cycle", "Cycle", "overrides the site's own Cycle"),
+    ("collection", "Collection", "what is used: the site's, until you change it; empty = none"),
+    ("cycle", "Cycle", "what is used: the site's, until you change it; empty = none"),
+    ("category", "Category", "BD, Manga, Comics...: `$category` in the path templates"),
     ("publisher", "Publisher", ""),
     ("isbn", "ISBN", ""),
     ("year", "Year", "four digits"),
@@ -49,7 +50,7 @@ FIELDS = (
     ("summary", "Summary", ""),
 )
 # what files of one series have in common (volume, the special tag, title, subfolder, cycle, isbn, pages, month and day vary file to file)
-SHARED = ("series", "collection", "publisher", "year", "language", "format", *CREDIT_KEYS, "genres", "summary")
+SHARED = ("series", "collection", "category", "publisher", "year", "language", "format", *CREDIT_KEYS, "genres", "summary")
 
 
 class FormError(ValueError):
@@ -88,11 +89,72 @@ def form_of(library: Library, album_id: int) -> dict[str, str]:
     """The form of an album already written by hand (to edit it)."""
     album = library.get_album(album_id) or {}
     credits = album.get("credits") or {}
-    values = {key: _str(album, key) for key in ("series", "volume", "alternate_number", "title", "subseries", "collection", "cycle",
+    values = {key: _str(album, key) for key in ("series", "volume", "alternate_number", "title", "subseries", "category",
                                                   "publisher", "isbn", "year", "month", "day", "language", "format", "pages", "summary")}
+    values.update({key: effective(album, key) for key in SITE_KEYS})  # the value in use: yours, else the site's
     values.update({key: "; ".join(credits.get(role, [])) for key, role in CREDIT_KEYS.items()})
     values["genres"] = "; ".join(album.get("genres") or [])
     return values
+
+
+def form_of_info(info: AlbumInfo) -> dict[str, str]:
+    """The form's values for a freshly read album (what the site says, no hand edit on it)."""
+    values = {key: "" if getattr(info, key, None) is None else str(getattr(info, key))
+              for key in ("volume", "alternate_number", "title", "subseries", "category", "publisher", "isbn", "year", "month", "day",
+                          "language", "format", "pages", "summary")}
+    values["series"] = info.series.name if info.series else ""
+    values.update({key: effective({"extra": info.extra, key: getattr(info, key, None)}, key) for key in SITE_KEYS})
+    values.update({key: "; ".join(info.credits.get(role, [])) for key, role in CREDIT_KEYS.items()})
+    values["genres"] = "; ".join(info.genres or [])
+    return values
+
+
+def site_form(settings, library: Library, album_id: Optional[int]) -> Optional[dict[str, str]]:
+    """What the site says for this album, read from the page stored in the library (offline, nothing is requested), in the form's keys.
+    ``None`` for an album written by hand, or whose page is not stored: there is nothing to go back to."""
+    album = library.get_album(album_id) if album_id is not None else None
+    if not album or album.get("source") == MANUAL or not album.get("url"):
+        return None
+    from bdnex.importer.registry import create_source, offline_settings
+
+    try:
+        source = create_source(settings.source, library, offline_settings(settings))
+        if not library.cache_has(source.name, "album", album["url"]):
+            return None
+        return form_of_info(source.album_info(album["url"]))
+    except Exception:
+        return None
+
+
+def forget_edits(library: Library, album_id: int, keys: list[str]) -> None:
+    """After a field was put back to the site's value: your edit of it is forgotten too, so the site's value is the one in use again (a later
+    re-read of the page changes it with the site, not with an old edit). ``keys``: the form's keys."""
+    album = library.get_album(album_id) or {}
+    edits = dict(album.get("extra", {}).get("edits", {}))
+    credits = dict(edits.get("credits", {}))
+    for key in keys:
+        if key in CREDIT_KEYS:
+            credits.pop(CREDIT_KEYS[key], None)
+        elif key == "genres":
+            edits.pop("genres", None)
+        elif key in library.EDIT_SCALARS:
+            edits.pop(key, None)
+    if "credits" in edits:
+        if credits:
+            edits["credits"] = credits
+        else:
+            edits.pop("credits")
+    with library.conn:
+        for key in keys:
+            if key in SITE_KEYS:  # the site's own value is read from the page: no value of ours
+                library.conn.execute(f"UPDATE albums SET {key} = NULL WHERE id = ?", (album_id,))
+        library._store_edits(album_id, edits)
+
+
+def is_site_album(library: Library, album_id: Optional[int]) -> bool:
+    """An album that came from the site (so a field can go back to what the site says)."""
+    album = library.get_album(album_id) if album_id is not None else None
+    return bool(album) and album.get("source") != MANUAL and bool(album.get("url"))
 
 
 def is_manual(library: Library, album_id: Optional[int]) -> bool:
@@ -130,7 +192,7 @@ def _info(values: dict[str, str], path: str, volume: Optional[int]) -> AlbumInfo
         day=_number(values.get("day", ""), "the day", 1, 31),
         pages=_number(values.get("pages", ""), "the pages", 0, 99999),
         language=_text(values, "language"), format=_text(values, "format"), subseries=_text(values, "subseries"),
-        collection=_text(values, "collection"), cycle=_text(values, "cycle"),
+        collection=_text(values, "collection"), cycle=_text(values, "cycle"), category=_text(values, "category"),
         summary=_text(values, "summary"), credits=credits, genres=_names(values.get("genres", "")))
 
 
@@ -168,11 +230,15 @@ def update(library: Library, album_id: int, values: dict[str, str]) -> None:
                                "volume": new.volume, "alternate_number": new.alternate_number, "publisher": new.publisher,
                                "isbn": new.isbn, "year": new.year, "month": new.month, "day": new.day, "pages": new.pages,
                                "language": new.language, "format": new.format, "subseries": new.subseries,
-                               "collection": new.collection, "cycle": new.cycle,
+                               "collection": new.collection, "cycle": new.cycle, "category": new.category,
                                "summary": new.summary, "genres": new.genres,
                                "credits": {role: new.credits.get(role, []) for role in CREDIT_ROLES}}
     if album.get("kind") == "series" and new.series is not None and new.series.name != album.get("series"):
         changes["series"] = new.series.name
+    for key in SITE_KEYS:  # the form shows the value in use: the same text is no change, an emptied field is "none" when the site has a value
+        changed, value = to_store(album, key, changes.pop(key))
+        if changed:
+            changes[key] = value
     library.edit_album(album_id, changes)
 
 

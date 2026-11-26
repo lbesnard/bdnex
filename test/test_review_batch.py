@@ -63,12 +63,12 @@ def test_each_decision_is_written_at_once_and_a_checked_file_leaves_the_next_bat
         batch.decide(lib, loose, "leave")
         assert wrong.status == "unlinked" and lib.get_file(wrong.path)["album_id"] is None
         assert lib.last_import(wrong.path)["outcome"] == "skipped"  # `import --skipped` decides it again
-        assert lib.attrs_of("file", lib.get_file(wrong.path)["id"])["checked"] == "unlink"
+        assert "checked" not in lib.attrs_of("file", lib.get_file(wrong.path)["id"])  # an unlink is not a confirmation
         assert lib.attrs_of("file", lib.get_file(unconfirmed.path)["id"])["checked"] == "keep"
         assert lib.get_file(unconfirmed.path)["album_id"] is not None
-        assert batch.next_batch(lib, settings, size=50, unmatched=True) == []  # nothing left: the next call continues later
+        assert [r.path for r in batch.next_batch(lib, settings, size=50, unmatched=True)] == [wrong.path]  # the unlinked one still waits for an album
     with Library(db) as lib:  # a new connection: it was saved
-        assert lib.attrs_of("file", lib.get_file(files["wrong"])["id"])["checked"] == "unlink"
+        assert "checked" not in lib.attrs_of("file", lib.get_file(files["wrong"])["id"])
 
 
 def test_a_switch_to_another_album_is_recorded_and_a_refusal_changes_nothing(env, monkeypatch):
@@ -131,7 +131,7 @@ def test_the_batch_options_need_batch(env, capsys):
 
     for flag in ("--all", "--again", "--unmatched"):
         assert review_cmd.run([flag]) == 2
-    assert "go with --batch" in capsys.readouterr().err
+    assert "review screen" in capsys.readouterr().err  # (no terminal here: the screen is not what `bdnex review` opens)
 
 
 def test_an_album_without_series_proposes_nothing():

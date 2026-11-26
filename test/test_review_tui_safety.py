@@ -177,10 +177,10 @@ def test_the_table_has_a_column_with_where_a_move_would_put_each_file_and_it_goe
     seen = {}
 
     async def script(app, pilot):
-        assert review_tui.COLUMNS[-1][0] == "Would go to"
+        assert review_tui.COLUMNS[review_tui.FLEX_COLUMN][0] == "Would go to"  # (Kind and Vol come after it)
         first = app.rows[0]  # linked to "Nains T01 Redwin"
         seen["dest"] = first.dest
-        seen["cell"] = str(app.query_one("DataTable").get_row_at(0)[8])
+        seen["cell"] = str(app.query_one("DataTable").get_row_at(0)[9])
         seen["loose"] = [r.dest for r in app.rows if r.album_id is None]  # no album: nothing to say
         app.record("keep")
         seen["after_keep"] = first.dest  # the same album, so the same place: it is worked out again, not left blank
@@ -247,7 +247,7 @@ def test_the_marked_files_say_they_are_reading_the_series_page_until_the_answer_
                 break
         table = app.query_one("DataTable")
         seen["during"] = [(r.busy, r.busy_what) for r in rows]
-        seen["cell"] = str(table.get_row_at(0)[7])  # the State column (the last one is now "Would go to")
+        seen["cell"] = str(table.get_row_at(0)[8])  # the Review column
         seen["blocked"] = app.idle() is None if app.current() is rows[0] else None  # no second decision while it reads
         release.set()
         await task
@@ -285,11 +285,11 @@ def test_after_a_link_the_column_says_where_the_file_would_go_and_it_is_not_cut(
         await pilot.press("enter")  # link it to the first hit (the album 2)
         await fetched(app, pilot)
         seen["after"] = row.dest
-        seen["cell"] = str(app.query_one("DataTable").get_row_at(2)[8])
-        column = app.query_one("DataTable").columns[list(app.query_one("DataTable").columns)[8]]
+        seen["cell"] = str(app.query_one("DataTable").get_row_at(2)[9])
+        column = app.query_one("DataTable").columns[list(app.query_one("DataTable").columns)[9]]
         seen["width"] = column.width  # fixed, but as wide as the screen allows (this one is 300 columns wide)
 
-    drive(db, script, columns=300)
+    drive(db, script, columns=420)
     assert seen["before"] == "" and seen["after"].endswith(".cbz") and "Forge" in seen["after"]  # it stayed '-' after the link
     assert seen["cell"] == seen["after"] and seen["width"] > 44 and seen["width"] >= len(seen["after"])  # more than 44 characters when the screen can show them
 
@@ -300,12 +300,15 @@ def test_d_shows_the_metadata_of_the_album_beside_the_detail_and_e_changes_it(en
 
     async def script(app, pilot):
         panel = app.query_one("#meta")
-        seen["closed"] = panel.display
+        seen["shown"] = panel.display  # shown by default
         app.query_one("DataTable").move_cursor(row=0)  # linked to the album "Redwin" (series Nains, T1, 2015, Soleil)
-        await pilot.press("d")
+        await pilot.press("d")  # hides it
+        await pilot.pause()
+        seen["hidden"] = panel.display
+        await pilot.press("d")  # shows it again
         await pilot.pause()
         seen["open"] = panel.display
-        seen["text"] = str(panel.render())
+        seen["text"] = str(panel.body.render())
         await pilot.press("e")  # an album of the site: its fields, not a refusal
         await pilot.pause()
         screen = app.screen
@@ -316,10 +319,10 @@ def test_d_shows_the_metadata_of_the_album_beside_the_detail_and_e_changes_it(en
         screen.action_accept()
         await pilot.pause()
         row = app.rows[0]
-        seen["row"] = (row.album, str(panel.render()))
+        seen["row"] = (row.album, str(panel.body.render()))
 
     drive(db, script)
-    assert seen["closed"] is False and seen["open"] is True
+    assert seen["shown"] is True and seen["hidden"] is False and seen["open"] is True
     assert "Redwin" in seen["text"] and "Nains" in seen["text"] and "2015" in seen["text"] and "e edits these" in seen["text"]
     assert seen["form"] == "EditScreen" and "series" in seen["fields"] and "title" in seen["fields"]  # the series can be renamed too (it asks first)
     assert "Redwin de la Forge" in seen["row"][0] and "2016" in seen["row"][1] and "changed by you" in seen["row"][1]  # the table and the panel follow
@@ -339,7 +342,7 @@ def test_the_panel_says_when_the_file_has_no_album(env):
         app.query_one("DataTable").move_cursor(row=2)  # the loose file
         await pilot.press("d")
         await pilot.pause()
-        seen["text"] = str(app.query_one("#meta").render())
+        seen["text"] = str(app.query_one("#meta-body").render())
 
     drive(db, script)
     assert "No album" in seen["text"]

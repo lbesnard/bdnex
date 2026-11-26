@@ -139,7 +139,7 @@ bdnex review --batch 50 --unmatched   # with the files that have no album
 
 `k` keeps, `u` unlinks, `o` searches another album (`O` for fzf), `c` shows the file's cover next to the album's, `p` copies or opens the album's
 page, `space` marks files and `a` gives them all the album of one series by volume number, a click on a header sorts. Stop with `q`
-and come back later: you continue with the files not checked yet. See [the table](checking-matches.md#a-table-a-batch-at-a-time-bdnex-review-batch).
+and come back later: you continue with the files not checked yet. See [the table](checking-matches.md#the-review-screen-bdnex-review).
 
 ## …keep the whole Bédéthèque catalogue in my library?
 

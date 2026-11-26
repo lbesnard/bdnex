@@ -454,9 +454,9 @@ class Library:
             publisher_id = self._get_or_create("publishers", info.publisher) if info.publisher else None
             self.conn.execute(
                 """INSERT INTO albums(kind, series_id, title, volume, alternate_number,
-                       publisher_id, isbn, year, month, day, pages, language, format, subseries, collection, cycle,
+                       publisher_id, isbn, year, month, day, pages, language, format, subseries, collection, cycle, category,
                        summary, rating, cover_url, url, source, source_id, extra)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(source, source_id) DO UPDATE SET
                        kind = excluded.kind, series_id = excluded.series_id,
                        title = excluded.title, volume = excluded.volume,
@@ -465,12 +465,12 @@ class Library:
                        year = excluded.year, month = excluded.month, day = excluded.day,
                        pages = excluded.pages, language = excluded.language,
                        format = excluded.format, subseries = excluded.subseries,
-                       collection = excluded.collection, cycle = excluded.cycle, summary = excluded.summary,
+                       collection = excluded.collection, cycle = excluded.cycle, category = excluded.category, summary = excluded.summary,
                        rating = excluded.rating, cover_url = excluded.cover_url,
                        url = excluded.url, extra = excluded.extra""",
                 (info.kind, series_id, info.title, info.volume, info.alternate_number,
                  publisher_id, info.isbn, info.year, info.month, info.day, info.pages,
-                 info.language, info.format, info.subseries, info.collection, info.cycle, info.summary, info.rating, info.cover_url,
+                 info.language, info.format, info.subseries, info.collection, info.cycle, info.category, info.summary, info.rating, info.cover_url,
                  info.url, info.source, info.source_id,
                  json.dumps(info.extra, ensure_ascii=False, default=str, sort_keys=True)))
             album_id = self.conn.execute(
@@ -493,7 +493,7 @@ class Library:
 
     # ------------------------------------------------------------ hand edits
     EDIT_SCALARS = ("title", "volume", "alternate_number", "publisher", "isbn", "year", "month", "day",
-                    "pages", "language", "format", "subseries", "collection", "cycle", "summary")
+                    "pages", "language", "format", "subseries", "collection", "cycle", "category", "summary")
     EDIT_FIELDS = EDIT_SCALARS + ("series", "credits", "genres")
 
     def _edits_of(self, album_id: int) -> dict[str, Any]:
@@ -504,7 +504,11 @@ class Library:
     def _apply_edits(info: AlbumInfo, edits: dict[str, Any]) -> AlbumInfo:
         """``info`` with the user's edits laid over it (a new object; ``info`` is untouched)."""
         changes: dict[str, Any] = {key: edits[key] for key in Library.EDIT_SCALARS if key in edits}
-        if "series" in edits and info.series is not None:
+        if edits.get("kind") == "oneshot":  # made a one-shot by hand: the site's series does not come back with a re-read
+            changes["series"] = None
+        elif edits.get("kind") == "series" and edits.get("assigned") and edits.get("series"):  # put in a series of its own by hand
+            changes["series"] = SeriesInfo("manual", edits["assigned"], edits["series"])
+        elif "series" in edits and info.series is not None:
             changes["series"] = dataclasses.replace(info.series, name=edits["series"])
         if "credits" in edits:
             credits = {**info.credits, **edits["credits"]}
@@ -573,6 +577,76 @@ class Library:
         self.conn.execute("UPDATE series SET name = ?, extra = ? WHERE id = ?", (name, json.dumps(extra, ensure_ascii=False), series_id))
         for row in self.conn.execute("SELECT id FROM albums WHERE series_id = ?", (series_id,)).fetchall():
             self._store_edits(row["id"], {**self._edits_of(row["id"]), "series": name})
+
+    def assign_series(self, album_id: int, name: str) -> None:
+        """Put an album in the series called ``name`` (a one-shot becomes a series album; an album of another series moves). The series is
+        one of your own, shared by every album given the same name, and the change survives a re-import like any hand edit. Only this
+        album moves: the others of its old series stay (``edit --set series=`` is what renames a whole series)."""
+        from bdnex.library.manual import MANUAL, series_key
+
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("a series needs its name")
+        album = self.get_album(album_id)
+        if album is None:
+            raise KeyError(f"no album {album_id}")
+        found = self.conn.execute("SELECT source_id, name FROM series WHERE source = ? AND name = ? COLLATE NOCASE",
+                                  (MANUAL, name)).fetchone()
+        key, name = (found["source_id"], found["name"]) if found else (series_key(name), name)  # the series keeps the name it was given first
+        before = self.series_id_of(album_id)
+        series_id = self.add_series(SeriesInfo(MANUAL, key, name))
+        with self.conn:
+            self.conn.execute("UPDATE albums SET kind = 'series', series_id = ? WHERE id = ?", (series_id, album_id))
+            edits = {**self._edits_of(album_id), "kind": "series", "series": name, "assigned": key}
+            self._store_edits(album_id, edits)
+        if before != series_id:
+            self.delete_series_if_unused(before)
+
+    def make_oneshot(self, album_id: int) -> None:
+        """Make an album a one-shot (it leaves its series); kept across re-imports."""
+        if self.get_album(album_id) is None:
+            raise KeyError(f"no album {album_id}")
+        before = self.series_id_of(album_id)
+        with self.conn:
+            self.conn.execute("UPDATE albums SET kind = 'oneshot', series_id = NULL WHERE id = ?", (album_id,))
+            edits = {k: v for k, v in self._edits_of(album_id).items() if k not in ("series", "assigned")}
+            self._store_edits(album_id, {**edits, "kind": "oneshot"})
+        self.delete_series_if_unused(before)
+
+    RELATIONS = ("version", "child")
+
+    def set_relation(self, album_id: int, parent_id: Optional[int], relation: Optional[str] = None) -> None:
+        """Say that an album is another ``version`` of ``parent_id`` (a black and white scan, an older edition) or its ``child``;
+        ``parent_id=None`` removes the link. An album is never its own parent, and the links never make a loop."""
+        if parent_id is None:
+            relation = None
+        elif relation not in self.RELATIONS:
+            raise ValueError(f"a relation is one of: {', '.join(self.RELATIONS)}")
+        if parent_id is not None:
+            if parent_id == album_id:
+                raise ValueError("an album can not be its own parent")
+            if self.get_album(parent_id) is None:
+                raise KeyError(f"no album {parent_id}")
+            seen, up = {album_id}, parent_id
+            while up is not None:  # walk up from the new parent: meeting the album again would close a loop
+                if up in seen:
+                    raise ValueError("that link would make a loop")
+                seen.add(up)
+                row = self.conn.execute("SELECT parent_id FROM albums WHERE id = ?", (up,)).fetchone()
+                up = row["parent_id"] if row else None
+        with self.conn:
+            self.conn.execute("UPDATE albums SET parent_id = ?, relation = ? WHERE id = ?", (parent_id, relation, album_id))
+
+    def related_albums(self, album_id: int) -> dict[str, Any]:
+        """The album's ``parent`` (``{id, title, relation}``, or ``None``) and its ``children`` (the same, a list)."""
+        album = self.conn.execute("SELECT parent_id, relation FROM albums WHERE id = ?", (album_id,)).fetchone()
+        parent = None
+        if album is not None and album["parent_id"] is not None:
+            row = self.conn.execute("SELECT id, title FROM albums WHERE id = ?", (album["parent_id"],)).fetchone()
+            parent = {"id": row["id"], "title": row["title"], "relation": album["relation"]} if row else None
+        children = [{"id": r["id"], "title": r["title"], "relation": r["relation"]} for r in self.conn.execute(
+            "SELECT id, title, relation FROM albums WHERE parent_id = ? ORDER BY id", (album_id,))]
+        return {"parent": parent, "children": children}
 
     def series_albums(self, album_id: int) -> list[int]:
         """Ids of all the albums in the same series as ``album_id`` (just itself for a one-shot)."""
