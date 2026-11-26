@@ -17,7 +17,7 @@ from textual.binding import Binding
 from textual.message import Message
 from textual.command import DiscoveryHit, Hit, Provider
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
+from bdnex.ui.review_modal import Modal
 from textual.widgets import Button, Input, Label, Select, Static, TextArea, Tree
 
 from bdnex.library import folders
@@ -606,7 +606,7 @@ class HelpChip(Static):
         self.app.action_help()
 
 
-class HelpScreen(ModalScreen):
+class HelpScreen(Modal):
     """Every key of the screen, in a few lines."""
 
     BINDINGS = [Binding("escape", "close", "Close"), Binding("question_mark", "close", "Close", show=False), Binding("q", "close", "Close", show=False),
@@ -655,7 +655,7 @@ class FacetCommands(Provider):
                 yield DiscoveryHit(f"State: {value}", partial(self.app.open_facet, group, value), help=f"{count} file(s)")
 
 
-class DuplicateScreen(ModalScreen):
+class DuplicateScreen(Modal):
     """Two or more files hold one album: them side by side, and what each one is (the answer is a letter, the library does the rest).
 
     Dismisses with ``(action, path, extra)``: ``trash`` the file, ``main`` make it the main one, ``version`` / ``child`` give it an album of
@@ -744,7 +744,7 @@ class DuplicateScreen(ModalScreen):
             self.dismiss((self.asking, self.found[self.at].path, event.value.strip()))
 
 
-class BulkScreen(ModalScreen):
+class BulkScreen(Modal):
     """One form for the marked files: the common fields (their shared value is shown; what you type is set on all of them), the kind
     (series or one-shot), and a volume for each file.
 

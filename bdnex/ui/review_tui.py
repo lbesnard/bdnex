@@ -34,7 +34,7 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
-from textual.screen import ModalScreen
+from bdnex.ui.review_modal import Modal
 from textual.widgets import TabbedContent, TabPane, Button, Checkbox, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
@@ -238,7 +238,7 @@ class Waiting:
     callback: Callable
 
 
-class CandidatesScreen(ModalScreen):
+class CandidatesScreen(Modal):
     """The albums this one file could be, best first, with where each score comes from: Enter links the highlighted one.
     Few and quick (the matcher's own list); `o` goes on to the search of the whole album list."""
 
@@ -335,7 +335,7 @@ class Tick(Checkbox):
     can_focus = False
 
 
-class FuzzyScreen(ModalScreen):
+class FuzzyScreen(Modal):
     """Search the whole album list as you type (like ``fzf``): Enter picks, Ctrl-O opens the page, Esc goes back."""
 
     BINDINGS = [Binding("escape", "back", "Back"), Binding("ctrl+o", "open", "Open the page"),
@@ -502,7 +502,7 @@ class FuzzyScreen(ModalScreen):
         self.dismiss(None)
 
 
-class AskScreen(ModalScreen):
+class AskScreen(Modal):
     """One line of text (an album address or number), or a yes/no question when ``text`` is ``None``."""
 
     BINDINGS = [Binding("escape", "back", "Back")]
@@ -553,7 +553,7 @@ class AskScreen(ModalScreen):
         self.dismiss(None)
 
 
-class EditScreen(ModalScreen):
+class EditScreen(Modal):
     """A form for an album written by hand (one file), or for the series of several files: the Save button (or Ctrl-S) accepts, Cancel (Esc, or `x` outside a text field) cancels.
 
     ``volumes``: for several files, ``[(path, volume or None)]``: one line each, ``volume  file name``, the numbers can be changed."""
@@ -742,7 +742,7 @@ class Pictures:
         app.set_timer(0.15, repaint)  # (after the screen under the popup is ready)
 
 
-class PageScreen(Pictures, ModalScreen):
+class PageScreen(Pictures, Modal):
     """One picture as large as the terminal allows, to read the credits: the pages of the file (left / right), or the album's saved cover (Tab).
     It is text (chafa when installed, else half blocks), so it works over SSH and in tmux."""
 
@@ -868,7 +868,7 @@ class PageScreen(Pictures, ModalScreen):
             + ("" if by != "half blocks" else "   ·   (install chafa for a sharper picture)") + (f"   ·   {note}" if note else ""), style="dim"))
 
 
-class CoverScreen(Pictures, ModalScreen):
+class CoverScreen(Pictures, Modal):
     """The file's first page next to the album's saved cover, drawn with text (works over SSH). Any key closes it."""
 
     BINDINGS = [Binding("escape", "close", "Close"), Binding("c", "close", "Close", show=False),

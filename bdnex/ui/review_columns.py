@@ -17,7 +17,7 @@ from textual import events
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
+from bdnex.ui.review_modal import Modal
 from textual.widgets import Button, DataTable, Label, OptionList, SelectionList
 from textual.widgets.option_list import Option
 
@@ -38,7 +38,7 @@ FLEX_COLUMN = DEFAULT_VIEW.index("dest")  # `Would go to` takes the room the oth
 VIEW_KEY = "review.view"
 
 
-class ColumnsScreen(ModalScreen):
+class ColumnsScreen(Modal):
     """Which columns the table shows: tick them (space), Enter or the button saves. They keep the order of this list."""
 
     BINDINGS = [Binding("escape", "close", "Cancel")]
@@ -81,7 +81,7 @@ class ColumnsScreen(ModalScreen):
         self.dismiss(None)
 
 
-class ColumnChoiceScreen(ModalScreen):
+class ColumnChoiceScreen(Modal):
     """The field of one column: pick another (the one it replaces is hidden), or hide it."""
 
     BINDINGS = [Binding("escape", "close", "Cancel")]

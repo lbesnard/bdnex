@@ -1422,3 +1422,25 @@ def test_the_detail_and_metadata_panes_scroll(env):
 
     drive(db, root, script)
     assert seen["scrolls"]
+
+
+def test_a_popup_asked_twice_to_close_closes_once_and_the_screen_stays(env):
+    """Enter held down (or a click and an Enter) sent two picks; the second dismiss raised ScreenStackError and the whole screen came down."""
+    from bdnex.ui.review_tui import AskScreen
+
+    db, root, paths = env
+    seen = {"answers": []}
+
+    async def script(app, pilot, lib):
+        await settle(app, pilot)
+        app.push_screen(AskScreen("Sure?", None), lambda yes: seen["answers"].append(yes))
+        await pilot.pause()
+        screen = app.screen
+        screen.dismiss(True)
+        screen.dismiss(True)  # the second one: nothing to close any more
+        await pilot.pause()
+        seen["screen"] = type(app.screen).__name__
+        seen["alive"] = app.is_running
+
+    drive(db, root, script)
+    assert seen["answers"] == [True] and seen["alive"] and seen["screen"] != "AskScreen"
