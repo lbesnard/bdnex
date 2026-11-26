@@ -126,6 +126,31 @@ def site_form(settings, library: Library, album_id: Optional[int]) -> Optional[d
         return None
 
 
+def forget_edits(library: Library, album_id: int, keys: list[str]) -> None:
+    """After a field was put back to the site's value: your edit of it is forgotten too, so the site's value is the one in use again (a later
+    re-read of the page changes it with the site, not with an old edit). ``keys``: the form's keys."""
+    album = library.get_album(album_id) or {}
+    edits = dict(album.get("extra", {}).get("edits", {}))
+    credits = dict(edits.get("credits", {}))
+    for key in keys:
+        if key in CREDIT_KEYS:
+            credits.pop(CREDIT_KEYS[key], None)
+        elif key == "genres":
+            edits.pop("genres", None)
+        elif key in library.EDIT_SCALARS:
+            edits.pop(key, None)
+    if "credits" in edits:
+        if credits:
+            edits["credits"] = credits
+        else:
+            edits.pop("credits")
+    with library.conn:
+        for key in keys:
+            if key in SITE_KEYS:  # the site's own value is read from the page: no value of ours
+                library.conn.execute(f"UPDATE albums SET {key} = NULL WHERE id = ?", (album_id,))
+        library._store_edits(album_id, edits)
+
+
 def is_site_album(library: Library, album_id: Optional[int]) -> bool:
     """An album that came from the site (so a field can go back to what the site says)."""
     album = library.get_album(album_id) if album_id is not None else None

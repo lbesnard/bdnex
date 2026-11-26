@@ -578,6 +578,7 @@ class EditScreen(ModalScreen):
         super().__init__()
         self.heading, self.values, self.fields, self.volumes = heading, values, fields, volumes
         self.originals = originals or {}
+        self.restored: set[str] = set()  # fields put back to the site's value (the box still says so when Save is pressed)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="edit"):
@@ -633,13 +634,16 @@ class EditScreen(ModalScreen):
             box.focus()
         elif (event.button.id or "").startswith("restore-"):
             box = self.query_one("#f-" + event.button.id[len("restore-"):], Input)
-            box.value = self.originals.get(event.button.id[len("restore-"):], "")  # the site's value: saved like any typed one
+            key = event.button.id[len("restore-"):]
+            box.value = self.originals.get(key, "")  # the site's value; your edit of it is forgotten on Save
+            self.restored.add(key)
             box.focus()
         else:
             self.dismiss(None)
 
     def action_accept(self) -> None:
         values = {key: self.query_one(f"#f-{key}", Input).value.strip() for key, _, _ in self.fields}
+        back = [key for key in self.restored if key in values and values[key] == self.originals.get(key, "").strip()]  # (typed over since: not a restore)
         if self.volumes is not None:
             lines = self.query_one("#volumes", TextArea).text.split("\n")
             while len(lines) > len(self.volumes) and not lines[-1].strip():
@@ -662,7 +666,7 @@ class EditScreen(ModalScreen):
         except manual.FormError as err:
             self.query_one("#problem", Label).update(str(err))
             return
-        self.dismiss(values)
+        self.dismiss({**values, "__restore__": back} if back else values)
 
     def action_back(self) -> None:
         self.dismiss(None)
@@ -1682,6 +1686,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
 
     def save_metadata(self, row: batch.Row, album_id: int, values: dict) -> None:
         album = self.library.get_album(album_id) or {}
+        values = dict(values)
         old, new = album.get("series") or "", (values.get("series") or "").strip()
         if album.get("kind") != "series":
             values = {**values, "series": old}  # a one-shot has none
@@ -1701,8 +1706,11 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     def apply_metadata(self, row: batch.Row, album_id: int, values: dict) -> None:
         from bdnex.library import manual
 
+        back = values.pop("__restore__", [])
         try:
             manual.update(self.library, album_id, values)
+            if back:
+                manual.forget_edits(self.library, album_id, back)
         except manual.FormError as err:
             self.notify(str(err), severity="error")
             return

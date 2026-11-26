@@ -138,3 +138,18 @@ def test_the_form_of_a_site_page_and_no_site_form_for_a_hand_written_album(lib, 
         "Tintin", "5", "Casterman", "1936", "Hergé", "Classiques")
     album = manual.create(lib, make_cbz("m.cbz"), {"series": "X", "title": "x"})
     assert manual.site_form(None, lib, album) is None and not manual.is_site_album(lib, album)
+
+
+def test_a_restored_field_forgets_your_edit_so_the_site_value_is_in_use_again(lib, make_cbz):
+    from bdnex.library import manual
+
+    target = make(lib, make_cbz, 1, collection="Site collection")
+    bulk.apply(lib, [target], {"publisher": "Mine", "collection": "Mine too", "writer": "Me"})
+    assert lib.get_album(target.album_id)["extra"]["edits"]["publisher"] == "Mine"
+    site = {"publisher": "Casterman", "collection": "Site collection", "writer": ""}
+    out = bulk.apply(lib, [target], {}, restore=["publisher", "collection", "writer"], site_of=lambda album_id: site)
+    assert out.ok
+    album = lib.get_album(target.album_id)
+    edits = album["extra"].get("edits", {})
+    assert album["publisher"] == "Casterman" and "publisher" not in edits and "collection" not in edits and "credits" not in edits
+    assert album["collection"] is None and manual.form_of(lib, target.album_id)["collection"] == ""  # (the stored page of a test album has none)

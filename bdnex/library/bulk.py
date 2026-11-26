@@ -144,6 +144,9 @@ def apply(library, targets: list[Target], values: dict[str, str], kind: Optional
         touched = bool(changes)
         if changes:
             library.edit_album(album["id"], changes)
+        if restore and site_of is not None and site_of(album["id"]):
+            manual.forget_edits(library, album["id"], [key for key in restore if key not in values])
+            touched = True
         if kind == ONESHOT and album["kind"] == SERIES:
             library.make_oneshot(album["id"])
             touched = True

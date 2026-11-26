@@ -1242,10 +1242,16 @@ def test_a_restore_button_puts_a_field_back_to_what_the_site_says(env, monkeypat
         await pilot.pause()
         seen["value"] = app.screen.query_one("#f-publisher").value
         seen["tip"] = app.screen.query_one("#restore-publisher").tooltip
+        album_id = app.current().album_id
+        app.screen.action_accept()
+        await settle(app, pilot)
+        album = lib.get_album(album_id)
+        seen["after"] = (album["publisher"], "publisher" in album["extra"].get("edits", {}))
 
     drive(db, root, script)
     assert "restore-publisher" in seen["buttons"] and "restore-series" not in seen["buttons"]
     assert seen["value"] == "Dupuis (site)" and "Dupuis (site)" in seen["tip"]
+    assert seen["after"] == ("Dupuis (site)", False)  # saved, and your edit of it forgotten
 
 
 def test_the_form_for_many_files_has_a_restore_button_that_asks_for_the_site_value_of_each(env, monkeypatch):
