@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import Optional
 
 from bdnex.importer import covers
 from bdnex.library import Library
@@ -26,6 +27,17 @@ def add_candidate_options(parser) -> None:
     from bdnex.ui.verdicts import add_candidate_options as add
 
     add(parser)
+
+
+def saved_place(library) -> Optional[dict]:
+    """Where the review screen was closed (what it showed, the sort, the find boxes, the ticks): ``None`` when it never saved one."""
+    import json
+
+    try:
+        place = (json.loads(library.get_meta("review.view") or "{}") or {}).get("last")
+    except Exception:
+        return None
+    return place if isinstance(place, dict) and place else None
 
 
 def _batch(args, settings, out) -> int:
@@ -70,8 +82,14 @@ def _batch(args, settings, out) -> int:
         except Exception as err:
             print(err, file=sys.stderr)
             return 1
+        place = saved_place(library) if args.resume else None
+        if args.resume and not place:
+            print("Nothing to continue yet (the screen saves where you are as you work): starting as usual.", file=sys.stderr)
+        if place and not (args.query or args.unmatched or args.all or args.again):  # what you type now wins over what was saved
+            args.query, args.unmatched = list(place.get("terms") or []), bool(place.get("unmatched"))
+            args.all, args.again = bool(place.get("everything")), bool(place.get("again"))
         decided = review_tui.run(library, settings, build_source, args.batch, args.query, args.unmatched, args.all, args.again, args.verbose,
-                                  False if args.no_tree else None)
+                                  False if args.no_tree else None, place)
     on = color.enabled(out)
     total = sum(decided.values())
     parts = ", ".join(f"{n} {what}" for what, n in sorted(decided.items()) if n)
@@ -174,6 +192,9 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
                              "match score, cover score; keep, unlink or pick another album from the album list. Every decision "
                              "is saved at once and the files checked are not shown again: run it again to continue; a query "
                              "limits the files, as in `bdnex ls --files`")
+    parser.add_argument("--continue", dest="resume", action="store_true",
+                        help="open the review screen where you left it: the folder or filters you were looking at, the page, the sort, the find boxes, "
+                             "the ticks and the query (the columns and panes are always kept). Options you type now win over the saved ones")
     parser.add_argument("--unmatched", action="store_true", help="in the screen: also the files that have no album")
     parser.add_argument("--no-tree", action="store_true",
                         help="in the screen: start with the left panel hidden (`f` shows it; the screen remembers how you left it)")
@@ -192,10 +213,10 @@ def run(argv: list[str], out=sys.stdout, prompter=None) -> int:
     if settings is None:
         return 1
     asked = args.unmatched or args.all or args.again or args.no_tree
-    screen = args.batch is not None or (not (args.list or args.auto or args.scan or args.no_tui or args.json) and prompter is None
+    screen = args.batch is not None or args.resume or (not (args.list or args.auto or args.scan or args.no_tui or args.json) and prompter is None
                                         and sys.stdin.isatty() and sys.stdout.isatty())  # in a terminal, `bdnex review` is the screen
-    if args.no_tui and (args.batch is not None or asked):
-        print("--no-tui asks one file at a time: --batch, --unmatched, --all, --again and --no-tree are for the screen.", file=sys.stderr)
+    if args.no_tui and (args.batch is not None or asked or args.resume):
+        print("--no-tui asks one file at a time: --batch, --continue, --unmatched, --all, --again and --no-tree are for the screen.", file=sys.stderr)
         return 2
     if asked and not screen:
         print("--unmatched, --all, --again and --no-tree are for the review screen (it needs a terminal).", file=sys.stderr)

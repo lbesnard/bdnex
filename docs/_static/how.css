@@ -1,0 +1,17 @@
+/* The CLI / TUI tags on the right of a heading (see docs/_ext/how.py). Colours work in the light and the dark theme. */
+.how-tag {
+  float: right;
+  clear: none;
+  margin-left: 0.4rem;
+  padding: 0.05rem 0.5rem;
+  border-radius: 0.8rem;
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  line-height: 1.5;
+  vertical-align: middle;
+  color: #fff;
+}
+.how-cli { background: #3b6ea8; }
+.how-tui { background: #2e7d5b; }
+.toc-tree .how-tag, .sidebar-tree .how-tag { display: none; }  /* the side menus stay plain */

@@ -34,6 +34,7 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
     ],
     "review": [
         ("bdnex review", "the review screen: folders and filters on the left, a table of files, the doubtful matches first"),
+        ("bdnex review --continue", "the screen as you left it: the same folder or filters, page, sort, find boxes and ticks"),
         ("bdnex review series:nains", "only the files of one series"),
         ("bdnex review --unmatched", "the same, with the files that have no album too"),
         ("bdnex review series:batman --all", "look through every Batman file (the doubtful ones first), not only the doubtful"),

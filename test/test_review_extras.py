@@ -49,13 +49,13 @@ def env(tmp_path, monkeypatch, make_cbz):
     return db, root, paths
 
 
-def drive(db, root, script, size=50):
+def drive(db, root, script, size=50, resume=None):
     settings = load_config().settings
     out = {}
 
     async def go():
         with Library(db, root=root) as lib:
-            app = review_tui.ReviewApp(lib, settings, FakeSource(), size, (), True, tree=True)
+            app = review_tui.ReviewApp(lib, settings, FakeSource(), size, (), True, tree=True, resume=resume)
             async with app.run_test(size=(180, 50)) as pilot:
                 await settle(app, pilot)
                 await script(app, pilot, lib)
@@ -1529,3 +1529,46 @@ def test_a_new_config_file_starts_with_the_collection_and_cycle_templates():
     assert settings.paths.series.startswith("Series/%ifdef{collection,$collection}/$series%ifdef{cycle, - Cycle $cycle:02}/")
     assert settings.paths.oneshot == "OneShot/$title ($authors) [$year]/$title ($authors) [$year]"
     assert settings.duplicates.versions_place == "top" and settings.duplicates.version_labels[0] == "Dossier"
+
+
+def test_continue_opens_the_screen_where_it_was_left(env):
+    db, root, paths = env
+    assert saved_place_of(db, root) is None  # nothing saved yet: `--continue` starts as usual
+    seen = {}
+
+    async def first(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        app.action_sort(1)
+        app.action_sort(1)  # the file column, reversed
+        app.query_one("#facetfind").value = "tintin"
+        app.facet_tree.ticked.add(("Format", "cbz"))
+        app.facet_tree.post_message(app.facet_tree.Ticked(app.facet_tree, 1))
+        await pilot.pause(0.3)
+        seen["first"] = [r.path for r in app.rows]
+
+    drive(db, root, first)
+    place = saved_place_of(db, root)
+    assert place and place["picks"] == [["folder", "Series/Tintin"]] and place["sort"][1] is True and place["facetfind"] == "tintin"
+
+    async def second(app, pilot, lib):
+        for _ in range(30):  # the trees are built in the background
+            if app.facet_tree is not None and app.facet_tree.ticked:
+                break
+            await pilot.pause(0.2)
+        await settle(app, pilot)
+        seen["again"] = [r.path for r in app.rows]
+        seen["find"] = app.query_one("#facetfind").value
+        seen["ticked"] = set(app.facet_tree.ticked)
+        seen["title"] = app.sub_title
+
+    drive(db, root, second, resume=place)
+    assert seen["again"] == seen["first"] and len(seen["again"]) == 3  # the same files, in the same (reversed) order
+    assert seen["find"] == "tintin" and seen["ticked"] == {("Format", "cbz")}
+
+
+def saved_place_of(db, root):
+    from bdnex.ui.review_cmd import saved_place
+
+    with Library(db, root=root) as lib:
+        return saved_place(lib)

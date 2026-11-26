@@ -13,14 +13,15 @@ change often, **with breaking changes at any time**. Back up your library databa
 the version you use. See the [roadmap](roadmap.md) for what exists and what is planned.
 ```
 
-A typical session: `bdnex import ~/comics` (you confirm each match), `bdnex ls` to look around,
-`bdnex write` to put the tags into the files. [How do I…?](guides/cookbook.md) lists the common
+The usual way in: `bdnex init` once, `bdnex import --match --auto=all ~/comics` to link what matches well, then `bdnex review`
+(a screen: look, fix, confirm), then `bdnex write` or `bdnex move`. [The workflow](guides/workflow.md) walks through it. [How do I…?](guides/cookbook.md) lists the common
 tasks; [Getting started](guides/getting-started.md) is the walk-through.
 
 ```{toctree}
 :maxdepth: 2
 :caption: User guide
 
+guides/workflow
 guides/getting-started
 guides/safe-workflows
 guides/cookbook

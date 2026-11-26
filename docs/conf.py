@@ -2,6 +2,7 @@ import os
 import sys
 
 sys.path.insert(0, os.path.abspath(".."))
+sys.path.insert(0, os.path.abspath("_ext"))
 
 project = "bdnex"
 author = "Laurent Besnard"
@@ -17,7 +18,7 @@ try:
 except PackageNotFoundError:
     release = version = ""
 
-extensions = ["myst_parser", "sphinx.ext.autodoc", "sphinx.ext.napoleon"]
+extensions = ["myst_parser", "sphinx.ext.autodoc", "sphinx.ext.napoleon", "how"]
 source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
 exclude_patterns = ["_build"]
 html_theme = "furo"
