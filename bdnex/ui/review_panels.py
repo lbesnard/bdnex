@@ -776,7 +776,21 @@ class BulkScreen(ModalScreen):
                 yield Button("Save", id="ok", variant="success")
                 yield Button("Cancel", id="cancel")
 
+    TIPS = {
+        "number": "Fills the volume list with 1, 2, 3... in the order shown: the first file is tome 1, the second tome 2. Nothing is saved until you press Save.",
+        "hs": "Fills the volume list with HS 1, HS 2, HS 3... (hors-série: special issues that have no tome number). Nothing is saved until you press Save.",
+        "names": "Reads each tome number from the file name ('Tintin - 05 - Le Lotus bleu.cbz' gives 5) and fills the volume list. Nothing is saved until you press Save.",
+        "ok": "Write these values on every file listed (only the fields you changed). Everything is checked first: one bad value writes nothing.",
+        "cancel": "Close without changing anything.",
+    }
+
     def on_mount(self) -> None:
+        for button in self.query(Button):
+            tip = self.TIPS.get(button.id or "")
+            if tip is None and (button.id or "").startswith("clear-"):
+                tip = "Empty this field on every file (click again to keep what they have). Typing a value instead sets that value."
+            if tip:
+                button.tooltip = tip
         self.query_one(f"#b-{self.fields[0][0]}", Input).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

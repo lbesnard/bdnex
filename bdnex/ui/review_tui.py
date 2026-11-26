@@ -594,6 +594,13 @@ class EditScreen(ModalScreen):
                 yield Button("Cancel", id="cancel")
 
     def on_mount(self) -> None:
+        for button in self.query(Button):
+            if (button.id or "").startswith("clear-"):
+                button.tooltip = "Empty this field (it is saved as none)."
+            elif button.id == "ok":
+                button.tooltip = "Save the changes (they are checked first)."
+            elif button.id == "cancel":
+                button.tooltip = "Close without changing anything."
         self.query_one(f"#f-{self.fields[0][0]}", Input).focus()
 
     def on_input_submitted(self, event: Input.Submitted) -> None:

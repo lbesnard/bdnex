@@ -1141,3 +1141,20 @@ def test_the_find_box_above_the_tree_keeps_only_the_folders_that_match(env):
     assert any("Tintin" in label for label in seen["some"])
     assert seen["none"] == []
     assert seen["back"] == seen["all"]
+
+
+def test_the_buttons_of_the_form_say_what_they_do_when_the_mouse_is_over_them(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("m")
+        await pilot.press("E")
+        await pilot.pause()
+        seen["tips"] = {b.id: b.tooltip for b in app.screen.query("Button")}
+
+    drive(db, root, script)
+    assert all(seen["tips"].values()), seen["tips"]
+    assert "tome" in seen["tips"]["number"] and "hors-série" in seen["tips"]["hs"]
