@@ -1067,8 +1067,10 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     ]
 
     def __init__(self, library, settings, source, size: int = 50, terms=(), unmatched: bool = False,
-                 everything: bool = False, again: bool = False, verbose: int = 0, tree: Optional[bool] = None):
+                 everything: bool = False, again: bool = False, verbose: int = 0, tree: Optional[bool] = None, resume: Optional[dict] = None):
         super().__init__()
+        self.resume = resume  # `--continue`: the place saved when the screen was closed (``remember_place``), shown again once the screen is up
+        self.pending_sort = None
         self.tree_pref = tree  # None: as it was left last time (``f`` toggles)
         self.verbose = verbose
         self.ui_thread = None
@@ -1278,6 +1280,9 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         self.background_started = True
         self.start_folders()
         self.hub.load_list().add_done_callback(self.list_loaded)
+        self.remember_place(terms=list(self.terms), unmatched=self.unmatched, everything=self.everything, again=self.again)
+        if self.resume:
+            self.restore_place()
 
     def list_loaded(self, future) -> None:  # called in the thread of the album list
         self.albums_in = time.monotonic() - self.started
@@ -1475,6 +1480,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
             return
         self.sort_reverse = (not self.sort_reverse) if index == self.sort_column else False
         self.sort_column = index
+        self.remember_place(sort=[self.view[index], self.sort_reverse])
         keep = self.current()
         keys = [(self.sort_key(index, row), row) for row in self.rows]
         present = sorted((pair for pair in keys if pair[0] is not None), key=lambda pair: pair[0], reverse=self.sort_reverse)
@@ -2400,9 +2406,9 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
 
 
 def run(library, settings, source, size: int = 50, terms=(), unmatched: bool = False, everything: bool = False,
-        again: bool = False, verbose: int = 0, tree: Optional[bool] = None) -> dict[str, int]:
-    """Run the table until the person quits; returns how many files were decided, by decision."""
-    app = ReviewApp(library, settings, source, size, terms, unmatched, everything, again, verbose, tree)
+        again: bool = False, verbose: int = 0, tree: Optional[bool] = None, resume: Optional[dict] = None) -> dict[str, int]:
+    """Run the table until the person quits; returns how many files were decided, by decision. ``resume``: the saved place (``--continue``)."""
+    app = ReviewApp(library, settings, source, size, terms, unmatched, everything, again, verbose, tree, resume)
     app.finish_fetches = True
     app.run()
     run.unfetched = app.finish_pending_fetches()  # the caller says what is left for `bdnex import --fetch`

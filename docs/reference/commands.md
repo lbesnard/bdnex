@@ -224,8 +224,8 @@ Go through the doubtful matches: one by one with both covers, or settled by rule
 
 ```text
 usage: bdnex review [-h] [--list] [--json] [--auto] [--no-tui] [--batch N]
-                    [--unmatched] [--no-tree] [--all] [--again] [--candidates N]
-                    [--no-cover] [-y] [-n] [-v] [--log-file PATH]
+                    [--continue] [--unmatched] [--no-tree] [--all] [--again]
+                    [--candidates N] [--no-cover] [-y] [-n] [-v] [--log-file PATH]
                     [query ...]
 
 ``bdnex review``: the review screen (folders, filters, the doubtful matches,
@@ -257,6 +257,10 @@ options:
                    decision is saved at once and the files checked are not shown
                    again: run it again to continue; a query limits the files, as in
                    `bdnex ls --files`
+  --continue       open the review screen where you left it: the folder or filters you
+                   were looking at, the page, the sort, the find boxes, the ticks and
+                   the query (the columns and panes are always kept). Options you type
+                   now win over the saved ones
   --unmatched      in the screen: also the files that have no album
   --no-tree        in the screen: start with the left panel hidden (`f` shows it; the
                    screen remembers how you left it)
@@ -290,6 +294,7 @@ could be.
 
 Examples:
   bdnex review                        the review screen: folders and filters on the left, a table of files, the doubtful matches first
+  bdnex review --continue             the screen as you left it: the same folder or filters, page, sort, find boxes and ticks
   bdnex review series:nains           only the files of one series
   bdnex review --unmatched            the same, with the files that have no album too
   bdnex review series:batman --all    look through every Batman file (the doubtful ones first), not only the doubtful

@@ -3,7 +3,16 @@
 Short answers to the things you will actually want to do, with the commands. Every command has
 `--help`, and `-n` (`--pretend`) shows what would happen without changing anything.
 
+On the right of each title, a tag says **where** it is done:
+
+- **CLI**: with a command you type in the terminal (the only way for this one).
+- **TUI**: in the review screen, `bdnex review` (the way to do it while you look at your files; see [the workflow](workflow.md)).
+- **CLI** and **TUI** together: either does it. The command is for a script or a whole library at once, the screen for looking as you go.
+
 ## …get started? Where do the sitemaps come from?
+
+```{how} cli
+```
 
 ```bash
 bdnex config --edit        # first time: set `collection_path` to your comics folder
@@ -19,6 +28,9 @@ bdnex offers to download the list on a terminal.
 
 ## …find my configuration file?
 
+```{how} cli
+```
+
 ```bash
 bdnex config --path        # where it is   (default: ~/.config/bdnex/bdnex.yaml)
 bdnex config --edit        # open it in $EDITOR
@@ -30,6 +42,9 @@ unknown options, wrong values, or a file written by an older version. See
 [Configuration](configuration.md).
 
 ## …import my comics, and check each match myself?
+
+```{how} cli
+```
 
 ```bash
 bdnex import ~/comics
@@ -52,12 +67,18 @@ Details and the settings (`import.auto`, `import.workers`, `import.lookahead`) a
 
 ## …pick the album myself when the right one is not offered?
 
+```{how} cli tui
+```
+
 In the match question, press **E** (*Enter a search in the album list...*). With `fzf`
 installed (any recent version), it searches all ~370,000 albums as you type, ignoring case, starting from the
 file's name. Without `fzf` you type a few words and filter their best hits. **O** (or Ctrl-O) opens the highlighted
 album's page in your browser so you can check it before choosing. Esc goes back to the list. Pressed a wrong key? **B** goes back to the previous file and undoes what was decided for it.
 
 ## …import a folder that holds a series?
+
+```{how} cli
+```
 
 Nothing to do for the usual case: a folder whose files are `T01`, `T02`, `T03`... is taken for a series and every
 file is matched by volume number inside it. When the names do not make it obvious, bdnex lists the files and asks
@@ -66,11 +87,17 @@ file is matched by volume number inside it. When the names do not make it obviou
 
 ## …stop an import half way and continue later?
 
+```{how} cli
+```
+
 Choose **Abort the import** in the match question (or press Ctrl-C while pages are being fetched). What you
 decided is kept; run the same command again and it resumes from the file where you stopped. Files you
 *skipped* stay skipped; the file you aborted on is asked about again.
 
 ## …import a very large collection quickly?
+
+```{how} cli
+```
 
 Importing is two steps, **match** (file to album, offline, seconds) and **fetch** (read the album
 pages, slow on purpose). Do the first now and the second whenever you like:
@@ -81,6 +108,9 @@ bdnex import --fetch                     # later, as long as you like; Ctrl-C an
 ```
 
 ## …do the first import of a big, already tidy collection?
+
+```{how} cli
+```
 
 Do it in two passes. The first one is slow and needs no attention; the second one is quick and is where you decide.
 
@@ -116,6 +146,9 @@ Before you start pass 2:
 
 ## …settle the doubtful matches (an older import's, or the flagged ones) without going through each?
 
+```{how} cli
+```
+
 Before `--auto=all` became strict, it applied the matches in the middle (a score under `match.strong_threshold`)
 without asking, and a cover check flags files whose cover is not like their album's. `bdnex review --auto` weighs all
 of them (the album page's year and authors, the file's own tags, its cover against the saved cover, and the covers
@@ -132,6 +165,9 @@ The ones nothing confirms are left alone: no evidence is no reason to ask you. S
 
 ## …go through thousands of doubtful matches without doing it one by one?
 
+```{how} cli tui
+```
+
 ```bash
 bdnex review --batch 50               # a table of the next 50, folder by folder; each decision is saved at once
 bdnex review --batch 50 --unmatched   # with the files that have no album
@@ -143,6 +179,9 @@ and come back later: you continue with the files not checked yet. See [the table
 
 ## …keep the whole Bédéthèque catalogue in my library?
 
+```{how} cli
+```
+
 ```bash
 bdnex init --mirror -n         # how many albums and covers are missing, and about how much room they take
 bdnex init --mirror --skip-list --limit 500  # fetch the next 500 (page, series page, cover), then stop
@@ -153,10 +192,16 @@ See [Keeping the whole catalogue](importing.md#keeping-the-whole-catalogue-bdnex
 
 ## …shorten a command I type often?
 
+```{how} cli
+```
+
 Add an alias to your configuration (`bdnex config --edit`): `aliases: ["settle-doubtful-matches = review --auto  # what it does"]`.
 Then `bdnex settle-doubtful-matches -n` is `bdnex review --auto -n`, and `bdnex --help` lists it with its explanation. See [Aliases](configuration.md#aliases-commands-with-a-name-that-says-what-they-do).
 
 ## …import again? Redo a file?
+
+```{how} cli
+```
 
 Running `bdnex import ~/comics` again is cheap (and plain `bdnex import` does the same on the library folder of
 your configuration, `collection_path`, to pick up the files you added to it): files already done are only counted ("83 already"),
@@ -175,6 +220,9 @@ remembered and not asked about again.
 
 ## …know how much of my library has been read?
 
+```{how} cli
+```
+
 ```bash
 bdnex stats                 # albums complete (page read) or only matched, files by format and size
 bdnex stats series:nains    # for part of it
@@ -182,6 +230,9 @@ bdnex ls partial:true -c    # how many albums still wait for their page
 ```
 
 ## …tell Komga (or anything else) every time I import or write?
+
+```{how} cli
+```
 
 ```yaml
 hooks:
@@ -193,12 +244,18 @@ linked files, never for a preview, and its failure never fails the import.
 
 ## …say which album a file is, when the match is wrong?
 
+```{how} cli tui
+```
+
 ```bash
 bdnex candidates filename:valise            # the other albums that file could be (a query, not a path)
 bdnex import --album 245127 ~/comics/La\ Valise.cbz
 ```
 
 ## …see what is in my library?
+
+```{how} cli tui
+```
 
 ```bash
 bdnex ls                              # albums
@@ -216,6 +273,9 @@ in [Querying](queries.md).
 
 ## …write the metadata into my files, without moving anything?
 
+```{how} cli
+```
+
 ```bash
 bdnex write -n               # preview
 bdnex write                  # write ComicInfo.xml into every matched file, where it is
@@ -232,6 +292,9 @@ erased from the file. `--force` lets the database win without asking. See
 
 ## …rename and organise my files into a tree?
 
+```{how} cli
+```
+
 ```bash
 bdnex move -n                # preview: each file's new path on the `->` line, nothing is touched
 bdnex move                   # write the tags, then rename into `collection_path` following `paths`
@@ -242,6 +305,9 @@ The names come from templates (`paths.series`, `paths.oneshot`); an empty author
 handled by `paths.missing_field`. See [Path templates](writing.md#path-templates).
 
 ## …fix a wrong or incomplete metadata?
+
+```{how} cli tui
+```
 
 ```bash
 bdnex edit series:nains                       # all its albums, as YAML in your editor
@@ -254,6 +320,9 @@ Your edits are kept when an album is re-imported or re-read. See
 
 ## …see which volumes of a series I am missing?
 
+```{how} cli
+```
+
 ```bash
 bdnex series --missing           # "Nains  3 of 26 albums  ·  missing 23"
 bdnex series nains --long        # which ones, with their address
@@ -264,6 +333,9 @@ The list of a series' albums comes from its page, read the first time one of its
 
 ## …find the files that did not match?
 
+```{how} cli tui
+```
+
 ```bash
 bdnex ls --unmatched                # skipped, failed, or never linked, with the best score
 bdnex ls --unmatched rahan -c       # how many under a name
@@ -273,6 +345,9 @@ Then import the folder again and choose the right candidate by hand. Files that 
 Bédéthèque sitemaps (magazines, scans, foreign editions) will stay unmatched.
 
 ## …get the details of an album when Bédéthèque blocks my requests?
+
+```{how} cli
+```
 
 Album pages are protected against scripts, and bdnex does not try to get around that. Three
 options, all in [Getting started](getting-started.md#album-pages) and
@@ -285,6 +360,9 @@ options, all in [Getting started](getting-started.md#album-pages) and
 
 ## …rebuild my albums from what is already stored, offline?
 
+```{how} cli
+```
+
 Every page ever read is stored as received. When bdnex learns to read more of a page:
 
 ```bash
@@ -296,6 +374,9 @@ bdnex write                  # push the new details (format, edition note, trans
 Reparse never erases a value the library already has, and keeps your `bdnex edit` changes.
 
 ## …keep my PDFs as PDFs, and convert them later?
+
+```{how} cli
+```
 
 ```bash
 bdnex config --edit                  # write: pdf: tag   (tags go into the PDF; skip: leave it alone)
@@ -310,6 +391,9 @@ copy of the PDF's own picture: see [Writing](writing.md#formats).
 
 ## …repair a damaged archive?
 
+```{how} cli
+```
+
 ```bash
 bdnex repair -n
 bdnex repair                 # rebuild archives with a wrong page checksum as a clean CBZ
@@ -319,6 +403,9 @@ bdnex repair                 # rebuild archives with a wrong page checksum as a 
 (`write.corrupted`) when a file cannot be repaired. See [Writing](writing.md#damaged-archives).
 
 ## …start again from scratch?
+
+```{how} cli
+```
 
 ```bash
 bdnex reset -n         # what would be forgotten, and what is kept
@@ -330,6 +417,9 @@ album pages**. The next `bdnex import` needs no network for what was already fet
 files are untouched. See [Maintaining](maintaining.md#starting-from-scratch).
 
 ## …fill the library without touching my files?
+
+```{how} cli
+```
 
 ```bash
 bdnex import --database-only -n ~/comics     # preview
@@ -351,6 +441,9 @@ bdnex import --database-only ~/comics    # no network for the pages already fetc
 
 ## …add comics I just downloaded to my collection?
 
+```{how} cli
+```
+
 ```bash
 bdnex import ~/Downloads        # match, read the pages, then ONE question about where the files go
 ```
@@ -369,6 +462,9 @@ If the album already has a file, you are shown both before anything moves: see t
 
 ## …keep two versions of a book, or replace one?
 
+```{how} cli tui
+```
+
 When an album already has a file, bdnex shows the two side by side (format, pages, size, whether the
 cover matches) and suggests one: **keep the existing**, **keep the new** (the existing goes to the trash) or
 **keep both**. A second file kept this way is a *spare version*, placed in `_versions/` in your library
@@ -382,6 +478,9 @@ See [Duplicates, versions and the trash](versions.md).
 
 ## …get back a file I replaced?
 
+```{how} cli
+```
+
 Nothing replaced is deleted: it waits in `.bdnex-trash` in your library folder.
 
 ```bash
@@ -391,6 +490,9 @@ bdnex trash --empty             # delete for good (asks first; --older-than 30 f
 ```
 
 ## …check that each file got the right album, by its cover?
+
+```{how} cli tui
+```
 
 ```bash
 bdnex import --fetch --cover-check ~/comics
@@ -402,6 +504,9 @@ album, so it is off unless you ask. See [Importing](importing.md#checking-covers
 
 ## …move my whole collection to another disk?
 
+```{how} cli
+```
+
 ```bash
 mv ~/comics /mnt/nas/comics
 bdnex config --edit          # collection_path: /mnt/nas/comics
@@ -412,6 +517,9 @@ Paths under `collection_path` are stored relative to it, so nothing in the datab
 [Maintaining](maintaining.md#paths-and-moving-your-collection).
 
 ## …take back a move, or find files I moved by hand?
+
+```{how} cli
+```
 
 ```bash
 bdnex undo                 # the runs of `bdnex move` that can be taken back
@@ -425,6 +533,9 @@ bdnex relocate --find -n ~/comics   # files moved or renamed outside bdnex: foun
 
 ## …look at the doubtful covers and the duplicates?
 
+```{how} cli tui
+```
+
 ```bash
 bdnex review --list         # list the flagged matches and why, ask nothing
 bdnex review               # one by one: keep, unlink, rematch or leave
@@ -432,6 +543,9 @@ bdnex duplicates           # the same book in several files (add --covers to com
 ```
 
 ## …browse my library in a browser, or complete commands with Tab?
+
+```{how} cli
+```
 
 ```bash
 pip install 'bdnex[api]'
@@ -441,11 +555,17 @@ eval "$(bdnex completion zsh)"        # in your shell startup file (bash and fis
 
 ## …get my PDFs' titles and summaries into Komga?
 
+```{how} cli
+```
+
 Komga does not read the tags inside a PDF. `bdnex komga show format:pdf` compares what Komga holds with the library,
 `bdnex komga push format:pdf -n` previews, and `bdnex komga push format:pdf --fields summary,authors,releaseDate,isbn`
 fills the missing data and leaves the titles alone. Step by step: [Komga](komga.md#how-to-fill-komga-from-the-library-step-by-step).
 
 ## …back up my library?
+
+```{how} cli
+```
 
 Copy the database file (`bdnex config --defaults | grep library`, by default
 `~/.local/share/bdnex/bdnex.sqlite`) while no bdnex command is running; `bdnex reset` also makes

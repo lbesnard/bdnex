@@ -107,6 +107,55 @@ class ReviewExtras:
                 ("Everything: all the files", "the first thousand, in path order", lambda: self.open_selection("folder", "", "the collection"))):
             yield SystemCommand(title, help_text, callback)
 
+    # -- where you were: `bdnex review --continue` opens the screen there again
+    def remember_place(self, **values) -> None:
+        """Keep a part of the screen's state (what is shown, the sort, the find boxes, the ticks) in the saved view, for ``--continue``."""
+        place = dict(self.view_extra.get("last") or {})
+        place.update(values)
+        self.remember(last=place)
+
+    def restore_place(self) -> None:
+        """``--continue``: the selection that was on the screen when it was closed, and its sort; the find boxes and the ticks follow when the
+        trees exist (``restore_trees``). Nothing is read that is not there any more: a folder that is gone just shows no files."""
+        place = self.resume or {}
+        with contextlib.suppress(Exception):
+            self.query_one("#narrow", Checkbox).value = bool(place.get("narrow"))
+        picks = [(kind, tuple(value) if kind == "facet" else value) for kind, value in place.get("picks") or []]
+        if picks:
+            self.pending_sort = place.get("sort")
+            self.open_selections(picks, place.get("title") or "where you were", int(place.get("page") or 0))
+
+    def restore_trees(self, which: str) -> None:
+        """A tree was just built: its find box and its ticks as they were (``which``: ``folder``, ``planned`` or ``facet``)."""
+        place = self.resume or {}
+        tree = {"folder": self.folder_tree, "planned": self.move_tree, "facet": self.facet_tree}[which]
+        if tree is None:
+            return
+        words = place.get("facetfind" if which == "facet" else "treefind") or ""
+        if words:
+            box = self.query_one("#facetfind" if which == "facet" else "#treefind", Input)
+            if box.value != words:
+                box.value = words  # (its Changed message filters every tree that exists)
+            tree.find(words)
+        ticked = (place.get("ticks") or {}).get(which) or []
+        if ticked:
+            tree.ticked = {tuple(key) if which == "facet" else key for key in ticked}
+            tree.relabel()
+            self.on_tick_tree_ticked(None)
+
+    def restore_built_trees(self) -> None:
+        for which in ("folder", "facet"):
+            self.restore_trees(which)
+
+    def after_sort_restored(self) -> None:
+        sort, self.pending_sort = self.pending_sort, None
+        keys = [key for key in self.view]
+        if sort and sort[0] in keys:
+            index = keys.index(sort[0])
+            self.action_sort(index)
+            if sort[1]:
+                self.action_sort(index)  # (the same column again reverses it)
+
     # -- the left panel: the folders as they are, the organised folders, and the filters
     def want_tree(self) -> bool:
         if self.tree_pref is not None:
@@ -167,6 +216,7 @@ class ReviewExtras:
             self.query_one("#folderslot").mount(self.folder_tree)
             self.facet_tree = panels.FacetTree(found, id="facettree")
             self.query_one("#facetslot").mount(self.facet_tree)
+            self.call_after_refresh(self.restore_built_trees)
         else:
             self.folder_tree.file_names = self.folder_names
             self.folder_tree.refresh_counts(root)
@@ -204,12 +254,14 @@ class ReviewExtras:
         """The find box above the trees: as you type, only the folders that match (by their name or the name of a file in them) stay."""
         if event.input.id == "facetfind":
             event.stop()
+            self.remember_place(facetfind=event.value)
             if self.facet_tree is not None:
                 self.facet_tree.find(event.value)
             return
         if event.input.id != "treefind":
             return
         event.stop()
+        self.remember_place(treefind=event.value)
         for tree in (self.folder_tree, self.move_tree):
             if tree is not None:
                 tree.find(event.value)
@@ -229,6 +281,7 @@ class ReviewExtras:
             if self.move_tree is None:
                 self.move_tree = panels.FolderTree(move_root, id="movetree")
                 slot.mount(self.move_tree)
+                self.call_after_refresh(self.restore_trees, "planned")
                 with contextlib.suppress(Exception):
                     self.query_one("#movewait").remove()
             else:
@@ -304,6 +357,9 @@ class ReviewExtras:
 
     def on_tick_tree_ticked(self, event: TickTree.Ticked) -> None:  # (a mixin: no `@on`, which only a message pump's own class collects)
         count = len(self.ticked_selections())
+        self.remember_place(ticks={"folder": sorted(self.folder_tree.ticked) if self.folder_tree is not None else [],
+                                   "planned": sorted(self.move_tree.ticked) if self.move_tree is not None else [],
+                                   "facet": sorted(self.facet_tree.ticked) if self.facet_tree is not None else []})
         self.query_one("#show-ticked", Button).label = f"Show ticked ({count})" if count else "Show ticked"
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -314,6 +370,8 @@ class ReviewExtras:
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Tell what the box does from now on."""
+        if event.checkbox.id == "narrow":
+            self.remember_place(narrow=bool(event.value))
         if event.checkbox.id == "narrow" and self.view_places + self.view_facets:
             self.say("Folders and filters work together: pick a folder, then a filter (or the other way round) to see the files that match both." if event.value
                      else "A click on a folder or a filter shows only what you clicked.")
@@ -369,6 +427,7 @@ class ReviewExtras:
         values are alternatives, different groups go together. ``n`` and ``b`` turn the pages."""
         self.view_places = [p for p in picks if p[0] in ("folder", "planned")]
         self.view_facets = [p for p in picks if p[0] == "facet"]
+        self.remember_place(picks=[[kind, value] for kind, value in picks], title=title, page=page, sort=None)
         only = picks[0] if len(picks) == 1 else None
         self.folder_current = only[1] if only and only[0] == "folder" else ""
         self.say(f"Reading {title}...")
@@ -405,6 +464,8 @@ class ReviewExtras:
         pages = max(1, -(-total // self.batch_size))
         where = f"{first}-{first + len(rows) - 1} of {total}" if rows else "none"
         self.display(rows, f"{title}: {where}" + (f" · page {page + 1}/{pages}: n and b turn the pages" if pages > 1 else "") + f" · {seconds:.2f} s")
+        if getattr(self, "pending_sort", None):
+            self.after_sort_restored()
         if title in self.folder_bad:
             self.notify(f"{title}: {self.folder_bad[title]}", severity="warning", timeout=6)
 
