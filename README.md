@@ -116,6 +116,8 @@ Requires Python 3.10 to 3.13. [uv](https://docs.astral.sh/uv/) is the recommende
 | reading `.cbr` files (match, covers, `write`, `move`, `repair`) | `unrar`, or `unar`, or `bsdtar` (a `7z` only if it has the RAR codec: many builds do not) | every CBR fails with `Failed the read enough data` in the log |
 | the cover check (`cover.check`, `candidates --cover`) | OpenCV (installed with bdnex; a build without it, e.g. an unusual platform, degrades) | covers are still downloaded, but not compared |
 | fetching pages (the default fetcher) | a [FlareSolverr](https://github.com/FlareSolverr/FlareSolverr) address in `fetch.endpoint`, or your own fetcher | no page can be fetched (see [Album pages](#album-pages-read-this-first)) |
+| *optional:* a sharp full-size cover in `bdnex review` (`c`, then `z`) | [`chafa`](https://hpjansson.org/chafa/) (`sudo apt install chafa`, `brew install chafa`) | the picture is drawn with plain half blocks: coarser, but it works |
+| *optional:* the fuzzy album search `O` in `bdnex review` | [`fzf`](https://github.com/junegunn/fzf) | the built-in search (`o`) is used |
 
 On Debian or Ubuntu: `sudo apt install unrar` (it needs the `non-free` / `multiverse` repository), or `sudo apt install libarchive-tools` for `bsdtar` (the package is called `bsdtar` on the newest releases).
 
