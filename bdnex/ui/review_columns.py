@@ -213,7 +213,9 @@ class ColumnsMixin:
             return {"series": Text("series", style="cyan"), "oneshot": Text("1-shot", style="magenta")}.get(kind, Text("-", style="dim"))
         if key == "vol":
             _, volume = self.album_facts(row)
-            return Text("-" if volume is None else str(volume), style="dim" if volume is None else "")
+            special = self.album_dict(row).get("alternate_number") if volume is None else None  # a tome with no number: HS 1, INT...
+            word = str(volume) if volume is not None else (special or "-")
+            return Text(word, style="dim" if word == "-" else "")
         album, file = self.album_dict(row), self.file_dict(row)
         text = ""
         if key == "series":
@@ -340,7 +342,9 @@ class ColumnsMixin:
             meta = event.style.meta
             if "column" not in meta:
                 return
-            if event.ctrl and meta.get("row", -1) >= 0:
+            if event.shift and meta.get("row", -1) >= 0 and self.mark_anchor is not None:
+                self.mark_range(self.mark_anchor, meta["row"])  # a list: from the last marked row to this one
+            elif event.ctrl and meta.get("row", -1) >= 0:
                 self.toggle_mark_at(meta["row"])
             elif meta.get("row") == -1 and event.chain >= 2:
                 index = meta["column"]
@@ -348,13 +352,36 @@ class ColumnsMixin:
                 if 0 <= index < len(self.view):
                     self.push_screen(ColumnChoiceScreen(self.view[index], self.view), lambda key: self.swap_column(index, key))
 
+    mark_anchor: Optional[int] = None  # the row last marked: a shift-click marks from it to the one clicked
+
     def toggle_mark_at(self, index: int) -> None:
         """Mark or unmark the row at ``index`` (a ctrl-click does what space does, without moving the cursor)."""
         if 0 <= index < len(self.rows) and not self.rows[index].busy:
             row = self.rows[index]
             self.marked.symmetric_difference_update({id(row)})
+            self.mark_anchor = index
             self.refresh_row(row)
             self.notify(f"{len(self.marked)} file(s) marked", timeout=2)
+
+    def mark_range(self, first: int, last: int) -> None:
+        """Mark every row from ``first`` to ``last`` (shift-click, or shift with the arrows)."""
+        for index in range(max(0, min(first, last)), min(len(self.rows) - 1, max(first, last)) + 1):
+            row = self.rows[index]
+            if not row.busy and id(row) not in self.marked:
+                self.marked.add(id(row))
+                self.refresh_row(row)
+        self.mark_anchor = last
+        self.notify(f"{len(self.marked)} file(s) marked", timeout=2)
+
+    def action_extend_mark(self, step: int) -> None:
+        """Shift with the arrows: mark this row and the next one in that direction, and move on (a list is marked by walking down it)."""
+        table = self.query_one("DataTable")
+        here = table.cursor_row
+        if not (0 <= here < len(self.rows)):
+            return
+        there = max(0, min(len(self.rows) - 1, here + step))
+        self.mark_range(here, there)
+        table.move_cursor(row=there)
 
     def swap_column(self, index: int, key) -> None:
         if key is None or not (0 <= index < len(self.view)):

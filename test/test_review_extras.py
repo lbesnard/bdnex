@@ -545,4 +545,89 @@ def test_a_filter_group_you_opened_stays_open_when_the_counts_are_read_again(env
         seen["others"] = [n.is_expanded for n in app.facet_tree.root.children if not str(n.label).startswith("Kind")]
 
     drive(db, root, script)
-    assert seen["open"] is True and seen["others"] == [False]
+    assert seen["open"] is True and seen["others"] == [True]  # (Colour starts open: it is the first thing to look at)
+
+
+def test_the_form_says_several_values_when_the_albums_differ_and_shows_the_one_they_share_otherwise(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series")  # Tintin (3) and Klezmer (2): two series
+        await settle(app, pilot)
+        await pilot.press("m")
+        await pilot.press("e")  # several marked files: the same form as E
+        await pilot.pause()
+        seen["differ"] = (app.screen.query_one("#b-series").value, app.screen.query_one("#b-series").placeholder)
+        app.screen.action_back()
+        await pilot.pause()
+        await pilot.press("x")
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("m")
+        await pilot.press("E")
+        await pilot.pause()
+        seen["same"] = (app.screen.query_one("#b-series").value, app.screen.query_one("#b-series").placeholder)
+
+    drive(db, root, script)
+    assert seen["differ"] == ("", "(several values)") and seen["same"] == ("", "Tintin")
+
+
+def test_hs_1_to_n_numbers_hors_series_and_v_takes_text_for_a_tome_with_no_number(env):
+    db, root, paths = env
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("m")
+        await pilot.press("E")
+        await pilot.pause()
+        await pilot.click("#hs")  # the button: HS 1..n
+        await pilot.pause()
+        script.lines = app.screen.query_one("#bulkvolumes").text
+        app.screen.action_accept()
+        await settle(app, pilot)
+        script.vols = [str(app.query_one("ReviewTable").get_row_at(i)[11]) for i in range(len(app.rows))]
+        app.query_one("ReviewTable").move_cursor(row=0)
+        await pilot.press("V")  # one file: a text is a number-less tome too
+        await pilot.pause()
+        app.screen.query_one("Input").value = "INT"
+        await pilot.press("enter")
+        await settle(app, pilot)
+
+    drive(db, root, script)
+    assert [line.split("\t")[0] for line in script.lines.split("\n")] == ["HS 1", "HS 2", "HS 3"] and script.vols == ["HS 1", "HS 2", "HS 3"]
+    with Library(db, root=root) as lib:
+        got = [lib.get_album(lib.get_file(paths[k])["album_id"]) for k in ("t1", "t2", "t3")]
+        assert [(a["volume"], a["alternate_number"]) for a in got] == [(None, "INT"), (None, "HS 2"), (None, "HS 3")]
+
+
+def test_shift_marks_a_list_of_rows_and_ticks_a_list_of_entries(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series")  # 5 files
+        await settle(app, pilot)
+        await pilot.click("ReviewTable", offset=(10, 1), control=True)  # row 0 marked (ctrl), the start of the list
+        await pilot.click("ReviewTable", offset=(10, 4), shift=True)  # shift-click row 3: rows 0 to 3
+        await pilot.pause()
+        seen["marked"] = sorted(i for i, r in enumerate(app.rows) if id(r) in app.marked)
+        await pilot.press("x")
+        app.query_one("ReviewTable").move_cursor(row=0)
+        await pilot.press("shift+down", "shift+down")  # the arrows with shift: 0, 1 and 2
+        await pilot.pause()
+        seen["arrows"] = sorted(i for i, r in enumerate(app.rows) if id(r) in app.marked)
+        tree = app.folder_tree
+        series = [n for n in tree.root.children if "Series" in str(n.label)][0]
+        series.expand()
+        await settle(app, pilot)
+        lines = {str(n.label).split("  ")[0].split(" ")[-1]: n.line for n in series.children}
+        await pilot.click("#foldertree", offset=(6, lines["Klezmer"]), control=True)
+        await pilot.click("#foldertree", offset=(6, lines["Tintin"]), shift=True)
+        await pilot.pause()
+        seen["ticked"] = sorted(tree.ticked)
+
+    drive(db, root, script)
+    assert seen["marked"] == [0, 1, 2, 3] and seen["arrows"] == [0, 1, 2]
+    assert seen["ticked"] == ["Series/Klezmer", "Series/Tintin"]

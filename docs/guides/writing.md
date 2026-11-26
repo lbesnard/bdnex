@@ -255,6 +255,7 @@ paths:
   field never asks for it when it is empty (`paths.missing_field`). Example: `Series/$series/%if{$year,($year) }$title`.
   `$special` is what the site calls the tome when it is no number: `INT` (an intégrale), `HS`, `16B6`; empty otherwise (`bdnex edit` changes it:
   `alternate_number`). To put it in the name: `Series/$series/$series - %if{$special,$special,T$volume:02} - $title`.
+  **Hors-série**: in `bdnex review`, the form for the marked files (`E`) has an **HS 1..n** button that numbers the files `HS 1`, `HS 2`...: no volume, a special that counts up (one file: `V`, then `HS 2`). With the template above they are named `Series - HS 1 - Title`, next to the numbered tomes.
   A function can not contain a `/` (a folder separator), and a typo in a function name is refused when the configuration is read.
 - The site names some series with the year of their first album, to tell them from another series of the same name (`Batman: Dark Victory (1999)`): `$series` has it too. `paths.series_year: strip` leaves a trailing `(year)` out of `$series` in paths (two series told apart only by their year then share a folder).
 - **`$collection` and `$cycle`**: some editions carry the site's own "Collection" and "Cycle" (its edition table, e.g. *Les mondes d'Aldébaran*,

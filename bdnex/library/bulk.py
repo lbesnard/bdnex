@@ -73,17 +73,18 @@ def _doc(values: dict[str, str]) -> dict[str, Any]:
 
 
 def apply(library, targets: list[Target], values: dict[str, str], kind: Optional[str] = None,
-          volumes: Optional[dict[str, Optional[int]]] = None, mark: bool = True) -> Outcome:
+          volumes: Optional[dict[str, Optional[int]]] = None, mark: bool = True, specials: Optional[dict[str, Optional[str]]] = None) -> Outcome:
     """Set ``values`` (only the fields to change; an empty text clears a field) on the albums of ``targets``.
 
     ``kind``: ``"series"`` (the albums join the series named in ``values["series"]``), ``"oneshot"`` (they leave their series) or ``None``
-    (as they are; a ``series`` value still moves them to that series). ``volumes``: ``{path: volume}``. A file without album gets a
+    (as they are; a ``series`` value still moves them to that series). ``volumes``: ``{path: volume}``; ``specials``: ``{path: "HS 1"}``, what the
+    site calls a tome that has no number (a hors-série, an intégrale: `alternate_number`; a file is numbered or special, so the screen gives both). A file without album gets a
     hand-written one when it is asked to become a series album or has a title; otherwise it is reported. ``mark``: the files are
     marked reviewed. Nothing is written when something is refused."""
     from bdnex.ui import edit_cmd
 
     out = Outcome()
-    volumes = volumes or {}
+    volumes, specials = volumes or {}, specials or {}
     series = (values.get("series") or "").strip()
     if kind not in (None, SERIES, ONESHOT):
         out.problems.append(f"unknown kind {kind!r}")
@@ -111,12 +112,15 @@ def apply(library, targets: list[Target], values: dict[str, str], kind: Optional
             continue
         problems: list[str] = []
         changes = edit_cmd.doc_changes(album, doc, problems) if doc else {}
-        if target.path in volumes and volumes[target.path] != album.get("volume"):
-            volume = volumes[target.path]
-            if album["id"] in seen_volume and seen_volume[album["id"]] != volume:
-                problems.append(f"{_name(target)}: two files of one album, two volumes")
-            seen_volume[album["id"]] = volume
-            changes["volume"] = volume
+        if target.path in volumes or target.path in specials:
+            volume, special = volumes.get(target.path, album.get("volume")), specials.get(target.path, album.get("alternate_number"))
+            if album["id"] in seen_volume and seen_volume[album["id"]] != (volume, special):
+                problems.append(f"{_name(target)}: two files of one album, two numbers")
+            seen_volume[album["id"]] = (volume, special)
+            if volume != album.get("volume"):
+                changes["volume"] = volume
+            if (special or None) != (album.get("alternate_number") or None):
+                changes["alternate_number"] = special or None
         errors.extend(problems)
         plan.append((target, album, changes))
     if errors:
@@ -125,7 +129,8 @@ def apply(library, targets: list[Target], values: dict[str, str], kind: Optional
     for target, album, changes in plan:
         if album is None:
             volume = volumes.get(target.path)
-            manual.create(library, target.path, {**values, "series": series if kind == SERIES else ""}, volume)
+            manual.create(library, target.path, {**values, "series": series if kind == SERIES else "",
+                                                 "alternate_number": specials.get(target.path) or values.get("alternate_number", "")}, volume)
             out.created += 1
             target.album_id = (library.get_file(target.path) or {}).get("album_id")
             _mark(library, target, out, mark)

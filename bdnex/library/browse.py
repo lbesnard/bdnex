@@ -25,7 +25,7 @@ CONFIRMED_SQL = "EXISTS (SELECT 1 FROM file_attrs x WHERE x.file_id = f.id AND x
 SCORE_SQL = "(SELECT score FROM import_log il WHERE il.path = f.path ORDER BY il.id DESC LIMIT 1)"
 LINKS = (("auto matched", "a strong match with nothing against it"), ("medium match", "applied, but the score is not strong"),
          ("doubtful", "the match is flagged: something is against it"), ("no album", "linked to no album"),
-         ("manual", "an album you wrote by hand"))
+         ("manual", "you chose it: an album written by hand, or given by its address or number (no score)"))
 COLOURS = (("green", "confirmed: you decided (kept, linked, or no album online)"), ("cyan", "auto matched, not confirmed yet"),
            ("orange", "medium match, not confirmed yet"), ("red", "doubtful, or no album, not confirmed: look here first"))
 REVIEWS = (("confirmed", "you decided"), ("not confirmed", "not yet"), ("no album online", "confirmed with no album: nothing exists online for it"))
@@ -43,9 +43,10 @@ def strong_of(settings) -> float:
 
 
 def link_sql(strong: float) -> str:
-    """How the file was linked: ``no album``, ``manual``, ``doubtful`` (flagged), ``auto matched`` (the score of the import is strong) or ``medium match``."""
+    """How the file was linked: ``no album``, ``doubtful`` (flagged), ``manual`` (an album you wrote by hand, or one you chose by its address or number: the
+    import recorded no score; it is most of a library that was matched with ``--album``), ``auto matched`` (the import's score is strong) or ``medium match``."""
     return (f"(CASE WHEN f.album_id IS NULL THEN 'no album' WHEN a.source = 'manual' THEN 'manual' WHEN f.review IS NOT NULL THEN 'doubtful' "
-            f"WHEN COALESCE({SCORE_SQL}, 0) >= {float(strong)} THEN 'auto matched' ELSE 'medium match' END)")
+            f"WHEN {SCORE_SQL} IS NULL THEN 'manual' WHEN {SCORE_SQL} >= {float(strong)} THEN 'auto matched' ELSE 'medium match' END)")
 
 
 def level_sql(strong: float) -> str:

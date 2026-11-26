@@ -429,16 +429,19 @@ class ReviewExtras:
         files = []
         for r in rows:
             album = self.library.get_album(r.album_id) if r.album_id is not None else None
-            files.append((r.path, album.get("volume") if album else None, f"[{album['kind']}]" if album else "[no album]"))
+            number = "" if not album else (str(album["volume"]) if album.get("volume") is not None else (album.get("alternate_number") or ""))
+            files.append((r.path, number, f"[{album['kind']}]" if album else "[no album]"))
         heading = f"{len(rows)} file(s): set what they share, the kind, a volume each"
-        self.push_screen(panels.BulkScreen(heading, shared, fields, files), lambda got: self.apply_bulk(rows, got) if got else None)
+        folders = {os.path.basename(os.path.dirname(r.path)) for r in rows}
+        hints = {"series": folders.pop()} if len(folders) == 1 else {}  # (grey: the folder's name, only a suggestion for files with no series)
+        self.push_screen(panels.BulkScreen(heading, shared, fields, files, hints), lambda got: self.apply_bulk(rows, got) if got else None)
 
     def apply_bulk(self, rows, got: dict) -> None:
         from bdnex.library import bulk
 
         targets = [bulk.Target(r.path, r.album_id) for r in rows]
         try:
-            out = bulk.apply(self.library, targets, got["values"], got["kind"], got["volumes"])
+            out = bulk.apply(self.library, targets, got["values"], got["kind"], got["volumes"], specials=got.get("specials"))
         except Exception as err:
             self.notify(f"Not saved ({err}): nothing was changed", severity="error", timeout=8)
             return
@@ -478,7 +481,7 @@ class ReviewExtras:
                          lambda name: self.apply_bulk(rows, {"values": {"series": name}, "kind": bulk.SERIES, "volumes": {}}) if name else None)
 
     def action_volume(self) -> None:
-        """The volume of the file under the cursor, typed in a line; Enter saves it and moves to the next file."""
+        """The number of the file under the cursor: a volume (5), or text for a tome with no number (HS 2, INT); Enter saves it and moves to the next file."""
         from bdnex.ui.review_tui import AskScreen
 
         row = self.idle()
@@ -486,18 +489,20 @@ class ReviewExtras:
             self.notify("This file has no album yet.", timeout=3)
             return
         album = self.library.get_album(row.album_id) or {}
-        current = "" if album.get("volume") is None else str(album["volume"])
+        current = str(album["volume"]) if album.get("volume") is not None else (album.get("alternate_number") or "")
 
         def done(text) -> None:
             if text is None:
                 return
-            if text != "-" and not (text.isascii() and text.isdigit()):
-                self.notify("A volume is a number (`-` empties it).", severity="error")
-                return
-            volume = None if text == "-" else int(text)
-            self.apply_bulk([row], {"values": {}, "kind": None, "volumes": {row.path: volume}})
+            if text == "-":
+                volume, special = None, None
+            elif text.isascii() and text.isdigit():
+                volume, special = int(text), None
+            else:  # a tome with no number: hors-série, intégrale...
+                volume, special = None, text
+            self.apply_bulk([row], {"values": {}, "kind": None, "volumes": {row.path: volume}, "specials": {row.path: special}})
             table = self.query_one("DataTable")
             if table.cursor_row + 1 < len(self.rows):
                 table.move_cursor(row=table.cursor_row + 1)
 
-        self.push_screen(AskScreen(f"Volume of {os.path.basename(row.path)} (now {current or 'none'})", current), done)
+        self.push_screen(AskScreen(f"Number of {os.path.basename(row.path)} (now {current or 'none'}): 5, or HS 2 / INT for a tome with no number, - to empty", current), done)

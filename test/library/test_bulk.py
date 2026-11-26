@@ -80,3 +80,14 @@ def test_a_file_without_album_gets_a_hand_written_one_when_it_is_asked_for_a_ser
     assert out.ok and out.created == 1
     album = lib.get_album(lib.get_file(path)["album_id"])
     assert (album["series"], album["volume"], album["collection"], album["source"]) == ("Klezmer", 4, "Bayou", "manual")
+
+
+def test_a_hors_serie_is_a_number_less_tome_with_a_special_that_counts_up(lib, make_cbz):
+    targets = [make(lib, make_cbz, n) for n in (1, 2, 3)]
+    specials = {t.path: f"HS {i}" for i, t in enumerate(targets[1:], start=1)}
+    out = bulk.apply(lib, targets, {}, volumes={**{t.path: None for t in targets[1:]}}, specials=specials)
+    assert out.ok
+    got = [lib.get_album(t.album_id) for t in targets]
+    assert [(a["volume"], a["alternate_number"]) for a in got] == [(1, None), (None, "HS 1"), (None, "HS 2")]
+    out = bulk.apply(lib, targets[1:2], {}, volumes={targets[1].path: 4}, specials={targets[1].path: None})  # back to a number
+    assert out.ok and (lib.get_album(targets[1].album_id)["volume"], lib.get_album(targets[1].album_id)["alternate_number"]) == (4, None)

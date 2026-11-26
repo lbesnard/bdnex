@@ -181,7 +181,7 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
     strong = float(getattr(getattr(settings, "match", None), "strong_threshold", 90))
     for row in rows:  # how each was linked, in the words of the Link column
         row.link = ("no album" if row.kind == "unmatched" else "doubtful" if row.kind == "wrong" else "medium match" if row.kind == "unconfirmed"
-                    else "auto matched" if (row.score or 0) >= strong else "medium match")
+                    else "manual" if row.score is None else "auto matched" if row.score >= strong else "medium match")
     rank = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # in one folder, the files in most doubt first
     rows.sort(key=lambda row: (row.folder.casefold(), rank.get(row.kind, 4), row.cover if row.cover is not None else 101.0, row.path))
     return rows

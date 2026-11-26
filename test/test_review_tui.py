@@ -1003,7 +1003,7 @@ def test_e_writes_the_metadata_of_a_file_by_hand_and_links_it(env):
     assert any(a["source"] == "manual" and a["series"] == "Fell" and a["volume"] == 2 for a in albums)
 
 
-def test_e_with_several_marked_files_writes_a_series(env):
+def test_e_with_several_marked_files_opens_the_form_that_shows_what_they_share_and_writes_a_series(env):
     db, files = env
 
     async def script(app, pilot):
@@ -1011,15 +1011,19 @@ def test_e_with_several_marked_files_writes_a_series(env):
         await pilot.press("e")
         await settle(app, pilot)
         screen = app.screen
-        assert screen.__class__.__name__ == "EditScreen" and screen.volumes is not None
-        screen.query_one("#f-series").value = "Nains Bis"
-        await pilot.press("ctrl+s")
+        assert screen.__class__.__name__ == "BulkScreen"
+        script.holder = screen.query_one("#b-series").placeholder  # two files in two series: several values, never one file's name
+        assert screen.query_one("#b-series").value == ""
+        screen.query_one("#b-series").value = "Nains Bis"
+        screen.query_one("#bulkkind").value = "series"
+        screen.action_accept()
         await settle(app, pilot)
 
     result, _ = drive(db, script)
+    assert script.holder == "Nains"  # what the two albums have in common (grey), not a file's name
     with Library(db) as lib:
         series = {lib.get_album(lib.get_file(p)["album_id"])["series"] for p in files.values()}
-    assert series == {"Nains Bis"} and all(row[8] == "confirmed · linked" for row in result["cells"])
+    assert series == {"Nains Bis"} and all(row[8].startswith("confirmed") for row in result["cells"])
 
 
 def test_the_title_says_which_batch_of_about_how_many(env):
@@ -1301,7 +1305,7 @@ def test_a_one_shot_series_page_gives_its_only_album_to_the_one_file_without_a_v
         batch.propose_for_series_address(source, address, ["/x/Scalp.cbz", "/x/Scalp bis.cbz"])
 
 
-def test_a_volume_that_only_looks_like_a_digit_is_refused_not_a_crash(env):
+def test_a_number_that_only_looks_like_a_digit_is_kept_as_text_not_a_crash(env):
     db, files = env
     seen = {}
 
@@ -1310,15 +1314,17 @@ def test_a_volume_that_only_looks_like_a_digit_is_refused_not_a_crash(env):
         await pilot.press("e")
         await settle(app, pilot)
         screen = app.screen
-        screen.query_one("#f-series").value = "Nains Bis"
-        screen.query_one("#volumes").text = "²\n1\n2"
-        await pilot.press("ctrl+s")
+        assert screen.__class__.__name__ == "BulkScreen"
+        screen.query_one("#bulkvolumes").text = "²\t\n1\t\n2\t"  # `²` is a digit to `isdigit()` but not to `int()`: it is text, a special
+        screen.action_accept()
         await settle(app, pilot)
-        seen["still"] = app.screen is screen
-        await pilot.press("escape")
+        seen["closed"] = app.screen is not screen
 
     drive(db, script)
-    assert seen["still"]
+    assert seen["closed"]
+    with Library(db) as lib:
+        first = lib.get_album(lib.get_file(files["wrong"])["album_id"])
+        assert first["volume"] is None and first["alternate_number"] == "²"
 
 
 def test_a_failed_link_is_reported_on_the_row_and_does_not_close_the_screen(env, monkeypatch):

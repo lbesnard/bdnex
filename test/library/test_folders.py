@@ -31,7 +31,9 @@ def test_a_folder_is_green_when_confirmed_and_otherwise_takes_the_colour_of_its_
     put(lib, "Series/Tintin/1.cbz", a, checked=True)
     put(lib, "Series/Tintin/2.cbz", b, checked=True)
     put(lib, "Series/Klezmer/1.cbz", a, checked=True)
-    put(lib, "Series/Klezmer/2.cbz", b)  # linked, no strong score: a medium match
+    put(lib, "Series/Klezmer/2.cbz", b)
+    with lib.conn:
+        lib.conn.execute("INSERT INTO import_log(path, outcome, score, album_id) VALUES ('Series/Klezmer/2.cbz', 'tagged', 80.0, ?)", (b,))  # a medium match
     put(lib, "Series/Bayou/1.cbz", a)
     with lib.conn:
         lib.conn.execute("INSERT INTO import_log(path, outcome, score, album_id) VALUES ('Series/Bayou/1.cbz', 'tagged', 96.0, ?)", (a,))

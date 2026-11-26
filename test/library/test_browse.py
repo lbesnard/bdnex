@@ -56,14 +56,14 @@ def test_the_rows_say_what_each_file_is(env):
     assert first.album == "Nains - T01 - Redwin" and (first.album_kind, first.volume, first.category) == ("series", 1, "BD")
     assert first.previous == "keep" and first.kind == "ok" and bis.spare and bis.album_id == second.album_id
     loose = browse.rows_for(lib, settings, "folder", "OneShot")
-    assert sorted((r.album or "", r.kind) for r in loose) == [("", "unmatched"), ("Maus", "unconfirmed")]  # no strong score: a medium match
+    assert sorted((r.album or "", r.kind) for r in loose) == [("", "unmatched"), ("Maus", "ok")]  # no score: you chose it (manual), nothing against
     manga = browse.rows_for(lib, settings, "folder", "Manga")[0]
-    assert manga.kind == "unconfirmed" and manga.link == "doubtful" and first.link == "auto matched" and second.link == "medium match"
+    assert manga.kind == "unconfirmed" and manga.link == "doubtful" and first.link == "auto matched" and second.link == "manual"
 
 
 @pytest.mark.parametrize("group,value,expected", [
-    ("Colour", "green", 1), ("Colour", "cyan", 0), ("Colour", "orange", 3), ("Colour", "red", 2),
-    ("Link", "auto matched", 1), ("Link", "medium match", 3), ("Link", "doubtful", 1), ("Link", "no album", 1), ("Link", "manual", 0),
+    ("Colour", "green", 1), ("Colour", "cyan", 3), ("Colour", "orange", 0), ("Colour", "red", 2),
+    ("Link", "auto matched", 1), ("Link", "medium match", 0), ("Link", "doubtful", 1), ("Link", "no album", 1), ("Link", "manual", 3),
     ("Review", "confirmed", 1), ("Review", "not confirmed", 5), ("Review", "no album online", 0),
     ("Other", "duplicates", 2), ("Other", "versions", 1), ("Other", "damaged", 0),
     ("Kind", "series", 4), ("Kind", "oneshot", 1), ("Category", "BD", 3),
@@ -79,7 +79,7 @@ def test_the_facets_list_their_values_with_the_number_of_files(env):
     settings, lib, files = env
     found = browse.facets(lib)
     assert dict(found["Review"]) == {"confirmed": 1, "not confirmed": 5, "no album online": 0} and dict(found["Genre"]) == {"Fantasy": 3, "Humour": 2}
-    assert dict(found["Colour"]) == {"green": 1, "cyan": 0, "orange": 3, "red": 2} and dict(found["Link"])["auto matched"] == 1
+    assert dict(found["Colour"]) == {"green": 1, "cyan": 3, "orange": 0, "red": 2} and dict(found["Link"])["auto matched"] == 1
     assert dict(found["Category"]) == {"BD": 3, "Manga": 1, browse.NONE: 1} and dict(found["Series"]) == {"Nains": 3, "Naruto": 1}
     assert set(found) == set(browse.GROUPS)
 
@@ -92,7 +92,7 @@ def test_the_plan_says_where_a_move_would_put_each_file_and_its_files_can_be_lis
     assert files["OneShot/loose.cbz"] not in planned  # no album: nowhere to go
     levels = {file_id: level for file_id, _, level in browse.file_levels(lib, 90.0)}
     counts = browse.plan_counts(planned, levels)
-    assert counts["BD/Nains"] == [2, 1, 0, 1, 0] and counts["_versions/BD/Nains"] == [1, 0, 0, 1, 0]  # files, green, red, orange, cyan
+    assert counts["BD/Nains"] == [2, 1, 0, 0, 1] and counts["_versions/BD/Nains"] == [1, 0, 0, 0, 1]  # files, green, red, orange, cyan
     got = browse.rows_for(lib, settings, "planned", "BD", planned)
     assert [r.dest for r in got] == ["BD/Nains/Nains - T01 - Redwin.cbz", "BD/Nains/Nains - T02 - Forge.cbz"] and got.total == 2
     assert browse.plan(lib, settings, only={lib.get_file(settings.require_collection() / "Manga/Naruto/1.cbz")["album_id"]}).keys() == {files["Manga/Naruto/1.cbz"]}

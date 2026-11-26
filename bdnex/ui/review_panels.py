@@ -22,7 +22,14 @@ from bdnex.library import folders
 
 STATUS_STYLE = {folders.DONE: "green", folders.AUTO: "cyan", folders.MEDIUM: "dark_orange", folders.PROBLEM: "red"}
 STATUS_MARK = {folders.DONE: "●", folders.AUTO: "○", folders.MEDIUM: "◐", folders.PROBLEM: "✖"}  # (the shape says it too: a colour is not the only sign)
-LEGEND = "● confirmed  ○ auto matched  ◐ medium match  ✖ doubtful / no album"
+def legend() -> Text:
+    """What the colours of the folders (and of the Colour filter) mean, in their own colours (two lines: the panel is narrow)."""
+    text = Text()
+    for number, (mark, word, style) in enumerate((("●", "confirmed", "green"), ("○", "auto matched", "cyan"), ("◐", "medium match", "dark_orange"),
+                                                  ("✖", "doubtful/no album", "red"))):
+        text.append(f"{mark} {word}", style=style)
+        text.append("\n" if number == 1 else " ")
+    return text
 
 
 def node_label(node: "folders.FolderNode", ticked: bool = False) -> Text:
@@ -142,15 +149,32 @@ class TickTree(Tree):
         if self.cursor_node is not None:
             self.toggle(self.cursor_node)
 
+    anchor_line = -1  # the entry last ticked: a shift-click ticks from it to the one clicked
+
+    def tick_range(self, first: int, last: int) -> None:
+        """Tick every entry shown from line ``first`` to line ``last`` (a list of entries, as in a file manager)."""
+        keys = []
+        for line in range(min(first, last), max(first, last) + 1):
+            node = self.get_node_at_line(line)
+            if node is not None:
+                keys.extend(self.keys_under(node))
+        self.ticked.update(keys)
+        self.relabel()
+        self.post_message(self.Ticked(self, len(self.ticked)))
+
     async def _on_click(self, event) -> None:
-        """Ctrl-click ticks the entry under the mouse (and does not open it)."""
-        if not event.ctrl:
+        """Ctrl-click ticks the entry under the mouse (and does not open it); shift-click ticks everything from the last ticked entry to this one."""
+        if not (event.ctrl or event.shift):
             return  # (the tree's own click handler runs after this one: calling it here too would open a folder and shut it again)
         line = event.style.meta.get("line", -1)
         node = self.get_node_at_line(line) if line >= 0 else None
         if node is not None:
             self.move_cursor(node)
-            self.toggle(node)
+            if event.shift and self.anchor_line >= 0:
+                self.tick_range(self.anchor_line, line)
+            else:
+                self.toggle(node)
+            self.anchor_line = line
         event.stop()
         event.prevent_default()
 
@@ -244,7 +268,8 @@ class FacetTree(TickTree):
     def fill(self, found: dict) -> None:
         from bdnex.library import browse
 
-        opened = self.open_keys()  # the counts are read again after a decision: what you had opened stays open
+        first = not any(True for _ in self.all_nodes())
+        opened = self.open_keys() or ({("group", "Colour")} if first else set())  # the counts are read again after a decision: what you had opened stays open; Colour starts open
         self.clear()
         self.described = browse.DESCRIBED
         for group in browse.GROUPS:
@@ -318,26 +343,29 @@ TIPS = (
     "n and b turn the pages · f hides the left panel · d hides the album's metadata",
     "Ctrl+P finds any action or filter: try 'series tintin' or 'state duplicates'",
     "D shows the other files of an album: trash a duplicate, keep a version · K series or one-shot · V volume",
-    "R marks the folder on the screen as reviewed · l says there is no album online for a file",
+    "k confirms a match (green) and again unconfirms it · l says there is no album online for a file · u unlink is not a confirmation",
+    "Shift-click, or shift with the arrows, marks a list of rows · shift-click ticks a list of folders",
+    "A hors-série: E, then the HS 1..n button (or V and type HS 2)",
+    "Red folders have a file with no album or a doubtful match: start there · green means you confirmed everything",
     "? lists every key",
 )
 
 HELP = """\
 LOOKING
-  the left panel: Folders (on disk), Organised (as `bdnex move` would build them), Filters. Click or Enter: all the files below it, 50 at a time
+  the left panel: Folders (on disk), Organised (as `bdnex move` would build them), Filters (Colour, Link, Review...). Click or Enter: all the files below it, 50 at a time
   n / b      next / previous page (then the next / previous batch)         f   the left panel on or off      d   the album's metadata on or off
-  space or ctrl-click on a folder or a filter: tick it · T or 'Show ticked' shows all the ticked ones together · 'Clear ticks' unticks all
-  C  columns · double-click a header: change that column's field · click a header: sort · 1-9 sort by that column · / ] [  search the page
+  space or ctrl-click on a folder or a filter: tick it · shift-click: tick a list · T or 'Show ticked' shows all the ticked ones together · 'Clear ticks' unticks all
+  C  columns · double-click a header: change that column's field · click a header: sort · 1-9 sort by that column · search the page: slash, then ] and [
   drag the thin bars between the panes to resize · Ctrl+P: every action and every filter value by name · ? this help · q quit
 DECIDING
-  k keep the match · u unlink · l no album online (reviewed, nothing exists for it) · s skip · o another album · t this file's candidates · i address
-  space or ctrl-click on a row marks it · m marks all · x unmarks · a gives the marked files the albums of a series · c covers · p open the page
+  k confirm the file (again: unconfirm) · l no album online (confirmed) · u unlink (not a confirmation) · s skip · o another album · t candidates · i address
+  space or ctrl-click on a row marks it · shift-click or shift+arrows marks a list · m marks all · x unmarks · k confirms all the marked · a gives them the albums of a series
 FIXING MANY AT ONCE
-  E one form for the marked files (any field, series or one-shot, a volume each) · K series or one-shot · V volume · e edit one by hand
-  D the duplicates of a file: trash, make main, keep as a version or child, wrong album · R the folder on the screen is reviewed
-COLOURS
-  folders: green ● reviewed · red ✖ a file with no album or a doubtful match (!n) · orange ◐ partly reviewed · yellow ○ matched, not reviewed yet
-  State: looks right · to check · looks wrong · no album · then what you decided (kept, linked, unlinked, no album online)
+  E (or e on several files) one form for the marked files: any field, series or one-shot, a number each (5, or HS 1 / INT: the HS 1..n button) · K series or one-shot · V number
+  D the duplicates of a file: trash, make main, keep as a version or child, wrong album · R the folder on the screen is confirmed
+COLOURS (a file you confirmed is green; otherwise by how it was linked)
+  green ● confirmed · cyan ○ auto matched (a strong match) · orange ◐ medium match · red ✖ doubtful, or no album
+  Link column: auto matched, medium match, doubtful, no album, manual · Review column: confirmed · kept / linked / no album online, unlinked, or -
 """
 
 
@@ -489,11 +517,12 @@ class BulkScreen(ModalScreen):
 
     KINDS = [("leave as they are", ""), ("series (named above)", "series"), ("one-shots", "oneshot")]
 
-    def __init__(self, heading: str, shared: dict, fields, files: list[tuple[str, Optional[int], str]]) -> None:
+    def __init__(self, heading: str, shared: dict, fields, files: list[tuple[str, str, str]], hints: Optional[dict] = None) -> None:
         """``fields``: ``manual.FIELDS``-like rows ``(key, label, hint)``; ``shared``: what the albums agree on (``None``: they differ);
-        ``files``: ``(path, volume, note)`` for the volume list."""
+        ``files``: ``(path, number, note)`` for the list of numbers (``5``, or ``HS 1`` for a tome with no number); ``hints``: a grey text to suggest for a field the albums have no value for
+        (a suggestion, never a value: nothing is set unless you type it)."""
         super().__init__()
-        self.heading, self.shared, self.fields, self.files = heading, shared, fields, files
+        self.heading, self.shared, self.fields, self.files, self.hints = heading, shared, fields, files, hints or {}
 
     def compose(self) -> ComposeResult:
         with Vertical(id="bulk"):
@@ -506,16 +535,17 @@ class BulkScreen(ModalScreen):
                     yield Select(self.KINDS, value="", allow_blank=False, id="bulkkind")
                 for key, label, hint in self.fields:
                     shared = self.shared.get(key)
-                    holder = "(they differ)" if shared is None else (shared or hint)
+                    holder = "(several values)" if shared is None else (shared or self.hints.get(key) or hint)
                     with Horizontal(classes="fieldrow"):
                         yield Label(label, classes="fieldname")
                         yield Input(value="", placeholder=holder, id=f"b-{key}")
-            yield Label(Text("Volume and file (one line each: change a number; [N]umber from 1, or from the file names with the buttons)",
+            yield Label(Text("Number and file, one line each: a number (5), or text for a tome with no number (HS 1, INT); the buttons fill them in",
                              style="dim"))
-            yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}  {note}" for p, v, note in self.files), id="bulkvolumes")
+            yield TextArea("\n".join(f"{v}\t{os.path.basename(p)}  {note}" for p, v, note in self.files), id="bulkvolumes")
             yield Label("", id="bulkproblem")
             with Horizontal(id="bulkbuttons"):
-                yield Button("Number 1..n", id="number")
+                yield Button("1..n", id="number")
+                yield Button("HS 1..n", id="hs")
                 yield Button("From the names", id="names")
                 yield Button("Save", id="ok", variant="success")
                 yield Button("Cancel", id="cancel")
@@ -531,6 +561,8 @@ class BulkScreen(ModalScreen):
             self.dismiss(None)
         elif event.button.id == "number":
             self.set_volumes([str(n) for n in range(1, len(self.files) + 1)])
+        elif event.button.id == "hs":  # hors-série: no volume, a special that counts up
+            self.set_volumes([f"HS {n}" for n in range(1, len(self.files) + 1)])
         elif event.button.id == "names":
             from bdnex.library import manual
 
@@ -556,13 +588,14 @@ class BulkScreen(ModalScreen):
             self.query_one("#bulkproblem", Label).update("keep one line per file")
             return
         volumes: dict[str, Optional[int]] = {}
+        specials: dict[str, Optional[str]] = {}
         for (path, old, _), line in zip(self.files, lines):
             first = line.split("\t", 1)[0].strip()
-            if first and not (first.isascii() and first.isdigit()):
-                self.query_one("#bulkproblem", Label).update(f"volume must be a number: {first!r}")
-                return
-            volume = int(first) if first else None
-            if volume != old:
-                volumes[path] = volume  # only the files whose number was changed
+            if first == old:
+                continue  # only the files whose number was changed
+            if first.isascii() and first.isdigit():
+                volumes[path], specials[path] = int(first), None
+            else:  # text: a tome with no number (HS 1, INT, 16B6)
+                volumes[path], specials[path] = None, first or None
         kind = self.query_one("#bulkkind", Select).value or None
-        self.dismiss({"values": values, "kind": kind or None, "volumes": volumes})
+        self.dismiss({"values": values, "kind": kind or None, "volumes": volumes, "specials": specials})

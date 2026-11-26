@@ -39,7 +39,7 @@ from textual.widgets.option_list import Option
 from bdnex.library import review_batch as batch
 from bdnex.ui import color
 from bdnex.ui.review_extras import ReviewExtras
-from bdnex.ui.review_panels import FacetCommands, Splitter
+from bdnex.ui.review_panels import FacetCommands, Splitter, legend
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "green", "skipped": "yellow"}
 STATUS_WORD = {"keep": "kept", "linked": "linked", "unlinked": "unlinked", "left": "no album online", "skipped": "skipped"}  # what a decision of this session is called
@@ -683,6 +683,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     #tickbar { height: 3; }
     #tickbar Button { min-width: 8; margin-right: 1; }
     #trees { height: 1fr; }
+    #legend { height: 2; padding: 0 1; }
     #folderslot, #moveslot, #facetslot { height: 1fr; }
     #facetbox { height: 1fr; border-top: solid $accent; }
     #foldertree, #movetree, #facettree { width: 100%; height: 100%; }
@@ -715,6 +716,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         Binding("w", "waiting", "Waiting questions"),
         Binding("e", "edit", "Edit by hand"),
         Binding("C", "columns", "Columns"),
+        Binding("shift+down", "extend_mark(1)", "Mark more", show=False),
+        Binding("shift+up", "extend_mark(-1)", "Mark more", show=False),
         Binding("question_mark", "help", "Help"),
         Binding("f", "folders", "Folders on/off"),
         Binding("R", "reviewed_folder", "Folder reviewed"),
@@ -792,6 +795,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
                         with Vertical(id="moveslot"):
                             yield Static("working out how `bdnex move` would organise the files...", id="movewait")
                 yield Splitter("#facetbox", "y", id="split-filters")
+                yield Static(legend(), id="legend")
                 with Vertical(id="facetbox"):
                     with Vertical(id="facetslot"):
                         yield Static("Filters: reading...", id="facetwait")
@@ -1392,6 +1396,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         if row is None or row.busy:
             return
         self.marked.symmetric_difference_update({id(row)})
+        self.mark_anchor = self.query_one(DataTable).cursor_row  # (a shift-click marks from here)
         self.refresh_row(row)
         self.notify(f"{len(self.marked)} file(s) marked: `a` attaches them to a series", timeout=3)
         table = self.query_one(DataTable)
@@ -1405,8 +1410,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         if row is None or row.busy:
             return
         marked = [r for r in self.rows if id(r) in self.marked and not r.busy]
-        if len(marked) >= 2:
-            self.edit_series(marked)
+        if len(marked) >= 2:  # several files: the form that shows what they share and what differs (never one file's name for all of them)
+            self.action_bulk()
             return
         file = self.library.get_file(row.path) or {}
         album_id = file.get("album_id")
