@@ -46,6 +46,23 @@ class Row:
     volume: Optional[int] = None
     category: str = ""
     spare: bool = False
+    link: str = ""  # how it was linked: auto matched | medium match | doubtful | no album | manual ("" = worked out by the screen from `kind`)
+
+
+def is_confirmed(row: "Row") -> bool:
+    """Did you confirm the file (kept its match, linked it, or said it has no album online): this session, or in an earlier run. An unlink is not one."""
+    if row.status:
+        return row.status in ("keep", "linked", "left")
+    return (row.previous or "").split(":")[0] in ("keep", "leave", "other")
+
+
+def unconfirm(library: Library, row: "Row") -> None:
+    """Take your confirmation back: the file is as it was before you decided (its link and flag are left as they are)."""
+    if row.file_id is None:
+        row.file_id = (library.get_file(row.path) or {}).get("id")
+    if row.file_id is not None:
+        library.remove_attr("file", row.file_id, CHECKED)
+    row.status, row.previous = "", ""
 
 
 def destination_of(library: Library, settings, file: dict, album_id: Optional[int]) -> str:
@@ -161,6 +178,10 @@ def next_batch(library: Library, settings, size: int = 50, terms: tuple[str, ...
                             dest=destination_of(library, settings, file, found["id"])))
             if len(rows) >= size:
                 break
+    strong = float(getattr(getattr(settings, "match", None), "strong_threshold", 90))
+    for row in rows:  # how each was linked, in the words of the Link column
+        row.link = ("no album" if row.kind == "unmatched" else "doubtful" if row.kind == "wrong" else "medium match" if row.kind == "unconfirmed"
+                    else "auto matched" if (row.score or 0) >= strong else "medium match")
     rank = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # in one folder, the files in most doubt first
     rows.sort(key=lambda row: (row.folder.casefold(), rank.get(row.kind, 4), row.cover if row.cover is not None else 101.0, row.path))
     return rows
@@ -182,9 +203,12 @@ def decide(library: Library, row: Row, action: str, album_id: Optional[int] = No
     if action == "keep":
         settle(library, {"path": row.path}, "keep")
         value, row.status = "keep", "keep"
-    elif action == "unlink":
+    elif action == "unlink":  # an unlink is not a confirmation: the file waits for an album (or for `l`: no album online)
         settle(library, {"path": row.path, "cover_score": row.cover}, "unlink")
-        value, row.status = "unlink", "unlinked"
+        row.status = "unlinked"
+        if row.file_id is not None:
+            library.remove_attr("file", row.file_id, CHECKED)
+        return
     elif action == "other":
         value, row.status = f"other:{album_id}", "linked"
     elif action == "leave":

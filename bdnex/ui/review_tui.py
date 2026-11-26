@@ -49,7 +49,6 @@ EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 SEARCH_LIMIT = 60
 SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"  # braille dots turning: a state that is waiting for the site
 from bdnex.ui.review_columns import COLUMN_TYPES, COLUMNS, DEFAULT_VIEW, FLEX_COLUMN, ColumnsMixin, ReviewTable  # noqa: E402,F401
-STATE_COLUMN = 7
 STATE_ORDER = {"wrong": 0, "unconfirmed": 1, "unmatched": 2, "ok": 3}  # the state column sorts by how doubtful, then by decision
 DECIDED_ORDER = {"keep": 10, "linked": 11, "unlinked": 12, "left": 13, "skipped": 14}
 
@@ -696,7 +695,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     #log { height: 7; border-top: solid $accent; padding: 0 1; color: $text-muted; }
     """
     BINDINGS = [
-        Binding("k", "keep", "Keep"),
+        Binding("k", "keep", "Confirm / unconfirm"),
         Binding("u", "unlink", "Unlink"),
         Binding("t", "top", "This file's candidates"),
         Binding("o", "other", "Other album (search)"),
@@ -884,7 +883,9 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         with contextlib.suppress(Exception):
             table = self.query_one(DataTable)  # once, and the index from the loop: not a search of the list per row
             for index, row in waiting:
-                table.update_cell_at((index, STATE_COLUMN), self.cells(index + 1, row)[STATE_COLUMN])
+                cells = self.cells(index + 1, row)
+                for position in (self.view.index("link"), self.view.index("review")) if "link" in self.view and "review" in self.view else ():
+                    table.update_cell_at((index, position), cells[position])
 
     def log_from_anywhere(self, text: str) -> None:
         import threading
@@ -1328,11 +1329,37 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         self.advance()
 
     def action_keep(self) -> None:
-        row = self.current()
-        if row is not None and row.album_id is not None:
-            self.record("keep")
-        elif row is not None:
-            self.notify("This file has no album to keep: `o` searches one, `l` leaves it.", severity="warning")
+        """Confirm the file (the match is right: it turns green), or take the confirmation back when it is confirmed already. With files marked
+        (space), all of them: the confirmed ones are unconfirmed only when every marked file is confirmed. A file with no album is confirmed as
+        having no album online."""
+        rows = [r for r in self.rows if id(r) in self.marked and not r.busy] or ([self.idle()] if self.idle() is not None else [])
+        if not rows:
+            return
+        if all(batch.is_confirmed(r) for r in rows):
+            for row in rows:
+                self.supersede(row)
+                batch.unconfirm(self.library, row)
+                self.refresh_row(row)
+            self.notify(f"{len(rows)} file(s) not confirmed any more", timeout=3)
+            self.schedule_counts()
+            return
+        todo = [r for r in rows if not batch.is_confirmed(r)]
+        for row in todo:
+            self.supersede(row)
+            try:
+                batch.decide(self.library, row, "keep" if row.album_id is not None else "leave")
+            except Exception as err:
+                logger.warning("%s: decision not saved: %s", os.path.basename(row.path), err, exc_info=True)
+                self.notify(f"Not saved ({err}): try again", severity="error", timeout=8)
+                return
+            self.refresh_dest(row)
+            self.decided[row.status] = self.decided.get(row.status, 0) + 1
+            self.marked.discard(id(row))
+            self.refresh_row(row)
+        if len(todo) == 1:
+            self.advance()
+        else:
+            self.notify(f"{len(todo)} file(s) confirmed", timeout=3)
 
     def action_unlink(self) -> None:
         row = self.current()
@@ -1342,13 +1369,18 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
             self.notify("This file has no album to unlink.", severity="warning")
 
     def action_leave(self) -> None:
+        """No album online: you looked, nothing exists for the file, so it stays without an album, and is confirmed."""
+        row = self.current()
+        if row is not None and row.album_id is not None:
+            self.notify("This file has an album: `k` confirms it, `u` unlinks it first.", severity="warning")
+            return
         self.record("leave")
 
     def action_skip(self) -> None:
         row = self.idle()
         if row is not None:
             if row.status not in ("", "skipped"):  # decided already (and saved): skipping would only change what the table says
-                self.notify("This file is decided already: `k` keeps, `u` unlinks, `l` leaves, `o` picks another album.", severity="warning")
+                self.notify("This file is decided already: `k` confirms (again: unconfirms), `u` unlinks, `l` says there is no album online, `o` picks another album.", severity="warning")
                 return
             row.status = "skipped"  # nothing is saved: it is in the next batch again
             self.refresh_row(row)

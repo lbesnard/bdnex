@@ -20,26 +20,59 @@ from bdnex.library.review_batch import CHECKED, Batch, Row, folder_of
 LIMIT = 50  # rows to a page by default (the screen passes its batch size): `n` and `b` turn the pages
 NONE = "(none)"
 
-STATES = (("needs attention", "not reviewed, and no album or a doubtful match"), ("unreviewed", "not reviewed yet"),
-          ("reviewed", "you looked at it"), ("linked", "linked to an album"), ("no album", "linked to no album"),
-          ("no album online", "reviewed, and no album: nothing exists online for it"), ("doubtful", "flagged: the match is doubtful"),
-          ("duplicates", "several files for one album"), ("versions", "a version or child of another album"), ("damaged", "the file is damaged"))
-CHECKED_SQL = "EXISTS (SELECT 1 FROM file_attrs x WHERE x.file_id = f.id AND x.key = 'checked')"
-STATE_SQL = {
-    "needs attention": f"(NOT {CHECKED_SQL} AND (f.album_id IS NULL OR f.review IS NOT NULL))", "unreviewed": f"NOT {CHECKED_SQL}",
-    "reviewed": CHECKED_SQL, "linked": "f.album_id IS NOT NULL", "no album": "f.album_id IS NULL",
-    "no album online": f"({CHECKED_SQL} AND f.album_id IS NULL)", "doubtful": "f.review IS NOT NULL",
-    "duplicates": "(f.spare = 1 OR f.album_id IN (SELECT album_id FROM files WHERE album_id IS NOT NULL GROUP BY album_id HAVING COUNT(*) > 1))",
-    "versions": "a.relation IS NOT NULL", "damaged": "f.corrupted = 1"}
+# -- the two ideas a file has: how it was linked (bdnex's) and whether you confirmed it (yours), and the colour they make
+CONFIRMED_SQL = "EXISTS (SELECT 1 FROM file_attrs x WHERE x.file_id = f.id AND x.key = 'checked' AND x.value != 'unlink')"  # (an unlink is not a confirmation)
+SCORE_SQL = "(SELECT score FROM import_log il WHERE il.path = f.path ORDER BY il.id DESC LIMIT 1)"
+LINKS = (("auto matched", "a strong match with nothing against it"), ("medium match", "applied, but the score is not strong"),
+         ("doubtful", "the match is flagged: something is against it"), ("no album", "linked to no album"),
+         ("manual", "an album you wrote by hand"))
+COLOURS = (("green", "confirmed: you decided (kept, linked, or no album online)"), ("cyan", "auto matched, not confirmed yet"),
+           ("orange", "medium match, not confirmed yet"), ("red", "doubtful, or no album, not confirmed: look here first"))
+REVIEWS = (("confirmed", "you decided"), ("not confirmed", "not yet"), ("no album online", "confirmed with no album: nothing exists online for it"))
+OTHERS = (("duplicates", "several files for one album"), ("versions", "a version or child of another album"), ("damaged", "the file is damaged"))
+DESCRIBED = {name: text for group in (LINKS, COLOURS, REVIEWS, OTHERS) for name, text in group}
+OTHER_SQL = {"duplicates": "(f.spare = 1 OR f.album_id IN (SELECT album_id FROM files WHERE album_id IS NOT NULL GROUP BY album_id HAVING COUNT(*) > 1))",
+             "versions": "a.relation IS NOT NULL", "damaged": "f.corrupted = 1"}
 JOINS = "FROM files f LEFT JOIN albums a ON a.id = f.album_id LEFT JOIN series s ON s.id = a.series_id"
-GROUPS = ("State", "Kind", "Category", "Collection", "Genre", "Author", "Series", "Publisher", "Format", "Language")
+GROUPS = ("Colour", "Link", "Review", "Other", "Kind", "Category", "Collection", "Genre", "Author", "Series", "Publisher", "Format", "Language")
+COLOUR_OF = {"auto matched": "cyan", "manual": "cyan", "medium match": "orange", "doubtful": "red", "no album": "red"}  # for a file not confirmed
 
 
-def _text_condition(group: str, value: str) -> tuple[str, list]:
+def strong_of(settings) -> float:
+    return float(getattr(getattr(settings, "match", None), "strong_threshold", 90))
+
+
+def link_sql(strong: float) -> str:
+    """How the file was linked: ``no album``, ``manual``, ``doubtful`` (flagged), ``auto matched`` (the score of the import is strong) or ``medium match``."""
+    return (f"(CASE WHEN f.album_id IS NULL THEN 'no album' WHEN a.source = 'manual' THEN 'manual' WHEN f.review IS NOT NULL THEN 'doubtful' "
+            f"WHEN COALESCE({SCORE_SQL}, 0) >= {float(strong)} THEN 'auto matched' ELSE 'medium match' END)")
+
+
+def level_sql(strong: float) -> str:
+    """The colour of a file: green when you confirmed it, else by how it was linked (cyan auto matched or manual, orange medium, red doubtful or no album)."""
+    return (f"(CASE WHEN {CONFIRMED_SQL} THEN 'green' WHEN {link_sql(strong)} IN ('auto matched', 'manual') THEN 'cyan' "
+            f"WHEN {link_sql(strong)} = 'medium match' THEN 'orange' ELSE 'red' END)")
+
+
+def file_levels(library, strong: float) -> list[tuple[int, str, str]]:
+    """``[(file id, stored path, colour)]`` for every file: one query."""
+    return [(r[0], r[1], r[2]) for r in library.conn.execute(f"SELECT f.id, f.path, {level_sql(strong)} {JOINS}")]
+
+
+def _text_condition(group: str, value: str, strong: float = 90.0) -> tuple[str, list]:
     none = value == NONE
     simple = {"Kind": "a.kind", "Category": "a.category", "Collection": "a.collection", "Language": "a.language", "Series": "s.name"}
-    if group == "State":
-        return STATE_SQL[value], []
+    if group == "Colour":
+        if value not in dict(COLOURS):
+            raise ValueError(f"no colour {value!r}")
+        return f"{level_sql(strong)} = '{value}'", []
+    if group == "Link":
+        return f"{link_sql(strong)} = ?", [value]
+    if group == "Review":
+        return {"confirmed": CONFIRMED_SQL, "not confirmed": f"NOT {CONFIRMED_SQL}",
+                "no album online": f"({CONFIRMED_SQL} AND f.album_id IS NULL)"}[value], []
+    if group == "Other":
+        return OTHER_SQL[value], []
     if group in simple:
         return (f"({simple[group]} IS NULL AND a.id IS NOT NULL)", []) if none else (f"{simple[group]} = ?", [value])
     if group == "Format":
@@ -53,11 +86,20 @@ def _text_condition(group: str, value: str) -> tuple[str, list]:
     raise ValueError(f"no filter {group!r}")
 
 
-def facets(library) -> dict[str, list[tuple[str, int]]]:
+def facets(library, strong: float = 90.0) -> dict[str, list[tuple[str, int]]]:
     """``{group: [(value, files)]}``: what the Filters tree lists, most files first inside a group (names in order for the long ones)."""
     conn = library.conn
     found: dict[str, list[tuple[str, int]]] = {}
-    found["State"] = [(name, conn.execute(f"SELECT COUNT(*) {JOINS} WHERE {STATE_SQL[name]}").fetchone()[0]) for name, _ in STATES]
+    counts: dict[tuple, int] = {}
+    for link, confirmed, album, n in conn.execute(f"SELECT {link_sql(strong)}, {CONFIRMED_SQL}, f.album_id IS NULL, COUNT(*) {JOINS} GROUP BY 1, 2, 3"):
+        counts[(link, bool(confirmed), bool(album))] = n
+    total = lambda pick: sum(n for key, n in counts.items() if pick(*key))  # noqa: E731
+    found["Colour"] = [(name, total(lambda link, ok, none, name=name: (ok and name == "green") or (not ok and COLOUR_OF[link] == name)))
+                       for name, _ in COLOURS]
+    found["Link"] = [(name, total(lambda link, ok, none, name=name: link == name)) for name, _ in LINKS]
+    found["Review"] = [("confirmed", total(lambda link, ok, none: ok)), ("not confirmed", total(lambda link, ok, none: not ok)),
+                       ("no album online", total(lambda link, ok, none: ok and none))]
+    found["Other"] = [(name, conn.execute(f"SELECT COUNT(*) {JOINS} WHERE {OTHER_SQL[name]}").fetchone()[0]) for name, _ in OTHERS]
     rows = lambda sql: [(r[0], r[1]) for r in conn.execute(sql) if r[0] is not None]  # noqa: E731
     found["Kind"] = rows(f"SELECT a.kind, COUNT(*) {JOINS} WHERE a.id IS NOT NULL GROUP BY a.kind ORDER BY 2 DESC")
     found["Category"] = rows(f"SELECT COALESCE(a.category, '{NONE}'), COUNT(*) {JOINS} WHERE a.id IS NOT NULL GROUP BY 1 ORDER BY 2 DESC")
@@ -96,18 +138,19 @@ def plan(library, settings, only: Optional[set[int]] = None) -> dict[int, str]:
     return found
 
 
-def plan_counts(planned: dict[int, str], checked: set[int]) -> dict[str, list[int]]:
-    """``{planned folder: [files, reviewed]}``, the shape ``folders.build`` reads: the tree of where a move would put things."""
+def plan_counts(planned: dict[int, str], levels: dict[int, str]) -> dict[str, list[int]]:
+    """``{planned folder: [files, confirmed, red, orange, cyan]}``, the shape ``folders.build`` reads: the tree of where a move would put things."""
     counts: dict[str, list[int]] = {}
+    slot = {"green": 1, "red": 2, "orange": 3, "cyan": 4}
     for file_id, dest in planned.items():
-        entry = counts.setdefault(os.path.dirname(dest), [0, 0])
+        entry = counts.setdefault(os.path.dirname(dest), [0, 0, 0, 0, 0])
         entry[0] += 1
-        entry[1] += file_id in checked
+        entry[slot.get(levels.get(file_id, "cyan"), 4)] += 1
     return counts
 
 
 def checked_ids(library) -> set[int]:
-    return {r[0] for r in library.conn.execute("SELECT file_id FROM file_attrs WHERE key = ?", (CHECKED,))}
+    return {r[0] for r in library.conn.execute("SELECT file_id FROM file_attrs WHERE key = ? AND value != 'unlink'", (CHECKED,))}
 
 
 def _label(row) -> Optional[str]:
@@ -122,21 +165,21 @@ def _rows(library, rows, planned: Optional[dict[int, str]]) -> Batch:
     out = Batch()
     for r in rows:
         path = library._resolve(r["path"])
-        kind = "unmatched" if r["album_id"] is None else ("unconfirmed" if r["review"] else "ok")
+        kind = "unmatched" if r["album_id"] is None else ("unconfirmed" if (r["review"] or r["link"] == "medium match") else "ok")
         why = [f"flagged: {r['review']}"] if r["review"] else ([] if r["album_id"] is not None else ["no album"])
         row = Row(path, folder_of(path), _label(r), r["album_id"], r["url"], r["score"], r["cover_score"], kind, why, r["id"],
                   previous=r["checked"] or "", dest=(planned or {}).get(r["id"], ""), album_kind=r["kind"] or "", volume=r["volume"],
-                  category=r["category"] or "", spare=bool(r["spare"]))
+                  category=r["category"] or "", spare=bool(r["spare"]), link=r["link"])
         row.facts = f"file: {(r['format'] or '').upper()} · {r['page_count'] or '?'} pages" + (" · spare version" if r["spare"] else "")
         out.append(row)
     return out
 
 
-SELECT = (f"SELECT f.id, f.path, f.album_id, f.review, f.cover_score, f.spare, f.corrupted, f.format, f.page_count, "
-          "a.kind, a.volume, a.title, a.alternate_number, a.category, a.url, s.name AS series, "
-          "(SELECT value FROM file_attrs x WHERE x.file_id = f.id AND x.key = 'checked') AS checked, "
-          "(SELECT score FROM import_log il WHERE il.path = f.path ORDER BY il.id DESC LIMIT 1) AS score "
-          f"{JOINS}")
+def select_sql(strong: float) -> str:
+    return (f"SELECT f.id, f.path, f.album_id, f.review, f.cover_score, f.spare, f.corrupted, f.format, f.page_count, "
+            "a.kind, a.volume, a.title, a.alternate_number, a.category, a.url, s.name AS series, "
+            f"(SELECT value FROM file_attrs x WHERE x.file_id = f.id AND x.key = 'checked') AS checked, {SCORE_SQL} AS score, "
+            f"{link_sql(strong)} AS link {JOINS}")
 
 
 def prefix_range(folder: str) -> tuple[str, str]:
@@ -150,14 +193,14 @@ def rows_for(library, settings, kind: str, value: Any, planned: Optional[dict[in
     return rows_for_many(library, settings, [(kind, value)], planned, limit, offset)
 
 
-def _planned_rows(library, ids: list[int], planned: dict[int, str], limit: int, offset: int = 0) -> Batch:
+def _planned_rows(library, ids: list[int], planned: dict[int, str], limit: int, offset: int = 0, strong: float = 90.0) -> Batch:
     """The files at ``ids``, in the order of where a move would put them (``limit`` of them from ``offset``)."""
     ids = sorted(ids, key=lambda i: planned[i].casefold())
     page = ids[offset:offset + limit]
     rows = []
     for start in range(0, len(page), 500):
         chunk = page[start:start + 500]
-        rows += library.conn.execute(f"{SELECT} WHERE f.id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+        rows += library.conn.execute(f"{select_sql(strong)} WHERE f.id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
     order = {i: n for n, i in enumerate(page)}
     rows.sort(key=lambda r: order[r["id"]])
     batch = _rows(library, rows, planned)
@@ -169,6 +212,7 @@ def rows_for_many(library, settings, selections: list, planned: Optional[dict[in
     """The files of several selections: folders (and organised folders) are alternatives, the values of one filter group are alternatives, and
     different kinds go together (these folders AND this genre AND not reviewed yet)."""
     conn = library.conn
+    strong = strong_of(settings)
     folders = [value for kind, value in selections if kind == "folder"]
     moves = [value for kind, value in selections if kind == "planned"]
     groups: dict[str, list] = {}
@@ -190,7 +234,7 @@ def rows_for_many(library, settings, selections: list, planned: Optional[dict[in
         prefixes = [move.rstrip("/") + "/" if move else "" for move in moves]
         ids = [i for i, dest in (planned or {}).items() if any(not prefix or dest.startswith(prefix) for prefix in prefixes)]
         if not parts and not groups:
-            return _planned_rows(library, ids, planned or {}, limit, offset)  # only organised folders: in the order a move would give
+            return _planned_rows(library, ids, planned or {}, limit, offset, strong)  # only organised folders: in the order a move would give
         conn.execute("CREATE TEMP TABLE IF NOT EXISTS plansel(id INTEGER PRIMARY KEY)")
         conn.execute("DELETE FROM plansel")
         conn.executemany("INSERT INTO plansel(id) VALUES (?)", [(i,) for i in ids])
@@ -198,13 +242,13 @@ def rows_for_many(library, settings, selections: list, planned: Optional[dict[in
     for group, values in groups.items():
         conditions = []
         for value in values:
-            condition, extra = _text_condition(group, value)
+            condition, extra = _text_condition(group, value, strong)
             conditions.append(condition)
             params += extra
         parts.append("(" + " OR ".join(conditions) + ")")
     where = " AND ".join(parts) or "1"
     total = conn.execute(f"SELECT COUNT(*) {JOINS} WHERE {where}", params).fetchone()[0]
-    rows = conn.execute(f"{SELECT} WHERE {where} ORDER BY f.path LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()
+    rows = conn.execute(f"{select_sql(strong)} WHERE {where} ORDER BY f.path LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()
     batch = _rows(library, rows, planned)
     batch.total = total
     return batch

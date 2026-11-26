@@ -20,8 +20,9 @@ from textual.widgets import Button, Input, Label, Select, Static, TextArea, Tree
 
 from bdnex.library import folders
 
-STATUS_STYLE = {folders.DONE: "green", folders.PARTIAL: "dark_orange", folders.TODO: "yellow", folders.PROBLEM: "red"}
-STATUS_MARK = {folders.DONE: "●", folders.PARTIAL: "◐", folders.TODO: "○", folders.PROBLEM: "✖"}  # (the shape says it too: a colour is not the only sign)
+STATUS_STYLE = {folders.DONE: "green", folders.AUTO: "cyan", folders.MEDIUM: "dark_orange", folders.PROBLEM: "red"}
+STATUS_MARK = {folders.DONE: "●", folders.AUTO: "○", folders.MEDIUM: "◐", folders.PROBLEM: "✖"}  # (the shape says it too: a colour is not the only sign)
+LEGEND = "● confirmed  ○ auto matched  ◐ medium match  ✖ doubtful / no album"
 
 
 def node_label(node: "folders.FolderNode", ticked: bool = False) -> Text:
@@ -245,12 +246,12 @@ class FacetTree(TickTree):
 
         opened = self.open_keys()  # the counts are read again after a decision: what you had opened stays open
         self.clear()
-        self.described = dict(browse.STATES)
+        self.described = browse.DESCRIBED
         for group in browse.GROUPS:
             values = found.get(group) or []
             if not values:
                 continue
-            node = self.root.add(Text(f"{group}  ({len(values)})" if group != "State" else group, style="bold"), data=("group", group),
+            node = self.root.add(Text(f"{group}  ({len(values)})" if group not in ("Colour", "Link", "Review", "Other") else group, style="bold"), data=("group", group),
                                  allow_expand=True)
             if len(values) > folders.MANY:
                 letters: dict[str, list] = {}
@@ -285,7 +286,9 @@ class FacetTree(TickTree):
 
     def value_label(self, group: str, value: str, count: int) -> Text:
         label = Text(f"{'☑' if (group, value) in self.ticked else '☐'} {value}  {count}")
-        if group == "State" and value in getattr(self, "described", {}):
+        if group == "Colour":
+            label.stylize({"green": "green", "cyan": "cyan", "orange": "dark_orange", "red": "red"}.get(value, ""))
+        if group in ("Colour", "Link", "Review", "Other") and value in getattr(self, "described", {}):
             label.append(f"   {self.described[value]}", style="dim")
         return label
 
@@ -369,7 +372,7 @@ class FacetCommands(Provider):
 
     async def discover(self):
         for group, value, count in self.app.facet_choices:
-            if group == "State":
+            if group in ("Colour", "Review"):
                 yield DiscoveryHit(f"State: {value}", partial(self.app.open_facet, group, value), help=f"{count} file(s)")
 
 

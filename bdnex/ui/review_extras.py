@@ -97,8 +97,9 @@ class ReviewExtras:
                 ("Series or one-shot", "the marked files, or this one (K)", self.action_kind),
                 ("Volume of this file", "type it, Enter goes to the next (V)", self.action_volume),
                 ("Mark every file", "or none, when all are marked (m)", self.action_mark_all),
-                ("Keep this match", "the flag goes (k)", self.action_keep),
-                ("Unlink this file", "it is asked about again by `bdnex import --skipped` (u)", self.action_unlink),
+                ("Confirm or unconfirm", "this file, or every marked one: it turns green (k)", self.action_keep),
+                ("Unlink this file", "it is asked about again by `bdnex import --skipped`; an unlink is not a confirmation (u)", self.action_unlink),
+                ("No album online", "you looked: nothing exists for this file, so it stays without an album (l)", self.action_leave),
                 ("Another album: search", "the whole album list (o)", self.action_other),
                 ("Covers: the file's and the album's", "side by side (c)", self.action_cover),
                 ("Everything: all the files", "the first thousand, in path order", lambda: self.open_selection("folder", "", "the collection"))):
@@ -126,20 +127,21 @@ class ReviewExtras:
         dirty, self.plan_dirty = set(self.plan_dirty), set()
         try:
             with Library.for_settings(self.settings, readonly=True) as library:
-                root = folders.build(folders.progress(library))
+                strong = browse.strong_of(self.settings)
+                root = folders.build(folders.progress(library, strong))
                 bad = folders.inconsistent(library)
-                found = browse.facets(library)
+                found = browse.facets(library, strong)
                 with contextlib.suppress(Exception):
                     self.call_from_thread(self.folders_ready, root, bad, found)
                 if self.planned is None or dirty:
                     planned = browse.plan(library, self.settings, only=dirty or None)
                 else:
                     planned = {}
-                checked = browse.checked_ids(library)
                 move_root = None
                 if self.planned is not None or planned:
                     merged = {**(self.planned or {}), **planned}
-                    move_root = folders.build(browse.plan_counts(merged, checked))
+                    levels = {file_id: level for file_id, _, level in browse.file_levels(library, strong)}
+                    move_root = folders.build(browse.plan_counts(merged, levels))
         except Exception as err:
             logger.info("the folder tree could not be read: %s", err)
             return

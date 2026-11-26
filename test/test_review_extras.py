@@ -88,9 +88,9 @@ def test_the_tree_shows_how_far_each_folder_is_reviewed_and_a_click_opens_its_fi
         seen["shown"] = app.query_one("#folderpane").display
 
     drive(db, root, script)
-    assert seen["root"].startswith("☐ ◐ collection") and "1/5" in seen["root"]
-    assert [text.split("  ")[0] for text, _ in seen["children"]] == ["☐ ○ Klezmer", "☐ ◐ Tintin"]  # all matched, none reviewed: yellow, not red
-    assert [style for _, style in seen["children"]] == ["yellow", "dark_orange"]
+    assert seen["root"].startswith("☐ ○ collection") and "1/5" in seen["root"]
+    assert [text.split("  ")[0] for text, _ in seen["children"]] == ["☐ ○ Klezmer", "☐ ○ Tintin"]  # auto matched (strong scores), not all confirmed: cyan
+    assert [style for _, style in seen["children"]] == ["cyan", "cyan"]
     assert "reviewed 1/5" in seen["progress"]
     assert seen["rows"] == ["Tintin T1.cbz", "Tintin T2.cbz", "Tintin T3.cbz"]
     assert seen["previous"] == ["keep", "", ""]  # what was decided before is shown
@@ -257,7 +257,7 @@ def test_a_folder_with_subfolders_shows_every_file_below_it(env):
         app.folder_tree.select_node(series)  # a click on `Series`, which only has subfolders
         await settle(app, pilot)
         seen["rows"] = sorted(os.path.basename(r.path) for r in app.rows)
-        seen["kinds"] = [(str(c[9]), str(c[10])) for c in [app.query_one("DataTable").get_row_at(i) for i in range(len(app.rows))]]
+        seen["kinds"] = [(str(c[10]), str(c[11])) for c in [app.query_one("DataTable").get_row_at(i) for i in range(len(app.rows))]]
 
     drive(db, root, script)
     assert len(seen["rows"]) == 5 and "Klezmer T05 main.cbz" in seen["rows"] and "Tintin T3.cbz" in seen["rows"]
@@ -273,10 +273,11 @@ def test_the_filters_list_albums_by_state_series_genre_and_a_click_shows_their_f
         assert isinstance(tree, review_panels.FacetTree)
         groups = {str(n.label).split("  ")[0]: n for n in tree.root.children}
         seen["groups"] = list(groups)
-        groups["State"].expand()
+        groups["Review"].expand()
+        groups["Other"].expand()
         await pilot.pause()
-        seen["states"] = {str(n.label).split("  ")[0][2:]: str(n.label).split("  ")[1].split()[0] for n in groups["State"].children}
-        app.open_facet("State", "duplicates")
+        seen["states"] = {str(n.label).split("  ")[0][2:]: str(n.label).split("  ")[1].split()[0] for n in [*groups["Review"].children, *groups["Other"].children]}
+        app.open_facet("Other", "duplicates")
         await settle(app, pilot)
         seen["dups"] = sorted(os.path.basename(r.path) for r in app.rows)
         app.open_facet("Series", "Tintin")
@@ -285,8 +286,8 @@ def test_the_filters_list_albums_by_state_series_genre_and_a_click_shows_their_f
         seen["choices"] = [c for c in app.facet_choices if c[0] == "Series"]
 
     drive(db, root, script)
-    assert seen["groups"][:2] == ["State", "Kind"] and "Series" in seen["groups"]
-    assert seen["states"]["unreviewed"] == "4" and seen["states"]["duplicates"] == "2" and seen["states"]["reviewed"] == "1"
+    assert seen["groups"][:4] == ["Colour", "Link", "Review", "Other"] and "Series" in seen["groups"]
+    assert seen["states"]["duplicates"] == "2" and seen["states"]["confirmed"] == "1"
     assert seen["dups"] == ["Klezmer T05 main.cbz", "Klezmer T05 spare.cbz"] and seen["tintin"] == 3
     assert ("Series", "Klezmer", 2) in seen["choices"]
 
@@ -356,7 +357,7 @@ def test_ticking_folders_and_a_filter_shows_the_files_of_all_of_them_together(en
         names = {str(n.label).split("  ")[0][2:].split(" ", 1)[1]: n for n in series.children}
         tree.toggle(names["Klezmer"])  # space does this on the cursor's node
         seen["boxes"] = str(names["Klezmer"].label)[:1]
-        app.facet_tree.toggle([n for n in app.facet_tree.root.children if str(n.label).startswith("State")][0].children[1])  # unreviewed
+        app.facet_tree.toggle([n for n in app.facet_tree.root.children if str(n.label).startswith("Review")][0].children[1])  # not confirmed
         await pilot.pause()
         seen["button"] = str(app.query_one("#show-ticked").label)
         app.action_show_ticked()
@@ -537,7 +538,7 @@ def test_a_filter_group_you_opened_stays_open_when_the_counts_are_read_again(env
         kind = [n for n in tree.root.children if str(n.label).startswith("Kind")][0]
         kind.expand()
         await pilot.pause()
-        app.folders_ready(app.folder_root, app.folder_bad, {"State": [("unreviewed", 3)], "Kind": [("series", 5)]})  # what a refresh does
+        app.folders_ready(app.folder_root, app.folder_bad, {"Colour": [("red", 3)], "Kind": [("series", 5)]})  # what a refresh does
         await pilot.pause()
         again = [n for n in app.facet_tree.root.children if str(n.label).startswith("Kind")][0]
         seen["open"] = again.is_expanded

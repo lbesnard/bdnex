@@ -26,19 +26,21 @@ def lib(tmp_path):
     return Library(":memory:", root=tmp_path)
 
 
-def test_a_folder_is_done_partial_or_todo_and_a_parent_counts_what_is_below(lib):
+def test_a_folder_is_green_when_confirmed_and_otherwise_takes_the_colour_of_its_worst_file(lib):
     a, b = album(lib, 1, "Tintin"), album(lib, 2, "Tintin")
     put(lib, "Series/Tintin/1.cbz", a, checked=True)
     put(lib, "Series/Tintin/2.cbz", b, checked=True)
     put(lib, "Series/Klezmer/1.cbz", a, checked=True)
-    put(lib, "Series/Klezmer/2.cbz", b)
+    put(lib, "Series/Klezmer/2.cbz", b)  # linked, no strong score: a medium match
     put(lib, "Series/Bayou/1.cbz", a)
+    with lib.conn:
+        lib.conn.execute("INSERT INTO import_log(path, outcome, score, album_id) VALUES ('Series/Bayou/1.cbz', 'tagged', 96.0, ?)", (a,))
     root = fo.build(fo.progress(lib))
     series = fo.find(root, "Series")
-    assert (series.total, series.below_checked, series.status) == (5, 3, fo.PARTIAL)
+    assert (series.total, series.below_checked, series.status) == (5, 3, fo.MEDIUM)  # the worst file not confirmed is orange
     assert fo.find(root, "Series/Tintin").status == fo.DONE
-    assert fo.find(root, "Series/Klezmer").status == fo.PARTIAL
-    assert fo.find(root, "Series/Bayou").status == fo.TODO
+    assert fo.find(root, "Series/Klezmer").status == fo.MEDIUM
+    assert fo.find(root, "Series/Bayou").status == fo.AUTO  # a strong match, not confirmed yet
     assert fo.find(root, "Series/Nothing") is None
     assert [n.name for n in series.sorted_children()] == ["Bayou", "Klezmer", "Tintin"]
     assert fo.find(root, "Series/Tintin").label() == "Tintin  2/2"
@@ -84,19 +86,24 @@ def test_not_recursive_leaves_the_subfolders_alone(lib):
     assert fo.mark_reviewed(lib, "Series/Tintin", recursive=False) == 1
 
 
-def test_a_folder_with_a_file_to_look_at_is_a_problem_and_a_clean_one_only_awaits_your_look(lib):
+def test_red_is_a_file_to_look_at_and_confirming_it_turns_it_green_even_without_an_album(lib):
     a = album(lib, 1, "Aama")
-    put(lib, "Series/Aama/1.cbz", a)  # matched, nothing doubtful: not reviewed, but nothing wrong
-    put(lib, "Series/Aama/2.cbz", a)
+    for n in (1, 2):
+        put(lib, f"Series/Aama/{n}.cbz", a)
+        with lib.conn:
+            lib.conn.execute("INSERT INTO import_log(path, outcome, score, album_id) VALUES (?, 'tagged', 95.0, ?)", (f"Series/Aama/{n}.cbz", a))
     put(lib, "Series/Loose/1.cbz")  # no album
     flagged = put(lib, "Series/Doubt/1.cbz", a)
     with lib.conn:
         lib.conn.execute("UPDATE files SET review = 'cover differs' WHERE id = ?", (flagged,))
-    seen = put(lib, "Series/Seen/1.cbz")  # no album, but you looked at it and left it: not a problem any more
+    seen = put(lib, "Series/Seen/1.cbz")  # no album, but you said there is none online: confirmed
     lib.set_attr("file", seen, CHECKED, "leave")
+    unlinked = put(lib, "Series/Unlinked/1.cbz")  # you unlinked it: that is not a confirmation
+    lib.set_attr("file", unlinked, CHECKED, "unlink")
     root = fo.build(fo.progress(lib))
-    assert fo.find(root, "Series/Aama").status == fo.TODO and fo.find(root, "Series/Aama").label() == "Aama  0/2"
+    assert fo.find(root, "Series/Aama").status == fo.AUTO and fo.find(root, "Series/Aama").label() == "Aama  0/2"
     assert fo.find(root, "Series/Loose").status == fo.PROBLEM and fo.find(root, "Series/Doubt").status == fo.PROBLEM
     assert fo.find(root, "Series/Seen").status == fo.DONE
-    assert fo.find(root, "Series").status == fo.PROBLEM and fo.find(root, "Series").below_issues == 2
+    assert fo.find(root, "Series/Unlinked").status == fo.PROBLEM
+    assert fo.find(root, "Series").status == fo.PROBLEM and fo.find(root, "Series").below_issues == 3
     assert fo.find(root, "Series/Loose").label() == "Loose  0/1  !1"

@@ -26,13 +26,13 @@ logger = logging.getLogger(__name__)
 # key: (title, width). The order here is the order in the table; DEFAULT_VIEW is what a screen that was never changed shows.
 COLUMN_TYPES = {
     "num": ("#", 3), "file": ("File", 40), "folder": ("Folder", 22), "album": ("Album now", 40), "page": ("Page", 8), "match": ("Match", 8),
-    "cover": ("Cover", 8), "state": ("State", 14), "dest": ("Would go to", 44), "kind": ("Kind", 7), "vol": ("Vol", 5),
+    "cover": ("Cover", 8), "link": ("Link", 13), "review": ("Review", 19), "dest": ("Would go to", 44), "kind": ("Kind", 7), "vol": ("Vol", 5),
     "series": ("Series", 24), "title": ("Title", 28), "category": ("Category", 9), "collection": ("Collection", 16),
     "publisher": ("Publisher", 14), "year": ("Year", 5), "authors": ("Authors", 22), "genres": ("Genres", 18), "language": ("Lang", 5),
     "format": ("Format", 6), "size": ("Size", 8), "pages": ("Pages", 6), "reviewed": ("Reviewed", 9), "spare": ("Spare", 5),
     "relation": ("Relation", 9),
 }
-DEFAULT_VIEW = ("num", "file", "folder", "album", "page", "match", "cover", "state", "dest", "kind", "vol", "series")
+DEFAULT_VIEW = ("num", "file", "folder", "album", "page", "match", "cover", "link", "review", "dest", "kind", "vol", "series")
 COLUMNS = tuple(COLUMN_TYPES[key] for key in DEFAULT_VIEW)  # (title, width) of the default view: what the tests and the number keys know
 FLEX_COLUMN = DEFAULT_VIEW.index("dest")  # `Would go to` takes the room the others leave
 VIEW_KEY = "review.view"
@@ -126,7 +126,8 @@ class ColumnsMixin:
         self.view, self.view_extra = list(DEFAULT_VIEW), {}
         with contextlib.suppress(Exception):
             saved = json.loads(self.library.get_meta(VIEW_KEY) or "{}")
-            keys = [key for key in saved.get("columns", []) if key in COLUMN_TYPES]
+            wanted = [item for key in saved.get("columns", []) for item in (("link", "review") if key == "state" else (key,))]  # (the old State column)
+            keys = [key for key in wanted if key in COLUMN_TYPES]
             if keys:
                 self.view = keys
             self.view_extra = {k: v for k, v in saved.items() if k != "columns"}
@@ -200,8 +201,10 @@ class ColumnsMixin:
             return t.score_text(row.cover)
         if key == "match":
             return Text("you", style="cyan") if row.status == "linked" else t.score_text(row.score)
-        if key == "state":
-            return self.state_cell(row)
+        if key == "link":
+            return self.link_cell(row)
+        if key == "review":
+            return self.review_cell(row)
         if key == "dest":
             return Text(row.dest or ("…" if self.planned is None else "-"),
                         style="dim" if row.dest != "?" and not row.dest.startswith("(") else "yellow")
@@ -240,7 +243,26 @@ class ColumnsMixin:
             text = (f"{album['relation']} of {album['parent_id']}" if album.get("parent_id") is not None else "") if album else ""
         return Text(text or "-", style="" if text else "dim")
 
-    def state_cell(self, row) -> Text:
+    LINK_STYLE = {"auto matched": "cyan", "manual": "cyan", "medium match": "dark_orange", "doubtful": "red", "no album": "red"}
+
+    def link_of(self, row) -> str:
+        """How the file is linked, in the words of the Link column (the rows of a selection carry it; the doubtful batch's are worked out from their verdict)."""
+        if row.link:
+            return "no album" if row.album_id is None else row.link
+        return {"unmatched": "no album", "wrong": "doubtful", "unconfirmed": "medium match"}.get(row.kind, "auto matched")
+
+    def link_cell(self, row) -> Text:
+        word = self.link_of(row)
+        return Text(word, style=self.LINK_STYLE.get(word, ""))
+
+    @staticmethod
+    def confirmed_how(row) -> str:
+        """``kept`` / ``linked`` / ``no album online`` when you confirmed the file (this session, or an earlier run), else ``""``."""
+        said = row.status if row.status in ("keep", "linked", "left") else {"keep": "keep", "other": "linked", "leave": "left"}.get(
+            (row.previous or "").split(":")[0], "") if not row.status else ""
+        return {"keep": "kept", "linked": "linked", "left": "no album online"}.get(said, "")
+
+    def review_cell(self, row) -> Text:
         import time
 
         from bdnex.ui import review_tui as t
@@ -253,15 +275,14 @@ class ColumnsMixin:
             now = time.monotonic()
             return Text(f"{spin} linked · fetching {now - row.started_at:.0f}s" if row.started_at else
                         f"linked · queued {now - row.queued_at:.0f}s", style="yellow")
-        if row.status:
-            return Text(t.STATUS_WORD.get(row.status, row.status), style=t.STATUS_STYLE.get(row.status, ""))
         if row.message.startswith(("refused", "failed")):
             return Text(row.message.split(":")[0], style="bold red")
-        if row.previous:  # decided before (the `checked` mark): what you said then
-            said = row.previous.split(":")[0]
-            word = {"keep": "kept", "unlink": "unlinked", "other": "linked", "leave": "no album online" if row.album_id is None else "left"}.get(said, said)
-            return Text(f"reviewed · {word}", style="green")
-        return Text(t.KIND_WORD.get(row.kind, row.kind) + "", style=t.KIND_STYLE.get(row.kind, ""))
+        how = self.confirmed_how(row)
+        if how:
+            return Text(f"confirmed · {how}", style="green")
+        if row.status in ("unlinked", "skipped") or (row.previous or "").startswith("unlink"):
+            return Text("skipped" if row.status == "skipped" else "unlinked", style="yellow")
+        return Text("-", style="dim")
 
     def sort_key(self, index: int, row):
         """What the column ``index`` sorts by; ``None`` puts the row after the others, whatever the direction."""
@@ -288,8 +309,10 @@ class ColumnsMixin:
             return self.album_facts(row)[0] or None
         if key == "vol":
             return self.album_facts(row)[1]
-        if key == "state":
-            return t.DECIDED_ORDER.get(row.status) if row.status else t.STATE_ORDER.get(row.kind, 5)
+        if key == "link":
+            return {"doubtful": 0, "no album": 1, "medium match": 2, "auto matched": 3, "manual": 4}.get(self.link_of(row), 5)
+        if key == "review":
+            return 1 if self.confirmed_how(row) else 0
         album, file = self.album_dict(row), self.file_dict(row)
         value = {"series": album.get("series"), "title": album.get("title"), "category": album.get("category"),
                  "collection": album.get("collection"), "publisher": album.get("publisher"), "year": album.get("year"),

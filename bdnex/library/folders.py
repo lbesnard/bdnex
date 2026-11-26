@@ -1,10 +1,9 @@
-"""How far a folder is reviewed: the tree of the review screen, read from the library (no file is touched).
+"""What a folder needs, for the tree of the review screen, read from the library (no file is touched).
 
-A file is *reviewed* when it has the ``checked`` mark (``bdnex review``, the review screen, ``bdnex mark``). A folder is *done* when all of its
-files are; it has a *problem* when a file not reviewed yet has no album or a flagged (doubtful) match: those are the ones to look at first;
-otherwise it is *partial* when some files are reviewed and *todo* when none is (every file matched, nothing doubtful: it only awaits your
-look). A parent counts everything below it. Paths are the stored ones
-(relative to the collection, ``@alias/...`` under a source, absolute otherwise): the same text ``Library._store`` writes.
+Every file has a colour: **green** when you confirmed it (kept the match, linked it, or said there is no album online: the ``checked`` mark), else
+by how it was linked: **cyan** auto matched (a strong score, nothing against) or an album you wrote by hand, **orange** a medium match, **red** doubtful
+(flagged) or no album. A folder takes the colour of its worst file that is not confirmed, and is green when all of its files are; a parent counts
+everything below it. Paths are the stored ones (relative to the collection, ``@alias/...`` under a source, absolute otherwise).
 """
 
 from __future__ import annotations
@@ -15,16 +14,16 @@ from typing import Optional
 
 from bdnex.library.review_batch import CHECKED
 
-DONE, PARTIAL, TODO, PROBLEM = "done", "partial", "todo", "problem"
+DONE, AUTO, MEDIUM, PROBLEM = "done", "auto", "medium", "problem"  # green, cyan, orange, red
 MANY = 80  # a folder with more children than this shows them in groups by first letter (the one-shot folders are thousands)
 
 
-def status_of(total: int, checked: int, issues: int = 0) -> str:
-    if total and checked >= total:
+def status_of(total: int, confirmed: int, red: int = 0, orange: int = 0) -> str:
+    if total and confirmed >= total:
         return DONE
-    if issues:
+    if red:
         return PROBLEM
-    return PARTIAL if checked else TODO
+    return MEDIUM if orange else AUTO
 
 
 def folder_of_stored(stored: str) -> str:
@@ -40,14 +39,16 @@ class FolderNode:
     checked: int = 0  # of those, the reviewed ones
     total: int = 0  # files in this folder and below
     below_checked: int = 0  # reviewed files in this folder and below
-    issues: int = 0  # files not reviewed that have no album or a doubtful match, directly in this folder
+    issues: int = 0  # files not confirmed that are red (doubtful or no album), directly in this folder
     below_issues: int = 0  # the same, in this folder and below
+    medium: int = 0  # files not confirmed that are orange (a medium match), directly in this folder
+    below_medium: int = 0  # the same, in this folder and below
     children: dict[str, "FolderNode"] = field(default_factory=dict)
     group: str = ""  # a letter group of the parent's children (not a real folder)
 
     @property
     def status(self) -> str:
-        return status_of(self.total, self.below_checked, self.below_issues)
+        return status_of(self.total, self.below_checked, self.below_issues, self.below_medium)
 
     def label(self) -> str:
         return f"{self.name}  {self.below_checked}/{self.total}" + (f"  !{self.below_issues}" if self.below_issues else "")
@@ -69,21 +70,20 @@ class FolderNode:
             node.total += child.total
             node.below_checked += child.below_checked
             node.below_issues += child.below_issues
+            node.below_medium += child.below_medium
         return [groups[key] for key in sorted(groups)]
 
 
-def progress(library) -> dict[str, list[int]]:
-    """``{folder: [files, reviewed, to look at]}``, one entry per folder that holds a file directly: one query. *To look at*: not reviewed,
-    and no album or a doubtful match."""
+def progress(library, strong: float = 90.0) -> dict[str, list[int]]:
+    """``{folder: [files, confirmed, red, orange, cyan]}``, one entry per folder that holds a file directly: one query."""
+    from bdnex.library import browse
+
     found: dict[str, list[int]] = {}
-    rows = library.conn.execute(
-        "SELECT f.path, EXISTS (SELECT 1 FROM file_attrs a WHERE a.file_id = f.id AND a.key = ?) AS done, "
-        "(f.album_id IS NULL OR f.review IS NOT NULL) AS issue FROM files f", (CHECKED,))
-    for row in rows:
-        entry = found.setdefault(folder_of_stored(row["path"]), [0, 0, 0])
+    slot = {"green": 1, "red": 2, "orange": 3, "cyan": 4}
+    for _, path, level in browse.file_levels(library, strong):
+        entry = found.setdefault(folder_of_stored(path), [0, 0, 0, 0, 0])
         entry[0] += 1
-        entry[1] += row["done"]
-        entry[2] += (not row["done"]) and row["issue"]
+        entry[slot[level]] += 1
     return found
 
 
@@ -99,20 +99,23 @@ def build(counts: dict[str, list[int]]) -> FolderNode:
     """The tree of folders, with the counts of every folder and of everything below it."""
     root = FolderNode("", "")
     for folder, (files, checked, *rest) in counts.items():
-        issues = rest[0] if rest else 0
+        issues, medium = (rest + [0, 0])[:2]
         node, here = root, []
         root.total += files
         root.below_checked += checked
         root.below_issues += issues
+        root.below_medium += medium
         for name in parts_of(folder):
             here.append(name)
             node = node.children.setdefault(name, FolderNode(name, "/".join(here).replace("//", "/")))
             node.total += files
             node.below_checked += checked
             node.below_issues += issues
+            node.below_medium += medium
         node.files += files
         node.checked += checked
         node.issues += issues
+        node.medium += medium
     return root
 
 
@@ -167,7 +170,7 @@ def mark_reviewed(library, folder: str, recursive: bool = True) -> int:
     from bdnex.ui.review_cmd import settle
 
     marked = 0
-    done = {row["file_id"] for row in library.conn.execute("SELECT file_id FROM file_attrs WHERE key = ?", (CHECKED,))}
+    done = {row["file_id"] for row in library.conn.execute("SELECT file_id FROM file_attrs WHERE key = ? AND value != 'unlink'", (CHECKED,))}
     for file_id, stored, album_id in stored_files(library, folder, recursive):
         if file_id in done:
             continue

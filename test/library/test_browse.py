@@ -28,6 +28,8 @@ def env(tmp_path):
             files[name] = lib.conn.execute("INSERT INTO files(path, album_id, md5, size, format, spare) VALUES (?, ?, 'm', 1, 'cbz', ?)",
                                            (name, album, spare)).lastrowid
     lib.set_attr("file", files["Series/Nains/1.cbz"], CHECKED, "keep")
+    with lib.conn:
+        lib.conn.execute("INSERT INTO import_log(path, outcome, score, album_id) VALUES ('Series/Nains/1.cbz', 'tagged', 95.0, ?)", (a1,))
     lib.set_relation(shot, a1, "version")
     with lib.conn:
         lib.conn.execute("UPDATE files SET review = 'doubtful' WHERE id = ?", (files["Manga/Naruto/1.cbz"],))
@@ -54,13 +56,17 @@ def test_the_rows_say_what_each_file_is(env):
     assert first.album == "Nains - T01 - Redwin" and (first.album_kind, first.volume, first.category) == ("series", 1, "BD")
     assert first.previous == "keep" and first.kind == "ok" and bis.spare and bis.album_id == second.album_id
     loose = browse.rows_for(lib, settings, "folder", "OneShot")
-    assert sorted((r.album or "", r.kind) for r in loose) == [("", "unmatched"), ("Maus", "ok")]
-    assert browse.rows_for(lib, settings, "folder", "Manga")[0].kind == "unconfirmed"
+    assert sorted((r.album or "", r.kind) for r in loose) == [("", "unmatched"), ("Maus", "unconfirmed")]  # no strong score: a medium match
+    manga = browse.rows_for(lib, settings, "folder", "Manga")[0]
+    assert manga.kind == "unconfirmed" and manga.link == "doubtful" and first.link == "auto matched" and second.link == "medium match"
 
 
 @pytest.mark.parametrize("group,value,expected", [
-    ("State", "unreviewed", 5), ("State", "needs attention", 2), ("State", "reviewed", 1), ("State", "no album", 1), ("State", "no album online", 0), ("State", "doubtful", 1), ("State", "duplicates", 2),
-    ("State", "versions", 1), ("State", "linked", 5), ("Kind", "series", 4), ("Kind", "oneshot", 1), ("Category", "BD", 3),
+    ("Colour", "green", 1), ("Colour", "cyan", 0), ("Colour", "orange", 3), ("Colour", "red", 2),
+    ("Link", "auto matched", 1), ("Link", "medium match", 3), ("Link", "doubtful", 1), ("Link", "no album", 1), ("Link", "manual", 0),
+    ("Review", "confirmed", 1), ("Review", "not confirmed", 5), ("Review", "no album online", 0),
+    ("Other", "duplicates", 2), ("Other", "versions", 1), ("Other", "damaged", 0),
+    ("Kind", "series", 4), ("Kind", "oneshot", 1), ("Category", "BD", 3),
     ("Category", browse.NONE, 1), ("Collection", "Soleil", 1), ("Genre", "Fantasy", 3), ("Genre", "Humour", 2), ("Author", "Jarry", 1),
     ("Series", "Nains", 3), ("Publisher", "Soleil", 1), ("Format", "cbz", 6), ("Language", "fr", 3)])
 def test_a_facet_finds_its_files(env, group, value, expected):
@@ -72,7 +78,8 @@ def test_a_facet_finds_its_files(env, group, value, expected):
 def test_the_facets_list_their_values_with_the_number_of_files(env):
     settings, lib, files = env
     found = browse.facets(lib)
-    assert dict(found["State"])["unreviewed"] == 5 and dict(found["Genre"]) == {"Fantasy": 3, "Humour": 2}
+    assert dict(found["Review"]) == {"confirmed": 1, "not confirmed": 5, "no album online": 0} and dict(found["Genre"]) == {"Fantasy": 3, "Humour": 2}
+    assert dict(found["Colour"]) == {"green": 1, "cyan": 0, "orange": 3, "red": 2} and dict(found["Link"])["auto matched"] == 1
     assert dict(found["Category"]) == {"BD": 3, "Manga": 1, browse.NONE: 1} and dict(found["Series"]) == {"Nains": 3, "Naruto": 1}
     assert set(found) == set(browse.GROUPS)
 
@@ -83,8 +90,9 @@ def test_the_plan_says_where_a_move_would_put_each_file_and_its_files_can_be_lis
     assert planned[files["Series/Nains/1.cbz"]] == "BD/Nains/Nains - T01 - Redwin.cbz"
     assert planned[files["Series/Nains/2 bis.cbz"]].startswith("_versions/BD/Nains/")  # a spare version
     assert files["OneShot/loose.cbz"] not in planned  # no album: nowhere to go
-    counts = browse.plan_counts(planned, browse.checked_ids(lib))
-    assert counts["BD/Nains"] == [2, 1] and counts["_versions/BD/Nains"] == [1, 0]
+    levels = {file_id: level for file_id, _, level in browse.file_levels(lib, 90.0)}
+    counts = browse.plan_counts(planned, levels)
+    assert counts["BD/Nains"] == [2, 1, 0, 1, 0] and counts["_versions/BD/Nains"] == [1, 0, 0, 1, 0]  # files, green, red, orange, cyan
     got = browse.rows_for(lib, settings, "planned", "BD", planned)
     assert [r.dest for r in got] == ["BD/Nains/Nains - T01 - Redwin.cbz", "BD/Nains/Nains - T02 - Forge.cbz"] and got.total == 2
     assert browse.plan(lib, settings, only={lib.get_file(settings.require_collection() / "Manga/Naruto/1.cbz")["album_id"]}).keys() == {files["Manga/Naruto/1.cbz"]}
@@ -96,8 +104,8 @@ def test_several_selections_are_alternatives_inside_a_kind_and_go_together_acros
     assert both.total == 4 and len(both) == 4  # two folders: the files of either
     genres = browse.rows_for_many(lib, settings, [("facet", ("Genre", "Fantasy")), ("facet", ("Genre", "Humour"))])
     assert genres.total == 3  # one group: either value
-    narrowed = browse.rows_for_many(lib, settings, [("folder", "Series"), ("facet", ("State", "unreviewed"))])
+    narrowed = browse.rows_for_many(lib, settings, [("folder", "Series"), ("facet", ("Review", "not confirmed"))])
     assert narrowed.total == 2  # the folder AND the state: Nains 2 and its bis (1.cbz is reviewed)
     planned = browse.plan(lib, settings)
-    mixed = browse.rows_for_many(lib, settings, [("planned", "BD"), ("facet", ("State", "unreviewed"))], planned)
+    mixed = browse.rows_for_many(lib, settings, [("planned", "BD"), ("facet", ("Review", "not confirmed"))], planned)
     assert [r.dest for r in mixed] == ["BD/Nains/Nains - T02 - Forge.cbz"] and mixed.total == 1

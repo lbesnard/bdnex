@@ -111,7 +111,8 @@ def test_the_table_opens_at_once_and_shows_file_folder_album_scores_state_and_ho
     first, second, third = result["cells"]
     assert first[1] == "Nains - T05 - Autre.cbz" and "Redwin" in first[3] and first[5] == "78%" and first[6] == "-"
     assert third[3] == "(no album)" and third[1] == "Loose file.cbz"  # the unmatched is shown, last
-    assert [first[7], second[7], third[7]] == ["looks wrong", "to check", "no album"]  # what is wrong, until it is decided
+    assert [first[7], second[7], third[7]] == ["doubtful", "medium match", "no album"]  # how each was linked (Link), until it is decided
+    assert [first[8], second[8], third[8]] == ["-", "-", "-"]  # and none is confirmed (Review)
 
 
 def test_a_loading_panel_says_what_is_being_done_until_the_table_is_ready(env, monkeypatch):
@@ -211,13 +212,13 @@ def test_keys_decide_and_each_decision_is_saved_at_once(env):
         await pilot.press("l")  # the file without album: leave it
 
     result, _ = drive(db, script)
-    assert [row[7] for row in result["cells"]] == ["unlinked", "kept", "no album online"]
+    assert [row[8] for row in result["cells"]] == ["unlinked", "confirmed · kept", "confirmed · no album online"]
     assert result["app"].decided == {"unlinked": 1, "keep": 1, "left": 1}
     with Library(db) as lib:
         assert lib.get_file(files["wrong"])["album_id"] is None and lib.last_import(files["wrong"])["outcome"] == "skipped"
         assert lib.attrs_of("file", lib.get_file(files["unconfirmed"])["id"])["checked"] == "keep"
         assert lib.get_file(files["unconfirmed"])["album_id"] is not None
-        assert batch.next_batch(lib, load_config().settings, 50, (), True) == []  # the next call continues with the rest
+        assert [r.path for r in batch.next_batch(lib, load_config().settings, 50, (), True)] == [files["wrong"]]  # only the unlinked one waits again
 
 
 def test_skip_saves_nothing_and_the_file_comes_back(env):
@@ -227,21 +228,53 @@ def test_skip_saves_nothing_and_the_file_comes_back(env):
         await pilot.press("s")
 
     result, _ = drive(db, script)
-    assert result["cells"][0][7] == "skipped"
+    assert result["cells"][0][8] == "skipped"
     with Library(db) as lib:
         assert [r.path for r in batch.next_batch(lib, load_config().settings, 50)][0] == files["wrong"]
 
 
-def test_a_file_without_album_cannot_be_kept_or_unlinked(env):
+def test_a_file_without_album_cannot_be_unlinked_and_k_confirms_it_as_having_no_album_online(env):
     db, files = env
 
     async def script(app, pilot):
         await pilot.press("down", "down")
-        await pilot.press("k")
-        await pilot.press("u")
+        await pilot.press("u")  # nothing to unlink
+        await pilot.pause()
+        assert app.rows[2].status == ""
+        await pilot.press("k")  # the file has no album: confirming it says there is none online
 
     result, _ = drive(db, script)
-    assert result["cells"][2][7] == "no album" and result["app"].decided == {}  # nothing was decided, nothing saved
+    assert result["cells"][2][7] == "no album" and result["cells"][2][8] == "confirmed · no album online"
+    assert result["app"].decided == {"left": 1}
+    from bdnex.library import Library
+
+    with Library(db) as lib:
+        assert lib.attrs_of("file", lib.get_file(files["loose"])["id"])["checked"] == "leave"
+
+
+def test_k_again_takes_the_confirmation_back_and_an_unlink_is_not_a_confirmation(env):
+    db, files = env
+
+    async def script(app, pilot):
+        await pilot.press("k")  # the first row: confirmed
+        await pilot.pause()
+        seen_first = str(app.query_one("DataTable").get_row_at(0)[8])
+        app.query_one("DataTable").move_cursor(row=0)
+        await pilot.press("k")  # again: not confirmed any more
+        await pilot.pause()
+        script.seen = (seen_first, str(app.query_one("DataTable").get_row_at(0)[8]))
+        app.query_one("DataTable").move_cursor(row=1)
+        await pilot.press("u")  # an unlink
+        await pilot.pause()
+
+    result, _ = drive(db, script)
+    assert script.seen == ("confirmed · kept", "-")
+    assert result["cells"][1][8] == "unlinked"
+    from bdnex.library import Library
+
+    with Library(db) as lib:
+        assert "checked" not in lib.attrs_of("file", lib.get_file(files["wrong"])["id"]) and "checked" not in lib.attrs_of("file", lib.get_file(files["unconfirmed"])["id"])
+        assert lib.get_file(files["unconfirmed"])["album_id"] is None  # (the second row was the unlinked one)
 
 
 seen_calls: list = []  # the ``keep_both`` of every link the screen asked for
@@ -279,7 +312,7 @@ def test_a_pick_is_written_at_once_and_the_page_and_cover_come_later(env, monkey
         row = app.rows[0]
         with Library(db) as lib:  # written already, before anything was fetched
             seen["album"] = lib.get_album(lib.get_file(files["wrong"])["album_id"])["source_id"]
-        seen["now"] = (row.status, row.pending, str(app.query_one("DataTable").get_row_at(0)[7]), row.message)
+        seen["now"] = (row.status, row.pending, str(app.query_one("DataTable").get_row_at(0)[8]), row.message)
         release.set()
         await fetched(app, pilot)
 
@@ -361,7 +394,7 @@ def test_a_link_to_an_album_that_has_another_file_is_made_at_once_as_a_spare_ver
 
     result, _ = drive(db, script)
     assert seen["screen"] != "AskScreen" and seen_calls == [True]
-    assert result["cells"][0][7] == "linked"
+    assert result["cells"][0][8] == "confirmed · linked"
 
 
 def test_the_page_is_a_link_in_its_column_and_in_the_detail_and_p_copies_it_over_ssh(env, monkeypatch):
@@ -413,7 +446,7 @@ def test_i_takes_an_address_or_a_number(env, monkeypatch):
         await settle(app, pilot)
 
     result, _ = drive(db, script)
-    assert result["cells"][0][7] == "linked"
+    assert result["cells"][0][8] == "confirmed · linked"
 
 
 def test_slash_searches_the_table_and_brackets_cycle_through_matches(env):
@@ -500,7 +533,7 @@ def test_capital_o_hands_over_to_the_real_fzf_when_it_is_installed(env, monkeypa
 
     result, _ = drive(db, script, source=source)
     assert asked and asked[0][0] == files["wrong"] and "nains" in asked[0][1].lower()  # it starts from the file's name
-    assert result["cells"][0][7] == "linked"
+    assert result["cells"][0][8] == "confirmed · linked"
 
 
 def test_the_next_batch_is_offered_when_the_batch_is_done(env):
@@ -643,7 +676,7 @@ def test_marked_files_get_the_album_of_a_series_by_their_volume_after_one_questi
 
     result, _ = drive(db, script)
     assert seen["marked"] == 2 and len(asked["paths"]) == 2 and seen["question"] == "AskScreen"
-    assert result["cells"][0][7] == "linked" and seen_calls == [True]
+    assert result["cells"][0][8] == "confirmed · linked" and seen_calls == [True]
     assert len(result["app"].marked) == 1  # the mark of the linked file went with the link; the other file found no volume and stays marked
 
 
@@ -692,7 +725,7 @@ def test_a_series_address_in_the_search_attaches_the_marked_files_by_volume(env,
 
     asked, seen, result = _series_address_run(env, monkeypatch, keys)
     assert asked["address"] == SERIES_PAGE and len(asked["paths"]) == 1 and seen["question"] == "AskScreen"
-    assert result["cells"][0][7] == "linked"
+    assert result["cells"][0][8] == "confirmed · linked"
 
 
 def test_i_with_a_series_address_attaches_the_files_too(env, monkeypatch):
@@ -964,7 +997,7 @@ def test_e_writes_the_metadata_of_a_file_by_hand_and_links_it(env):
         await settle(app, pilot)
 
     result, _ = drive(db, script)
-    assert result["cells"][0][7] == "linked" or result["cells"][1][7] == "linked"
+    assert result["cells"][0][8] == "confirmed · linked" or result["cells"][1][7] == "linked"
     with Library(db) as lib:
         albums = [lib.get_album(lib.get_file(p)["album_id"]) for p in files.values()]
     assert any(a["source"] == "manual" and a["series"] == "Fell" and a["volume"] == 2 for a in albums)
@@ -986,7 +1019,7 @@ def test_e_with_several_marked_files_writes_a_series(env):
     result, _ = drive(db, script)
     with Library(db) as lib:
         series = {lib.get_album(lib.get_file(p)["album_id"])["series"] for p in files.values()}
-    assert series == {"Nains Bis"} and all(row[7] == "linked" for row in result["cells"])
+    assert series == {"Nains Bis"} and all(row[8] == "confirmed · linked" for row in result["cells"])
 
 
 def test_the_title_says_which_batch_of_about_how_many(env):
@@ -1141,7 +1174,7 @@ def test_i_with_a_bdtheque_address_links_the_file_to_what_that_page_says(env, mo
         await settle(app, pilot)
 
     result, _ = drive(db, script)
-    assert asked and result["cells"][0][7] == "linked"
+    assert asked and result["cells"][0][8] == "confirmed · linked"
     with Library(db) as lib:
         albums = [lib.get_album(lib.get_file(p)["album_id"]) for p in files.values() if lib.get_file(p)["album_id"]]
     assert any(a["source"] == "bdtheque" and a["publisher"] == "Dargaud" for a in albums)
@@ -1167,17 +1200,17 @@ def test_the_state_column_turns_a_wheel_while_a_page_is_fetched(env, monkeypatch
         app.screen.query_one("Input").value = "https://www.bdtheque.com/series/14922/x"
         await pilot.press("enter")
         await pilot.pause(0.4)
-        seen["during"] = [str(c) for c in app.query_one("DataTable").get_row_at(0)][7]
+        seen["during"] = [str(c) for c in app.query_one("DataTable").get_row_at(0)][8]
         seen["later"] = None
         await pilot.pause(0.4)
-        seen["frames"] = {str(app.query_one("DataTable").get_row_at(0)[7])[:1], seen["during"][:1]}
+        seen["frames"] = {str(app.query_one("DataTable").get_row_at(0)[8])[:1], seen["during"][:1]}
         release.set()
         await fetched(app, pilot)
         await settle(app, pilot)
 
     result, _ = drive(db, script)
     assert "fetching the page" in seen["during"] and seen["during"][0] in review_tui.SPINNER
-    assert len(seen["frames"]) >= 1 and result["cells"][0][7] == "linked"
+    assert len(seen["frames"]) >= 1 and result["cells"][0][8] == "confirmed · linked"
 
 
 def test_no_question_about_a_next_batch_when_there_is_none(env):
@@ -1252,7 +1285,7 @@ def test_a_one_shot_picked_with_a_is_linked_to_the_one_file_instead_of_a_refusal
         await settle(app, pilot)
 
     result, _ = drive(db, script)
-    assert result["cells"][0][7] == "linked" and seen_calls == [True]
+    assert result["cells"][0][8] == "confirmed · linked" and seen_calls == [True]
 
 
 def test_a_one_shot_series_page_gives_its_only_album_to_the_one_file_without_a_volume():
@@ -1307,7 +1340,7 @@ def test_a_failed_link_is_reported_on_the_row_and_does_not_close_the_screen(env,
         assert app.is_running
 
     result, _ = drive(db, script)
-    assert result["cells"][0][7] != "linked"
+    assert result["cells"][0][8] != "confirmed · linked"
 
 
 def test_a_series_link_leaves_a_row_decided_meanwhile_alone(env, monkeypatch):
@@ -1566,7 +1599,7 @@ def test_with_several_endpoints_several_rows_show_fetching_at_the_same_time(env,
                 break
             await asyncio.sleep(0.05)
         app.tick_pending()
-        seen["both"] = [str(app.query_one("DataTable").get_row_at(i)[7]) for i in (0, 1)]
+        seen["both"] = [str(app.query_one("DataTable").get_row_at(i)[8]) for i in (0, 1)]
         release.set()
         for _ in range(200):
             await asyncio.sleep(0.05)
@@ -1599,7 +1632,7 @@ def test_a_without_a_mark_is_for_the_file_under_the_cursor_not_for_the_rest_of_i
     result, _ = drive(db, script)
     assert "Pick this file's album, or a SERIES" in seen["heading"]
     assert len(seen["about"]) == 1 and seen["about"][0].endswith("/" + os.path.basename(files["wrong"]))  # the folder and the name, to search with
-    assert [row[7] for row in result["cells"]].count("linked") == 1  # only the file under the cursor
+    assert [row[8] for row in result["cells"]].count("confirmed · linked") == 1  # only the file under the cursor
 
 
 def test_a_works_on_a_file_already_decided_so_a_wrong_keep_can_be_matched_again(env, monkeypatch):
@@ -1761,4 +1794,4 @@ def test_declining_the_offer_changes_nothing(env, monkeypatch):
         seen["still_asking"] = app.screen.__class__.__name__ in ("AskScreen", "EditScreen")
 
     result, _ = drive(db, script)
-    assert seen["still_asking"] is False and all(cell[7] != "linked" for cell in result["cells"])
+    assert seen["still_asking"] is False and all(cell[8] != "confirmed · linked" for cell in result["cells"])

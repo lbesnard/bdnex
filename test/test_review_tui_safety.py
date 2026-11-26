@@ -180,7 +180,7 @@ def test_the_table_has_a_column_with_where_a_move_would_put_each_file_and_it_goe
         assert review_tui.COLUMNS[review_tui.FLEX_COLUMN][0] == "Would go to"  # (Kind and Vol come after it)
         first = app.rows[0]  # linked to "Nains T01 Redwin"
         seen["dest"] = first.dest
-        seen["cell"] = str(app.query_one("DataTable").get_row_at(0)[8])
+        seen["cell"] = str(app.query_one("DataTable").get_row_at(0)[9])
         seen["loose"] = [r.dest for r in app.rows if r.album_id is None]  # no album: nothing to say
         app.record("keep")
         seen["after_keep"] = first.dest  # the same album, so the same place: it is worked out again, not left blank
@@ -247,7 +247,7 @@ def test_the_marked_files_say_they_are_reading_the_series_page_until_the_answer_
                 break
         table = app.query_one("DataTable")
         seen["during"] = [(r.busy, r.busy_what) for r in rows]
-        seen["cell"] = str(table.get_row_at(0)[7])  # the State column (the last one is now "Would go to")
+        seen["cell"] = str(table.get_row_at(0)[8])  # the Review column
         seen["blocked"] = app.idle() is None if app.current() is rows[0] else None  # no second decision while it reads
         release.set()
         await task
@@ -285,11 +285,11 @@ def test_after_a_link_the_column_says_where_the_file_would_go_and_it_is_not_cut(
         await pilot.press("enter")  # link it to the first hit (the album 2)
         await fetched(app, pilot)
         seen["after"] = row.dest
-        seen["cell"] = str(app.query_one("DataTable").get_row_at(2)[8])
-        column = app.query_one("DataTable").columns[list(app.query_one("DataTable").columns)[8]]
+        seen["cell"] = str(app.query_one("DataTable").get_row_at(2)[9])
+        column = app.query_one("DataTable").columns[list(app.query_one("DataTable").columns)[9]]
         seen["width"] = column.width  # fixed, but as wide as the screen allows (this one is 300 columns wide)
 
-    drive(db, script, columns=300)
+    drive(db, script, columns=420)
     assert seen["before"] == "" and seen["after"].endswith(".cbz") and "Forge" in seen["after"]  # it stayed '-' after the link
     assert seen["cell"] == seen["after"] and seen["width"] > 44 and seen["width"] >= len(seen["after"])  # more than 44 characters when the screen can show them
 
