@@ -40,6 +40,7 @@ from textual.widgets.option_list import Option
 from bdnex.library import browse, review_batch as batch
 from bdnex.ui import color
 from bdnex.ui.review_extras import ReviewExtras
+from bdnex.ui.cover_text import GRAPHICS, graphic
 from bdnex.ui.review_panels import FacetCommands, HelpChip, PagerChip, Splitter, legend
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "green", "skipped": "yellow"}
@@ -645,6 +646,7 @@ class PageScreen(ModalScreen):
         super().__init__()
         self.title_text, self.files = title, files  # files: (path, format, saved cover or None)
         self.index, self.total, self.which, self.token = 0, 0, "file", 0
+        self.deletes_kitty = False  # set when the kitty mode draws (its pictures stay on the terminal until deleted)
         self.zoom, self.px, self.py, self.step = 1, 0.0, 0.0, (0.0, 0.0)  # zoom 1 is the whole page; above it a part of the page, moved with the arrows
 
     def compose(self) -> ComposeResult:
@@ -654,9 +656,33 @@ class PageScreen(ModalScreen):
             yield Label("", id="pagefoot")
 
     def on_mount(self) -> None:
+        self.deletes_kitty = getattr(getattr(getattr(self.app, "settings", None), "cover", None), "picture", "") == "kitty"
         self.show()
 
+    def write_raw(self, data: bytes) -> None:
+        """Straight to the terminal, past Textual (it knows nothing of pictures): used only for the real-picture modes."""
+        driver = getattr(self.app, "_driver", None)
+        if driver is not None:
+            driver.write(data.decode("utf-8", "replace"))
+            flush = getattr(driver, "flush", None)
+            if flush:
+                flush()
+
+    def draw_graphic(self, sequence: bytes) -> None:
+        """The picture goes over the (blank) area of the screen, at its top left; the cursor is put back where it was."""
+        if not self.is_attached:
+            return
+        region = self.query_one("#picture", Static).region
+        self.write_raw(b"\x1b7" + f"\x1b[{region.y + 1};{region.x + 1}H".encode() + sequence + b"\x1b8")
+
+    def clear_graphic(self) -> None:
+        """A kitty picture stays until it is deleted (sixel and iTerm2 pictures are painted over by the next draw)."""
+        if self.deletes_kitty:
+            delete = b"\x1b_Ga=d\x1b\\"
+            self.write_raw(b"\x1bPtmux;\x1b" + delete.replace(b"\x1b", b"\x1b\x1b") + b"\x1b\\" if os.environ.get("TMUX") else delete)
+
     def action_close(self) -> None:
+        self.clear_graphic()
         self.dismiss(None)
 
     def action_turn(self, step: int) -> None:
@@ -704,7 +730,15 @@ class PageScreen(ModalScreen):
                 columns, rows = max(20, size.width - 2), max(8, size.height - 3)
                 image, fx, fy = crop(image, zoom, px, py, columns, rows)
                 self.step = (fx, fy)
-                made = picture(image, columns, rows)
+                how = getattr(getattr(getattr(self.app, "settings", None), "cover", None), "picture", "chafa")
+                if how in GRAPHICS:
+                    sequence = graphic(image, columns, rows, how)
+                    if sequence:
+                        made = (Text("\n".join(" " * columns for _ in range(rows))), "graphic", sequence)
+                    else:
+                        note = f"{how}: chafa is not installed or failed; drawn with text instead"
+                if made is None:
+                    made = picture(image, columns, rows)
             elif not note:
                 note = "this page could not be read"
         except Exception as err:  # a picture is a help: say why, never end the program
@@ -718,12 +752,16 @@ class PageScreen(ModalScreen):
         if token != self.token or not self.is_attached:
             return
         self.total = total
-        text, by = made if made else (Text(note or "(none)", style="yellow"), "")
+        sequence = made[2] if made and len(made) > 2 else None
+        text, by = made[:2] if made else (Text(note or "(none)", style="yellow"), "")
         self.query_one("#picture", Static).update(text)
+        self.clear_graphic()
+        if sequence:
+            self.call_after_refresh(self.draw_graphic, sequence)
         where = f"page {self.index + 1}/{total}" if which == "file" and total else "the album's saved cover"
         self.query_one("#pagefoot", Label).update(Text(
             f"the {'file' if which == 'file' else 'album'}: {where} · zoom {self.zoom}x   ·   ← → pages   ·   + - zoom (to read the writing)   ·   ↑ ↓ h l move   ·   Tab file / album   ·   Esc back"
-            + ("" if by != "half blocks" else "   ·   (install chafa for a sharper picture)"), style="dim"))
+            + ("" if by != "half blocks" else "   ·   (install chafa for a sharper picture)") + (f"   ·   {note}" if note else ""), style="dim"))
 
 
 class CoverScreen(ModalScreen):

@@ -51,6 +51,7 @@ cover:
   dir: ~/.local/share/bdnex/covers      # where the cover files are kept
   check: auto                           # compare each file's cover with its album's: auto (when OpenCV is installed) | true | false
   match_percentage: 3                   # similarity (0-100) below which a cover is not the album's: a right match scores about 50, another series about 0 (measured)
+  picture: chafa                        # `bdnex review`, c then z: how a page is drawn: chafa (text, any terminal; needs chafa, else blocks) | blocks (text, nothing to install) | kitty | iterm2 | sixel (a real picture: sharp, but the terminal must show it; kitty is the best when it works; tmux needs `allow-passthrough on`, and nested tmux often blocks it)
 
 api:
   host: 127.0.0.1                       # `bdnex serve` listens here; anything but this machine needs a token

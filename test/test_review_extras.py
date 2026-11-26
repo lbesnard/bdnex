@@ -820,3 +820,37 @@ def test_plus_and_the_arrows_zoom_and_move_over_the_page(env):
 
     drive(db, root, script)
     assert seen["zoom"] == 2 and seen["px"] > 0 and seen["back"] == (1, 0.0)
+
+
+def test_the_picture_setting_draws_a_real_picture_over_the_page_and_falls_back_to_text(env, monkeypatch):
+    from bdnex.ui import cover_text
+
+    db, root, paths = env
+    seen = {"writes": []}
+    monkeypatch.setattr(cover_text, "graphic", lambda image, columns, rows, how: b"<PICTURE %s %dx%d>" % (how.encode(), columns, rows))
+    monkeypatch.setattr(review_tui, "graphic", cover_text.graphic)
+
+    async def script(app, pilot, lib):
+        object.__setattr__(app.settings.cover, "picture", "kitty")
+        monkeypatch.setattr(review_tui.PageScreen, "write_raw", lambda self, data: seen["writes"].append(data))
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("c")
+        await pilot.pause()
+        await pilot.press("z")
+        for _ in range(40):
+            await pilot.pause(0.1)
+            if any(b"<PICTURE kitty" in w for w in seen["writes"]):
+                break
+        await pilot.press("escape")
+        await pilot.pause()
+
+    drive(db, root, script)
+    pictures = [w for w in seen["writes"] if b"<PICTURE kitty" in w]
+    assert pictures and pictures[0].startswith(b"\x1b7\x1b[") and pictures[0].endswith(b"\x1b8")  # placed at the area, cursor put back
+    assert any(w.startswith(b"\x1b_Ga=d") or b"_Ga=d" in w for w in seen["writes"])  # a kitty picture is deleted when the page goes away
+
+
+def test_the_picture_option_is_in_the_config_with_chafa_as_the_default():
+    settings = load_config().settings
+    assert settings.cover.picture == "chafa"

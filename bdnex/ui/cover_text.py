@@ -93,3 +93,18 @@ def crop(image: bytes, zoom: int, px: float, py: float, columns: int, rows: int)
     part = fitz.Pixmap(source.colorspace, box, source.alpha)
     part.copy(source, box)
     return part.tobytes("png"), min(fx, 1.0), min(fy, 1.0)
+
+
+GRAPHICS = {"kitty": "kitty", "iterm2": "iterm", "sixel": "sixel"}  # the setting -> the name of chafa's format
+
+
+def graphic(image: bytes, columns: int, rows: int, how: str) -> Optional[bytes]:
+    """The escape sequence that makes the terminal draw ``image`` in ``columns`` x ``rows`` cells (a real picture, through ``chafa``, which also
+    wraps it for tmux when ``TMUX`` is set); ``None`` when chafa is missing or fails."""
+    if not chafa_installed() or how not in GRAPHICS:
+        return None
+    try:
+        done = subprocess.run(["chafa", "-f", GRAPHICS[how], f"--size={columns}x{rows}", "--animate=off", "-"], input=image, capture_output=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout.rstrip(b"\n") if done.returncode == 0 and done.stdout else None
