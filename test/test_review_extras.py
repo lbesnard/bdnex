@@ -764,3 +764,59 @@ def test_z_in_the_cover_popup_opens_the_full_size_page_and_arrows_turn_it(env):
 
     drive(db, root, script)
     assert seen["screen"] == "PageScreen" and seen["total"] == 3 and seen["index"] == 1 and seen["back"] == "CoverScreen"
+
+
+def big_page() -> bytes:
+    import pymupdf
+
+    pix = pymupdf.Pixmap(pymupdf.csRGB, pymupdf.IRect(0, 0, 800, 1200))
+    pix.set_rect(pix.irect, (200, 120, 40))
+    return pix.tobytes("png")
+
+
+def test_zooming_a_page_shows_a_part_of_it_that_pans(env):
+    from bdnex.importer import covers
+    from bdnex.ui import cover_text
+
+    db, root, paths = env
+    image = big_page()
+    whole = covers.image_size(image)
+    same, fx, fy = cover_text.crop(image, 1, 0, 0, 100, 40)
+    assert same == image and (fx, fy) == (0.0, 0.0)
+    part, fx, fy = cover_text.crop(image, 2, 0, 0, 100, 40)
+    size = covers.image_size(part)
+    assert size[0] <= whole[0] // 2 + 1 and fx >= 0
+    moved, _, _ = cover_text.crop(image, 2, 1, 1, 100, 40)  # the far corner: still a picture of the same size
+    assert covers.image_size(moved) == size
+
+
+def test_plus_and_the_arrows_zoom_and_move_over_the_page(env):
+    import zipfile
+
+    db, root, paths = env
+    seen = {}
+    with zipfile.ZipFile(paths["t1"], "w") as archive:  # a page with room to move over
+        archive.writestr("p1.png", big_page())
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("c")
+        await pilot.pause()
+        await pilot.press("z")
+        for _ in range(40):
+            await pilot.pause(0.1)
+            if type(app.screen).__name__ == "PageScreen" and app.screen.total:
+                break
+        await pilot.press("plus")
+        await pilot.pause(0.5)
+        seen["zoom"] = app.screen.zoom
+        await pilot.press("l")
+        await pilot.pause(0.5)
+        seen["px"] = app.screen.px
+        await pilot.press("minus")
+        await pilot.pause(0.3)
+        seen["back"] = (app.screen.zoom, app.screen.px)
+
+    drive(db, root, script)
+    assert seen["zoom"] == 2 and seen["px"] > 0 and seen["back"] == (1, 0.0)

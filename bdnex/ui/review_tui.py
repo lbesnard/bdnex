@@ -629,7 +629,11 @@ class PageScreen(ModalScreen):
 
     BINDINGS = [Binding("escape", "close", "Back"), Binding("z", "close", "Back", show=False), Binding("q", "close", "Back", show=False),
                 Binding("right", "turn(1)", "Next page"), Binding("left", "turn(-1)", "Previous page"),
-                Binding("tab", "swap", "File / album cover")]
+                Binding("tab", "swap", "File / album cover"),
+                Binding("plus", "zoom(1)", "Zoom in"), Binding("equals_sign", "zoom(1)", "Zoom in", show=False), Binding("minus", "zoom(-1)", "Zoom out"),
+                Binding("up", "pan(0, -1)", "Up", show=False), Binding("down", "pan(0, 1)", "Down", show=False),
+                Binding("h", "pan(-1, 0)", "Left", show=False), Binding("l", "pan(1, 0)", "Right", show=False),
+                Binding("k", "pan(0, -1)", "Up", show=False), Binding("j", "pan(0, 1)", "Down", show=False)]
     CSS = """
     PageScreen { align: center middle; background: $surface; }
     #pageview { width: 100%; height: 100%; }
@@ -641,6 +645,7 @@ class PageScreen(ModalScreen):
         super().__init__()
         self.title_text, self.files = title, files  # files: (path, format, saved cover or None)
         self.index, self.total, self.which, self.token = 0, 0, "file", 0
+        self.zoom, self.px, self.py, self.step = 1, 0.0, 0.0, (0.0, 0.0)  # zoom 1 is the whole page; above it a part of the page, moved with the arrows
 
     def compose(self) -> ComposeResult:
         with Vertical(id="pageview"):
@@ -657,6 +662,21 @@ class PageScreen(ModalScreen):
     def action_turn(self, step: int) -> None:
         if self.which == "file":
             self.index = max(0, min(self.index + step, max(0, self.total - 1)))
+            self.px = self.py = 0.0
+            self.show()
+
+    def action_zoom(self, step: int) -> None:
+        from bdnex.ui.cover_text import ZOOMS
+
+        at = max(0, min(len(ZOOMS) - 1, ZOOMS.index(self.zoom) + step))
+        if ZOOMS[at] != self.zoom:
+            self.zoom, self.px, self.py = ZOOMS[at], 0.0, 0.0
+            self.show()
+
+    def action_pan(self, across: int, down: int) -> None:
+        if self.zoom > 1:
+            self.px = min(1.0, max(0.0, self.px + across * self.step[0]))
+            self.py = min(1.0, max(0.0, self.py + down * self.step[1]))
             self.show()
 
     def action_swap(self) -> None:
@@ -665,11 +685,11 @@ class PageScreen(ModalScreen):
 
     def show(self) -> None:
         self.token += 1
-        self.run_worker(partial(self.load, self.token, self.which, self.index), thread=True, group="page", exclusive=True)
+        self.run_worker(partial(self.load, self.token, self.which, self.index, self.zoom, self.px, self.py), thread=True, group="page", exclusive=True)
 
-    def load(self, token: int, which: str, index: int) -> None:
+    def load(self, token: int, which: str, index: int, zoom: int = 1, px: float = 0.0, py: float = 0.0) -> None:
         from bdnex.importer import covers
-        from bdnex.ui.cover_text import picture
+        from bdnex.ui.cover_text import crop, picture
 
         path, fmt, saved = self.files
         note, total, made = "", self.total, None
@@ -681,7 +701,10 @@ class PageScreen(ModalScreen):
                 note = "" if image else "the album's cover is not saved (`bdnex import --fetch` saves it)"
             if image:
                 size = self.app.size
-                made = picture(image, max(20, size.width - 2), max(8, size.height - 3))
+                columns, rows = max(20, size.width - 2), max(8, size.height - 3)
+                image, fx, fy = crop(image, zoom, px, py, columns, rows)
+                self.step = (fx, fy)
+                made = picture(image, columns, rows)
             elif not note:
                 note = "this page could not be read"
         except Exception as err:  # a picture is a help: say why, never end the program
@@ -699,7 +722,7 @@ class PageScreen(ModalScreen):
         self.query_one("#picture", Static).update(text)
         where = f"page {self.index + 1}/{total}" if which == "file" and total else "the album's saved cover"
         self.query_one("#pagefoot", Label).update(Text(
-            f"the {'file' if which == 'file' else 'album'}: {where}   ·   ← → pages   ·   Tab file / album cover   ·   Esc back"
+            f"the {'file' if which == 'file' else 'album'}: {where} · zoom {self.zoom}x   ·   ← → pages   ·   + - zoom (to read the writing)   ·   ↑ ↓ h l move   ·   Tab file / album   ·   Esc back"
             + ("" if by != "half blocks" else "   ·   (install chafa for a sharper picture)"), style="dim"))
 
 
@@ -725,7 +748,7 @@ class CoverScreen(ModalScreen):
             with Horizontal(id="pair"):
                 yield Static(Text("reading the file...", style="dim"), id="left")
                 yield Static(Text(""), id="right")
-            yield Label(Text("z: full size (read the credits, turn the pages) · c / Esc: close", style="dim"), id="foot")
+            yield Label(Text("z: full size (zoom with + and -, read the credits, turn the pages) · c / Esc: close", style="dim"), id="foot")
 
     def on_mount(self) -> None:
         self.run_worker(self.load, thread=True, exclusive=True)

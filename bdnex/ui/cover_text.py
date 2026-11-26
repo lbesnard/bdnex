@@ -52,10 +52,44 @@ def picture(image: bytes, columns: int, rows: int) -> tuple[Optional[Text], str]
     the best characters for each cell, much sharper than half blocks) or ``half blocks``. Works over SSH and in tmux: it is only text."""
     if chafa_installed():
         try:
-            done = subprocess.run(["chafa", "--format=symbols", "--colors=full", f"--size={columns}x{rows}", "--animate=off", "-"],
+            done = subprocess.run(["chafa", "--format=symbols", "--colors=full", "--work=9", f"--size={columns}x{rows}", "--animate=off", "-"],
                                   input=image, capture_output=True, timeout=15)
             if done.returncode == 0 and done.stdout:
                 return Text.from_ansi(done.stdout.decode("utf-8", "replace").rstrip("\n")), "chafa"
         except (OSError, subprocess.SubprocessError):
             pass  # chafa broke: the plain drawing below
     return half_blocks(image, columns, rows), "half blocks"
+
+
+ZOOMS = (1, 2, 3, 4, 6)
+
+
+def crop(image: bytes, zoom: int, px: float, py: float, columns: int, rows: int) -> tuple[bytes, float, float]:
+    """The part of ``image`` that fills ``columns`` x ``rows`` cells at ``zoom`` times the whole-page size, its top-left at ``(px, py)`` (0 to 1 of the
+    way it can move), and how far one step of panning moves ``px`` / ``py`` (half a window). Zoom 1 is the whole picture. This is what makes small
+    writing readable: the terminal has few cells, so the way to more detail is to look at less of the page."""
+    try:
+        import pymupdf as fitz
+    except ImportError:
+        import fitz
+    if zoom <= 1:
+        return image, 0.0, 0.0
+    from bdnex.importer import covers
+
+    covers.refuse_bomb(image)
+    source = fitz.Pixmap(image)
+    if source.alpha or source.colorspace is None or source.colorspace.n != 3:
+        source = fitz.Pixmap(fitz.csRGB, fitz.Pixmap(source, 0) if source.alpha else source)
+    width, height = source.width, source.height
+    aspect = columns / (2.0 * rows)  # a terminal cell is about twice as tall as it is wide
+    win_w = max(8, width // zoom)
+    win_h = round(win_w / aspect)
+    if win_h > height:
+        win_h, win_w = height, min(width, round(height * aspect))
+    fx = 0.5 * win_w / (width - win_w) if width > win_w else 0.0
+    fy = 0.5 * win_h / (height - win_h) if height > win_h else 0.0
+    x0, y0 = round(min(max(px, 0.0), 1.0) * (width - win_w)), round(min(max(py, 0.0), 1.0) * (height - win_h))
+    box = fitz.IRect(x0, y0, x0 + win_w, y0 + win_h)
+    part = fitz.Pixmap(source.colorspace, box, source.alpha)
+    part.copy(source, box)
+    return part.tobytes("png"), min(fx, 1.0), min(fy, 1.0)

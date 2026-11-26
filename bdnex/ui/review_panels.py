@@ -367,7 +367,7 @@ HELP_SECTIONS = (
         "[o] searches all the albums of the library (offline) to link the file to one",
     )),
     ("LINKING A FILE TO AN ALBUM", (
-        "[t] the candidates bdnex found · [o] search every known album · [i] type an id or a bédéthèque address · [p] open the album page · [c] compare covers, then [z] full size: read the credits, ← → turn the pages, Tab the album's cover",
+        "[t] the candidates bdnex found · [o] search every known album · [i] type an id or a bédéthèque address · [p] open the album page · [c] compare covers, then [z] full size: [+] [-] zoom to read the writing, ↑ ↓ h l move, ← → turn the pages, Tab the album's cover",
         "[k] this match is right: confirm (again: unconfirm) · [l] there is no album online · [u] unlink (it waits for an album) · [s] skip",
         "[a] gives the marked files the albums of a series (a number each) · [D] the other files of an album: trash a duplicate, make main, keep a version or child",
     )),
