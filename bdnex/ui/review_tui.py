@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from functools import partial
 import io
 import logging
 import os
@@ -39,7 +40,7 @@ from textual.widgets.option_list import Option
 from bdnex.library import browse, review_batch as batch
 from bdnex.ui import color
 from bdnex.ui.review_extras import ReviewExtras
-from bdnex.ui.review_panels import FacetCommands, HelpChip, Splitter, legend
+from bdnex.ui.review_panels import FacetCommands, HelpChip, PagerChip, Splitter, legend
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "green", "skipped": "yellow"}
 STATUS_WORD = {"keep": "kept", "linked": "linked", "unlinked": "unlinked", "left": "no album online", "skipped": "skipped"}  # what a decision of this session is called
@@ -350,6 +351,7 @@ class FuzzyScreen(ModalScreen):
         self.hub, self.start, self.heading, self.series_ok = hub, start, title, series_ok
         self.about = about or []  # the folder and name of the file(s) this is for: they help to find the album, and are not on this screen otherwise
         self.hits: list = []
+        self.knowledge: dict = {}  # (id, is a series) -> (author, year) the library has
         self.show_series = self.show_albums = True  # the two tick boxes (only when series can be picked)
         self.text = start
 
@@ -366,7 +368,7 @@ class FuzzyScreen(ModalScreen):
                     yield Tick("Albums  (F3)", True, id="show-albums")
             yield Label("", id="count")
             if self.series_ok:
-                yield Label(Text("score  type    name   (a SERIES gives each file its volume; an album is just that one book)", style="dim"))
+                yield Label(Text("score  type    year  author                  name   (a SERIES gives each file its volume; an album is just that one book)", style="dim"))
             yield OptionList(id="hits")
             yield Static("", id="preview")
             yield Label(Text("Enter picks the album · Ctrl-O opens its page · ↑↓ move · Ctrl-U clears · Esc goes back", style="dim"))
@@ -421,15 +423,28 @@ class FuzzyScreen(ModalScreen):
         from bdnex.ui.prompts import display_name
 
         line = Text(f"{score:>3.0f}  ")
-        if is_series_address(candidate.url):
-            if self.series_ok:
-                line.append("SERIES  ", style="bold cyan")
-            line.append(candidate.name, style="bold")
-        else:
-            if self.series_ok:
-                line.append("album   ", style="dim")
-            line.append(display_name(candidate))
+        series = is_series_address(candidate.url)
+        if series and self.series_ok:
+            line.append("SERIES  ", style="bold cyan")
+        elif self.series_ok:
+            line.append("album   ", style="dim")
+        author, year = self.known(candidate, series)
+        line.append(f"{year:<4}  ", style="dim")  # only what the library already has: an album not fetched yet shows nothing here
+        line.append(f"{author[:22]:<22}  ", style="cyan")
+        line.append(candidate.name if series else display_name(candidate), style="bold" if series else "")
         return line
+
+    def known(self, candidate, series: bool) -> tuple[str, str]:
+        try:
+            library = getattr(self.app, "library", None)
+        except Exception:  # (a screen not shown yet has no app)
+            library = None
+        if library is None:
+            return "", ""
+        key = (candidate.source_id, series)
+        if key not in self.knowledge:
+            self.knowledge[key] = batch.known_about(library, getattr(self.hub.source, "name", "bedetheque"), candidate.source_id, series)
+        return self.knowledge[key]
 
     def on_input_changed(self, event: Input.Changed) -> None:
         self.text = event.value
@@ -608,11 +623,91 @@ class EditScreen(ModalScreen):
         self.dismiss(None)
 
 
+class PageScreen(ModalScreen):
+    """One picture as large as the terminal allows, to read the credits: the pages of the file (left / right), or the album's saved cover (Tab).
+    It is text (chafa when installed, else half blocks), so it works over SSH and in tmux."""
+
+    BINDINGS = [Binding("escape", "close", "Back"), Binding("z", "close", "Back", show=False), Binding("q", "close", "Back", show=False),
+                Binding("right", "turn(1)", "Next page"), Binding("left", "turn(-1)", "Previous page"),
+                Binding("tab", "swap", "File / album cover")]
+    CSS = """
+    PageScreen { align: center middle; background: $surface; }
+    #pageview { width: 100%; height: 100%; }
+    #picture { width: 100%; height: 1fr; content-align: center middle; }
+    #pagehead, #pagefoot { height: 1; padding: 0 1; }
+    """
+
+    def __init__(self, title: str, files) -> None:
+        super().__init__()
+        self.title_text, self.files = title, files  # files: (path, format, saved cover or None)
+        self.index, self.total, self.which, self.token = 0, 0, "file", 0
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="pageview"):
+            yield Label(Text(self.title_text, style="bold"), id="pagehead")
+            yield Static(Text("reading...", style="dim"), id="picture")
+            yield Label("", id="pagefoot")
+
+    def on_mount(self) -> None:
+        self.show()
+
+    def action_close(self) -> None:
+        self.dismiss(None)
+
+    def action_turn(self, step: int) -> None:
+        if self.which == "file":
+            self.index = max(0, min(self.index + step, max(0, self.total - 1)))
+            self.show()
+
+    def action_swap(self) -> None:
+        self.which = "album" if self.which == "file" else "file"
+        self.show()
+
+    def show(self) -> None:
+        self.token += 1
+        self.run_worker(partial(self.load, self.token, self.which, self.index), thread=True, group="page", exclusive=True)
+
+    def load(self, token: int, which: str, index: int) -> None:
+        from bdnex.importer import covers
+        from bdnex.ui.cover_text import picture
+
+        path, fmt, saved = self.files
+        note, total, made = "", self.total, None
+        try:
+            if which == "file":
+                image, total = covers.page_image(path, fmt, index)
+            else:
+                image = saved.read_bytes() if saved is not None else None
+                note = "" if image else "the album's cover is not saved (`bdnex import --fetch` saves it)"
+            if image:
+                size = self.app.size
+                made = picture(image, max(20, size.width - 2), max(8, size.height - 3))
+            elif not note:
+                note = "this page could not be read"
+        except Exception as err:  # a picture is a help: say why, never end the program
+            note = f"could not read the picture: {err}"
+        try:
+            self.app.call_from_thread(self.shown, token, which, total, made, note)
+        except Exception:
+            pass
+
+    def shown(self, token: int, which: str, total: int, made, note: str) -> None:
+        if token != self.token or not self.is_attached:
+            return
+        self.total = total
+        text, by = made if made else (Text(note or "(none)", style="yellow"), "")
+        self.query_one("#picture", Static).update(text)
+        where = f"page {self.index + 1}/{total}" if which == "file" and total else "the album's saved cover"
+        self.query_one("#pagefoot", Label).update(Text(
+            f"the {'file' if which == 'file' else 'album'}: {where}   ·   ← → pages   ·   Tab file / album cover   ·   Esc back"
+            + ("" if by != "half blocks" else "   ·   (install chafa for a sharper picture)"), style="dim"))
+
+
 class CoverScreen(ModalScreen):
     """The file's first page next to the album's saved cover, drawn with text (works over SSH). Any key closes it."""
 
     BINDINGS = [Binding("escape", "close", "Close"), Binding("c", "close", "Close", show=False),
-                Binding("q", "close", "Close", show=False)]
+                Binding("q", "close", "Close", show=False), Binding("z", "zoom", "Full size"), Binding("enter", "zoom", "Full size", show=False)]
     CSS = """
     CoverScreen { align: center middle; }
     #covers { width: 90%; height: auto; max-height: 95%; border: round $accent; padding: 1 2; background: $surface; }
@@ -630,7 +725,7 @@ class CoverScreen(ModalScreen):
             with Horizontal(id="pair"):
                 yield Static(Text("reading the file...", style="dim"), id="left")
                 yield Static(Text(""), id="right")
-            yield Label(Text("c / Esc: close", style="dim"), id="foot")
+            yield Label(Text("z: full size (read the credits, turn the pages) · c / Esc: close", style="dim"), id="foot")
 
     def on_mount(self) -> None:
         self.run_worker(self.load, thread=True, exclusive=True)
@@ -663,7 +758,10 @@ class CoverScreen(ModalScreen):
         self.query_one("#left", Static).update(side("the file", left))
         self.query_one("#right", Static).update(side("the album (saved cover)", right))
         if notes:
-            self.query_one("#foot", Label).update(Text(notes + "   ·   c / Esc: close", style="yellow"))
+            self.query_one("#foot", Label).update(Text(notes + "   ·   z: full size · c / Esc: close", style="yellow"))
+
+    def action_zoom(self) -> None:
+        self.app.push_screen(PageScreen(self.title_text, self.files))
 
     def action_close(self) -> None:
         self.dismiss(None)
@@ -685,6 +783,9 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     #folderpane { width: 38; border-right: solid $accent; }
     #tickbar { height: 3; }
     #tickbar Button { min-width: 8; margin-right: 1; }
+    #pager { height: 1; }
+    #pager PagerChip { width: auto; }
+    #pager-where { width: 1fr; content-align: center middle; color: $text-muted; }
     #narrow { height: 1; border: none; padding: 0 1; background: transparent; }
     #trees { height: 1fr; }
     #legend { height: 2; padding: 0 1; }
@@ -761,7 +862,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         self.album_data: dict = {}  # album id -> the album, for the cells a selection did not build
         self.file_data: dict = {}  # path -> the file's record, the same
         self.load_view()  # the columns as they were left (saved in the library)
-        self.view_places: list = []  # the folders on the screen and the filters on it, for the "Narrow the view" box
+        self.view_places: list = []  # the folders on the screen and the filters on it, for the "Apply filters to folders" box
         self.view_facets: list = []
         self.shown: set[str] = set()  # every file of every batch of this run: the next batch never repeats one
         self.number = 0
@@ -795,7 +896,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
                 with Horizontal(id="tickbar"):
                     yield Button("Show ticked", id="show-ticked")
                     yield Button("Clear ticks", id="clear-ticks")
-                yield Checkbox("Narrow the view (folder + filters)", id="narrow")
+                yield Checkbox("Apply filters to folders (both)", id="narrow")
                 with TabbedContent(id="trees"):
                     with TabPane("Folders", id="tab-folders"):
                         with Vertical(id="folderslot"):
@@ -812,6 +913,10 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
             with Vertical(id="center"):
                 yield Static("", id="loading")
                 yield ReviewTable(id="table", cursor_type="row", zebra_stripes=True)
+                with Horizontal(id="pager"):
+                    yield PagerChip(" ◀  b  previous ", "action_previous_batch", id="pager-back")
+                    yield Static("", id="pager-where")
+                    yield PagerChip(" next  n  ▶ ", "action_next_batch", id="pager-next")
                 yield Splitter("#detailrow", "y", id="split-detail")
                 with Horizontal(id="detailrow"):
                     yield Static("", id="detail")
@@ -1079,10 +1184,28 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         self.sort_column, self.sort_reverse = None, False
         self.timing = timing
         self.render_table()
+        self.update_pager()
         if not self.rows:
             self.sub_title = "nothing left to check" + self.progress_text()
             self.say("Nothing left to check: every doubtful file has been looked at. "
                      "`bdnex import --skipped --auto=all` decides the unlinked ones again.", "green")
+
+    def update_pager(self) -> None:
+        """The bar under the table: where you are in the pages (or batches) and the two arrows that turn them (`b` and `n` do the same)."""
+        selection = getattr(self.rows, "selection", None)
+        if selection:
+            total = getattr(self.rows, "total", len(self.rows))
+            pages = max(1, -(-total // self.batch_size))
+            page = selection[2]
+            where = f"page {page + 1} of {pages} · {total} files"
+            more_back, more_next = page > 0 or self.at > 0, page + 1 < pages or self.at < len(self.batches) - 1
+        else:
+            where = f"batch {self.at + 1}"
+            more_back, more_next = self.at > 0, True
+        with contextlib.suppress(Exception):
+            self.query_one("#pager-where", Static).update(where)
+            self.query_one("#pager-back").display = more_back
+            self.query_one("#pager-next").display = more_next
 
     def table_width(self) -> int:
         """The room the table has: the screen less the folder tree, when it is shown."""

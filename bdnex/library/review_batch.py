@@ -441,3 +441,27 @@ def refresh_link(library: Library, row: Row, strong: float) -> None:
     row.score = score
     if row.link == "doubtful":
         row.kind = "wrong"
+
+
+AUTHOR_ROLES = ("Writer", "Scénario", "Artist", "Penciller", "Dessin")
+
+
+def known_about(library, source: str, source_id: str, series: bool = False) -> tuple[str, str]:
+    """``(author, year)`` of an album (or, for a series, of its first fetched album) when the library already has its page, else ``("", "")``:
+    what the search list of the review screen shows beside a name. No request: the library only."""
+    try:
+        if series:
+            row = library.conn.execute(
+                "SELECT a.id, (SELECT MIN(year) FROM albums WHERE series_id = s.id) AS first FROM series s JOIN albums a ON a.series_id = s.id "
+                "WHERE s.source = ? AND s.source_id = ? ORDER BY a.volume LIMIT 1", (source, source_id)).fetchone()
+            album_id, year = (row["id"], row["first"]) if row else (None, None)
+        else:
+            album_id, year = library.find_album(source, source_id), None
+        album = library.get_album(album_id) if album_id is not None else None
+    except Exception:  # a help beside a name: never a reason for the list to fail
+        return "", ""
+    if not album:
+        return "", ""
+    credits = album.get("credits") or {}
+    names = next((credits[role] for role in AUTHOR_ROLES if credits.get(role)), None) or next((v for v in credits.values() if v), [])
+    return (names[0] if names else ""), str(year or album.get("year") or "")

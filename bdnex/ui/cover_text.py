@@ -3,6 +3,8 @@ background). It works in any terminal, over SSH, inside a Textual screen, with n
 
 from __future__ import annotations
 
+import shutil
+import subprocess
 from typing import Optional
 
 from rich.text import Text
@@ -39,3 +41,21 @@ def half_blocks(image: bytes, columns: int = 36, max_rows: int = 22) -> Optional
         return text
     except Exception:
         return None
+
+
+def chafa_installed() -> bool:
+    return shutil.which("chafa") is not None
+
+
+def picture(image: bytes, columns: int, rows: int) -> tuple[Optional[Text], str]:
+    """``image`` as text as large as ``columns`` x ``rows`` cells allow, and the name of what drew it: ``chafa`` (when it is installed: it picks
+    the best characters for each cell, much sharper than half blocks) or ``half blocks``. Works over SSH and in tmux: it is only text."""
+    if chafa_installed():
+        try:
+            done = subprocess.run(["chafa", "--format=symbols", "--colors=full", f"--size={columns}x{rows}", "--animate=off", "-"],
+                                  input=image, capture_output=True, timeout=15)
+            if done.returncode == 0 and done.stdout:
+                return Text.from_ansi(done.stdout.decode("utf-8", "replace").rstrip("\n")), "chafa"
+        except (OSError, subprocess.SubprocessError):
+            pass  # chafa broke: the plain drawing below
+    return half_blocks(image, columns, rows), "half blocks"

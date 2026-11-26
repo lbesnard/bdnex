@@ -264,10 +264,10 @@ class ReviewExtras:
             self.action_clear_ticks()
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
-        """Ticking the box again shows the view as it is with the box's meaning: the places and filters on screen, narrowed (or not) from now on."""
+        """Tell what the box does from now on."""
         if event.checkbox.id == "narrow" and self.view_places + self.view_facets:
-            self.say("Narrow the view: a click on a folder or a filter now adds to what is shown." if event.value
-                     else "Narrow off: a click shows only what you clicked.")
+            self.say("Folders and filters work together: pick a folder, then a filter (or the other way round) to see the files that match both." if event.value
+                     else "A click on a folder or a filter shows only what you clicked.")
 
     def action_show_ticked(self) -> None:
         picks = self.ticked_selections()
@@ -290,7 +290,7 @@ class ReviewExtras:
     def open_selection(self, kind: str, value, title: str) -> None:
         pick = (kind, value)
         if self.narrowing():
-            # "Narrow the view": the click is added to what is on the screen. A folder keeps the filters; a filter keeps the folders and
+            # "Apply filters to folders": the click is added to what is on the screen. A folder keeps the filters; a filter keeps the folders and
             # the filters of the other groups (a filter of its own group replaces the old one).
             places, facets = list(self.view_places), list(self.view_facets)
             if kind == "facet":
@@ -299,7 +299,7 @@ class ReviewExtras:
                 places = [pick]
             picks = places + facets
             if len(picks) > 1:
-                title = " + ".join(self.pick_title(p) for p in picks) if kind != "facet" else f"{title} (narrowed)"
+                title = " + ".join(self.pick_title(p) for p in picks) if kind != "facet" else f"{title} (in the folder)"
             self.open_selections(picks, title)
             return
         self.open_selections([pick], title)

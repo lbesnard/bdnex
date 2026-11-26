@@ -695,3 +695,72 @@ def test_narrow_the_view_adds_a_click_to_what_is_on_the_screen(env):
     drive(db, root, script)
     assert seen["alone"] == 1 and seen["narrowed"] == ["Tintin T1.cbz"]
     assert seen["third"] == ["Tintin T1.cbz"] and seen["off"] == 2
+
+
+def test_the_search_list_shows_the_author_and_year_the_library_already_has(env):
+    db, root, paths = env
+    with Library(db, root=root) as lib:
+        album = lib.find_album("b", "t2")
+        lib.edit_album(album, {"credits": {"Writer": ["Hergé"]}})
+        assert batch.known_about(lib, "b", "t2") == ("Hergé", "1952")
+        assert batch.known_about(lib, "b", "t", series=True)[1] == "1951"  # a series: its first year
+        assert batch.known_about(lib, "b", "unknown") == ("", "")  # not fetched: nothing, no error
+
+
+def test_arrows_under_the_table_turn_the_pages(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("")
+        await settle(app, pilot)
+        seen["first"] = [r.path for r in app.rows]
+        seen["where"] = str(app.query_one("#pager-where").render())
+        await pilot.click("#pager-next")
+        await settle(app, pilot)
+        seen["second"] = [r.path for r in app.rows]
+        seen["where2"] = str(app.query_one("#pager-where").render())
+
+    drive(db, root, script, size=2)
+    assert seen["where"].startswith("page 1 of 3")
+    assert seen["second"] and not set(seen["second"]) & set(seen["first"]) and seen["where2"].startswith("page 2 of 3")
+
+
+def test_a_page_of_a_file_is_read_and_drawn_as_large_as_asked(env):
+    from bdnex.importer import covers
+    from bdnex.ui import cover_text
+
+    db, root, paths = env
+    image, total = covers.page_image(paths["t1"], "cbz", 1)
+    assert image and total == 3
+    assert covers.page_image(paths["t1"], "cbz", 99)[1] == 3  # past the end: the last page
+    assert covers.page_image(str(root / "nothing.cbz"), "cbz") == (None, 0)
+    text, by = cover_text.picture(image, 60, 30)
+    assert text is not None and by in ("chafa", "half blocks") and len(text.plain.splitlines()) >= 2
+
+
+def test_z_in_the_cover_popup_opens_the_full_size_page_and_arrows_turn_it(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("c")
+        await pilot.pause()
+        await pilot.press("z")
+        for _ in range(40):
+            await pilot.pause(0.1)
+            if type(app.screen).__name__ == "PageScreen" and app.screen.total:
+                break
+        seen["screen"] = type(app.screen).__name__
+        seen["total"] = app.screen.total
+        await pilot.press("right")
+        await pilot.pause(0.3)
+        seen["index"] = app.screen.index
+        await pilot.press("escape")
+        await pilot.pause()
+        seen["back"] = type(app.screen).__name__
+
+    drive(db, root, script)
+    assert seen["screen"] == "PageScreen" and seen["total"] == 3 and seen["index"] == 1 and seen["back"] == "CoverScreen"

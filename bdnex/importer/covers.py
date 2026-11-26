@@ -106,6 +106,33 @@ def front_cover(path: str, fmt: str) -> Optional[bytes]:
     return None
 
 
+def page_image(path: str, fmt: str, index: int = 0) -> tuple[Optional[bytes], int]:
+    """``(the picture of page ``index`` (0 is the first), how many pages the file has)``: the review screen's full-size view, to read the credits.
+    ``(None, 0)`` when the file cannot be read."""
+    try:
+        fmt = _sniff(path) or fmt
+        if fmt in ("cbz", "cbr"):
+            opener = zipfile.ZipFile if fmt == "cbz" else rartool.RarFile
+            with opener(path) as archive:
+                names = sorted((i.filename for i in archive.infolist() if not i.is_dir() and _is_page(i.filename.replace("\\", "/"))),
+                               key=_natural_key)
+                if not names:
+                    return None, 0
+                index = max(0, min(index, len(names) - 1))
+                return (archive.read(names[index]) or None), len(names)
+        if fmt == "pdf":
+            import pymupdf
+
+            with pymupdf.open(path) as doc:
+                if doc.page_count == 0:
+                    return None, 0
+                index = max(0, min(index, doc.page_count - 1))
+                return doc[index].get_pixmap(dpi=PDF_COVER_DPI).tobytes("png"), doc.page_count
+    except Exception as err:
+        logger.debug(f"no page {index} from {path}: {err}")
+    return None, 0
+
+
 def _pdf_first_page(path: str) -> Optional[bytes]:
     import pymupdf
 

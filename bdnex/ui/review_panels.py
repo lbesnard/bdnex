@@ -357,6 +357,8 @@ HELP_SECTIONS = (
         "Left panel: [Folders] (on disk), [Organised] (where `bdnex move` would put them), [Filters] (Colour, Link, Review, series, author...). Click or Enter: all the files below it, 50 a page",
         "[n] / [b]  next / previous page    [f]  left panel on/off    [d]  album's metadata on/off    drag the thin bars between panes to resize",
         "[space] or ctrl-click ticks a folder or a filter, shift-click a list · [T] shows all the ticked together",
+        "The box {bold:Apply filters to folders} makes a click on a folder and a click on a filter work together (the files that match both)",
+        "Under the table, the arrows ◀ ▶ (click) or [b] / [n] turn the pages",
         "[C] columns (saved) · double-click a header: change its field · click a header: sort · [1]-[9] sort by that column",
     )),
     ("SEARCH", (
@@ -365,7 +367,7 @@ HELP_SECTIONS = (
         "[o] searches all the albums of the library (offline) to link the file to one",
     )),
     ("LINKING A FILE TO AN ALBUM", (
-        "[t] the candidates bdnex found · [o] search every known album · [i] type an id or a bédéthèque address · [p] open the album page · [c] compare covers",
+        "[t] the candidates bdnex found · [o] search every known album · [i] type an id or a bédéthèque address · [p] open the album page · [c] compare covers, then [z] full size: read the credits, ← → turn the pages, Tab the album's cover",
         "[k] this match is right: confirm (again: unconfirm) · [l] there is no album online · [u] unlink (it waits for an album) · [s] skip",
         "[a] gives the marked files the albums of a series (a number each) · [D] the other files of an album: trash a duplicate, make main, keep a version or child",
     )),
@@ -416,6 +418,17 @@ def help_text() -> Text:
             text.append(line[at:] + "\n")
         text.append("\n")
     return text
+
+
+class PagerChip(Static):
+    """A clickable word under the table (``◀ b  previous``): a click runs the action, like its key."""
+
+    def __init__(self, label: str, action: str, id: str) -> None:
+        super().__init__(Text(label, style="bold black on cyan"), id=id)
+        self.action_name = action
+
+    def on_click(self) -> None:
+        getattr(self.app, self.action_name)()
 
 
 class HelpChip(Static):
