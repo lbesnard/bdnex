@@ -5,6 +5,7 @@ Each is a thin widget over a library module (``library/folders``, ``library/twin
 
 from __future__ import annotations
 
+import re
 import os
 from functools import partial
 from typing import Optional
@@ -350,23 +351,81 @@ TIPS = (
     "? lists every key",
 )
 
-HELP = """\
-LOOKING
-  the left panel: Folders (on disk), Organised (as `bdnex move` would build them), Filters (Colour, Link, Review...). Click or Enter: all the files below it, 50 at a time
-  n / b      next / previous page (then the next / previous batch)         f   the left panel on or off      d   the album's metadata on or off
-  space or ctrl-click on a folder or a filter: tick it · shift-click: tick a list · T or 'Show ticked' shows all the ticked ones together · 'Clear ticks' unticks all
-  C  columns · double-click a header: change that column's field · click a header: sort · 1-9 sort by that column · search the page: slash, then ] and [
-  drag the thin bars between the panes to resize · Ctrl+P: every action and every filter value by name · ? this help · q quit
-DECIDING
-  k confirm the file (again: unconfirm) · l no album online (confirmed) · u unlink (not a confirmation) · s skip · o another album · t candidates · i address
-  space or ctrl-click on a row marks it · shift-click or shift+arrows marks a list · m marks all · x unmarks · k confirms all the marked · a gives them the albums of a series
-FIXING MANY AT ONCE
-  E (or e on several files) one form for the marked files: any field, series or one-shot, a number each (5, or HS 1 / INT: the HS 1..n button) · K series or one-shot · V number
-  D the duplicates of a file: trash, make main, keep as a version or child, wrong album · R the folder on the screen is confirmed
-COLOURS (a file you confirmed is green; otherwise by how it was linked)
-  green ● confirmed · cyan ○ auto matched (a strong match) · orange ◐ medium match · red ✖ doubtful, or no album
-  Link column: auto matched, medium match, doubtful, no album, manual · Review column: confirmed · kept / linked / no album online, unlinked, or -
-"""
+# What the help says: ("heading", [lines]); in a line, `[key]` is a key, `{green:...}` a word in that colour (the colours of the folders and columns)
+HELP_SECTIONS = (
+    ("LOOKING", (
+        "Left panel: [Folders] (on disk), [Organised] (where `bdnex move` would put them), [Filters] (Colour, Link, Review, series, author...). Click or Enter: all the files below it, 50 a page",
+        "[n] / [b]  next / previous page    [f]  left panel on/off    [d]  album's metadata on/off    drag the thin bars between panes to resize",
+        "[space] or ctrl-click ticks a folder or a filter, shift-click a list · [T] shows all the ticked together",
+        "[C] columns (saved) · double-click a header: change its field · click a header: sort · [1]-[9] sort by that column",
+    )),
+    ("SEARCH", (
+        "[/] searches this page (file, folder, album, destination, state); then `]` and `[` go to the next / previous hit",
+        "[Ctrl+P] finds any action or filter by name: `series tintin`, `author hergé`, `link doubtful`",
+        "[o] searches all the albums of the library (offline) to link the file to one",
+    )),
+    ("LINKING A FILE TO AN ALBUM", (
+        "[t] the candidates bdnex found · [o] search every known album · [i] type an id or a bédéthèque address · [p] open the album page · [c] compare covers",
+        "[k] this match is right: confirm (again: unconfirm) · [l] there is no album online · [u] unlink (it waits for an album) · [s] skip",
+        "[a] gives the marked files the albums of a series (a number each) · [D] the other files of an album: trash a duplicate, make main, keep a version or child",
+    )),
+    ("EDITING", (
+        "[space] or ctrl-click marks a row, shift-click or shift+arrows a list, [m] all, [x] none · [k] confirms all the marked",
+        "[e] one file by hand · [E] (or [e] on several) one form for the marked: any field, series or one-shot, a number each (`5`, or `HS 1`; the HS 1..n button)",
+        "[K] series or one-shot · [V] volume · [R] the folder on the screen is all confirmed",
+    )),
+    ("COLOURS (a file you confirmed is green, the others by how bdnex linked them; a folder takes its worst file)", (
+        "{green:● green}  confirmed by you      {cyan:○ cyan}  auto matched (a strong score) or an album you wrote",
+        "{dark_orange:◐ orange}  medium match: look at it      {red:✖ red}  doubtful (flagged) or no album: start here",
+        "The shape says it too, for a screen without colours. `!3` after a folder: 3 files wait for a look.",
+    )),
+    ("WORDS", (
+        "{bold:Link} column: how bdnex linked the file ({cyan:auto matched}, {dark_orange:medium match}, {red:doubtful}, {red:no album}, manual). {bold:Review} column: what you decided ({green:confirmed}, kept, linked, no album online, unlinked)",
+        "{bold:Series} / {bold:one-shot}: an album with a number in a series, or a stand-alone one · {bold:Category}: Series, Mangas, Comics... (a folder in the destination)",
+        "{bold:HS 1}: a hors-série, a tome with no number · {bold:Version}: another edition of an album (kept in `_versions`) · {bold:Child}: an album that belongs to another",
+        "{bold:Score}: how well the title matched, 0-100; at or above {bold:match.strong_threshold} (90) it is auto matched",
+    )),
+    ("CONFIG", (
+        "The columns, pane sizes, tab and panels are remembered in the library. The matching threshold, the destination templates (`paths`) and the sources are in your",
+        "configuration file: `bdnex config` shows it, `bdnex config --edit` opens it. `bdnex review --help` lists the options of this screen.",
+        "Nothing here moves or writes a comic file: `bdnex write` and `bdnex move` do, after you checked.",
+    )),
+)
+KEY = re.compile(r"\[([^\[\]]+)\]|\{(\w+):([^}]*)\}")
+HELP = "\n".join(f"{head}\n" + "\n".join(lines) for head, lines in HELP_SECTIONS)  # plain, for a test and for a screen without styles
+
+
+def help_text() -> Text:
+    """The help in colour: headings, keys, and the colours of the folders in their own colour."""
+    text = Text()
+    for head, lines in HELP_SECTIONS:
+        text.append(f"{head.split(' (')[0]}", style="bold reverse")
+        if " (" in head:
+            text.append(" (" + head.split(" (", 1)[1], style="dim")
+        text.append("\n")
+        for line in lines:
+            at = 0
+            text.append("  ")
+            for hit in KEY.finditer(line):
+                text.append(line[at:hit.start()])
+                if hit.group(1) is not None:
+                    text.append(f" {hit.group(1)} ", style="bold black on yellow")
+                else:
+                    text.append(hit.group(3), style="bold" if hit.group(2) == "bold" else f"bold {hit.group(2)}")
+                at = hit.end()
+            text.append(line[at:] + "\n")
+        text.append("\n")
+    return text
+
+
+class HelpChip(Static):
+    """``? Help`` at the top right: a click opens the help (the ``?`` key does too)."""
+
+    def __init__(self) -> None:
+        super().__init__(Text(" ? Help ", style="bold black on yellow"), id="helpchip")
+
+    def on_click(self) -> None:
+        self.app.action_help()
 
 
 class HelpScreen(ModalScreen):
@@ -380,7 +439,7 @@ class HelpScreen(ModalScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="help"):
-            yield Static(HELP, markup=False)
+            yield Static(help_text(), markup=False)
             yield Label(Text("Esc closes", style="dim"))
 
     def action_close(self) -> None:

@@ -39,7 +39,7 @@ from textual.widgets.option_list import Option
 from bdnex.library import review_batch as batch
 from bdnex.ui import color
 from bdnex.ui.review_extras import ReviewExtras
-from bdnex.ui.review_panels import FacetCommands, Splitter, legend
+from bdnex.ui.review_panels import FacetCommands, HelpChip, Splitter, legend
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "green", "skipped": "yellow"}
 STATUS_WORD = {"keep": "kept", "linked": "linked", "unlinked": "unlinked", "left": "no album online", "skipped": "skipped"}  # what a decision of this session is called
@@ -676,6 +676,9 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     TITLE = "bdnex review"
     COMMANDS = App.COMMANDS | {FacetCommands}
     CSS = """
+    #topbar { dock: top; height: 1; }
+    #topbar Header { dock: none; width: 1fr; }
+    #helpchip { width: 8; height: 1; }
     #queue-badge { dock: right; width: auto; height: 1; padding: 0 1; background: red; color: white; text-style: bold; display: none; }
     #loading { height: 2fr; min-height: 8; content-align: center middle; text-align: left; }
     #main { height: 1fr; }
@@ -780,7 +783,9 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
 
     # -- layout
     def compose(self) -> ComposeResult:
-        yield Header()
+        with Horizontal(id="topbar"):
+            yield Header()
+            yield HelpChip()
         yield Static("", id="queue-badge")
         with Horizontal(id="main"):
             with Vertical(id="folderpane"):

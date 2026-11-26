@@ -631,3 +631,23 @@ def test_shift_marks_a_list_of_rows_and_ticks_a_list_of_entries(env):
     drive(db, root, script)
     assert seen["marked"] == [0, 1, 2, 3] and seen["arrows"] == [0, 1, 2]
     assert seen["ticked"] == ["Series/Klezmer", "Series/Tintin"]
+
+
+def test_the_help_chip_at_the_top_right_opens_the_help_and_the_colours_are_in_colour(env):
+    from bdnex.ui import review_panels as panels
+
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        await pilot.click("#helpchip")
+        await pilot.pause()
+        seen["help"] = type(app.screen).__name__
+
+    drive(db, root, script)
+    assert seen["help"] == "HelpScreen"
+    text = panels.help_text()
+    styles = {str(span.style) for span in text.spans}
+    assert {"bold green", "bold cyan", "bold dark_orange", "bold red"} <= styles
+    assert "SEARCH" in text.plain and "LINKING" in text.plain and "CONFIG" in text.plain and "WORDS" in text.plain
+    assert "{" not in text.plain and "[" not in text.plain.replace("`[`", "")
