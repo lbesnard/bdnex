@@ -963,3 +963,34 @@ def test_choosing_series_in_the_form_fills_the_name_and_the_destination_follows(
     drive(db, root, script)
     assert seen["name"] == "One" and seen["still_open"] and "name of the series" in seen["problem"]
     assert seen["before"] != seen["after"] and all(d.startswith("Series/Solo Series/") for d in seen["after"])
+
+
+def test_the_kind_of_the_form_is_a_field_like_the_others(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        from textual.widgets import Select
+
+        app.open_folder("Series/Tintin")  # three series albums
+        await settle(app, pilot)
+        await pilot.press("m")
+        await pilot.press("E")
+        await pilot.pause(0.5)
+        seen["all_series"] = app.screen.query_one("#bulkkind", Select).value
+        await pilot.click("#ok")  # nothing changed: saving is fine, nothing is written
+        await pilot.pause(0.6)
+        seen["closed"] = type(app.screen).__name__ != "BulkScreen"
+        app.open_folder("Series")  # series albums only too: make one of them a one-shot, then they differ
+        await settle(app, pilot)
+        lib.make_oneshot(lib.find_album("b", "t3"))
+        await pilot.press("m")
+        await pilot.press("E")
+        await pilot.pause(0.5)
+        select = app.screen.query_one("#bulkkind", Select)
+        seen["mixed"] = (select.value, "several" in select.classes)
+        await pilot.press("escape")
+
+    drive(db, root, script)
+    assert seen["all_series"] == "series" and seen["closed"]
+    assert seen["mixed"] == ("", True)

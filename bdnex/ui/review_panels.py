@@ -584,13 +584,14 @@ class BulkScreen(ModalScreen):
     .fieldrow Input.emptied > .input--placeholder { color: red; text-style: bold; }
     .fieldrow Input.several > .input--placeholder { color: darkorange; text-style: bold; }
     #bulkkind { width: 30; }
+    #bulkkind.several SelectCurrent { color: darkorange; text-style: bold; }
     #bulkvolumes { height: 9; }
     #bulkproblem { color: $error; height: auto; }
     #bulkbuttons { height: 3; align-horizontal: right; }
     #bulkbuttons Button { margin-left: 2; }
     """
 
-    KINDS = [("leave as they are", ""), ("series (named above)", "series"), ("one-shots", "oneshot")]
+    KINDS = [("series", "series"), ("one-shot", "oneshot")]
 
     def __init__(self, heading: str, shared: dict, fields, files: list[tuple[str, str, str]], hints: Optional[dict] = None) -> None:
         """``fields``: ``manual.FIELDS``-like rows ``(key, label, hint)``; ``shared``: what the albums agree on (``None``: they differ);
@@ -608,8 +609,11 @@ class BulkScreen(ModalScreen):
             with Vertical(id="bulkfields"):
                 with Horizontal(classes="fieldrow"):
                     yield Label("Kind", classes="fieldname")
-                    now = {"series": "series", "oneshot": "one-shots"}.get(self.shared.get("kind") or "", "series and one-shots")
-                    yield Select([(f"leave as they are (now: {now})", ""), *self.KINDS[1:]], value="", allow_blank=False, id="bulkkind")
+                    # a field like the others: the kind they all have, or "(several values)" (a blank choice that changes nothing)
+                    blank = "(several values)" if "kind" in self.shared else "(no album yet)"
+                    options = [*self.KINDS] if self.shared.get("kind") else [(blank, ""), *self.KINDS]
+                    yield Select(options, value=self.shared.get("kind") or "", allow_blank=False, id="bulkkind",
+                                 classes="" if self.shared.get("kind") else "several")
                 for key, label, hint in self.fields:
                     shared = self.shared.get(key)
                     holder = "(several values)" if shared is None else (shared or self.hints.get(key) or hint)
@@ -651,7 +655,7 @@ class BulkScreen(ModalScreen):
 
     def on_select_changed(self, event: Select.Changed) -> None:
         """Choosing "series" asks for its name: the box is filled with the folder's name (change it if it is not the series) and gets the focus."""
-        if event.select.id != "bulkkind" or event.value != "series" or not self.fields or not any(k == "series" for k, _, _ in self.fields):
+        if event.select.id != "bulkkind" or event.value != "series" or event.value == (self.shared.get("kind") or "") or not self.fields or not any(k == "series" for k, _, _ in self.fields):
             return
         box = self.query_one("#b-series", Input)
         if not box.value.strip():
@@ -716,7 +720,8 @@ class BulkScreen(ModalScreen):
                 volumes[path], specials[path] = int(first), None
             else:  # text: a tome with no number (HS 1, INT, 16B6)
                 volumes[path], specials[path] = None, first or None
-        kind = self.query_one("#bulkkind", Select).value or None
+        chosen = self.query_one("#bulkkind", Select).value or ""
+        kind = None if chosen == (self.shared.get("kind") or "") else (chosen or None)  # (the kind they have already is no change)
         if kind == "series" and not (values.get("series") or "").strip():
             self.query_one("#bulkproblem", Label).update("Type the name of the series (above), or choose another kind")
             self.query_one("#b-series", Input).focus()
