@@ -126,7 +126,7 @@ cover:
   # A real picture needs `set -g allow-passthrough on` in tmux, and a tmux inside a tmux usually blocks it.
   picture: symbols
   # tmux can leave a real picture on the screen after it is closed (tmux issues 5126, 5894): a temporary workaround, see the next option.
-  redraw_after_picture: false           # true: redraw the whole screen (`tmux refresh-client`) when a real picture is closed; try it if pictures stay on screen
+  redraw_after_picture: false           # true: clear the terminal and redraw the whole screen when a real picture is closed; try it if pictures stay on screen
 
 api:
   host: 127.0.0.1                        # `bdnex serve` listens here; anything but this machine needs a password or a token

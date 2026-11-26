@@ -704,20 +704,26 @@ class Pictures:
 
 
     def redraw_after(self) -> None:
-        """A real picture was shown: the whole screen is drawn again once it is closed. tmux can leave a picture on the screen (it does not
-        clear what a program drew past it); ``tmux refresh-client`` is the redraw you would ask for by hand. ``cover.redraw_after_picture: false``
-        turns it off (when tmux no longer does this). Never an error: it is only a help."""
+        """A real picture was shown: once it is closed the terminal is cleared and the whole screen drawn again. Textual only sends the cells
+        that changed, so it never touches the ones a picture sits on, and tmux (or the terminal) keeps the picture there; clearing the
+        terminal (ESC [ 2 J) takes it away, and the full repaint puts the app back. ``cover.redraw_after_picture: false`` (the default) turns it
+        off. Never an error: it is only a help."""
         from bdnex.ui.cover_text import GRAPHICS
 
         if self.picture_mode() not in GRAPHICS or not getattr(getattr(getattr(self.app, "settings", None), "cover", None), "redraw_after_picture", False):
             return
-        self.app.refresh(layout=True)
-        if os.environ.get("TMUX"):
-            def refresh() -> None:
+        app = self.app
+
+        def repaint() -> None:
+            with contextlib.suppress(Exception):
+                self.write_raw(b"\x1b[2J")
+                app.refresh(layout=True)
+                app.screen.refresh(layout=True)
+            if os.environ.get("TMUX"):
                 with contextlib.suppress(Exception):
                     subprocess.Popen(["tmux", "refresh-client"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            self.app.set_timer(0.15, refresh)  # (after the screen under the popup has been painted again)
+        app.set_timer(0.15, repaint)  # (after the screen under the popup is ready)
 
 
 class PageScreen(Pictures, ModalScreen):

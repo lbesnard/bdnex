@@ -1343,7 +1343,8 @@ def test_closing_a_real_picture_asks_tmux_to_redraw_unless_the_option_is_off(env
     db, root, paths = env
     asked = []
     monkeypatch.setattr(cover_text, "graphic", lambda image, columns, rows, how: b"<PICTURE>")
-    monkeypatch.setattr(review_tui.Pictures, "write_raw", lambda self, data: None)
+    cleared = []
+    monkeypatch.setattr(review_tui.Pictures, "write_raw", lambda self, data: cleared.append(data) if data == b"\x1b[2J" else None)
     real = subprocess.Popen
     monkeypatch.setattr(subprocess, "Popen", lambda cmd, *a, **kw: asked.append(cmd) if cmd[0] == "tmux" else real(cmd, *a, **kw))
     monkeypatch.setenv("TMUX", "/tmp/tmux-1/default,1,0")
@@ -1375,6 +1376,7 @@ def test_closing_a_real_picture_asks_tmux_to_redraw_unless_the_option_is_off(env
 
     drive(db, root, script)
     assert script.on == [["tmux", "refresh-client"]] and script.off == [] and script.text == []
+    assert len(cleared) == 1  # the terminal was cleared once (the first close), and the screen drawn again
 
 
 def test_the_redraw_option_is_in_the_config_with_its_own_comment_and_off_by_default():
