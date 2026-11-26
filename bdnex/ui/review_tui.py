@@ -36,7 +36,7 @@ from textual.screen import ModalScreen
 from textual.widgets import TabbedContent, TabPane, Button, Checkbox, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
-from bdnex.library import review_batch as batch
+from bdnex.library import browse, review_batch as batch
 from bdnex.ui import color
 from bdnex.ui.review_extras import ReviewExtras
 from bdnex.ui.review_panels import FacetCommands, HelpChip, Splitter, legend
@@ -685,6 +685,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     #folderpane { width: 38; border-right: solid $accent; }
     #tickbar { height: 3; }
     #tickbar Button { min-width: 8; margin-right: 1; }
+    #narrow { height: 1; border: none; padding: 0 1; background: transparent; }
     #trees { height: 1fr; }
     #legend { height: 2; padding: 0 1; }
     #folderslot, #moveslot, #facetslot { height: 1fr; }
@@ -760,6 +761,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         self.album_data: dict = {}  # album id -> the album, for the cells a selection did not build
         self.file_data: dict = {}  # path -> the file's record, the same
         self.load_view()  # the columns as they were left (saved in the library)
+        self.view_places: list = []  # the folders on the screen and the filters on it, for the "Narrow the view" box
+        self.view_facets: list = []
         self.shown: set[str] = set()  # every file of every batch of this run: the next batch never repeats one
         self.number = 0
         self.terminal_stderr = sys.stderr  # the real one, before any fetch redirects it
@@ -792,6 +795,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
                 with Horizontal(id="tickbar"):
                     yield Button("Show ticked", id="show-ticked")
                     yield Button("Clear ticks", id="clear-ticks")
+                yield Checkbox("Narrow the view (folder + filters)", id="narrow")
                 with TabbedContent(id="trees"):
                     with TabPane("Folders", id="tab-folders"):
                         with Vertical(id="folderslot"):
@@ -1925,6 +1929,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         else:
             file = self.library.get_file(row.path) or {}
             row.cover = file.get("cover_score")
+            batch.refresh_link(self.library, row, browse.strong_of(self.settings))
             row.message = f"linked to {row.album} · page and cover fetched" + (
                 f" · its cover is {row.cover:.0f}% like the file's" if row.cover is not None else "")
             logger.info("%s: %s", os.path.basename(row.path), row.message)

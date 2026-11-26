@@ -12,7 +12,7 @@ import os
 from typing import Optional
 
 from rich.text import Text
-from textual.widgets import Button, Static
+from textual.widgets import Button, Checkbox, Static
 
 from bdnex.library import review_batch as batch
 from bdnex.ui import review_panels as panels
@@ -263,6 +263,12 @@ class ReviewExtras:
         elif event.button.id == "clear-ticks":
             self.action_clear_ticks()
 
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Ticking the box again shows the view as it is with the box's meaning: the places and filters on screen, narrowed (or not) from now on."""
+        if event.checkbox.id == "narrow" and self.view_places + self.view_facets:
+            self.say("Narrow the view: a click on a folder or a filter now adds to what is shown." if event.value
+                     else "Narrow off: a click shows only what you clicked.")
+
     def action_show_ticked(self) -> None:
         picks = self.ticked_selections()
         if not picks:
@@ -282,11 +288,38 @@ class ReviewExtras:
         self.open_selection("facet", (group, value), f"{group}: {value}")
 
     def open_selection(self, kind: str, value, title: str) -> None:
-        self.open_selections([(kind, value)], title)
+        pick = (kind, value)
+        if self.narrowing():
+            # "Narrow the view": the click is added to what is on the screen. A folder keeps the filters; a filter keeps the folders and
+            # the filters of the other groups (a filter of its own group replaces the old one).
+            places, facets = list(self.view_places), list(self.view_facets)
+            if kind == "facet":
+                facets = [f for f in facets if f[1][0] != value[0]] + [pick]
+            else:
+                places = [pick]
+            picks = places + facets
+            if len(picks) > 1:
+                title = " + ".join(self.pick_title(p) for p in picks) if kind != "facet" else f"{title} (narrowed)"
+            self.open_selections(picks, title)
+            return
+        self.open_selections([pick], title)
+
+    @staticmethod
+    def pick_title(pick) -> str:
+        kind, value = pick
+        return f"{value[0]}: {value[1]}" if kind == "facet" else (f"organised: {value}" if kind == "planned" else value or "the collection")
+
+    def narrowing(self) -> bool:
+        try:
+            return bool(self.query_one("#narrow", Checkbox).value)
+        except Exception:  # (no box yet: the screen is still being built)
+            return False
 
     def open_selections(self, picks: list, title: str, page: int = 0) -> None:
         """The files of one or several selections, one page (a batch size) at a time: folders and ``organised`` folders are alternatives, a group's
         values are alternatives, different groups go together. ``n`` and ``b`` turn the pages."""
+        self.view_places = [p for p in picks if p[0] in ("folder", "planned")]
+        self.view_facets = [p for p in picks if p[0] == "facet"]
         only = picks[0] if len(picks) == 1 else None
         self.folder_current = only[1] if only and only[0] == "folder" else ""
         self.say(f"Reading {title}...")

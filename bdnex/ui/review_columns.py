@@ -200,7 +200,7 @@ class ColumnsMixin:
         if key == "cover":
             return t.score_text(row.cover)
         if key == "match":
-            return Text("you", style="cyan") if row.status == "linked" else t.score_text(row.score)
+            return Text("you", style="cyan") if row.status == "linked" and row.score is None else t.score_text(row.score)
         if key == "link":
             return self.link_cell(row)
         if key == "review":

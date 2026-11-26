@@ -49,6 +49,12 @@ def link_sql(strong: float) -> str:
             f"WHEN {SCORE_SQL} IS NULL THEN 'manual' WHEN {SCORE_SQL} >= {float(strong)} THEN 'auto matched' ELSE 'medium match' END)")
 
 
+def link_of_file(library, file_id: int, strong: float) -> tuple[str, Optional[float]]:
+    """``(link word, import score)`` of one file as the library says now (after a link, a fetch): the same SQL as the lists."""
+    row = library.conn.execute(f"SELECT {link_sql(strong)}, {SCORE_SQL} {JOINS} WHERE f.id = ?", (file_id,)).fetchone()
+    return (row[0], row[1]) if row else ("no album", None)
+
+
 def level_sql(strong: float) -> str:
     """The colour of a file: green when you confirmed it, else by how it was linked (cyan auto matched or manual, orange medium, red doubtful or no album)."""
     return (f"(CASE WHEN {CONFIRMED_SQL} THEN 'green' WHEN {link_sql(strong)} IN ('auto matched', 'manual') THEN 'cyan' "

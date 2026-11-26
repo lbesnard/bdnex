@@ -255,7 +255,7 @@ def link_info(library: Library, row: Row, info, url: Optional[str] = None) -> in
     album = library.get_album(album_id) or {}
     row.album, row.album_id, row.album_url = label(album), album_id, album.get("url") or url or info.url
     row.facts = facts_of(album, library.get_file(row.path))
-    row.cover, row.score, row.kind, row.why = None, None, "ok", ["+ chosen by you"]
+    row.cover, row.score, row.kind, row.why, row.link = None, None, "ok", ["+ chosen by you"], "manual"
     decide(library, row, "other", album_id)
     row.message = f"linked to {row.album}" + (" (a spare version: it has another file)" if others else "")
     return album_id
@@ -278,7 +278,7 @@ def record_manual(library: Library, row: Row, album_id: int) -> None:
     album = library.get_album(album_id) or {}
     row.album, row.album_id, row.album_url = label(album), album_id, None
     row.facts = facts_of(album, library.get_file(row.path))
-    row.cover, row.score, row.kind, row.why = None, None, "ok", ["+ written by you"]
+    row.cover, row.score, row.kind, row.why, row.link = None, None, "ok", ["+ written by you"], "manual"
     decide(library, row, "other", album_id)
     row.message = f"linked to {row.album} (written by hand)"
 
@@ -295,6 +295,7 @@ def finish_link(library: Library, row: Row, before: Optional[int], url: Optional
     album = library.get_album(now) or {}
     row.album, row.album_id, row.album_url = label(album), now, album.get("url")
     row.facts = facts_of(album, library.get_file(row.path))
+    row.score, row.kind, row.link = None, "ok", "manual"  # chosen by you: the old doubt is not this link
     decide(library, row, "other", now)
     row.message = f"linked to {row.album}"
     return True, row.message
@@ -427,3 +428,16 @@ def propose_for_series(source, candidate, paths: list[str]):
     if series is None:
         return None
     return folders.propose_for_series(source, series.source_id, series.name, paths, {})
+
+
+def refresh_link(library: Library, row: Row, strong: float) -> None:
+    """After the page and cover came: the score and the Link word as the library has them now (the import may have recorded a score, or doubted the link again)."""
+    row.file_id = row.file_id or (library.get_file(row.path) or {}).get("id")
+    if row.file_id is None:
+        return
+    from bdnex.library import browse
+
+    row.link, score = browse.link_of_file(library, row.file_id, strong)
+    row.score = score
+    if row.link == "doubtful":
+        row.kind = "wrong"

@@ -651,3 +651,47 @@ def test_the_help_chip_at_the_top_right_opens_the_help_and_the_colours_are_in_co
     assert {"bold green", "bold cyan", "bold dark_orange", "bold red"} <= styles
     assert "SEARCH" in text.plain and "LINKING" in text.plain and "CONFIG" in text.plain and "WORDS" in text.plain
     assert "{" not in text.plain and "[" not in text.plain.replace("`[`", "")
+
+
+def test_a_doubtful_file_you_link_is_no_longer_doubtful_after_the_fetch(env):
+    db, root, paths = env
+    with Library(db, root=root) as lib:
+        lib.flag_review(paths["t2"], "looks like another volume")
+        settings = load_config().settings
+        row = next(r for r in batch.next_batch(lib, settings, size=50, everything=True) if r.path == paths["t2"])
+        row.link, row.kind = "doubtful", "wrong"
+        batch.link_info(lib, row, AlbumInfo("b", "t2", "Tintin 2", series=SeriesInfo("b", "t", "Tintin"), volume=2))
+        assert row.link == "manual" and row.kind == "ok"  # at once, before any page
+        lib.log_import(paths["t2"], "tagged", 97.0)  # what the fetch's import recorded
+        batch.refresh_link(lib, row, 90.0)
+        assert row.link == "auto matched" and row.score == 97.0
+        lib.flag_review(paths["t2"], "doubt again")  # the page may find something against it: it is said, not hidden
+        batch.refresh_link(lib, row, 90.0)
+        assert row.link == "doubtful"
+
+
+def test_narrow_the_view_adds_a_click_to_what_is_on_the_screen(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        from textual.widgets import Checkbox
+
+        app.open_facet("Review", "confirmed")
+        await settle(app, pilot)
+        seen["alone"] = len(app.rows)  # box off: just the filter (all the confirmed files)
+        app.query_one("#narrow", Checkbox).value = True
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        seen["narrowed"] = sorted(os.path.basename(r.path) for r in app.rows)  # the folder AND the filter kept from before
+        app.open_facet("Link", "auto matched")
+        await settle(app, pilot)
+        seen["third"] = sorted(os.path.basename(r.path) for r in app.rows)  # the folder kept, the filters of two groups
+        app.query_one("#narrow", Checkbox).value = False
+        app.open_folder("Series/Klezmer")
+        await settle(app, pilot)
+        seen["off"] = len(app.rows)
+
+    drive(db, root, script)
+    assert seen["alone"] == 1 and seen["narrowed"] == ["Tintin T1.cbz"]
+    assert seen["third"] == ["Tintin T1.cbz"] and seen["off"] == 2
