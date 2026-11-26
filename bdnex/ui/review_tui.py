@@ -672,7 +672,35 @@ class EditScreen(ModalScreen):
         self.dismiss(None)
 
 
-class PageScreen(ModalScreen):
+class Pictures:
+    """What a screen needs to draw a real picture (kitty, iTerm2, sixel) straight on the terminal, past Textual, and to take it away."""
+
+    deletes_kitty = False  # set when the kitty mode draws (its pictures stay on the terminal until deleted)
+
+    def picture_mode(self) -> str:
+        return getattr(getattr(getattr(self.app, "settings", None), "cover", None), "picture", "symbols")
+
+    def write_raw(self, data: bytes) -> None:
+        """Straight to the terminal, past Textual (it knows nothing of pictures): used only for the real-picture modes."""
+        driver = getattr(self.app, "_driver", None)
+        if driver is not None:
+            driver.write(data.decode("utf-8", "replace"))
+            flush = getattr(driver, "flush", None)
+            if flush:
+                flush()
+
+    def place(self, sequence: bytes, x: int, y: int) -> None:
+        """The picture goes at screen cell ``(x, y)``, its top left; the cursor is put back where it was."""
+        self.write_raw(b"\x1b7" + f"\x1b[{y + 1};{x + 1}H".encode() + sequence + b"\x1b8")
+
+    def clear_graphic(self) -> None:
+        """A kitty picture stays until it is deleted (sixel and iTerm2 pictures are painted over by the next draw)."""
+        if self.deletes_kitty:
+            delete = b"\x1b_Ga=d\x1b\\"
+            self.write_raw(b"\x1bPtmux;\x1b" + delete.replace(b"\x1b", b"\x1b\x1b") + b"\x1b\\" if os.environ.get("TMUX") else delete)
+
+
+class PageScreen(Pictures, ModalScreen):
     """One picture as large as the terminal allows, to read the credits: the pages of the file (left / right), or the album's saved cover (Tab).
     It is text (chafa when installed, else half blocks), so it works over SSH and in tmux."""
 
@@ -704,30 +732,15 @@ class PageScreen(ModalScreen):
             yield Label("", id="pagefoot")
 
     def on_mount(self) -> None:
-        self.deletes_kitty = getattr(getattr(getattr(self.app, "settings", None), "cover", None), "picture", "") == "kitty"
+        self.deletes_kitty = self.picture_mode() == "kitty"
         self.show()
 
-    def write_raw(self, data: bytes) -> None:
-        """Straight to the terminal, past Textual (it knows nothing of pictures): used only for the real-picture modes."""
-        driver = getattr(self.app, "_driver", None)
-        if driver is not None:
-            driver.write(data.decode("utf-8", "replace"))
-            flush = getattr(driver, "flush", None)
-            if flush:
-                flush()
-
     def draw_graphic(self, sequence: bytes) -> None:
-        """The picture goes over the (blank) area of the screen, at its top left; the cursor is put back where it was."""
+        """The picture goes over the (blank) area of the screen, at its top left."""
         if not self.is_attached:
             return
         region = self.query_one("#picture", Static).region
-        self.write_raw(b"\x1b7" + f"\x1b[{region.y + 1};{region.x + 1}H".encode() + sequence + b"\x1b8")
-
-    def clear_graphic(self) -> None:
-        """A kitty picture stays until it is deleted (sixel and iTerm2 pictures are painted over by the next draw)."""
-        if self.deletes_kitty:
-            delete = b"\x1b_Ga=d\x1b\\"
-            self.write_raw(b"\x1bPtmux;\x1b" + delete.replace(b"\x1b", b"\x1b\x1b") + b"\x1b\\" if os.environ.get("TMUX") else delete)
+        self.place(sequence, region.x, region.y)
 
     def action_close(self) -> None:
         self.clear_graphic()
@@ -812,7 +825,7 @@ class PageScreen(ModalScreen):
             + ("" if by != "half blocks" else "   ·   (install chafa for a sharper picture)") + (f"   ·   {note}" if note else ""), style="dim"))
 
 
-class CoverScreen(ModalScreen):
+class CoverScreen(Pictures, ModalScreen):
     """The file's first page next to the album's saved cover, drawn with text (works over SSH). Any key closes it."""
 
     BINDINGS = [Binding("escape", "close", "Close"), Binding("c", "close", "Close", show=False),
@@ -837,16 +850,31 @@ class CoverScreen(ModalScreen):
             yield Label(Text("z: full size (zoom with + and -, read the credits, turn the pages) · c / Esc: close", style="dim"), id="foot")
 
     def on_mount(self) -> None:
+        self.deletes_kitty = self.picture_mode() == "kitty"
         self.run_worker(self.load, thread=True, exclusive=True)
 
     def load(self) -> None:
-        from bdnex.ui.cover_text import half_blocks
+        """Both pictures drawn the way ``cover.picture`` says (the same as the full-size page): chafa symbols, half blocks, or a real picture."""
+        from bdnex.ui.cover_text import GRAPHICS, graphic, picture
 
+        how = self.picture_mode()
+        left = right = None
+        notes = ""
         try:
             local, online, notes = batch.read_covers(*self.files)
-            width = max(20, min(40, (self.app.size.width * 9 // 10 - 12) // 2))
-            left = half_blocks(local, width) if local else None
-            right = half_blocks(online, width) if online else None
+            columns = max(20, min(40, (self.app.size.width * 9 // 10 - 12) // 2))
+            rows = max(10, min(30, self.app.size.height - 10))
+
+            def draw(image):
+                if not image:
+                    return None
+                if how in GRAPHICS:
+                    sequence = graphic(image, columns, rows, how)
+                    if sequence:
+                        return (Text("\n".join(" " * columns for _ in range(rows))), "graphic", sequence)
+                return picture(image, columns, rows, use_chafa=how != "blocks")
+
+            left, right = draw(local), draw(online)
         except Exception as err:  # a picture is a help: its failure is said on the screen, never the end of the program
             left = right = None
             notes = f"could not read the pictures: {err}"
@@ -859,20 +887,31 @@ class CoverScreen(ModalScreen):
         if not self.is_attached or not self.query("#left"):
             return
 
-        def side(heading: str, picture) -> Text:
+        def side(heading: str, made) -> Text:
             text = Text(heading + "\n", style="bold")
-            text.append_text(picture if picture is not None else Text("(none)", style="dim"))
+            text.append_text(made[0] if made is not None else Text("(none)", style="dim"))
             return text
 
         self.query_one("#left", Static).update(side("the file", left))
         self.query_one("#right", Static).update(side("the album (saved cover)", right))
+        self.clear_graphic()
+        for made, where in ((left, "#left"), (right, "#right")):
+            if made is not None and len(made) > 2 and made[2]:
+                self.call_after_refresh(self.draw_in, made[2], where)
         if notes:
             self.query_one("#foot", Label).update(Text(notes + "   ·   z: full size · c / Esc: close", style="yellow"))
 
+    def draw_in(self, sequence: bytes, where: str) -> None:
+        if self.is_attached and self.query(where):
+            region = self.query_one(where, Static).region
+            self.place(sequence, region.x, region.y + 1)  # (under the heading line)
+
     def action_zoom(self) -> None:
+        self.clear_graphic()
         self.app.push_screen(PageScreen(self.title_text, self.files))
 
     def action_close(self) -> None:
+        self.clear_graphic()
         self.dismiss(None)
 
 

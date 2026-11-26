@@ -1287,3 +1287,30 @@ def test_the_form_for_many_files_has_a_restore_button_that_asks_for_the_site_val
     drive(db, root, script)
     assert seen["has"] and seen["restored"] == {"publisher"} and seen["then"] == set()
     assert seen["publishers"] == [f"Site {i}" for i in seen["ids"]]
+
+
+def test_the_cover_popup_follows_the_picture_setting_like_the_full_size_page(env, monkeypatch):
+    from bdnex.ui import cover_text
+
+    db, root, paths = env
+    seen = {"writes": []}
+    monkeypatch.setattr(cover_text, "graphic", lambda image, columns, rows, how: b"<PICTURE %s %dx%d>" % (how.encode(), columns, rows))
+    monkeypatch.setattr(review_tui.Pictures, "write_raw", lambda self, data: seen["writes"].append(data))
+
+    async def script(app, pilot, lib):
+        object.__setattr__(app.settings.cover, "picture", "kitty")
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("c")
+        for _ in range(40):
+            await pilot.pause(0.1)
+            if any(b"<PICTURE kitty" in w for w in seen["writes"]):
+                break
+        seen["screen"] = type(app.screen).__name__
+        await pilot.press("escape")
+        await pilot.pause()
+
+    drive(db, root, script)
+    assert seen["screen"] == "CoverScreen"
+    assert any(b"<PICTURE kitty" in w and w.startswith(b"\x1b7\x1b[") for w in seen["writes"])
+    assert any(b"_Ga=d" in w for w in seen["writes"])  # taken away when the popup closes
