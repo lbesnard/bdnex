@@ -1444,3 +1444,88 @@ def test_a_popup_asked_twice_to_close_closes_once_and_the_screen_stays(env):
 
     drive(db, root, script)
     assert seen["answers"] == [True] and seen["alive"] and seen["screen"] != "AskScreen"
+
+
+def test_the_form_for_many_files_makes_them_versions_with_a_name_from_the_dropdown(env):
+    from textual.widgets import Select
+
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("m")
+        await pilot.press("E")
+        await pilot.pause()
+        select = app.screen.query_one("#versionpick", Select)
+        seen["choices"] = [value for _, value in select._options]
+        seen["before"] = [r.album_id for r in app.rows]
+        select.value = "Dossier"
+        await pilot.pause()
+        app.screen.action_accept()
+        await settle(app, pilot)
+        seen["albums"] = [lib.get_album(r.album_id) for r in app.rows]
+
+    drive(db, root, script)
+    assert seen["choices"][1:5] == ["Dossier", "Cahier", "Noir et blanc", "Croquis"]  # the first is "not a version", the last "another name"
+    assert seen["albums"] and all(a["relation"] == "version" and a["title"].endswith("(Dossier)") for a in seen["albums"])
+    assert all(a["id"] not in seen["before"] for a in seen["albums"])  # each file has an album of its own
+
+
+def test_the_form_for_one_file_offers_the_versions_and_a_typed_name(env):
+    from textual.widgets import Select
+
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("e")
+        await pilot.pause()
+        before = app.current().album_id
+        app.screen.query_one("#versionpick", Select).value = "__other__"
+        app.screen.query_one("#versionname").value = ""
+        app.screen.action_accept()  # "another name" with no name typed: the form stays open and says so
+        await pilot.pause()
+        seen["open"] = type(app.screen).__name__
+        seen["problem"] = str(app.screen.query_one("#problem").render())
+        app.screen.query_one("#versionname").value = "Tirage de tête"
+        app.screen.action_accept()
+        await settle(app, pilot)
+        album = lib.get_album(app.current().album_id)
+        seen["album"] = (album["title"], album["relation"], app.current().album_id != before)
+
+    drive(db, root, script)
+    assert seen["open"] == "EditScreen" and "name of the version" in seen["problem"]
+    assert seen["album"][0].endswith("(Tirage de tête)") and seen["album"][1:] == ("version", True)
+
+
+def test_a_spare_version_can_go_inside_the_albums_own_folder():
+    from pathlib import Path
+    from types import SimpleNamespace
+
+    from bdnex.organizer.organizer import Organizer
+
+    def settings(place):
+        return SimpleNamespace(duplicates=SimpleNamespace(versions_dir="_versions", versions_place=place))
+
+    root = Path("/lib")
+    top = Organizer._spare_path(SimpleNamespace(settings=settings("top")), root, ["Series", "Tintin"], "Tintin - T01.cbz")
+    beside = Organizer._spare_path(SimpleNamespace(settings=settings("beside")), root, ["Series", "Tintin"], "Tintin - T01.cbz")
+    assert top == "/lib/_versions/Series/Tintin/Tintin - T01.cbz"
+    assert beside == "/lib/Series/Tintin/_versions/Tintin - T01.cbz"
+
+
+def test_a_new_config_file_starts_with_the_collection_and_cycle_templates():
+    import yaml
+
+    from bdnex import config
+    from bdnex.config_template import complete
+
+    text, _ = complete(config.USER_TEMPLATE.format(version=config.CONFIG_VERSION, placeholder="/comics"))
+    settings, _, _ = config.build_settings(yaml.safe_load(text))
+    assert settings.paths.series.startswith("Series/%ifdef{collection,$collection}/$series%ifdef{cycle, - Cycle $cycle:02}/")
+    assert settings.paths.oneshot == "OneShot/$title ($authors) [$year]/$title ($authors) [$year]"
+    assert settings.duplicates.versions_place == "top" and settings.duplicates.version_labels[0] == "Dossier"

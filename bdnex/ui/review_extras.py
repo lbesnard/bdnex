@@ -517,7 +517,7 @@ class ReviewExtras:
         folders = {os.path.basename(os.path.dirname(r.path)) for r in rows}
         hints = {"series": folders.pop()} if len(folders) == 1 else {}  # (grey: the folder's name, only a suggestion for files with no series)
         restorable = any(manual.is_site_album(self.library, r.album_id) for r in rows)
-        self.push_screen(panels.BulkScreen(heading, shared, fields, files, hints, restorable), lambda got: self.apply_bulk(rows, got) if got else None)
+        self.push_screen(panels.BulkScreen(heading, shared, fields, files, hints, restorable, self.settings.duplicates.version_labels), lambda got: self.apply_bulk(rows, got) if got else None)
 
     def apply_bulk(self, rows, got: dict) -> None:
         from bdnex.library import bulk, manual
@@ -532,6 +532,7 @@ class ReviewExtras:
         if not out.ok:
             self.notify("Nothing written: " + "; ".join(out.problems[:3]), severity="error", timeout=10)
             return
+        version = got.get("version") or ""
         for row, target in zip(rows, targets):
             if row.album_id is None and target.album_id is not None:
                 self.supersede(row)
@@ -544,7 +545,31 @@ class ReviewExtras:
             self.refresh_dest(row)
             self.refresh_row(row)
         self.notify(f"{out.changed} album(s) changed, {out.created} written by hand, {out.marked} file(s) reviewed", timeout=6)
+        if version:
+            self.make_versions(rows, version)
         self.schedule_counts()
+
+    def make_versions(self, rows, label: str) -> None:
+        """Each file is another version of its album, called ``label`` (Dossier, Noir et blanc...): ``twins.keep_as_version``, the same as ``D`` then ``v``."""
+        from bdnex.library import twins
+
+        done, failed = 0, []
+        for row in rows:
+            try:
+                new = twins.keep_as_version(self.library, row.path, "version", label)
+            except Exception as err:  # (a file with no album: said, the others go on)
+                failed.append(f"{os.path.basename(row.path)}: {err}")
+                continue
+            batch.record_manual(self.library, row, new)
+            done += 1
+        self.refresh_album_rows({r.album_id for r in rows if r.album_id is not None})
+        for row in rows:
+            self.refresh_dest(row)
+            self.refresh_row(row)
+        if failed:
+            self.notify("Not a version: " + "; ".join(failed[:3]), severity="warning", timeout=8)
+        if done:
+            self.notify(f"{done} file(s) are now a version ({label}) of their album: each has an album of its own, linked to the first", timeout=7)
 
     def action_kind(self) -> None:
         """Series or one-shot for the marked files (or the one under the cursor): a one-shot becomes a series (asked for its name), a series

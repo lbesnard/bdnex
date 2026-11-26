@@ -99,6 +99,8 @@ duplicates:
   action: ask                            # ask | skip | keep_both | replace
   prefer: [cbz, cbr, pdf]                # the format suggested first when two files are the same book
   versions_dir: _versions                # spare versions of an album, inside `collection_path`
+  versions_place: top          # top: `_versions/<the album's path>`; beside: `_versions` inside the album's own folder
+  version_labels: [Dossier, Cahier, Noir et blanc, Croquis]  # the names the review screen offers for a version of an album
 
 trash:
   dir: .bdnex-trash                      # replaced files wait here, inside `collection_path`

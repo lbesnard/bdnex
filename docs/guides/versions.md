@@ -57,6 +57,15 @@ _versions/Series/Nains/Nains - T01 - Redwin de la Forge.cbr
 _versions/Series/Nains/Nains - T01 - Redwin de la Forge (2).cbz
 ```
 
+With `duplicates.versions_place: beside` the spare versions sit inside the album's own folder instead
+(`Series/Nains/_versions/Nains - T01 - Redwin de la Forge.cbr`): the `_versions` folder is under the series, not at the top. Your
+reader then has to skip a `_versions` folder at every level (Komga has a setting for the folder names it ignores).
+
+A file that is another *edition* of the album (a dossier, a cahier, a black and white scan, sketches) is made a version in
+`bdnex review --batch`: mark one or many files, press `e`, and choose the name in **Version of the album** (the names are
+`duplicates.version_labels`; "another name" lets you type one). Each file gets an album of its own, titled `Title (Dossier)`,
+linked to the first as its *version*, and its file goes to the spare versions folder.
+
 So a reader such as Komga, pointed at your library folder minus `_versions`, sees one book. Spare
 versions stay in the library: `bdnex ls --files spare:true` lists them, and `bdnex move` puts a spare
 version back into `_versions` and a main file back in the tree. Tags are written to all of them.
@@ -98,6 +107,8 @@ duplicates:
   action: ask                  # ask | skip | keep_both | replace
   prefer: [cbz, cbr, pdf]      # the format suggested first when the files are the same book
   versions_dir: _versions      # spare versions, inside `collection_path`
+  versions_place: top          # top: `_versions/<the album's path>`; beside: `_versions` inside the album's own folder
+  version_labels: [Dossier, Cahier, Noir et blanc, Croquis]  # the names the review screen offers for a version of an album
 
 trash:
   dir: .bdnex-trash            # replaced files, inside `collection_path`
