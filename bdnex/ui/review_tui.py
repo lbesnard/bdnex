@@ -674,6 +674,21 @@ class EditScreen(ModalScreen):
         self.dismiss(None)
 
 
+class Pane(VerticalScroll):
+    """A panel of text that scrolls (a Static does not): its text is in ``body``; ``update`` replaces it and goes back to the top."""
+
+    def __init__(self, id: str) -> None:
+        super().__init__(id=id)
+        self.body = Static("", id=f"{id}-body")
+
+    def compose(self) -> ComposeResult:
+        yield self.body
+
+    def update(self, content) -> None:
+        self.body.update(content)
+        self.scroll_home(animate=False)
+
+
 class Pictures:
     """What a screen needs to draw a real picture (kitty, iTerm2, sixel) straight on the terminal, past Textual, and to take it away."""
 
@@ -972,8 +987,9 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     #center { width: 1fr; }
     #table { height: 2fr; min-height: 8; }
     #detailrow { height: 1fr; min-height: 8; border-top: solid $accent; }
-    #detail { width: 1fr; height: 100%; padding: 0 1; overflow-y: auto; }
-    #meta { width: 45%; height: 100%; border-left: solid $accent; padding: 0 1; overflow-y: auto; }
+    #detail { width: 1fr; height: 100%; padding: 0 1; }
+    #meta { width: 45%; height: 100%; border-left: solid $accent; padding: 0 1; }
+    #detail-body, #meta-body { width: 100%; height: auto; }
     #tips { height: 1; padding: 0 1; color: $text-muted; background: $boost; }
     #log { height: 7; border-top: solid $accent; padding: 0 1; color: $text-muted; }
     """
@@ -1102,8 +1118,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
                     yield PagerChip(" next  n  ▶ ", "action_next_batch", id="pager-next", tooltip="The next 50 files (key n).")
                 yield Splitter("#detailrow", "y", id="split-detail", tooltip="Drag up or down to resize the album's metadata panel.")
                 with Horizontal(id="detailrow"):
-                    yield Static("", id="detail")
-                    yield Static("", id="meta")
+                    yield Pane("detail")
+                    yield Pane("meta")
         yield RichLog(id="log", max_lines=500, wrap=True, markup=False, highlight=False)
         yield Static("", id="tips")
         yield Footer()
@@ -1261,7 +1277,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
 
     # -- the batch: weighed in a thread, so the table is there at once
     def say(self, text: str, style: str = "") -> None:
-        self.query_one("#detail", Static).update(Text(text, style=style))
+        self.query_one("#detail", Pane).update(Text(text, style=style))
 
     def load_batch(self) -> None:
         if self.loading:
@@ -1510,12 +1526,12 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         if not (0 <= index < len(self.rows)):
             return
         row = self.rows[index]
-        self.query_one("#detail", Static).update(self.detail_text(row))
+        self.query_one("#detail", Pane).update(self.detail_text(row))
         self.show_meta(row)
 
     # -- the metadata the library holds for the album of the file under the cursor (`d`), which `e` can change
     def action_metadata(self) -> None:
-        panel = self.query_one("#meta", Static)
+        panel = self.query_one("#meta", Pane)
         panel.display = not panel.display
         self.remember(meta=panel.display)
         row = self.current()
@@ -1523,7 +1539,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
             self.show_meta(row)
 
     def show_meta(self, row: batch.Row) -> None:
-        panel = self.query_one("#meta", Static)
+        panel = self.query_one("#meta", Pane)
         if not panel.display:
             return
         file = self.library.get_file(row.path) or {}

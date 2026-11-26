@@ -1404,3 +1404,21 @@ def test_the_detail_pane_has_one_labelled_block_per_thing(env):
     assert heads[:2] == ["FILE", "ALBUM"] and "GOES" in heads
     assert all(line.startswith(" " * 9) or line[:9].strip() for line in lines if line)  # a label, or the indent under it
     assert "Series/Tintin/" in seen["text"] and "Tintin - T01 - Titre.cbz" in seen["text"]
+
+
+def test_the_detail_and_metadata_panes_scroll(env):
+    from bdnex.ui.review_tui import Pane
+
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        meta = app.query_one("#meta", Pane)
+        meta.update("\n".join(f"line {n}" for n in range(200)))
+        await pilot.pause()
+        seen["scrolls"] = meta.max_scroll_y > 0 and isinstance(app.query_one("#detail"), Pane)
+
+    drive(db, root, script)
+    assert seen["scrolls"]

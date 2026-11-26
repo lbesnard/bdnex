@@ -308,7 +308,7 @@ def test_d_shows_the_metadata_of_the_album_beside_the_detail_and_e_changes_it(en
         await pilot.press("d")  # shows it again
         await pilot.pause()
         seen["open"] = panel.display
-        seen["text"] = str(panel.render())
+        seen["text"] = str(panel.body.render())
         await pilot.press("e")  # an album of the site: its fields, not a refusal
         await pilot.pause()
         screen = app.screen
@@ -319,7 +319,7 @@ def test_d_shows_the_metadata_of_the_album_beside_the_detail_and_e_changes_it(en
         screen.action_accept()
         await pilot.pause()
         row = app.rows[0]
-        seen["row"] = (row.album, str(panel.render()))
+        seen["row"] = (row.album, str(panel.body.render()))
 
     drive(db, script)
     assert seen["shown"] is True and seen["hidden"] is False and seen["open"] is True
@@ -342,7 +342,7 @@ def test_the_panel_says_when_the_file_has_no_album(env):
         app.query_one("DataTable").move_cursor(row=2)  # the loose file
         await pilot.press("d")
         await pilot.pause()
-        seen["text"] = str(app.query_one("#meta").render())
+        seen["text"] = str(app.query_one("#meta-body").render())
 
     drive(db, script)
     assert "No album" in seen["text"]
