@@ -61,7 +61,7 @@ def picture(image: bytes, columns: int, rows: int) -> tuple[Optional[Text], str]
     return half_blocks(image, columns, rows), "half blocks"
 
 
-ZOOMS = (1, 2, 3, 4, 6)
+ZOOMS = (1, 2, 3, 4, 6, 8, 12)
 
 
 def crop(image: bytes, zoom: int, px: float, py: float, columns: int, rows: int) -> tuple[bytes, float, float]:
