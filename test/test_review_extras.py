@@ -895,3 +895,31 @@ def test_a_collection_the_site_gives_is_the_value_in_the_form_and_any_value_you_
 
     drive(db, root, script)
     assert seen["value"] == "Collection Pilote"
+
+
+def test_the_empty_button_clears_a_field_on_every_marked_file(env):
+    db, root, paths = env
+    seen = {}
+    with Library(db, root=root) as lib:
+        lib.edit_album(lib.find_album("b", "t1"), {"collection": "One"})
+        lib.edit_album(lib.find_album("b", "t2"), {"collection": "Two"})
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        for key in ("m",):
+            await pilot.press(key)
+        await pilot.press("E")
+        await pilot.pause(0.5)
+        screen = app.screen
+        seen["holder"] = screen.query_one("#b-collection").placeholder
+        await pilot.click("#clear-collection")
+        await pilot.pause(0.2)
+        seen["after"] = screen.query_one("#b-collection").placeholder
+        await pilot.click("#ok")
+        await pilot.pause(0.8)
+        seen["albums"] = [lib.get_album(lib.find_album("b", f"t{n}"))["collection"] for n in (1, 2, 3)]
+
+    drive(db, root, script)
+    assert seen["holder"] == "(several values)" and "emptied" in seen["after"]
+    assert all(value in ("", None) for value in seen["albums"])

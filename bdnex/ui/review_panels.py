@@ -580,6 +580,8 @@ class BulkScreen(ModalScreen):
     .fieldrow { height: 3; }
     .fieldname { width: 18; padding-top: 1; color: $text-muted; }
     .fieldrow Input { width: 1fr; }
+    .fieldrow .emptier { min-width: 9; margin-left: 1; }
+    .fieldrow Input.emptied > .input--placeholder { color: red; text-style: bold; }
     .fieldrow Input.several > .input--placeholder { color: darkorange; text-style: bold; }
     #bulkkind { width: 30; }
     #bulkvolumes { height: 9; }
@@ -596,12 +598,13 @@ class BulkScreen(ModalScreen):
         (a suggestion, never a value: nothing is set unless you type it)."""
         super().__init__()
         self.heading, self.shared, self.fields, self.files, self.hints = heading, shared, fields, files, hints or {}
+        self.cleared: set[str] = set()  # fields to empty on every file (the Empty button)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="bulk"):
             yield Label(Text(self.heading, style="bold"))
             yield Label(Text("A field you leave as it is stays as it is on every file; one you type is set on all of them; "
-                             "type `-` to empty it (none). Grey: what they all have; orange: they differ.", style="dim"))
+                             "press Empty to clear a field on all of them. Grey: what they all have; orange: they differ.", style="dim"))
             with Vertical(id="bulkfields"):
                 with Horizontal(classes="fieldrow"):
                     yield Label("Kind", classes="fieldname")
@@ -612,6 +615,8 @@ class BulkScreen(ModalScreen):
                     with Horizontal(classes="fieldrow"):
                         yield Label(label, classes="fieldname")
                         yield Input(value="", placeholder=holder, id=f"b-{key}", classes="several" if shared is None else "")
+                        if shared != "":  # (when they all have none already, there is nothing to empty)
+                            yield Button("Empty", id=f"clear-{key}", classes="emptier")
             yield Label(Text("Number and file, one line each: a number (5), or text for a tome with no number (HS 1, INT); the buttons fill them in",
                              style="dim"))
             yield TextArea("\n".join(f"{v}\t{os.path.basename(p)}  {note}" for p, v, note in self.files), id="bulkvolumes")
@@ -632,6 +637,8 @@ class BulkScreen(ModalScreen):
             self.action_accept()
         elif event.button.id == "cancel":
             self.dismiss(None)
+        elif (event.button.id or "").startswith("clear-"):
+            self.toggle_clear(event.button.id[len("clear-"):])
         elif event.button.id == "number":
             self.set_volumes([str(n) for n in range(1, len(self.files) + 1)])
         elif event.button.id == "hs":  # hors-série: no volume, a special that counts up
@@ -640,6 +647,31 @@ class BulkScreen(ModalScreen):
             from bdnex.library import manual
 
             self.set_volumes([str(manual.guess(path)["volume"]) for path, _, _ in self.files])
+
+    def toggle_clear(self, key: str) -> None:
+        """Empty this field on every file (or take it back): the box says so in red, and typing a value instead is the other choice."""
+        box, button = self.query_one(f"#b-{key}", Input), self.query_one(f"#clear-{key}", Button)
+        if key in self.cleared:
+            self.cleared.discard(key)
+            box.remove_class("emptied")
+            box.placeholder = self.holder(key)
+            button.label = "Empty"
+        else:
+            self.cleared.add(key)
+            box.value = ""
+            box.add_class("emptied")
+            box.placeholder = "(will be emptied on every file)"
+            button.label = "Keep"
+
+    def holder(self, key: str) -> str:
+        shared = self.shared.get(key)
+        hint = next((h for k, _, h in self.fields if k == key), "")
+        return "(several values)" if shared is None else (shared or self.hints.get(key) or hint)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        key = (event.input.id or "")[2:]
+        if event.value and key in self.cleared:  # typing a value is the other choice
+            self.toggle_clear(key)
 
     def set_volumes(self, numbers: list[str]) -> None:
         self.query_one("#bulkvolumes", TextArea).text = "\n".join(
@@ -654,6 +686,8 @@ class BulkScreen(ModalScreen):
             typed = self.query_one(f"#b-{key}", Input).value.strip()
             if typed:
                 values[key] = "" if typed == "-" else typed
+            elif key in self.cleared:
+                values[key] = ""
         lines = self.query_one("#bulkvolumes", TextArea).text.split("\n")
         while len(lines) > len(self.files) and not lines[-1].strip():
             lines.pop()
