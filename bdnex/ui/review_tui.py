@@ -47,6 +47,7 @@ from bdnex.ui.review_panels import FacetCommands, HelpChip, PagerChip, Splitter,
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "green", "skipped": "yellow"}
 STATUS_WORD = {"keep": "kept", "linked": "linked", "unlinked": "unlinked", "left": "no album online", "skipped": "skipped"}  # what a decision of this session is called
 KIND_STYLE = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "ok": "green"}
+KIND_COLOUR = {"wrong": "red", "unconfirmed": "yellow", "unmatched": "magenta", "ok": "green"}  # (the badge: dark text on this colour)
 KIND_WORD = {"wrong": "looks wrong", "unconfirmed": "to check", "unmatched": "no album", "ok": "looks right"}  # (what bdnex thinks of the match; `reviewed` is what you did)
 EVIDENCE_STYLE = {"-": "red", "+": "green", "?": "yellow", "f": "yellow"}
 SEARCH_LIMIT = 60
@@ -1442,25 +1443,74 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
             return str(self.number)
         return f"{self.number}/{max(self.number, -(-self.first_total // self.batch_size))}"
 
+    LABEL_WIDTH = 9
+
+    def detail_text(self, row: batch.Row) -> Text:
+        """The pane under the table: one block per thing (the file, the album it is linked to, what bdnex thinks, where a move would put it),
+        each with its label in the same column, so the eye finds the block before it reads."""
+        text = Text()
+        pad = " " * self.LABEL_WIDTH
+
+        def block(label: str, style: str = "bold cyan") -> None:
+            text.append(f"{label:<{self.LABEL_WIDTH}}", style=style)
+
+        def more(value, style: str = "") -> None:  # a further line of the same block (the pad is styled: an unstyled blank is dropped when drawn)
+            text.append(pad, style="dim")
+            text.append(value if isinstance(value, Text) else Text(str(value), style=style))
+            text.append("\n")
+
+        album_facts = [line for line in (row.facts or "").split("\n") if line and not line.startswith("file:")]
+        file_facts = [line[len("file:"):].strip() for line in (row.facts or "").split("\n") if line.startswith("file:")]
+        folder, name = os.path.split(row.path)
+        block("FILE")
+        text.append(name + "\n", style="bold")
+        if folder:
+            more(folder, "dim")
+        for line in file_facts:
+            more(line, "cyan")
+
+        block("ALBUM", "bold magenta")
+        text.append_text(album_text(row))
+        text.append("   ")
+        text.append(f" {KIND_WORD.get(row.kind, row.kind)} ", style=f"bold black on {KIND_COLOUR.get(row.kind, 'white')}")
+        text.append("\n")
+        for line in album_facts:  # the year and pages on one line, the authors on the next (the other credits are in the metadata panel, `d`)
+            parts = line.split(" · ")
+            plain = " · ".join(part for part in parts if ": " not in part)
+            if plain:
+                more(plain, "")
+            authors = []
+            for part in parts:
+                role, _, names = part.partition(": ")
+                if names and role in ("Writer", "Scénario", "Penciller", "Artist", "Dessin"):
+                    authors += [n for n in names.split("; ") if n not in authors]
+            if authors:
+                more(Text.assemble(("by ", "dim"), "  ·  ".join(authors[:4])))
+        if row.album_url:  # a link: ctrl/cmd-click in most terminals, or `p`
+            more(Text(row.album_url, style=Style(color="cyan", underline=True, link=row.album_url)))
+        if row.why:
+            block("WHY", "bold yellow")
+            first = True
+            for line in row.why[:5]:
+                if not first:
+                    text.append(pad, style="dim")
+                first = False
+                text.append(line + "\n", style=EVIDENCE_STYLE.get(line[:1], ""))
+        if row.dest and row.dest != "?":
+            block("GOES TO", "bold green")  # where `bdnex move` would put it (the template of your config): folder, then the new name
+            where, new_name = os.path.split(row.dest)
+            text.append((where + "/" if where else "") + "\n", style="dim")
+            more(new_name, "bold")
+        if row.message:
+            block("NOW", "bold yellow")
+            text.append(row.message + "\n", style="bold yellow" if row.busy else "yellow")
+        return text
+
     def show_detail(self, index: int) -> None:
         if not (0 <= index < len(self.rows)):
             return
         row = self.rows[index]
-        text = Text()
-        text.append(row.path + "\n", style="dim")
-        if row.dest and row.dest != "?":
-            text.append("would go to  ", style="dim").append(row.dest + "\n")  # where `bdnex move` would put it (the template of your config)
-        text.append(KIND_WORD.get(row.kind, row.kind), style=KIND_STYLE.get(row.kind, "")).append("   now: ").append(album_text(row))
-        text.append("\n")
-        if row.album_url:  # a link: ctrl/cmd-click in most terminals, or `p`
-            text.append(f"  {row.album_url}\n", style=Style(color="cyan", link=row.album_url))
-        if row.facts:
-            text.append("".join(f"  {line}\n" for line in row.facts.split("\n")))
-        for line in row.why[:5]:
-            text.append(f"  {line}\n", style=EVIDENCE_STYLE.get(line[:1], ""))
-        if row.message:
-            text.append(f"  {row.message}\n", style="bold yellow" if row.busy else "yellow")
-        self.query_one("#detail", Static).update(text)
+        self.query_one("#detail", Static).update(self.detail_text(row))
         self.show_meta(row)
 
     # -- the metadata the library holds for the album of the file under the cursor (`d`), which `e` can change
@@ -1488,25 +1538,37 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         def line(name: str, value) -> None:
             if value in (None, "", [], {}):
                 return
-            text.append(f"{name:<11}", style="dim")
+            text.append(f"{name:<12}", style="dim")
             text.append(f"{value}", style="bold yellow" if name.strip().lower() in {k.lower() for k in edits} else "")
             text.append("\n")
 
-        text.append(album["title"] + "\n", style="bold")
+        def heading(word: str, colour: str) -> None:
+            if text.plain and not text.plain.endswith("\n\n"):
+                text.append("\n")
+            text.append(f" {word} ", style=f"bold black on {colour}")
+            text.append("\n")
+
+        text.append(album["title"] + "\n", style="bold underline")
+        heading("ALBUM", "magenta")
         line("series", album.get("series"))
         line("volume", album.get("volume") if album.get("volume") is not None else album.get("alternate_number"))
         date = "-".join(f"{album[k]:02d}" if k != "year" else str(album[k]) for k in ("year", "month", "day") if album.get(k))
         line("date", date)
+        credits = album.get("credits") or {}
+        if credits or album.get("genres"):
+            heading("PEOPLE", "cyan")
+            for role, names in credits.items():
+                line(role.lower(), "; ".join(names))
+            line("genres", "; ".join(album.get("genres") or []))
+        heading("EDITION", "yellow")
         line("publisher", album.get("publisher"))
         line("language", album.get("language"))
         line("pages", album.get("pages"))
         line("isbn", album.get("isbn"))
-        for role, names in (album.get("credits") or {}).items():
-            line(role.lower(), "; ".join(names))
-        line("genres", "; ".join(album.get("genres") or []))
         line("source", f"{album.get('source')} {album.get('source_id')}")
         if album.get("summary"):
-            text.append("\n" + album["summary"] + "\n", style="italic")
+            heading("SUMMARY", "green")
+            text.append(album["summary"] + "\n", style="italic")
         if edits:
             text.append("\nchanged by you (kept when the album is read again): " + ", ".join(sorted(edits)) + "\n", style="yellow")
         text.append("\ne edits these · d closes", style="dim")
