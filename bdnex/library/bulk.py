@@ -46,7 +46,7 @@ def shared(library, album_ids: list[int]) -> dict[str, Optional[str]]:
     for key in forms[0]:
         values = {form.get(key, "") for form in forms}
         out[key] = values.pop() if len(values) == 1 else None
-    out["kind"] = _same({(library.get_album(a) or {}).get("kind") for a in album_ids if a is not None})
+    out["kind"] = _same({(library.get_album(a) or {}).get("kind") if a is not None else None for a in album_ids})  # (a file with no album differs from the rest)
     return out
 
 

@@ -576,7 +576,7 @@ class BulkScreen(ModalScreen):
     CSS = """
     BulkScreen { align: center middle; }
     #bulk { width: 96%; height: 96%; border: round $accent; padding: 0 2; background: $surface; }
-    #bulkfields { height: 1fr; overflow-y: auto; }
+    #bulkfields { height: 1fr; overflow-y: auto; }  /* everything but the buttons scrolls: Save is always in view */
     .fieldrow { height: 3; }
     .fieldname { width: 18; padding-top: 1; color: $text-muted; }
     .fieldrow Input { width: 1fr; }
@@ -622,9 +622,9 @@ class BulkScreen(ModalScreen):
                         yield Input(value="", placeholder=holder, id=f"b-{key}", classes="several" if shared is None else "")
                         if shared != "":  # (when they all have none already, there is nothing to empty)
                             yield Button("Clear", id=f"clear-{key}", classes="emptier")
-            yield Label(Text("Number and file, one line each: a number (5), or text for a tome with no number (HS 1, INT); the buttons fill them in",
-                             style="dim"))
-            yield TextArea("\n".join(f"{v}\t{os.path.basename(p)}  {note}" for p, v, note in self.files), id="bulkvolumes")
+                yield Label(Text("Number and file, one line each: a number (5), or text for a tome with no number (HS 1, INT); the buttons fill them in",
+                                 style="dim"))
+                yield TextArea("\n".join(f"{v}\t{os.path.basename(p)}  {note}" for p, v, note in self.files), id="bulkvolumes")
             yield Label("", id="bulkproblem")
             with Horizontal(id="bulkbuttons"):
                 yield Button("1..n", id="number")

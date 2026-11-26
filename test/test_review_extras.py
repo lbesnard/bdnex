@@ -994,3 +994,51 @@ def test_the_kind_of_the_form_is_a_field_like_the_others(env):
     drive(db, root, script)
     assert seen["all_series"] == "series" and seen["closed"]
     assert seen["mixed"] == ("", True)
+
+
+def test_m_marks_the_files_you_already_decided_too(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        for row in app.rows:  # all looked at (an edit, a confirm): they have a decision
+            row.status = "keep"
+        await pilot.press("m")
+        seen["marked"] = len(app.marked)
+        await pilot.press("m")
+        seen["unmarked"] = len(app.marked)
+
+    drive(db, root, script)
+    assert seen["marked"] == 3 and seen["unmarked"] == 0
+
+
+def test_save_is_always_in_view_in_the_popups_even_in_a_small_terminal(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        for name, keys in (("bulk", ("m", "E")), ("edit", ("e",))):
+            if name == "bulk":
+                await pilot.press("m")
+            await pilot.press(*[k for k in keys if k != "m"])
+            await pilot.pause(0.5)
+            button = app.screen.query_one("#ok")
+            seen[name] = (button.label.plain if hasattr(button.label, "plain") else str(button.label), button.region.bottom <= app.size.height and button.region.height > 0)
+            await pilot.press("escape")
+            await pilot.pause(0.3)
+
+    settings = load_config().settings
+
+    async def go():
+        with Library(db, root=root) as lib:
+            app = review_tui.ReviewApp(lib, settings, FakeSource(), 50, (), True, tree=True)
+            async with app.run_test(size=(100, 22)) as pilot:  # a small terminal
+                await settle(app, pilot)
+                await script(app, pilot, lib)
+
+    asyncio.run(go())
+    assert seen["bulk"] == ("Save", True) and seen["edit"] == ("Save", True)

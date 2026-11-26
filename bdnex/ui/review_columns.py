@@ -190,7 +190,8 @@ class ColumnsMixin:
         if key == "num":
             return Text(str(number), style="bold reverse magenta" if id(row) in self.marked else "cyan")
         if key == "file":
-            return Text(os.path.basename(row.path), style="bold")
+            name = os.path.basename(row.path)
+            return Text("✔ " + name, style="bold magenta") if id(row) in self.marked else Text(name, style="bold")  # (marked: easy to see)
         if key == "folder":
             return Text(row.folder, style="dim")
         if key == "album":

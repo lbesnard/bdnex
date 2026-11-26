@@ -32,7 +32,7 @@ from rich.style import Style
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
 from textual.widgets import TabbedContent, TabPane, Button, Checkbox, DataTable, Footer, Header, Input, Label, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
@@ -507,6 +507,8 @@ class AskScreen(ModalScreen):
     CSS = """
     AskScreen { align: center middle; }
     #ask { width: 80%; height: auto; border: round $accent; padding: 1 2; background: $surface; }
+    #askbuttons { height: 3; align-horizontal: right; }
+    #askbuttons Button { margin-left: 2; }
     """
 
     def __init__(self, question: str, text: Optional[str] = ""):
@@ -520,6 +522,9 @@ class AskScreen(ModalScreen):
                 yield Input(value=self.text, id="line")
             else:
                 yield Label(Text("y: yes · n: no", style="dim"))
+            with Horizontal(id="askbuttons"):
+                yield Button("Save" if self.text is not None else "Yes", id="askok", variant="success")
+                yield Button("Cancel" if self.text is not None else "No", id="askno")
 
     def on_mount(self) -> None:
         if self.text is not None:
@@ -527,6 +532,13 @@ class AskScreen(ModalScreen):
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         self.dismiss(event.value.strip() or None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if event.button.id == "askok":
+            self.dismiss(self.query_one(Input).value.strip() or None if self.text is not None else True)
+        else:
+            self.dismiss(None if self.text is not None else False)
 
     def on_key(self, event) -> None:
         if self.text is None and event.key in ("y", "n"):
@@ -538,7 +550,7 @@ class AskScreen(ModalScreen):
 
 
 class EditScreen(ModalScreen):
-    """A form for an album written by hand (one file), or for the series of several files: the OK button (or Ctrl-S) accepts, Cancel (Esc, or `x` outside a text field) cancels.
+    """A form for an album written by hand (one file), or for the series of several files: the Save button (or Ctrl-S) accepts, Cancel (Esc, or `x` outside a text field) cancels.
 
     ``volumes``: for several files, ``[(path, volume or None)]``: one line each, ``volume  file name``, the numbers can be changed."""
 
@@ -546,12 +558,14 @@ class EditScreen(ModalScreen):
                 Binding("ctrl+s", "accept", "Save")]  # Ctrl-S stays for who can use it; tmux takes it, hence the buttons
     CSS = """
     EditScreen { align: center middle; }
-    #edit { width: 90%; height: auto; max-height: 95%; border: round $accent; padding: 1 2; background: $surface; overflow-y: auto; }
+    #edit { width: 90%; height: 95%; border: round $accent; padding: 1 2; background: $surface; }
+    #editfields { height: 1fr; }
     #edit Input { margin-bottom: 0; }
     #volumes { height: 8; }
-    #problem { color: $error; }
-    #buttons { height: auto; align-horizontal: right; }
+    #problem { color: $error; height: auto; }
+    #buttons { height: 3; align-horizontal: right; }
     #buttons Button { margin-left: 2; }
+    #edithelp { height: 1; }
     """
 
     def __init__(self, heading: str, values: dict, fields, volumes=None):
@@ -561,17 +575,18 @@ class EditScreen(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(id="edit"):
             yield Label(Text(self.heading, style="bold"))
-            for key, label, hint in self.fields:
-                yield Label(Text(f"{label}" + (f"  ({hint})" if hint else ""), style="dim"))
-                yield Input(value=self.values.get(key, ""), id=f"f-{key}")
-            if self.volumes is not None:
-                yield Label(Text("Volume and file (change a number if it was read wrong)", style="dim"))
-                yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}" for p, v in self.volumes), id="volumes")
-            yield Label("", id="problem")
+            with VerticalScroll(id="editfields"):  # the fields scroll; Save and Cancel stay at the bottom of the window
+                for key, label, hint in self.fields:
+                    yield Label(Text(f"{label}" + (f"  ({hint})" if hint else ""), style="dim"))
+                    yield Input(value=self.values.get(key, ""), id=f"f-{key}")
+                if self.volumes is not None:
+                    yield Label(Text("Volume and file (change a number if it was read wrong)", style="dim"))
+                    yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}" for p, v in self.volumes), id="volumes")
+                yield Label("", id="problem")
+            yield Label(Text("Tab moves · Save (or Ctrl-S) saves · Cancel, Esc or x (outside a text field) closes", style="dim"), id="edithelp")
             with Horizontal(id="buttons"):
-                yield Button("OK", id="ok", variant="success")
+                yield Button("Save", id="ok", variant="success")
                 yield Button("Cancel", id="cancel")
-            yield Label(Text("Tab moves · OK (or Ctrl-S) saves and links · Cancel, Esc or x (outside a text field) closes", style="dim"))
 
     def on_mount(self) -> None:
         self.query_one(f"#f-{self.fields[0][0]}", Input).focus()
@@ -1741,9 +1756,11 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         self.advance()
 
     def action_mark_all(self) -> None:
-        """Mark every file not decided yet (and not being linked); when they are all marked already, unmark them."""
-        free = [r for r in self.rows if not r.status and not r.busy]
+        """Mark every file on the screen (decided or not: a folder you are editing is full of decided ones; only a file being linked is left out);
+        when they are all marked already, unmark them."""
+        free = [r for r in self.rows if not r.busy]
         if not free:
+            self.notify("Nothing to mark here.", timeout=3)
             return
         if all(id(r) in self.marked for r in free):
             self.action_mark_none()
@@ -1769,7 +1786,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
 
     def action_attach(self) -> None:
         """Pick an album of a series: each marked file (without a mark: the file under the cursor) gets the album of that series with
-        the volume number in its name. `m` marks every file not decided yet, for a whole folder of one series."""
+        the volume number in its name. `m` marks every file on the screen, for a whole folder of one series."""
         chosen = self.files_to_attach()
         if not chosen:
             return
