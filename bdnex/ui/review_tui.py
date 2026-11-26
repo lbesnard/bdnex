@@ -554,20 +554,16 @@ class EditScreen(ModalScreen):
     #buttons Button { margin-left: 2; }
     """
 
-    def __init__(self, heading: str, values: dict, fields, volumes=None, site: Optional[dict] = None):
+    def __init__(self, heading: str, values: dict, fields, volumes=None):
         super().__init__()
         self.heading, self.values, self.fields, self.volumes = heading, values, fields, volumes
-        self.site = site or {}  # what the site says for a field you did not set (the paths use it): shown, never saved unless you type it
 
     def compose(self) -> ComposeResult:
         with Vertical(id="edit"):
             yield Label(Text(self.heading, style="bold"))
             for key, label, hint in self.fields:
                 yield Label(Text(f"{label}" + (f"  ({hint})" if hint else ""), style="dim"))
-                from_site = self.site.get(key)
-                yield Input(value=self.values.get(key, ""), id=f"f-{key}", placeholder=f"(the site says: {from_site})" if from_site else "")
-                if from_site and not self.values.get(key):
-                    yield Label(Text(f"The paths use the site's value, {from_site!r}, until you type one here.", style="yellow"))
+                yield Input(value=self.values.get(key, ""), id=f"f-{key}")
             if self.volumes is not None:
                 yield Label(Text("Volume and file (change a number if it was read wrong)", style="dim"))
                 yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}" for p, v in self.volumes), id="volumes")
@@ -1616,8 +1612,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
             self.edit_metadata(row, album_id)  # an album of the site: its fields can be changed (kept when it is read again), not rebuilt
             return
         values = manual.form_of(self.library, album_id) if album_id is not None else {**manual.guess(row.path), "title": ""}
-        self.push_screen(EditScreen(f"Metadata of {os.path.basename(row.path)}", values, manual.FIELDS,
-                                    site=manual.site_values(self.library, album_id) if album_id is not None else None),
+        self.push_screen(EditScreen(f"Metadata of {os.path.basename(row.path)}", values, manual.FIELDS),
                          lambda got: self.save_one(row, album_id, got) if got else None)
 
     def edit_metadata(self, row: batch.Row, album_id: int) -> None:
@@ -1632,8 +1627,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         heading = f"Metadata of {values.get('title') or 'the album'} (saved as your own edits)"
         if in_series:
             heading += " · the series name renames it for all its albums"
-        self.push_screen(EditScreen(heading, values, fields, site=manual.site_values(self.library, album_id)),
-                         lambda got: self.save_metadata(row, album_id, got) if got else None)
+        self.push_screen(EditScreen(heading, values, fields), lambda got: self.save_metadata(row, album_id, got) if got else None)
 
     def save_metadata(self, row: batch.Row, album_id: int, values: dict) -> None:
         album = self.library.get_album(album_id) or {}

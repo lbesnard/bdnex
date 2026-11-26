@@ -803,7 +803,8 @@ class Organizer:
         paths = self.settings.paths
         # a hand-set $collection (`bdnex edit`) always wins; else a `paths.collections` rule; else the site's own value, already in fields["collection"]
         rule_collection = template.collection_of(fields, path, template.parse_rules(paths.collections))
-        fields["collection"] = album.get("collection") or rule_collection or fields["collection"]
+        if album.get("collection") is None:  # (a hand-set value, even an empty one, is the one used)
+            fields["collection"] = rule_collection or fields["collection"]
         fields = template.apply_rewrites(fields, template.parse_rules(paths.rewrite))
         rendered = template.render(tpl, fields, lambda name: self._missing(name, album_id, album),
                                    template.parse_replacements(paths.replace))

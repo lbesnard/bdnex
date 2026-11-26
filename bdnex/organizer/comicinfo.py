@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+
+from bdnex.library.models import effective
 from typing import Any, Optional
 
 import xmlschema
@@ -36,10 +38,9 @@ def album_to_fields(album: dict[str, Any], page_count: Optional[int] = None) -> 
                       ("language", "LanguageISO"), ("format", "Format")):
         if album.get(key):
             fields[name] = str(album[key])
-    edition = (album.get("extra") or {}).get("edition_fields") or {}
-    for key, name in (("Collection", "Imprint"), ("Cycle", "StoryArc")):  # the publisher's collection, the cycle of a series
-        if edition.get(key):
-            fields[name] = edition[key]
+    for key, name in (("collection", "Imprint"), ("cycle", "StoryArc")):  # the publisher's collection, the cycle of a series (yours, else the site's)
+        if effective(album, key):
+            fields[name] = effective(album, key)
     if album["genres"]:
         fields["Genre"] = ", ".join(album["genres"])
     if album.get("rating") is not None:

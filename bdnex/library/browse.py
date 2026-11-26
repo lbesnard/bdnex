@@ -110,7 +110,7 @@ def facets(library, strong: float = 90.0) -> dict[str, list[tuple[str, int]]]:
     rows = lambda sql: [(r[0], r[1]) for r in conn.execute(sql) if r[0] is not None]  # noqa: E731
     found["Kind"] = rows(f"SELECT a.kind, COUNT(*) {JOINS} WHERE a.id IS NOT NULL GROUP BY a.kind ORDER BY 2 DESC")
     found["Category"] = rows(f"SELECT COALESCE(a.category, '{NONE}'), COUNT(*) {JOINS} WHERE a.id IS NOT NULL GROUP BY 1 ORDER BY 2 DESC")
-    found["Collection"] = rows(f"SELECT a.collection, COUNT(*) {JOINS} WHERE a.collection IS NOT NULL GROUP BY 1 ORDER BY 1 COLLATE NOCASE")
+    found["Collection"] = rows(f"SELECT a.collection, COUNT(*) {JOINS} WHERE a.collection IS NOT NULL AND a.collection != '' GROUP BY 1 ORDER BY 1 COLLATE NOCASE")
     found["Genre"] = rows("SELECT g.name, COUNT(DISTINCT f.id) FROM files f JOIN album_genres ag ON ag.album_id = f.album_id "
                           "JOIN genres g ON g.id = ag.genre_id GROUP BY g.name ORDER BY 2 DESC")
     found["Author"] = rows("SELECT p.name, COUNT(DISTINCT f.id) FROM files f JOIN album_credits c ON c.album_id = f.album_id "

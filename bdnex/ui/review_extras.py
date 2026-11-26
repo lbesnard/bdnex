@@ -467,11 +467,6 @@ class ReviewExtras:
         heading = f"{len(rows)} file(s): set what they share, the kind, a volume each"
         folders = {os.path.basename(os.path.dirname(r.path)) for r in rows}
         hints = {"series": folders.pop()} if len(folders) == 1 else {}  # (grey: the folder's name, only a suggestion for files with no series)
-        sites = [manual.site_values(self.library, r.album_id) for r in rows if r.album_id is not None]
-        for key in ("collection", "cycle"):  # what the site says, when every album that has none of its own gets the same
-            values = {site.get(key) for site in sites}
-            if len(values) == 1 and None not in values:
-                hints[key] = f"(the site says: {values.pop()})"
         self.push_screen(panels.BulkScreen(heading, shared, fields, files, hints), lambda got: self.apply_bulk(rows, got) if got else None)
 
     def apply_bulk(self, rows, got: dict) -> None:

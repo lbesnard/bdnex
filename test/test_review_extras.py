@@ -11,6 +11,7 @@ pytest.importorskip("textual")
 
 from bdnex.config import load_config  # noqa: E402
 from bdnex.library import AlbumInfo, Library, SeriesInfo  # noqa: E402
+from bdnex.library import manual  # noqa: E402
 from bdnex.library import review_batch as batch  # noqa: E402
 from bdnex.ui import review_panels, review_tui  # noqa: E402
 
@@ -856,8 +857,9 @@ def test_the_picture_option_is_in_the_config_with_chafa_as_the_default():
     assert settings.cover.picture == "chafa"
 
 
-def test_the_edit_form_says_what_the_site_gives_for_a_collection_you_did_not_set(env):
-    from bdnex.library import manual
+def test_a_collection_the_site_gives_is_the_value_in_the_form_and_any_value_you_type_is_the_one_used(env):
+    from bdnex.organizer import template
+    from bdnex.ui import edit_cmd
 
     db, root, paths = env
     seen = {}
@@ -865,11 +867,23 @@ def test_the_edit_form_says_what_the_site_gives_for_a_collection_you_did_not_set
         album_id = lib.find_album("b", "t2")
         with lib.conn:
             lib.conn.execute("UPDATE albums SET extra = ? WHERE id = ?", ('{"edition_fields": {"Collection": "Collection Pilote"}}', album_id))
-        assert manual.site_values(lib, album_id) == {"collection": "Collection Pilote"}
-        lib.edit_album(album_id, {"collection": "Mine"})
-        assert manual.site_values(lib, album_id) == {}  # a value of your own: nothing to say about the site's
-
-        lib.edit_album(album_id, {"collection": None})
+        assert manual.form_of(lib, album_id)["collection"] == "Collection Pilote"  # the value in use, not an empty box
+        manual.update(lib, album_id, manual.form_of(lib, album_id))  # saved as it is: nothing is frozen
+        assert lib.get_album(album_id)["collection"] is None
+        assert template.fields_for(lib.get_album(album_id))["collection"] == "Collection Pilote"
+        manual.update(lib, album_id, {**manual.form_of(lib, album_id), "collection": ""})  # emptied: none, not the site's again
+        assert lib.get_album(album_id)["collection"] == "" and template.fields_for(lib.get_album(album_id))["collection"] == ""
+        manual.update(lib, album_id, {**manual.form_of(lib, album_id), "collection": "Mine"})
+        assert template.fields_for(lib.get_album(album_id))["collection"] == "Mine"
+        # the same rules in `bdnex edit` and the bulk form (edit_cmd.doc_changes)
+        manual.update(lib, album_id, {**manual.form_of(lib, album_id), "collection": ""})
+        album = lib.get_album(album_id)
+        assert edit_cmd.doc_changes(album, {"collection": None}, []) == {}  # already none
+        assert edit_cmd.doc_changes(album, {"collection": "Collection Pilote"}, []) == {"collection": "Collection Pilote"}
+        lib.edit_album(album_id, {"collection": None})  # back to the site's
+        album = lib.get_album(album_id)
+        assert edit_cmd.doc_changes(album, {"collection": "Collection Pilote"}, []) == {}
+        assert edit_cmd.doc_changes(album, {"collection": None}, []) == {"collection": ""}
 
     async def script(app, pilot, lib):
         app.open_folder("Series/Tintin")
@@ -877,8 +891,7 @@ def test_the_edit_form_says_what_the_site_gives_for_a_collection_you_did_not_set
         await pilot.press("down")  # Tintin T2
         await pilot.press("e")
         await pilot.pause(0.5)
-        field = app.screen.query_one("#f-collection")
-        seen["value"], seen["holder"] = field.value, field.placeholder
+        seen["value"] = app.screen.query_one("#f-collection").value
 
     drive(db, root, script)
-    assert seen["value"] == "" and "Collection Pilote" in seen["holder"]
+    assert seen["value"] == "Collection Pilote"

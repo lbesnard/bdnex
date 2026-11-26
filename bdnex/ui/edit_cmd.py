@@ -18,7 +18,7 @@ from typing import Any, Callable
 import yaml
 
 from bdnex.library import Library
-from bdnex.library.models import CREDIT_ROLES
+from bdnex.library.models import CREDIT_ROLES, SITE_KEYS, effective, to_store
 from bdnex.library.query import QueryError
 from bdnex.ui import context, describe
 from bdnex.ui.output import add_pretend
@@ -60,6 +60,8 @@ def album_document(album: dict[str, Any]) -> dict[str, Any]:
             doc[key] = {role: list(names) for role, names in album["credits"].items()}
         elif key == "genres":
             doc[key] = list(album["genres"])
+        elif key in SITE_KEYS:
+            doc[key] = effective(album, key) or None  # the value in use (yours, else the site's)
         else:
             doc[key] = album.get(key)
     return doc
@@ -186,6 +188,10 @@ def doc_changes(album: dict[str, Any], doc: dict[str, Any], errors: list[str]) -
             genres = _names(value, errors, f"{where}: genres")
             if genres != album["genres"]:
                 change["genres"] = genres
+        elif key in SITE_KEYS:  # the value in use is yours, else the site's: the same text is no change, an empty one is "none"
+            changed, stored = to_store(album, key, _scalar(key, value, errors, where))
+            if changed:
+                change[key] = stored
         else:
             new_value = _scalar(key, value, errors, where)
             if new_value != (album.get(key) or None):
@@ -235,7 +241,8 @@ def describe_changes(albums: dict[int, dict[str, Any]], changes: dict[int, dict[
                 lines.append(f"    genres: {', '.join(album['genres']) or '-'} -> {', '.join(value) or '-'}")
             else:
                 suffix = "  (renames the series for all its albums)" if key == "series" else ""
-                lines.append(f"    {key}: {album.get(key)!r} -> {value!r}{suffix}")
+                before = effective(album, key) if key in SITE_KEYS else album.get(key)
+                lines.append(f"    {key}: {before!r} -> {value!r}{suffix}")
     return lines
 
 

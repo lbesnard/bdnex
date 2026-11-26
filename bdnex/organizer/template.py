@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+
+from bdnex.library.models import effective
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
@@ -105,7 +107,6 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
             if name not in authors:
                 authors.append(name)
     volume = album.get("volume")
-    edition = (album.get("extra") or {}).get("edition_fields") or {}  # the site's own edition table, scraped as written
     return {
         "kind": album["kind"],
         "series": album.get("series") or "",
@@ -123,8 +124,8 @@ def fields_for(album: dict[str, Any]) -> dict[str, Any]:
         "colorist": ", ".join(credits.get("Colorist", [])),
         # the site's own "Collection", unless overridden by hand (`bdnex edit --set collection=...`); a `paths.collections` rule
         # (the organizer applies it: it needs the file's path) wins over the site's value, but never over a hand-set one
-        "collection": album.get("collection") or edition.get("Collection") or "",
-        "cycle": album.get("cycle") or edition.get("Cycle") or "",  # the site's own "Cycle", unless overridden by hand
+        "collection": effective(album, "collection"),
+        "cycle": effective(album, "cycle"),  # the site's own "Cycle", unless overridden by hand ("" is an override: none)
         "category": album.get("category") or "",  # hand-set (`bdnex edit`, the review screen): BD, Manga, Comics...
         "subseries": album.get("subseries") or "",  # hand-set (`bdnex edit`): a subfolder inside the series, for an album the site does not list
     }

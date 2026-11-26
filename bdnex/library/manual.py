@@ -13,7 +13,7 @@ import uuid
 from typing import Any, Optional
 
 from bdnex.library import AlbumInfo, Library, SeriesInfo
-from bdnex.library.models import CREDIT_ROLES
+from bdnex.library.models import CREDIT_ROLES, SITE_KEYS, effective, to_store
 from bdnex.library.query import fold
 
 MANUAL = "manual"
@@ -29,8 +29,8 @@ FIELDS = (
     ("alternate_number", "Special", "Hors-série, Intégrale... when there is no number"),
     ("title", "Title", "empty = the series and the volume"),
     ("subseries", "Subfolder", "a subfolder inside the series, for an album the site does not list"),
-    ("collection", "Collection", "overrides the site's own Collection, and any paths.collections rule"),
-    ("cycle", "Cycle", "overrides the site's own Cycle"),
+    ("collection", "Collection", "what is used: the site's, until you change it; empty = none"),
+    ("cycle", "Cycle", "what is used: the site's, until you change it; empty = none"),
     ("category", "Category", "BD, Manga, Comics...: `$category` in the path templates"),
     ("publisher", "Publisher", ""),
     ("isbn", "ISBN", ""),
@@ -89,23 +89,12 @@ def form_of(library: Library, album_id: int) -> dict[str, str]:
     """The form of an album already written by hand (to edit it)."""
     album = library.get_album(album_id) or {}
     credits = album.get("credits") or {}
-    values = {key: _str(album, key) for key in ("series", "volume", "alternate_number", "title", "subseries", "collection", "cycle", "category",
+    values = {key: _str(album, key) for key in ("series", "volume", "alternate_number", "title", "subseries", "category",
                                                   "publisher", "isbn", "year", "month", "day", "language", "format", "pages", "summary")}
+    values.update({key: effective(album, key) for key in SITE_KEYS})  # the value in use: yours, else the site's
     values.update({key: "; ".join(credits.get(role, [])) for key, role in CREDIT_KEYS.items()})
     values["genres"] = "; ".join(album.get("genres") or [])
     return values
-
-
-def site_values(library: Library, album_id: int) -> dict[str, str]:
-    """What the site's own edition table says for the fields a hand-set value overrides (``Collection``, ``Cycle``): used by the paths when the
-    album has none of its own, so the form shows it (the form's field is empty then, and it is not what the paths use)."""
-    album = library.get_album(album_id) or {}
-    edition = (album.get("extra") or {}).get("edition_fields") or {}
-    found = {}
-    for key, name in (("collection", "Collection"), ("cycle", "Cycle")):
-        if not album.get(key) and edition.get(name):
-            found[key] = str(edition[name])
-    return found
 
 
 def is_manual(library: Library, album_id: Optional[int]) -> bool:
@@ -186,6 +175,10 @@ def update(library: Library, album_id: int, values: dict[str, str]) -> None:
                                "credits": {role: new.credits.get(role, []) for role in CREDIT_ROLES}}
     if album.get("kind") == "series" and new.series is not None and new.series.name != album.get("series"):
         changes["series"] = new.series.name
+    for key in SITE_KEYS:  # the form shows the value in use: the same text is no change, an emptied field is "none" when the site has a value
+        changed, value = to_store(album, key, changes.pop(key))
+        if changed:
+            changes[key] = value
     library.edit_album(album_id, changes)
 
 

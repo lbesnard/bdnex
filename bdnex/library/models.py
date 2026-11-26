@@ -62,3 +62,26 @@ class AlbumInfo:
 
 # What the library called a credit role before the source's labels were mapped: read back as the new name
 LEGACY_ROLES = {"Encrage": "Inker"}
+
+
+SITE_KEYS = {"collection": "Collection", "cycle": "Cycle"}  # fields the site's edition table also gives (extra.edition_fields)
+
+
+def effective(album: dict, key: str) -> str:
+    """The value that is USED for ``collection`` / ``cycle``: what you set by hand (``""`` is a value: no collection at all), else the site's own."""
+    hand = album.get(key)
+    if hand is not None:
+        return hand
+    edition = (album.get("extra") or {}).get("edition_fields") or {}
+    return str(edition.get(SITE_KEYS[key]) or "")
+
+
+def to_store(album: dict, key: str, new: Optional[str]) -> tuple[bool, Optional[str]]:
+    """What the form's ``new`` value means for ``collection`` / ``cycle``: ``(changed, value to store)``. The form shows the value in use, so
+    the same text is no change; an emptied field is an explicit ``""`` (none) when the site has a value, else just no value."""
+    if (new or "") == effective(album, key):
+        return False, None
+    if new:
+        return True, new
+    site = effective({**album, key: None}, key)
+    return True, "" if site else None
