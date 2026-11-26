@@ -109,3 +109,16 @@ def test_several_selections_are_alternatives_inside_a_kind_and_go_together_acros
     planned = browse.plan(lib, settings)
     mixed = browse.rows_for_many(lib, settings, [("planned", "BD"), ("facet", ("Review", "not confirmed"))], planned)
     assert [r.dest for r in mixed] == ["BD/Nains/Nains - T02 - Forge.cbz"] and mixed.total == 1
+
+
+def test_a_plan_stops_when_asked_so_that_quitting_the_screen_does_not_wait_for_all_of_it(env):
+    settings, lib, files = env
+    asked = []
+
+    def stop():
+        asked.append(1)
+        return True
+
+    with pytest.raises(browse.Stopped):
+        browse.plan(lib, settings, stop=stop)
+    assert asked  # asked, and it stopped at once

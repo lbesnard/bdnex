@@ -1314,3 +1314,22 @@ def test_the_cover_popup_follows_the_picture_setting_like_the_full_size_page(env
     assert seen["screen"] == "CoverScreen"
     assert any(b"<PICTURE kitty" in w and w.startswith(b"\x1b7\x1b[") for w in seen["writes"])
     assert any(b"_Ga=d" in w for w in seen["writes"])  # taken away when the popup closes
+
+
+def test_chafa_is_run_without_the_terminal_so_its_questions_never_come_back_as_typed_keys(monkeypatch):
+    """chafa asks the terminal what it can do; the answer arrives as keys (one is `c`, which closed the cover popup at once)."""
+    import subprocess
+
+    from bdnex.ui import cover_text
+
+    calls = []
+
+    def fake(cmd, **kw):
+        calls.append(kw)
+        return subprocess.CompletedProcess(cmd, 0, stdout=b"x", stderr=b"")
+
+    monkeypatch.setattr(cover_text, "chafa_installed", lambda: True)
+    monkeypatch.setattr(subprocess, "run", fake)
+    cover_text.picture(b"png", 20, 10)
+    cover_text.graphic(b"png", 20, 10, "kitty")
+    assert len(calls) == 2 and all(kw.get("start_new_session") for kw in calls)

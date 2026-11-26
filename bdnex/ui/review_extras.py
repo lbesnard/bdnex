@@ -13,6 +13,7 @@ from typing import Optional
 
 from rich.text import Text
 from textual.widgets import Button, Checkbox, Input, Static
+from textual.worker import get_current_worker
 
 from bdnex.library import review_batch as batch
 from bdnex.ui import review_panels as panels
@@ -137,13 +138,15 @@ class ReviewExtras:
                 with contextlib.suppress(Exception):
                     self.call_from_thread(self.folders_ready, root, bad, found, names)
                 if self.planned is None or dirty:
-                    planned = browse.plan(library, self.settings, only=dirty or None)
+                    planned = browse.plan(library, self.settings, only=dirty or None, stop=lambda: get_current_worker().is_cancelled)
                 else:
                     planned = {}
                 move_root = None
                 if self.planned is not None or planned:
                     merged = {**(self.planned or {}), **planned}
                     move_root = folders.build(browse.plan_counts(merged, {file_id: level for file_id, _, level in levels}))
+        except browse.Stopped:  # the screen is closing, or newer counts were asked for: nothing to hand back
+            return
         except Exception as err:
             logger.info("the folder tree could not be read: %s", err)
             return

@@ -123,10 +123,15 @@ def facets(library, strong: float = 90.0) -> dict[str, list[tuple[str, int]]]:
     return found
 
 
-def plan(library, settings, only: Optional[set[int]] = None, files: Optional[list[int]] = None) -> dict[int, str]:
+class Stopped(Exception):
+    """The caller asked a long calculation to stop (the screen is closing): nothing more is worked out."""
+
+
+def plan(library, settings, only: Optional[set[int]] = None, files: Optional[list[int]] = None, stop=None) -> dict[int, str]:
     """``{file id: where `bdnex move` would put it}``, relative to the collection and with the extension it would have. Offline and read-only;
     a file the template refuses or that needs a question (a missing field) is left out. ``only``: the album ids to work out (after an edit);
-    ``files``: just these file ids (the rows of a page: a few milliseconds, so a page never waits for the plan of the whole library)."""
+    ``files``: just these file ids (the rows of a page: a few milliseconds, so a page never waits for the plan of the whole library).
+    ``stop``: called now and then; when it says yes, :class:`Stopped` is raised (quitting the screen must not wait for the whole plan)."""
     from bdnex.organizer.organizer import FileResult, Organizer, _Deferring
 
     organizer = Organizer(library, settings, prompter=_Deferring(), pretend=True)
@@ -140,7 +145,9 @@ def plan(library, settings, only: Optional[set[int]] = None, files: Optional[lis
                 f"SELECT id, path, format, album_id, spare FROM files WHERE album_id IS NOT NULL AND id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
     else:
         chosen = library.conn.execute("SELECT id, path, format, album_id, spare FROM files WHERE album_id IS NOT NULL").fetchall()
-    for row in chosen:
+    for number, row in enumerate(chosen):
+        if stop is not None and number % 100 == 0 and stop():
+            raise Stopped()
         if only is not None and row["album_id"] not in only:
             continue
         try:

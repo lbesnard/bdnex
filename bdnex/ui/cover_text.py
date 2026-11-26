@@ -43,6 +43,8 @@ def half_blocks(image: bytes, columns: int = 36, max_rows: int = 22) -> Optional
         return None
 
 
+# chafa asks the terminal what it can do (it writes to the controlling terminal and waits for the answer); the answer comes back as typed
+# keys, and one of them is a `c`: the popup that `c` opens closed at once. A process with no controlling terminal (a new session) asks nothing.
 def chafa_installed() -> bool:
     return shutil.which("chafa") is not None
 
@@ -53,7 +55,7 @@ def picture(image: bytes, columns: int, rows: int, use_chafa: bool = True) -> tu
     if use_chafa and chafa_installed():
         try:
             done = subprocess.run(["chafa", "--format=symbols", "--colors=full", "--work=9", f"--size={columns}x{rows}", "--animate=off", "-"],
-                                  input=image, capture_output=True, timeout=15)
+                                  input=image, capture_output=True, timeout=15, start_new_session=True)
             if done.returncode == 0 and done.stdout:
                 return Text.from_ansi(done.stdout.decode("utf-8", "replace").rstrip("\n")), "chafa"
         except (OSError, subprocess.SubprocessError):
@@ -104,7 +106,8 @@ def graphic(image: bytes, columns: int, rows: int, how: str) -> Optional[bytes]:
     if not chafa_installed() or how not in GRAPHICS:
         return None
     try:
-        done = subprocess.run(["chafa", "-f", GRAPHICS[how], f"--size={columns}x{rows}", "--animate=off", "-"], input=image, capture_output=True, timeout=20)
+        done = subprocess.run(["chafa", "-f", GRAPHICS[how], f"--size={columns}x{rows}", "--animate=off", "-"], input=image, capture_output=True, timeout=20,
+                              start_new_session=True)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout.rstrip(b"\n") if done.returncode == 0 and done.stdout else None
