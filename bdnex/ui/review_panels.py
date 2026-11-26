@@ -20,7 +20,7 @@ from textual.containers import Horizontal, Vertical
 from bdnex.ui.review_modal import Modal
 from textual.widgets import Button, Input, Label, Select, Static, TextArea, Tree
 
-from bdnex.library import folders
+from bdnex.library import browse, folders
 
 STATUS_STYLE = {folders.DONE: "green", folders.AUTO: "cyan", folders.MEDIUM: "dark_orange", folders.PROBLEM: "red"}
 STATUS_MARK = {folders.DONE: "●", folders.AUTO: "○", folders.MEDIUM: "◐", folders.PROBLEM: "✖"}  # (the shape says it too: a colour is not the only sign)
@@ -362,7 +362,7 @@ class FacetTree(TickTree):
                     node.add_leaf(Text(f"  ... {len(values) - self.SHOWN_MAX} more: type more letters", style="dim"))
                 node.expand()
                 continue
-            node = self.root.add(Text(f"{group}  ({len(values)})" if group not in ("Colour", "Link", "Review", "Other") else group, style="bold"), data=("group", group),
+            node = self.root.add(Text(f"{group}  ({len(values)})" if group not in browse.NO_LETTERS else group, style="bold"), data=("group", group),
                                  allow_expand=True)
             if len(values) > folders.MANY:
                 letters: dict[str, list] = {}
@@ -399,7 +399,7 @@ class FacetTree(TickTree):
         label = Text(f"{'☑' if (group, value) in self.ticked else '☐'} {value}  {count}")
         if group == "Colour":
             label.stylize({"green": "green", "cyan": "cyan", "orange": "dark_orange", "red": "red"}.get(value, ""))
-        if group in ("Colour", "Link", "Review", "Other") and value in getattr(self, "described", {}):
+        if group in browse.NO_LETTERS and value in getattr(self, "described", {}):
             label.append(f"   {self.described[value]}", style="dim")
         return label
 
