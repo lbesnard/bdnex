@@ -156,6 +156,7 @@ class Cover(_Section):
     check: Union[bool, Literal["auto"]]  # auto: whenever OpenCV is installed
     match_percentage: float = Field(ge=0, le=100)
     picture: Literal["symbols", "blocks", "kitty", "iterm2", "sixel"] = "symbols"
+    redraw_after_picture: bool = True
 
 
 class Write(_Section):

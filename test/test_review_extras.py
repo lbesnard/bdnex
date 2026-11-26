@@ -1333,3 +1333,48 @@ def test_chafa_is_run_without_the_terminal_so_its_questions_never_come_back_as_t
     cover_text.picture(b"png", 20, 10)
     cover_text.graphic(b"png", 20, 10, "kitty")
     assert len(calls) == 2 and all(kw.get("start_new_session") for kw in calls)
+
+
+def test_closing_a_real_picture_asks_tmux_to_redraw_unless_the_option_is_off(env, monkeypatch):
+    import subprocess
+
+    from bdnex.ui import cover_text
+
+    db, root, paths = env
+    asked = []
+    monkeypatch.setattr(cover_text, "graphic", lambda image, columns, rows, how: b"<PICTURE>")
+    monkeypatch.setattr(review_tui.Pictures, "write_raw", lambda self, data: None)
+    real = subprocess.Popen
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, *a, **kw: asked.append(cmd) if cmd[0] == "tmux" else real(cmd, *a, **kw))
+    monkeypatch.setenv("TMUX", "/tmp/tmux-1/default,1,0")
+
+    async def script(app, pilot, lib):
+        object.__setattr__(app.settings.cover, "picture", "kitty")
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("c")
+        await pilot.pause(0.5)
+        await pilot.press("escape")
+        await pilot.pause(0.5)
+        script.on = list(asked)
+        asked.clear()
+        object.__setattr__(app.settings.cover, "redraw_after_picture", False)
+        await pilot.press("c")
+        await pilot.pause(0.5)
+        await pilot.press("escape")
+        await pilot.pause(0.5)
+        script.off = list(asked)
+        object.__setattr__(app.settings.cover, "redraw_after_picture", True)
+        object.__setattr__(app.settings.cover, "picture", "symbols")  # no real picture was drawn: nothing to clean up
+        await pilot.press("c")
+        await pilot.pause(0.5)
+        await pilot.press("escape")
+        await pilot.pause(0.5)
+        script.text = list(asked)
+
+    drive(db, root, script)
+    assert script.on == [["tmux", "refresh-client"]] and script.off == [] and script.text == []
+
+
+def test_the_redraw_option_is_in_the_config_and_on_by_default():
+    assert load_config().settings.cover.redraw_after_picture is True

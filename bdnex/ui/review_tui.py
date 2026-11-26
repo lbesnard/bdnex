@@ -18,6 +18,7 @@ from functools import partial
 import io
 import logging
 import os
+import subprocess
 import re
 import shutil
 import sys
@@ -700,6 +701,23 @@ class Pictures:
             self.write_raw(b"\x1bPtmux;\x1b" + delete.replace(b"\x1b", b"\x1b\x1b") + b"\x1b\\" if os.environ.get("TMUX") else delete)
 
 
+    def redraw_after(self) -> None:
+        """A real picture was shown: the whole screen is drawn again once it is closed. tmux can leave a picture on the screen (it does not
+        clear what a program drew past it); ``tmux refresh-client`` is the redraw you would ask for by hand. ``cover.redraw_after_picture: false``
+        turns it off (when tmux no longer does this). Never an error: it is only a help."""
+        from bdnex.ui.cover_text import GRAPHICS
+
+        if self.picture_mode() not in GRAPHICS or not getattr(getattr(getattr(self.app, "settings", None), "cover", None), "redraw_after_picture", True):
+            return
+        self.app.refresh(layout=True)
+        if os.environ.get("TMUX"):
+            def refresh() -> None:
+                with contextlib.suppress(Exception):
+                    subprocess.Popen(["tmux", "refresh-client"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+            self.app.set_timer(0.15, refresh)  # (after the screen under the popup has been painted again)
+
+
 class PageScreen(Pictures, ModalScreen):
     """One picture as large as the terminal allows, to read the credits: the pages of the file (left / right), or the album's saved cover (Tab).
     It is text (chafa when installed, else half blocks), so it works over SSH and in tmux."""
@@ -745,6 +763,7 @@ class PageScreen(Pictures, ModalScreen):
     def action_close(self) -> None:
         self.clear_graphic()
         self.dismiss(None)
+        self.redraw_after()
 
     def action_turn(self, step: int) -> None:
         if self.which == "file":
@@ -913,6 +932,7 @@ class CoverScreen(Pictures, ModalScreen):
     def action_close(self) -> None:
         self.clear_graphic()
         self.dismiss(None)
+        self.redraw_after()
 
 
 # ----------------------------------------------------------------------------- the table

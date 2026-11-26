@@ -59,6 +59,9 @@ cover:
   #   sixel    a real picture (foot, WezTerm, Windows Terminal, tmux 3.4+...); needs chafa
   # A real picture needs `set -g allow-passthrough on` in tmux, and a tmux inside a tmux usually blocks it.
   picture: symbols
+  # tmux (even 3.4+) can leave a real picture on the screen after it is closed (tmux issues 5126, 5894): with true, bdnex redraws
+  # the whole screen as soon as the pictures close (`tmux refresh-client`, what you would do by hand). Set false once your tmux is fixed.
+  redraw_after_picture: true
 
 api:
   host: 127.0.0.1                       # `bdnex serve` listens here; anything but this machine needs a token
