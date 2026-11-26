@@ -1054,3 +1054,31 @@ def test_a_page_has_its_would_go_to_at_once_without_waiting_for_the_plan_of_the_
         assert len(rows) == 3 and all(r.dest.startswith("Series/Tintin/") for r in rows)
         only = browse.plan(lib, settings, files=[rows[0].file_id])
         assert list(only) == [rows[0].file_id] and only[rows[0].file_id] == rows[0].dest
+
+
+def test_the_help_has_a_second_page_with_every_key(env):
+    from bdnex.ui import review_panels as panels
+    from bdnex.ui.review_tui import ReviewApp
+
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        await pilot.press("question_mark")
+        await pilot.pause()
+        await pilot.press("tab")
+        await pilot.pause()
+        seen["page"] = app.screen.page
+        await pilot.press("tab")
+        await pilot.pause()
+        seen["back"] = app.screen.page
+
+    drive(db, root, script)
+    assert seen == {"page": 1, "back": 0}
+    plain = panels.keys_text().plain
+    listed = {key.strip() for _, lines in panels.KEY_SECTIONS for keys, _ in lines for key in keys.replace("  ", " ").split(" ")}
+    for binding in ReviewApp.BINDINGS:
+        key = binding.key
+        if key.isdigit() or key in ("question_mark", "shift+down", "shift+up", "ctrl+p"):
+            continue
+        assert key in listed or key == "space" and "space" in plain, f"key {key!r} is not on the keys page"

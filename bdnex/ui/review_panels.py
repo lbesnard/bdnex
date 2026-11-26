@@ -393,6 +393,62 @@ HELP_SECTIONS = (
         "Nothing here moves or writes a comic file: `bdnex write` and `bdnex move` do, after you checked.",
     )),
 )
+# The second page of the help: every key, one line each ("keys", "what it does"); a key with a space in it is several keys
+KEY_SECTIONS = (
+    ("MOVING AND LOOKING", (
+        ("n  b", "next / previous page of 50 files (the arrows ◀ ▶ under the table too)"),
+        ("f", "left panel (folders, organised, filters) on / off"),
+        ("d", "album's metadata panel on / off"),
+        ("C", "choose the columns (double-click a header changes one; click a header sorts)"),
+        ("1-9", "sort by that column (again: the other way)"),
+        ("/", "search this page"),
+        ("]  [", "next / previous search hit"),
+        ("Ctrl+P", "find any action or filter by name: `series tintin`, `link doubtful`"),
+        ("T", "show everything ticked in the left panel together (space on a folder or filter ticks it)"),
+        ("v  y", "log panel on / off · copy the log"),
+        ("w", "questions that are waiting for you (a download that needs a choice)"),
+        ("? ", "this help (Tab or ← → switch the page) · Esc closes"),
+        ("q", "quit"),
+    )),
+    ("LINKING A FILE TO AN ALBUM", (
+        ("t", "the candidates bdnex found for this file"),
+        ("o  O", "search every known album of the library (O: with fzf)"),
+        ("i", "type an album id or a bédéthèque address"),
+        ("p", "open the album's page in the browser"),
+        ("c", "compare the file's cover with the album's; then z for the full size (+ - zoom, arrows move, Tab file / album)"),
+        ("k", "this match is right: confirm it (green); again: unconfirm"),
+        ("l", "there is no album online for this file"),
+        ("u", "unlink: the file waits for an album (never a confirmation)"),
+        ("s", "skip for now"),
+        ("a", "give the marked files the albums of a series, one number each"),
+        ("D", "the other files of the same album: trash a duplicate, make main, keep as version"),
+    )),
+    ("MARKING AND EDITING", (
+        ("space", "mark / unmark this row (a ✔ shows in the file column)"),
+        ("Shift+↑ ↓", "mark a list of rows (shift-click too, ctrl-click one)"),
+        ("m  x", "mark every file on screen (again: none) · unmark all"),
+        ("e", "edit this file's album by hand; with several marked: one form for all of them"),
+        ("E", "the form for the marked files: any field, 'several values' when they differ, Clear to empty one"),
+        ("K", "series or one-shot (the marked files)"),
+        ("V", "volume: a number, or `HS 2` for a hors-série"),
+        ("R", "the folder on the screen is all reviewed: confirm every file in it"),
+    )),
+    ("IN A FORM OR A POPUP", (
+        ("Tab  Shift+Tab", "next / previous field or button"),
+        ("Enter", "press the focused button"),
+        ("Esc", "cancel and close"),
+        ("Ctrl+S", "Save (if your terminal passes it; tmux keeps it: use the Save button)"),
+    )),
+    ("IN THE COVER AND THE FULL-SIZE PAGE", (
+        ("c", "open / close the cover comparison"),
+        ("z  Enter", "from the cover comparison: the file's pages at full size"),
+        ("← →", "previous / next page of the file"),
+        ("+  -", "zoom in / out to read the writing"),
+        ("↑ ↓ h l", "move around when zoomed (j k work too)"),
+        ("Tab", "swap between the file's page and the album's cover"),
+        ("Esc  z  q", "back"),
+    )),
+)
 KEY = re.compile(r"\[([^\[\]]+)\]|\{(\w+):([^}]*)\}")
 HELP = "\n".join(f"{head}\n" + "\n".join(lines) for head, lines in HELP_SECTIONS)  # plain, for a test and for a screen without styles
 
@@ -416,6 +472,24 @@ def help_text() -> Text:
                     text.append(hit.group(3), style="bold" if hit.group(2) == "bold" else f"bold {hit.group(2)}")
                 at = hit.end()
             text.append(line[at:] + "\n")
+        text.append("\n")
+    return text
+
+
+def keys_text() -> Text:
+    """Page 2 of the help: every key and what it does, the keys in yellow, one aligned column."""
+    text = Text()
+    for head, lines in KEY_SECTIONS:
+        text.append(head, style="bold reverse")
+        text.append("\n")
+        for keys, what in lines:
+            at = 0
+            for key in keys.split("  "):
+                chip = f" {key.strip()} "
+                text.append(chip, style="bold black on yellow")
+                text.append(" ")
+                at += len(chip) + 1
+            text.append(" " * max(2, 22 - at) + what + "\n")
         text.append("\n")
     return text
 
@@ -444,16 +518,30 @@ class HelpChip(Static):
 class HelpScreen(ModalScreen):
     """Every key of the screen, in a few lines."""
 
-    BINDINGS = [Binding("escape", "close", "Close"), Binding("question_mark", "close", "Close", show=False), Binding("q", "close", "Close", show=False)]
+    BINDINGS = [Binding("escape", "close", "Close"), Binding("question_mark", "close", "Close", show=False), Binding("q", "close", "Close", show=False),
+                Binding("tab", "swap", "Other page", show=False), Binding("right", "swap", show=False), Binding("left", "swap", show=False)]
     CSS = """
     HelpScreen { align: center middle; }
     #help { width: 96%; height: auto; max-height: 94%; border: round $accent; padding: 1 2; background: $surface; overflow-y: auto; }
     """
 
+    page = 0  # 0: the guide, 1: every key
+
     def compose(self) -> ComposeResult:
         with Vertical(id="help"):
-            yield Static(help_text(), markup=False)
-            yield Label(Text("Esc closes", style="dim"))
+            yield Static(self.bar(), id="helpbar")
+            yield Static(help_text(), markup=False, id="helpbody")
+            yield Label(Text("Esc closes · Tab or ← → : the other page", style="dim"))
+
+    def bar(self) -> Text:
+        on, off = "bold black on yellow", "dim"
+        return Text.assemble((" 1  Guide ", on if self.page == 0 else off), "  ", (" 2  Every key ", on if self.page == 1 else off), "\n")
+
+    def action_swap(self) -> None:
+        self.page = 1 - self.page
+        self.query_one("#helpbar", Static).update(self.bar())
+        self.query_one("#helpbody", Static).update(keys_text() if self.page else help_text())
+        self.query_one("#help").scroll_home(animate=False)
 
     def action_close(self) -> None:
         self.dismiss(None)
