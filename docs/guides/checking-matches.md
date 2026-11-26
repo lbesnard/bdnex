@@ -161,9 +161,8 @@ The table shows a selection **one page at a time** (50 files, or the `--batch` s
 
 (The pictures come from a demo library of made-up files: `uv run python tools/review_screens.py docs/_static/screens` draws them again.)
 
-The screen **opens at once**. While the batch is made it shows a loading panel with the two jobs and how long each has taken:
-`weighing the files` (the table appears when that is done; the title then says `weighed in 6.2 s`) and `loading the album list`
-(the search waits for that one, in the background), so you always see what it is doing. Picking an album **links the file at once**: the link is written in the library before anything is fetched, the row says `linked`
+The screen **opens at once**. While the batch is made it shows a loading panel with the job and how long it has taken:
+`weighing the files` (the table appears when that is done; the title then says `weighed in 1.1 s`). Only then do the folder tree, the filters and the album list (the search waits for it) load, in the background: they are Python work that shares the interpreter with the weighing, so started together they made the table appear about four times later. Picking an album **links the file at once**: the link is written in the library before anything is fetched, the row says `linked`
 (`you` as the match) and you can go on, to the next row or the next batch. The album's page and cover are then fetched in the
 background (the log panel says what it is doing). With several fetcher endpoints (`fetch.endpoint`, or `fetch.parallel`) the pages and covers of **several files are downloaded at once, as many as `bdnex import` would fetch**, each request still waiting its polite delay, and every file being fetched shows a turning wheel; the library is still written one file at a time, so two files of one series never clash. With one endpoint it is one file at a time. The row's state says `linked · fetching` until they are
 there, then shows the cover score. A mistake is one `u` away: **unlink** removes the link from the library and cancels what was

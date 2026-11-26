@@ -138,7 +138,7 @@ def test_a_loading_panel_says_what_is_being_done_until_the_table_is_ready(env, m
     asyncio.run(go())
     shown, table_shown, text = seen["during"]
     assert shown and not table_shown  # the panel is where the table will be
-    assert "weighing the files" in text and "loading the album list" in text and "Getting the batch ready" in text
+    assert "weighing the files" in text and "album list" in text and "in the background" in text and "Getting the batch ready" in text
     assert "s\n" in text or " s" in text  # each job says for how long
     assert seen["after"] == (False, True, 3)  # then the table takes its place
 
@@ -1801,3 +1801,27 @@ def test_declining_the_offer_changes_nothing(env, monkeypatch):
 
     result, _ = drive(db, script)
     assert seen["still_asking"] is False and all(cell[8] != "confirmed · linked" for cell in result["cells"])
+
+
+def test_the_folders_and_the_album_list_load_only_after_the_first_batch_is_on_screen(env, monkeypatch):
+    """They share the interpreter with the weighing of the first batch: started together, the table came several times later."""
+    db, files = env
+    release = threading.Event()
+    real = batch.next_batch
+    monkeypatch.setattr(batch, "next_batch", lambda *a, **k: (release.wait(5), real(*a, **k))[1])
+    seen = {}
+
+    async def go():
+        settings = load_config().settings
+        with Library(db) as lib:
+            app = review_tui.ReviewApp(lib, settings, FakeSource(), 50, (), True)
+            async with app.run_test(size=(170, 45)) as pilot:
+                await pilot.pause(0.3)
+                seen["before"] = (app.background_started, app.hub.loaded)
+                release.set()
+                await fetched(app, pilot)
+                await pilot.pause(0.3)
+                seen["after"] = (app.background_started, app.hub.loaded is not None)
+
+    asyncio.run(go())
+    assert seen["before"] == (False, None) and seen["after"] == (True, True)
