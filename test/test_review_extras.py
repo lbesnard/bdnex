@@ -1042,3 +1042,15 @@ def test_save_is_always_in_view_in_the_popups_even_in_a_small_terminal(env):
 
     asyncio.run(go())
     assert seen["bulk"] == ("Save", True) and seen["edit"] == ("Save", True)
+
+
+def test_a_page_has_its_would_go_to_at_once_without_waiting_for_the_plan_of_the_library(env):
+    from bdnex.library import browse
+
+    db, root, paths = env
+    settings = load_config().settings
+    with Library(db, root=root) as lib:
+        rows = browse.rows_for(lib, settings, "folder", "Series/Tintin", planned=None)  # no plan yet: the first seconds of the screen
+        assert len(rows) == 3 and all(r.dest.startswith("Series/Tintin/") for r in rows)
+        only = browse.plan(lib, settings, files=[rows[0].file_id])
+        assert list(only) == [rows[0].file_id] and only[rows[0].file_id] == rows[0].dest

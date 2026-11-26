@@ -123,16 +123,24 @@ def facets(library, strong: float = 90.0) -> dict[str, list[tuple[str, int]]]:
     return found
 
 
-def plan(library, settings, only: Optional[set[int]] = None) -> dict[int, str]:
+def plan(library, settings, only: Optional[set[int]] = None, files: Optional[list[int]] = None) -> dict[int, str]:
     """``{file id: where `bdnex move` would put it}``, relative to the collection and with the extension it would have. Offline and read-only;
-    a file the template refuses or that needs a question (a missing field) is left out. ``only``: the album ids to work out (after an edit)."""
+    a file the template refuses or that needs a question (a missing field) is left out. ``only``: the album ids to work out (after an edit);
+    ``files``: just these file ids (the rows of a page: a few milliseconds, so a page never waits for the plan of the whole library)."""
     from bdnex.organizer.organizer import FileResult, Organizer, _Deferring
 
     organizer = Organizer(library, settings, prompter=_Deferring(), pretend=True)
     root = str(settings.require_collection())
     found: dict[int, str] = {}
-    sql = "SELECT id, path, format, album_id, spare FROM files WHERE album_id IS NOT NULL"
-    for row in library.conn.execute(sql).fetchall():
+    if files is not None:
+        chosen = []
+        for start in range(0, len(files), 500):
+            chunk = files[start:start + 500]
+            chosen += library.conn.execute(
+                f"SELECT id, path, format, album_id, spare FROM files WHERE album_id IS NOT NULL AND id IN ({','.join('?' * len(chunk))})", chunk).fetchall()
+    else:
+        chosen = library.conn.execute("SELECT id, path, format, album_id, spare FROM files WHERE album_id IS NOT NULL").fetchall()
+    for row in chosen:
         if only is not None and row["album_id"] not in only:
             continue
         try:
@@ -193,6 +201,20 @@ def prefix_range(folder: str) -> tuple[str, str]:
     """The stored paths below a folder are exactly those from ``folder/`` up to (not including) ``folder0``: an index range, not a scan."""
     low = folder.rstrip("/") + "/"
     return low, low[:-1] + chr(ord("/") + 1)
+
+
+def fill_destinations(library, settings, rows) -> None:
+    """The rows of a page whose *Would go to* is not known yet (the plan of the whole library is still being worked out) get it now, from their
+    own albums: a page of 50 files takes a few milliseconds, and the plan is not waited for."""
+    missing = [row for row in rows if row.album_id is not None and not row.dest and row.file_id is not None]
+    if not missing:
+        return
+    try:
+        found = plan(library, settings, files=[row.file_id for row in missing])
+    except Exception:  # (a help: no collection_path, a template that asks something)
+        return
+    for row in missing:
+        row.dest = found.get(row.file_id, "")
 
 
 def rows_for(library, settings, kind: str, value: Any, planned: Optional[dict[int, str]] = None, limit: int = LIMIT, offset: int = 0) -> Batch:
@@ -258,4 +280,5 @@ def rows_for_many(library, settings, selections: list, planned: Optional[dict[in
     rows = conn.execute(f"{select_sql(strong)} WHERE {where} ORDER BY f.path LIMIT ? OFFSET ?", [*params, limit, offset]).fetchall()
     batch = _rows(library, rows, planned)
     batch.total = total
+    fill_destinations(library, settings, batch)
     return batch

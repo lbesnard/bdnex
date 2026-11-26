@@ -74,13 +74,14 @@ class FolderNode:
         return [groups[key] for key in sorted(groups)]
 
 
-def progress(library, strong: float = 90.0) -> dict[str, list[int]]:
-    """``{folder: [files, confirmed, red, orange, cyan]}``, one entry per folder that holds a file directly: one query."""
+def progress(library, strong: float = 90.0, levels=None) -> dict[str, list[int]]:
+    """``{folder: [files, confirmed, red, orange, cyan]}``, one entry per folder that holds a file directly: one query (``levels``: the result
+    of ``browse.file_levels``, when the caller has it already)."""
     from bdnex.library import browse
 
     found: dict[str, list[int]] = {}
     slot = {"green": 1, "red": 2, "orange": 3, "cyan": 4}
-    for _, path, level in browse.file_levels(library, strong):
+    for _, path, level in (levels if levels is not None else browse.file_levels(library, strong)):
         entry = found.setdefault(folder_of_stored(path), [0, 0, 0, 0, 0])
         entry[0] += 1
         entry[slot[level]] += 1

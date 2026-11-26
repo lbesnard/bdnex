@@ -128,7 +128,8 @@ class ReviewExtras:
         try:
             with Library.for_settings(self.settings, readonly=True) as library:
                 strong = browse.strong_of(self.settings)
-                root = folders.build(folders.progress(library, strong))
+                levels = browse.file_levels(library, strong)  # one query, used twice (the folders, then the organised folders)
+                root = folders.build(folders.progress(library, strong, levels))
                 bad = folders.inconsistent(library)
                 found = browse.facets(library, strong)
                 with contextlib.suppress(Exception):
@@ -140,8 +141,7 @@ class ReviewExtras:
                 move_root = None
                 if self.planned is not None or planned:
                     merged = {**(self.planned or {}), **planned}
-                    levels = {file_id: level for file_id, _, level in browse.file_levels(library, strong)}
-                    move_root = folders.build(browse.plan_counts(merged, levels))
+                    move_root = folders.build(browse.plan_counts(merged, {file_id: level for file_id, _, level in levels}))
         except Exception as err:
             logger.info("the folder tree could not be read: %s", err)
             return
