@@ -12,7 +12,7 @@ import os
 from typing import Optional
 
 from rich.text import Text
-from textual.widgets import Button, Checkbox, Static
+from textual.widgets import Button, Checkbox, Input, Static
 
 from bdnex.library import review_batch as batch
 from bdnex.ui import review_panels as panels
@@ -27,6 +27,7 @@ class ReviewExtras:
 
     folder_root = None
     folder_tree = None
+    folder_names: dict = {}
     facet_tree = None
     move_tree = None
     move_root = None
@@ -132,8 +133,9 @@ class ReviewExtras:
                 root = folders.build(folders.progress(library, strong, levels))
                 bad = folders.inconsistent(library)
                 found = browse.facets(library, strong)
+                names = folders.file_names(library)
                 with contextlib.suppress(Exception):
-                    self.call_from_thread(self.folders_ready, root, bad, found)
+                    self.call_from_thread(self.folders_ready, root, bad, found, names)
                 if self.planned is None or dirty:
                     planned = browse.plan(library, self.settings, only=dirty or None)
                 else:
@@ -148,8 +150,9 @@ class ReviewExtras:
         with contextlib.suppress(Exception):
             self.call_from_thread(self.plan_ready, planned, move_root, dirty)
 
-    def folders_ready(self, root, bad: dict, found: dict) -> None:
+    def folders_ready(self, root, bad: dict, found: dict, names: Optional[dict] = None) -> None:
         self.folder_root, self.folder_bad = root, bad
+        self.folder_names = names or {}
         self.facet_choices = [(group, value, count) for group, values in found.items() for value, count in values]
         pane = self.query_one("#folderpane")
         if self.folder_tree is None:
@@ -157,15 +160,40 @@ class ReviewExtras:
                 with contextlib.suppress(Exception):
                     self.query_one(waiting).remove()
             self.folder_tree = panels.FolderTree(root, id="foldertree")
+            self.folder_tree.file_names = self.folder_names
             self.query_one("#folderslot").mount(self.folder_tree)
             self.facet_tree = panels.FacetTree(found, id="facettree")
             self.query_one("#facetslot").mount(self.facet_tree)
         else:
+            self.folder_tree.file_names = self.folder_names
             self.folder_tree.refresh_counts(root)
             self.facet_tree.fill(found)
         self.counts_due = False
         self.update_title()
         pane.refresh()
+
+    def action_find_folder(self) -> None:
+        """``F``: the cursor goes to the find box above the trees (the panel is shown if it was hidden)."""
+        pane = self.query_one("#folderpane")
+        if not pane.display:
+            self.action_folders()
+        self.query_one("#treefind", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Enter in the find box: on to the tree, to pick a folder."""
+        if event.input.id == "treefind":
+            event.stop()
+            tree = self.folder_tree if self.query_one("#trees").active == "tab-folders" else self.move_tree
+            (tree or self.query_one("DataTable")).focus()
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """The find box above the trees: as you type, only the folders that match (by their name or the name of a file in them) stay."""
+        if event.input.id != "treefind":
+            return
+        event.stop()
+        for tree in (self.folder_tree, self.move_tree):
+            if tree is not None:
+                tree.find(event.value)
 
     def plan_ready(self, planned: dict, move_root, dirty: set) -> None:
         """Where a move would put the files is known (or known again for the albums that changed): the second tree, and the *Would go to* of the rows."""
@@ -214,6 +242,7 @@ class ReviewExtras:
     def action_folders(self) -> None:
         pane = self.query_one("#folderpane")
         pane.display = not pane.display
+        self.query_one("#treefind", Input).disabled = not pane.display  # (a hidden box would still take the keys)
         self.remember_tree(pane.display)
         table = self.query_one("DataTable")
         keep = table.cursor_row

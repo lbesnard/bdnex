@@ -561,6 +561,9 @@ class EditScreen(ModalScreen):
     #edit { width: 90%; height: 95%; border: round $accent; padding: 1 2; background: $surface; }
     #editfields { height: 1fr; }
     #edit Input { margin-bottom: 0; }
+    .editrow { height: 3; }
+    .editrow Input { width: 1fr; }
+    .editrow Button { margin-left: 1; min-width: 9; }
     #volumes { height: 8; }
     #problem { color: $error; height: auto; }
     #buttons { height: 3; align-horizontal: right; }
@@ -578,7 +581,9 @@ class EditScreen(ModalScreen):
             with VerticalScroll(id="editfields"):  # the fields scroll; Save and Cancel stay at the bottom of the window
                 for key, label, hint in self.fields:
                     yield Label(Text(f"{label}" + (f"  ({hint})" if hint else ""), style="dim"))
-                    yield Input(value=self.values.get(key, ""), id=f"f-{key}")
+                    with Horizontal(classes="editrow"):
+                        yield Input(value=self.values.get(key, ""), id=f"f-{key}")
+                        yield Button("Clear", id=f"clear-{key}", classes="emptier")  # the same button as in the form for many files
                 if self.volumes is not None:
                     yield Label(Text("Volume and file (change a number if it was read wrong)", style="dim"))
                     yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}" for p, v in self.volumes), id="volumes")
@@ -606,6 +611,10 @@ class EditScreen(ModalScreen):
         event.stop()
         if event.button.id == "ok":
             self.action_accept()
+        elif (event.button.id or "").startswith("clear-"):
+            box = self.query_one("#f-" + event.button.id[len("clear-"):], Input)
+            box.value = ""  # an empty field is saved as none
+            box.focus()
         else:
             self.dismiss(None)
 
@@ -901,6 +910,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         Binding("shift+up", "extend_mark(-1)", "Mark more", show=False),
         Binding("question_mark", "help", "Help"),
         Binding("f", "folders", "Folders on/off"),
+        Binding("F", "find_folder", "Find a folder or file"),
         Binding("R", "reviewed_folder", "Folder reviewed"),
         Binding("T", "show_ticked", "Show the ticked"),
         Binding("D", "duplicates", "Duplicates"),
@@ -973,6 +983,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
                     yield Button("Show ticked", id="show-ticked")
                     yield Button("Clear ticks", id="clear-ticks")
                 yield Checkbox("Apply filters to folders (both)", id="narrow")
+                yield Input(placeholder="Find a folder or a file...  (words, any order)", id="treefind")
                 with TabbedContent(id="trees"):
                     with TabPane("Folders", id="tab-folders"):
                         with Vertical(id="folderslot"):

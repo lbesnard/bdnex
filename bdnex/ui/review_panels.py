@@ -5,6 +5,7 @@ Each is a thin widget over a library module (``library/folders``, ``library/twin
 
 from __future__ import annotations
 
+import dataclasses
 import re
 import os
 from functools import partial
@@ -191,8 +192,52 @@ class FolderTree(TickTree):
         super().__init__(node_label(root), data=root, **kwargs)
         self.show_root = True
         self.guide_depth = 3
+        self.full_root = root
+        self.words: list[str] = []  # what the find box says: the tree shows only the folders that match (and the ones leading to them)
+        self.file_names: dict[str, str] = {}  # folder -> its file names, lower case, one string (for the find box)
         self.fill(self.root, root)
         self.root.expand()
+
+    def find(self, text: str, file_names: Optional[dict] = None) -> int:
+        """Show only the folders whose name, or the name of a file in them, has every word of ``text`` (blank: everything again).
+        A folder that matches keeps all it holds; the folders leading to a match stay open. Returns the folders that matched."""
+        if file_names is not None:
+            self.file_names = file_names
+        self.words = text.casefold().split()
+        if not self.words:
+            self.root.data = self.full_root
+            self.fill(self.root, self.full_root)
+            self.root.expand()
+            return 0
+        count = [0]
+        shown = self.pruned(self.full_root, count)
+        shown = shown or dataclasses.replace(self.full_root, children={})
+        self.root.data = shown
+        self.expand_all_of(self.root, shown)
+        return count[0]
+
+    def matches(self, folder: "folders.FolderNode") -> bool:
+        if not folder.path and not folder.name:
+            return False
+        hay = f"{folder.name.casefold()} {self.file_names.get(folder.path, '')}"
+        return all(word in hay for word in self.words)
+
+    def pruned(self, folder: "folders.FolderNode", count: list) -> Optional["folders.FolderNode"]:
+        """A copy of ``folder`` with only what matches below it (None: nothing here matches)."""
+        if self.matches(folder):
+            count[0] += 1
+            return folder  # the whole folder, as it is
+        kept = {name: node for name, child in folder.children.items() if (node := self.pruned(child, count)) is not None}
+        return dataclasses.replace(folder, children=kept) if kept else None
+
+    def expand_all_of(self, tree_node, folder: "folders.FolderNode", depth: int = 0) -> None:
+        """Fill and open the entries on the way to the matches (a folder that matched stays closed: it is the answer)."""
+        self.fill(tree_node, folder)
+        tree_node.expand()
+        for child in tree_node.children:
+            data = child.data
+            if data is not None and data.children and depth < 8 and not self.matches(data):
+                self.expand_all_of(child, data, depth + 1)
 
     def fill(self, tree_node, folder: "folders.FolderNode") -> None:
         tree_node.remove_children()
@@ -227,6 +272,11 @@ class FolderTree(TickTree):
 
     def refresh_counts(self, root: "folders.FolderNode") -> None:
         """New counts from the library, the tree otherwise left as it is (what is expanded stays expanded)."""
+        self.full_root = root
+        if self.words:  # the find box is in use: the tree is built again from the new counts with the same words
+            self.find(" ".join(self.words))
+            return
+
         def walk(tree_node, folder: Optional["folders.FolderNode"]) -> None:
             if folder is None:
                 return
@@ -346,7 +396,7 @@ TIPS = (
     "D shows the other files of an album: trash a duplicate, keep a version · K series or one-shot · V volume",
     "k confirms a match (green) and again unconfirms it · l says there is no album online for a file · u unlink is not a confirmation",
     "Shift-click, or shift with the arrows, marks a list of rows · shift-click ticks a list of folders",
-    "A hors-série: E, then the HS 1..n button (or V and type HS 2)",
+    "A hors-série: E, then the button Hors-série HS 1, HS 2... (or V and type HS 2)",
     "Red folders have a file with no album or a doubtful match: start there · green means you confirmed everything",
     "? lists every key",
 )
@@ -363,6 +413,7 @@ HELP_SECTIONS = (
     )),
     ("SEARCH", (
         "[/] searches this page (file, folder, album, destination, state); then `]` and `[` go to the next / previous hit",
+        "[F] types in the box above the tree: only the folders with that name, or holding a file with that name, stay (words in any order)",
         "[Ctrl+P] finds any action or filter by name: `series tintin`, `author hergé`, `link doubtful`",
         "[o] searches all the albums of the library (offline) to link the file to one",
     )),
@@ -373,7 +424,7 @@ HELP_SECTIONS = (
     )),
     ("EDITING", (
         "[space] or ctrl-click marks a row, shift-click or shift+arrows a list, [m] all, [x] none · [k] confirms all the marked",
-        "[e] one file by hand · [E] (or [e] on several) one form for the marked: any field, series or one-shot, a number each (`5`, or `HS 1`; the HS 1..n button)",
+        "[e] one file by hand · [E] (or [e] on several) one form for the marked: any field, series or one-shot, a number each (`5`, or `HS 1`; buttons number them for you)",
         "[K] series or one-shot · [V] volume · [R] the folder on the screen is all confirmed",
     )),
     ("COLOURS (a file you confirmed is green, the others by how bdnex linked them; a folder takes its worst file)", (
@@ -398,6 +449,7 @@ KEY_SECTIONS = (
     ("MOVING AND LOOKING", (
         ("n  b", "next / previous page of 50 files (the arrows ◀ ▶ under the table too)"),
         ("f", "left panel (folders, organised, filters) on / off"),
+        ("F", "find: type part of a folder or file name above the tree, only the folders that match stay (Enter: on to the tree)"),
         ("d", "album's metadata panel on / off"),
         ("C", "choose the columns (double-click a header changes one; click a header sorts)"),
         ("1-9", "sort by that column (again: the other way)"),
@@ -674,6 +726,8 @@ class BulkScreen(ModalScreen):
     #bulkkind { width: 30; }
     #bulkkind.several SelectCurrent { color: darkorange; text-style: bold; }
     #bulkvolumes { height: 9; }
+    #volumebuttons { height: 3; width: 100%; }
+    #volumebuttons Button { margin-right: 1; }
     #bulkproblem { color: $error; height: auto; }
     #bulkbuttons { height: 3; align-horizontal: right; }
     #bulkbuttons Button { margin-left: 2; }
@@ -710,14 +764,15 @@ class BulkScreen(ModalScreen):
                         yield Input(value="", placeholder=holder, id=f"b-{key}", classes="several" if shared is None else "")
                         if shared != "":  # (when they all have none already, there is nothing to empty)
                             yield Button("Clear", id=f"clear-{key}", classes="emptier")
-                yield Label(Text("Number and file, one line each: a number (5), or text for a tome with no number (HS 1, INT); the buttons fill them in",
-                                 style="dim"))
+                yield Label(Text("Volume of each file, one line each: its number in the series (5), or a word for a book with no number "
+                                 "(HS 1 = hors-série, INT = intégrale). Fill the lines with:", style="dim"))
+                with Horizontal(id="volumebuttons"):
+                    yield Button("Number them 1, 2, 3...", id="number")
+                    yield Button("Hors-série HS 1, HS 2...", id="hs")
+                    yield Button("Read from file names", id="names")
                 yield TextArea("\n".join(f"{v}\t{os.path.basename(p)}  {note}" for p, v, note in self.files), id="bulkvolumes")
             yield Label("", id="bulkproblem")
             with Horizontal(id="bulkbuttons"):
-                yield Button("1..n", id="number")
-                yield Button("HS 1..n", id="hs")
-                yield Button("From the names", id="names")
                 yield Button("Save", id="ok", variant="success")
                 yield Button("Cancel", id="cancel")
 

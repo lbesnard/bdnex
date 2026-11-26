@@ -583,7 +583,7 @@ def test_hs_1_to_n_numbers_hors_series_and_v_takes_text_for_a_tome_with_no_numbe
         await pilot.press("m")
         await pilot.press("E")
         await pilot.pause()
-        await pilot.click("#hs")  # the button: HS 1..n
+        app.screen.query_one("#hs").press()  # the button: Hors-série HS 1, HS 2...
         await pilot.pause()
         script.lines = app.screen.query_one("#bulkvolumes").text
         app.screen.action_accept()
@@ -1082,3 +1082,62 @@ def test_the_help_has_a_second_page_with_every_key(env):
         if key.isdigit() or key in ("question_mark", "shift+down", "shift+up", "ctrl+p"):
             continue
         assert key in listed or key == "space" and "space" in plain, f"key {key!r} is not on the keys page"
+
+
+def test_the_form_for_one_file_has_a_clear_button_like_the_one_for_many(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("e")
+        await pilot.pause()
+        box = app.screen.query_one("#f-series")
+        seen["before"] = box.value
+        app.screen.query_one("#clear-series").press()
+        await pilot.pause()
+        seen["after"] = app.screen.query_one("#f-series").value
+
+    drive(db, root, script)
+    assert seen["before"] and seen["after"] == ""
+
+
+def test_the_find_box_above_the_tree_keeps_only_the_folders_that_match(env):
+    db, root, paths = env
+    seen = {}
+
+    def labels(tree):
+        out = []
+
+        def walk(node):
+            for child in node.children:
+                out.append(str(child.label))
+                walk(child)
+
+        walk(tree.root)
+        return out
+
+    async def script(app, pilot, lib):
+        await settle(app, pilot)
+        tree = app.folder_tree
+        seen["all"] = len(labels(tree))
+        await pilot.press("F")
+        await pilot.pause()
+        seen["focus"] = app.focused.id
+        for ch in "tintin":
+            await pilot.press(ch)
+        await pilot.pause()
+        seen["some"] = labels(tree)
+        app.query_one("#treefind").value = "zzzzqq"
+        await pilot.pause()
+        seen["none"] = labels(tree)
+        app.query_one("#treefind").value = ""
+        await pilot.pause()
+        seen["back"] = len(labels(tree))
+
+    drive(db, root, script)
+    assert seen["focus"] == "treefind"
+    assert any("Tintin" in label for label in seen["some"])
+    assert seen["none"] == []
+    assert seen["back"] == seen["all"]

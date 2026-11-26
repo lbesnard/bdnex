@@ -180,3 +180,13 @@ def mark_reviewed(library, folder: str, recursive: bool = True) -> int:
         library.set_attr("file", file_id, CHECKED, "keep" if album_id is not None else "leave")
         marked += 1
     return marked
+
+
+def file_names(library) -> dict[str, str]:
+    """``{folder: its file names}``, lower case in one string each: what the find box above the tree looks in (one query)."""
+    import posixpath as pp
+
+    names: dict[str, list[str]] = {}
+    for row in library.conn.execute("SELECT path FROM files"):
+        names.setdefault(folder_of_stored(row["path"]), []).append(pp.basename(row["path"]).casefold())
+    return {folder: " ".join(found) for folder, found in names.items()}
