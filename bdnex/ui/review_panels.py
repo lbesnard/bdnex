@@ -608,7 +608,8 @@ class BulkScreen(ModalScreen):
             with Vertical(id="bulkfields"):
                 with Horizontal(classes="fieldrow"):
                     yield Label("Kind", classes="fieldname")
-                    yield Select(self.KINDS, value="", allow_blank=False, id="bulkkind")
+                    now = {"series": "series", "oneshot": "one-shots"}.get(self.shared.get("kind") or "", "series and one-shots")
+                    yield Select([(f"leave as they are (now: {now})", ""), *self.KINDS[1:]], value="", allow_blank=False, id="bulkkind")
                 for key, label, hint in self.fields:
                     shared = self.shared.get(key)
                     holder = "(several values)" if shared is None else (shared or self.hints.get(key) or hint)
@@ -647,6 +648,17 @@ class BulkScreen(ModalScreen):
             from bdnex.library import manual
 
             self.set_volumes([str(manual.guess(path)["volume"]) for path, _, _ in self.files])
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Choosing "series" asks for its name: the box is filled with the folder's name (change it if it is not the series) and gets the focus."""
+        if event.select.id != "bulkkind" or event.value != "series" or not self.fields or not any(k == "series" for k, _, _ in self.fields):
+            return
+        box = self.query_one("#b-series", Input)
+        if not box.value.strip():
+            shared = self.shared.get("series")
+            box.value = shared or self.hints.get("series") or ""
+        box.focus()
+        self.query_one("#bulkproblem", Label).update("The series name: change it if it is not the one these albums belong to")
 
     def toggle_clear(self, key: str) -> None:
         """Clear this field on every file (or take it back): the box says so in red, and typing a value instead is the other choice."""
@@ -705,4 +717,8 @@ class BulkScreen(ModalScreen):
             else:  # text: a tome with no number (HS 1, INT, 16B6)
                 volumes[path], specials[path] = None, first or None
         kind = self.query_one("#bulkkind", Select).value or None
+        if kind == "series" and not (values.get("series") or "").strip():
+            self.query_one("#bulkproblem", Label).update("Type the name of the series (above), or choose another kind")
+            self.query_one("#b-series", Input).focus()
+            return
         self.dismiss({"values": values, "kind": kind or None, "volumes": volumes, "specials": specials})

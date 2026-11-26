@@ -923,3 +923,43 @@ def test_the_clear_button_clears_a_field_on_every_marked_file(env):
     drive(db, root, script)
     assert seen["holder"] == "(several values)" and "cleared" in seen["after"]
     assert all(value in ("", None) for value in seen["albums"])
+
+
+def test_choosing_series_in_the_form_fills_the_name_and_the_destination_follows(env, make_cbz):
+    db, root, paths = env
+    seen = {}
+    (root / "One").mkdir()
+    with Library(db, root=root) as lib:
+        for n in (1, 2):
+            album = lib.add_album(AlbumInfo("b", f"o{n}", f"Solo {n}"))
+            path = str(root / "One" / f"Solo {n}.cbz")
+            shutil.copy(make_cbz(f"o{n}.cbz", pages=3), path)
+            lib.add_file(path, album)
+            lib.log_import(path, "tagged", 95.0, album)
+
+    async def script(app, pilot, lib):
+        from textual.widgets import Select
+
+        app.open_folder("One")
+        await settle(app, pilot)
+        seen["before"] = [r.dest for r in app.rows]
+        await pilot.press("m")
+        await pilot.press("E")
+        await pilot.pause(0.5)
+        screen = app.screen
+        screen.query_one("#bulkkind", Select).value = "series"
+        await pilot.pause(0.3)
+        seen["name"] = screen.query_one("#b-series").value  # filled with the folder's name
+        screen.query_one("#b-series").value = ""
+        await pilot.click("#ok")
+        await pilot.pause(0.3)
+        seen["still_open"] = type(app.screen).__name__ == "BulkScreen"
+        seen["problem"] = str(app.screen.query_one("#bulkproblem").render())
+        app.screen.query_one("#b-series").value = "Solo Series"
+        await pilot.click("#ok")
+        await pilot.pause(0.8)
+        seen["after"] = [r.dest for r in app.rows]
+
+    drive(db, root, script)
+    assert seen["name"] == "One" and seen["still_open"] and "name of the series" in seen["problem"]
+    assert seen["before"] != seen["after"] and all(d.startswith("Series/Solo Series/") for d in seen["after"])
