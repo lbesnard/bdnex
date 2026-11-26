@@ -41,6 +41,7 @@ from textual.widgets.option_list import Option
 from bdnex.library import browse, review_batch as batch
 from bdnex.ui import color
 from bdnex.ui.review_extras import ReviewExtras
+from bdnex.ui.review_organise import ReviewOrganise
 from bdnex.ui.cover_text import GRAPHICS, graphic
 from bdnex.ui import review_panels as panels
 from bdnex.ui.review_panels import FacetCommands, HelpChip, PagerChip, Splitter, legend
@@ -991,7 +992,7 @@ class CoverScreen(Pictures, Modal):
 
 
 # ----------------------------------------------------------------------------- the table
-class ReviewApp(ColumnsMixin, ReviewExtras, App):
+class ReviewApp(ColumnsMixin, ReviewOrganise, ReviewExtras, App):
     """The table of one batch, the detail of the row under the cursor, and the keys that decide."""
 
     TITLE = "bdnex review"
@@ -1008,6 +1009,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
     #tickbar Button { min-width: 8; margin-right: 1; }
     #pager { height: 1; }
     #pager PagerChip { width: auto; }
+    #pager-write, #pager-move { margin-left: 1; }
     #pager-where { width: 1fr; content-align: center middle; color: $text-muted; }
     #narrow { height: 1; border: none; padding: 0 1; background: transparent; }
     #trees { height: 1fr; }
@@ -1037,6 +1039,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         Binding("c", "cover", "Covers"),
         Binding("space", "mark", "Mark"),
         Binding("m", "mark_all", "Mark all / none"),
+        Binding("W", "write_view", "Write the view's tags", show=False),
+        Binding("M", "move_view", "Move the view's files", show=False),
         Binding("x", "mark_none", "Unmark all"),
         Binding("v", "toggle_log", "Log"),
         Binding("y", "copy_log", "Copy the log"),
@@ -1149,6 +1153,10 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
                     yield PagerChip(" ◀  b  previous ", "action_previous_batch", id="pager-back", tooltip="The previous 50 files (key b).")
                     yield Static("", id="pager-where")
                     yield PagerChip(" next  n  ▶ ", "action_next_batch", id="pager-next", tooltip="The next 50 files (key n).")
+                    yield PagerChip(" Write ", "action_write_view", id="pager-write",
+                                    tooltip="`bdnex write` for every file of this view (all its pages): the tags go into the files, where they are. You see what would change first (key W).")
+                    yield PagerChip(" Move ", "action_move_view", id="pager-move",
+                                    tooltip="`bdnex move` for every file of this view (all its pages): the tags are written and the files go where your `paths` templates put them. You see what would change first (key M).")
                 yield Splitter("#detailrow", "y", id="split-detail", tooltip="Drag up or down to resize the album's metadata panel.")
                 with Horizontal(id="detailrow"):
                     yield Pane("detail")
