@@ -192,13 +192,16 @@ def _rows(library, rows, planned: Optional[dict[int, str]]) -> Batch:
         row = Row(path, folder_of(path), _label(r), r["album_id"], r["url"], r["score"], r["cover_score"], kind, why, r["id"],
                   previous=r["checked"] or "", dest=(planned or {}).get(r["id"], ""), album_kind=r["kind"] or "", volume=r["volume"],
                   category=r["category"] or "", spare=bool(r["spare"]), link=r["link"])
-        row.facts = f"file: {(r['format'] or '').upper()} · {r['page_count'] or '?'} pages" + (" · spare version" if r["spare"] else "")
+        from bdnex.formatting import human_size
+
+        row.facts = (f"file: {(r['format'] or '').upper()} · {r['page_count'] or '?'} pages" + (f" · {human_size(r['size'])}" if r["size"] else "")
+                     + (" · spare version" if r["spare"] else ""))
         out.append(row)
     return out
 
 
 def select_sql(strong: float) -> str:
-    return (f"SELECT f.id, f.path, f.album_id, f.review, f.cover_score, f.spare, f.corrupted, f.format, f.page_count, "
+    return (f"SELECT f.id, f.path, f.album_id, f.review, f.cover_score, f.spare, f.corrupted, f.format, f.page_count, f.size, "
             "a.kind, a.volume, a.title, a.alternate_number, a.category, a.url, s.name AS series, "
             f"(SELECT value FROM file_attrs x WHERE x.file_id = f.id AND x.key = 'checked') AS checked, {SCORE_SQL} AS score, "
             f"{link_sql(strong)} AS link {JOINS}")

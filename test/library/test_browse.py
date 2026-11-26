@@ -122,3 +122,12 @@ def test_a_plan_stops_when_asked_so_that_quitting_the_screen_does_not_wait_for_a
     with pytest.raises(browse.Stopped):
         browse.plan(lib, settings, stop=stop)
     assert asked  # asked, and it stopped at once
+
+
+def test_a_listed_file_shows_its_size_with_its_format_and_pages(env):
+    settings, lib, files = env
+    lib.conn.execute("UPDATE files SET size = 3 * 1024 * 1024, page_count = 413 WHERE id = ?", (files["Series/Nains/1.cbz"],))
+    lib.conn.commit()
+    rows = browse.rows_for(lib, settings, "folder", "Series/Nains")
+    row = next(r for r in rows if r.file_id == files["Series/Nains/1.cbz"])
+    assert "413 pages" in row.facts and "3.0 MiB" in row.facts
