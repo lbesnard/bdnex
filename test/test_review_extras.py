@@ -1350,6 +1350,7 @@ def test_closing_a_real_picture_asks_tmux_to_redraw_unless_the_option_is_off(env
 
     async def script(app, pilot, lib):
         object.__setattr__(app.settings.cover, "picture", "kitty")
+        object.__setattr__(app.settings.cover, "redraw_after_picture", True)
         app.open_folder("Series/Tintin")
         await settle(app, pilot)
         await pilot.press("c")
@@ -1376,5 +1377,9 @@ def test_closing_a_real_picture_asks_tmux_to_redraw_unless_the_option_is_off(env
     assert script.on == [["tmux", "refresh-client"]] and script.off == [] and script.text == []
 
 
-def test_the_redraw_option_is_in_the_config_and_on_by_default():
-    assert load_config().settings.cover.redraw_after_picture is True
+def test_the_redraw_option_is_in_the_config_with_its_own_comment_and_off_by_default():
+    from bdnex import config_template
+
+    assert load_config().settings.cover.redraw_after_picture is False
+    line = next(raw for raw in config_template.DEFAULTS_PATH.read_text(encoding="utf-8").splitlines() if "redraw_after_picture:" in raw)
+    assert config_template._help_of(line) is not None  # a comment of its own, on the line (the user's file gets it with `bdnex config`)

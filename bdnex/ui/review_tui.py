@@ -697,8 +697,10 @@ class Pictures:
     def clear_graphic(self) -> None:
         """A kitty picture stays until it is deleted (sixel and iTerm2 pictures are painted over by the next draw)."""
         if self.deletes_kitty:
-            delete = b"\x1b_Ga=d\x1b\\"
-            self.write_raw(b"\x1bPtmux;\x1b" + delete.replace(b"\x1b", b"\x1b\x1b") + b"\x1b\\" if os.environ.get("TMUX") else delete)
+            delete = b"\x1b_Ga=d,d=A\x1b\\"  # every picture, and its data
+            self.write_raw(delete)  # as it is: a tmux that keeps the pictures itself (recent versions) takes this one
+            if os.environ.get("TMUX"):  # and wrapped, for the terminal behind a tmux that only passes it on
+                self.write_raw(b"\x1bPtmux;\x1b" + delete.replace(b"\x1b", b"\x1b\x1b") + b"\x1b\\")
 
 
     def redraw_after(self) -> None:
@@ -707,7 +709,7 @@ class Pictures:
         turns it off (when tmux no longer does this). Never an error: it is only a help."""
         from bdnex.ui.cover_text import GRAPHICS
 
-        if self.picture_mode() not in GRAPHICS or not getattr(getattr(getattr(self.app, "settings", None), "cover", None), "redraw_after_picture", True):
+        if self.picture_mode() not in GRAPHICS or not getattr(getattr(getattr(self.app, "settings", None), "cover", None), "redraw_after_picture", False):
             return
         self.app.refresh(layout=True)
         if os.environ.get("TMUX"):
