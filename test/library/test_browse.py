@@ -131,3 +131,13 @@ def test_a_listed_file_shows_its_size_with_its_format_and_pages(env):
     rows = browse.rows_for(lib, settings, "folder", "Series/Nains")
     row = next(r for r in rows if r.file_id == files["Series/Nains/1.cbz"])
     assert "413 pages" in row.facts and "3.0 MiB" in row.facts
+
+
+def test_the_added_filter_lists_the_files_put_in_the_library_recently(env):
+    settings, lib, files = env
+    with lib.conn:  # two files that came in earlier: ten days ago, and two months ago
+        lib.conn.execute("UPDATE files SET added = datetime('now', '-10 days') WHERE id = ?", (files["OneShot/Maus.cbz"],))
+        lib.conn.execute("UPDATE files SET added = datetime('now', '-60 days') WHERE id = ?", (files["OneShot/loose.cbz"],))
+    assert dict(browse.facets(lib)["Added"]) == {"last day": 4, "last 7 days": 4, "last 30 days": 5}
+    got = browse.rows_for(lib, settings, "facet", ("Added", "last 30 days"))
+    assert got.total == 5 and all(row.path != "OneShot/loose.cbz" for row in got)

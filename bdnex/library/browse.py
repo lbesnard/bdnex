@@ -30,11 +30,16 @@ COLOURS = (("green", "confirmed: you decided (kept, linked, or no album online)"
            ("orange", "medium match, not confirmed yet"), ("red", "doubtful, or no album, not confirmed: look here first"))
 REVIEWS = (("confirmed", "you decided"), ("not confirmed", "not yet"), ("no album online", "confirmed with no album: nothing exists online for it"))
 OTHERS = (("duplicates", "several files for one album"), ("versions", "a version or child of another album"), ("damaged", "the file is damaged"))
-DESCRIBED = {name: text for group in (LINKS, COLOURS, REVIEWS, OTHERS) for name, text in group}
+ADDED = (("last day", "put in the library in the last 24 hours"), ("last 7 days", "put in the library in the last week"),
+         ("last 30 days", "put in the library in the last month"))
+ADDED_SQL = {"last day": "f.added >= datetime('now', '-1 day')", "last 7 days": "f.added >= datetime('now', '-7 days')",
+             "last 30 days": "f.added >= datetime('now', '-30 days')"}  # (`added` is when the file was first registered, in UTC)
+DESCRIBED = {name: text for group in (LINKS, COLOURS, REVIEWS, OTHERS, ADDED) for name, text in group}
+NO_LETTERS = ("Colour", "Link", "Review", "Other", "Added")  # short groups: always a plain list, with what each value means
 OTHER_SQL = {"duplicates": "(f.spare = 1 OR f.album_id IN (SELECT album_id FROM files WHERE album_id IS NOT NULL GROUP BY album_id HAVING COUNT(*) > 1))",
              "versions": "a.relation IS NOT NULL", "damaged": "f.corrupted = 1"}
 JOINS = "FROM files f LEFT JOIN albums a ON a.id = f.album_id LEFT JOIN series s ON s.id = a.series_id"
-GROUPS = ("Colour", "Link", "Review", "Other", "Kind", "Category", "Collection", "Genre", "Author", "Series", "Publisher", "Format", "Language")
+GROUPS = ("Colour", "Link", "Review", "Other", "Added", "Kind", "Category", "Collection", "Genre", "Author", "Series", "Publisher", "Format", "Language")
 COLOUR_OF = {"auto matched": "cyan", "manual": "cyan", "medium match": "orange", "doubtful": "red", "no album": "red"}  # for a file not confirmed
 
 
@@ -80,6 +85,8 @@ def _text_condition(group: str, value: str, strong: float = 90.0) -> tuple[str, 
                 "no album online": f"({CONFIRMED_SQL} AND f.album_id IS NULL)"}[value], []
     if group == "Other":
         return OTHER_SQL[value], []
+    if group == "Added":
+        return ADDED_SQL[value], []
     if group in simple:
         return (f"({simple[group]} IS NULL AND a.id IS NOT NULL)", []) if none else (f"{simple[group]} = ?", [value])
     if group == "Format":
@@ -107,6 +114,7 @@ def facets(library, strong: float = 90.0) -> dict[str, list[tuple[str, int]]]:
     found["Review"] = [("confirmed", total(lambda link, ok, none: ok)), ("not confirmed", total(lambda link, ok, none: not ok)),
                        ("no album online", total(lambda link, ok, none: ok and none))]
     found["Other"] = [(name, conn.execute(f"SELECT COUNT(*) {JOINS} WHERE {OTHER_SQL[name]}").fetchone()[0]) for name, _ in OTHERS]
+    found["Added"] = [(name, conn.execute(f"SELECT COUNT(*) {JOINS} WHERE {ADDED_SQL[name]}").fetchone()[0]) for name, _ in ADDED]
     rows = lambda sql: [(r[0], r[1]) for r in conn.execute(sql) if r[0] is not None]  # noqa: E731
     found["Kind"] = rows(f"SELECT a.kind, COUNT(*) {JOINS} WHERE a.id IS NOT NULL GROUP BY a.kind ORDER BY 2 DESC")
     found["Category"] = rows(f"SELECT COALESCE(a.category, '{NONE}'), COUNT(*) {JOINS} WHERE a.id IS NOT NULL GROUP BY 1 ORDER BY 2 DESC")
