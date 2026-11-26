@@ -97,6 +97,41 @@ def form_of(library: Library, album_id: int) -> dict[str, str]:
     return values
 
 
+def form_of_info(info: AlbumInfo) -> dict[str, str]:
+    """The form's values for a freshly read album (what the site says, no hand edit on it)."""
+    values = {key: "" if getattr(info, key, None) is None else str(getattr(info, key))
+              for key in ("volume", "alternate_number", "title", "subseries", "category", "publisher", "isbn", "year", "month", "day",
+                          "language", "format", "pages", "summary")}
+    values["series"] = info.series.name if info.series else ""
+    values.update({key: effective({"extra": info.extra, key: getattr(info, key, None)}, key) for key in SITE_KEYS})
+    values.update({key: "; ".join(info.credits.get(role, [])) for key, role in CREDIT_KEYS.items()})
+    values["genres"] = "; ".join(info.genres or [])
+    return values
+
+
+def site_form(settings, library: Library, album_id: Optional[int]) -> Optional[dict[str, str]]:
+    """What the site says for this album, read from the page stored in the library (offline, nothing is requested), in the form's keys.
+    ``None`` for an album written by hand, or whose page is not stored: there is nothing to go back to."""
+    album = library.get_album(album_id) if album_id is not None else None
+    if not album or album.get("source") == MANUAL or not album.get("url"):
+        return None
+    from bdnex.importer.registry import create_source, offline_settings
+
+    try:
+        source = create_source(settings.source, library, offline_settings(settings))
+        if not library.cache_has(source.name, "album", album["url"]):
+            return None
+        return form_of_info(source.album_info(album["url"]))
+    except Exception:
+        return None
+
+
+def is_site_album(library: Library, album_id: Optional[int]) -> bool:
+    """An album that came from the site (so a field can go back to what the site says)."""
+    album = library.get_album(album_id) if album_id is not None else None
+    return bool(album) and album.get("source") != MANUAL and bool(album.get("url"))
+
+
 def is_manual(library: Library, album_id: Optional[int]) -> bool:
     return album_id is not None and (library.get_album(album_id) or {}).get("source") == MANUAL
 

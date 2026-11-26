@@ -1222,3 +1222,62 @@ def test_the_find_box_above_the_filters_keeps_only_the_values_that_match(env):
     assert seen["none"] == []
     assert seen["back"] == seen["all"]
     assert seen["open1"] == seen["open0"]
+
+
+def test_a_restore_button_puts_a_field_back_to_what_the_site_says(env, monkeypatch):
+    from bdnex.library import manual
+
+    db, root, paths = env
+    monkeypatch.setattr(manual, "site_form", lambda settings, library, album_id: {"publisher": "Dupuis (site)", "title": "Title (site)"})
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("e")
+        await pilot.pause()
+        seen["buttons"] = sorted(b.id for b in app.screen.query("Button") if (b.id or "").startswith("restore-"))
+        app.screen.query_one("#f-publisher").value = "typed"
+        app.screen.query_one("#restore-publisher").press()
+        await pilot.pause()
+        seen["value"] = app.screen.query_one("#f-publisher").value
+        seen["tip"] = app.screen.query_one("#restore-publisher").tooltip
+
+    drive(db, root, script)
+    assert "restore-publisher" in seen["buttons"] and "restore-series" not in seen["buttons"]
+    assert seen["value"] == "Dupuis (site)" and "Dupuis (site)" in seen["tip"]
+
+
+def test_the_form_for_many_files_has_a_restore_button_that_asks_for_the_site_value_of_each(env, monkeypatch):
+    from bdnex.library import manual
+
+    db, root, paths = env
+    monkeypatch.setattr(manual, "site_form", lambda settings, library, album_id: {"publisher": f"Site {album_id}"})
+    monkeypatch.setattr(manual, "is_site_album", lambda library, album_id: True)
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("m")
+        await pilot.press("E")
+        await pilot.pause()
+        screen = app.screen
+        seen["has"] = bool(screen.query("#restore-publisher"))
+        screen.query_one("#restore-publisher").press()
+        await pilot.pause()
+        seen["restored"] = set(screen.restored)
+        screen.query_one("#restore-publisher").press()  # (taken back)
+        await pilot.pause()
+        seen["then"] = set(screen.restored)
+        screen.query_one("#restore-publisher").press()
+        await pilot.pause()
+        screen.action_accept()
+        await settle(app, pilot)
+        ids = [r.album_id for r in app.rows]
+        seen["publishers"] = [lib.get_album(i)["publisher"] for i in ids]
+        seen["ids"] = ids
+
+    drive(db, root, script)
+    assert seen["has"] and seen["restored"] == {"publisher"} and seen["then"] == set()
+    assert seen["publishers"] == [f"Site {i}" for i in seen["ids"]]

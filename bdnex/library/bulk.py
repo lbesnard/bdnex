@@ -73,14 +73,16 @@ def _doc(values: dict[str, str]) -> dict[str, Any]:
 
 
 def apply(library, targets: list[Target], values: dict[str, str], kind: Optional[str] = None,
-          volumes: Optional[dict[str, Optional[int]]] = None, mark: bool = True, specials: Optional[dict[str, Optional[str]]] = None) -> Outcome:
+          volumes: Optional[dict[str, Optional[int]]] = None, mark: bool = True, specials: Optional[dict[str, Optional[str]]] = None,
+          restore: Optional[list[str]] = None, site_of=None) -> Outcome:
     """Set ``values`` (only the fields to change; an empty text clears a field) on the albums of ``targets``.
 
     ``kind``: ``"series"`` (the albums join the series named in ``values["series"]``), ``"oneshot"`` (they leave their series) or ``None``
     (as they are; a ``series`` value still moves them to that series). ``volumes``: ``{path: volume}``; ``specials``: ``{path: "HS 1"}``, what the
     site calls a tome that has no number (a hors-série, an intégrale: `alternate_number`; a file is numbered or special, so the screen gives both). A file without album gets a
     hand-written one when it is asked to become a series album or has a title; otherwise it is reported. ``mark``: the files are
-    marked reviewed. Nothing is written when something is refused."""
+    marked reviewed. ``restore``: fields to put back to what the site says, for each album its own (``site_of(album_id)``: the form's values read from the
+    stored page, or ``None``: that album is left alone). Nothing is written when something is refused."""
     from bdnex.ui import edit_cmd
 
     out = Outcome()
@@ -112,6 +114,10 @@ def apply(library, targets: list[Target], values: dict[str, str], kind: Optional
             continue
         problems: list[str] = []
         changes = edit_cmd.doc_changes(album, doc, problems) if doc else {}
+        site = site_of(album["id"]) if restore and site_of is not None else None
+        if site:  # its own site value for each album; a field typed in the same form wins
+            back = _doc({key: site.get(key, "") for key in restore if key not in values})
+            changes = {**edit_cmd.doc_changes(album, back, problems), **changes} if back else changes
         if target.path in volumes or target.path in specials:
             volume, special = volumes.get(target.path, album.get("volume")), specials.get(target.path, album.get("alternate_number"))
             if album["id"] in seen_volume and seen_volume[album["id"]] != (volume, special):

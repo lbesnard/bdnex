@@ -107,3 +107,34 @@ def test_a_dash_in_the_form_empties_a_collection_the_site_gives_on_every_album(t
         assert out.ok and out.changed == 2
         assert [template.fields_for(lib.get_album(i))["collection"] for i in ids] == ["", ""]  # none on both, whatever they had
         assert bulk.shared(lib, ids)["collection"] == ""
+
+
+def test_restore_puts_a_field_back_to_what_the_site_says_for_each_album(lib, make_cbz):
+    targets = [make(lib, make_cbz, n) for n in (1, 2)]
+    bulk.apply(lib, targets, {"publisher": "Mine", "category": "BD"})
+    site = {targets[0].album_id: {"publisher": "Casterman", "category": ""}, targets[1].album_id: {"publisher": "Dupuis", "category": ""}}
+    out = bulk.apply(lib, targets, {}, restore=["publisher"], site_of=lambda album_id: site[album_id])
+    assert out.ok
+    assert [lib.get_album(t.album_id)["publisher"] for t in targets] == ["Casterman", "Dupuis"]  # each its own
+    assert lib.get_album(targets[0].album_id)["category"] == "BD"  # not asked: left alone
+
+
+def test_restore_leaves_alone_an_album_with_no_site_value_and_what_you_type_wins(lib, make_cbz):
+    targets = [make(lib, make_cbz, n) for n in (1, 2)]
+    bulk.apply(lib, targets, {"publisher": "Mine"})
+    out = bulk.apply(lib, targets, {}, restore=["publisher"], site_of=lambda album_id: None)
+    assert out.ok and [lib.get_album(t.album_id)["publisher"] for t in targets] == ["Mine", "Mine"]
+    out = bulk.apply(lib, targets, {"publisher": "Typed"}, restore=["publisher"], site_of=lambda album_id: {"publisher": "Casterman"})
+    assert [lib.get_album(t.album_id)["publisher"] for t in targets] == ["Typed", "Typed"]
+
+
+def test_the_form_of_a_site_page_and_no_site_form_for_a_hand_written_album(lib, make_cbz):
+    from bdnex.library import manual
+
+    info = AlbumInfo("b", "9", "Le Lotus bleu", series=SeriesInfo("b", "s", "Tintin"), volume=5, publisher="Casterman", year=1936,
+                     credits={"Writer": ["Hergé"]}, genres=["Aventure"], extra={"edition_fields": {"Collection": "Classiques"}})
+    form = manual.form_of_info(info)
+    assert (form["series"], form["volume"], form["publisher"], form["year"], form["writer"], form["collection"]) == (
+        "Tintin", "5", "Casterman", "1936", "Hergé", "Classiques")
+    album = manual.create(lib, make_cbz("m.cbz"), {"series": "X", "title": "x"})
+    assert manual.site_form(None, lib, album) is None and not manual.is_site_album(lib, album)

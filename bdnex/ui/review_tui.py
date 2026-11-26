@@ -573,9 +573,11 @@ class EditScreen(ModalScreen):
     #edithelp { height: 1; }
     """
 
-    def __init__(self, heading: str, values: dict, fields, volumes=None):
+    def __init__(self, heading: str, values: dict, fields, volumes=None, originals: Optional[dict] = None):
+        """``originals``: what the site says (the form's keys), for the Restore button of each field that has one."""
         super().__init__()
         self.heading, self.values, self.fields, self.volumes = heading, values, fields, volumes
+        self.originals = originals or {}
 
     def compose(self) -> ComposeResult:
         with Vertical(id="edit"):
@@ -586,6 +588,8 @@ class EditScreen(ModalScreen):
                     with Horizontal(classes="editrow"):
                         yield Input(value=self.values.get(key, ""), id=f"f-{key}")
                         yield Button("Clear", id=f"clear-{key}", classes="emptier")  # the same button as in the form for many files
+                        if key in self.originals and key not in ("series", "volume"):
+                            yield Button("Restore", id=f"restore-{key}", classes="emptier")
                 if self.volumes is not None:
                     yield Label(Text("Volume and file (change a number if it was read wrong)", style="dim"))
                     yield TextArea("\n".join(f"{'' if v is None else v}\t{os.path.basename(p)}" for p, v in self.volumes), id="volumes")
@@ -599,6 +603,9 @@ class EditScreen(ModalScreen):
         for button in self.query(Button):
             if (button.id or "").startswith("clear-"):
                 button.tooltip = "Empty this field (it is saved as none)."
+            elif (button.id or "").startswith("restore-"):
+                site = self.originals.get(button.id[len("restore-"):], "")
+                button.tooltip = "Put back what the site (Bédéthèque) says: " + (f"{site[:80]!r}" if site else "nothing (it has no value)") + "."
             elif button.id == "ok":
                 button.tooltip = "Save the changes (they are checked first)."
             elif button.id == "cancel":
@@ -623,6 +630,10 @@ class EditScreen(ModalScreen):
         elif (event.button.id or "").startswith("clear-"):
             box = self.query_one("#f-" + event.button.id[len("clear-"):], Input)
             box.value = ""  # an empty field is saved as none
+            box.focus()
+        elif (event.button.id or "").startswith("restore-"):
+            box = self.query_one("#f-" + event.button.id[len("restore-"):], Input)
+            box.value = self.originals.get(event.button.id[len("restore-"):], "")  # the site's value: saved like any typed one
             box.focus()
         else:
             self.dismiss(None)
@@ -1666,7 +1677,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         heading = f"Metadata of {values.get('title') or 'the album'} (saved as your own edits)"
         if in_series:
             heading += " · the series name renames it for all its albums"
-        self.push_screen(EditScreen(heading, values, fields), lambda got: self.save_metadata(row, album_id, got) if got else None)
+        originals = manual.site_form(self.settings, self.library, album_id) or {}
+        self.push_screen(EditScreen(heading, values, fields, originals=originals), lambda got: self.save_metadata(row, album_id, got) if got else None)
 
     def save_metadata(self, row: batch.Row, album_id: int, values: dict) -> None:
         album = self.library.get_album(album_id) or {}

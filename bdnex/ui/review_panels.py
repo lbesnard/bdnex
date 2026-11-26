@@ -759,7 +759,8 @@ class BulkScreen(ModalScreen):
     .fieldrow { height: 3; }
     .fieldname { width: 18; padding-top: 1; color: $text-muted; }
     .fieldrow Input { width: 1fr; }
-    .fieldrow .emptier { min-width: 9; margin-left: 1; }
+    .fieldrow .emptier, .fieldrow .restorer { min-width: 9; margin-left: 1; }
+    .fieldrow Input.restoring > .input--placeholder { color: green; text-style: bold; }
     .fieldrow Input.emptied > .input--placeholder { color: red; text-style: bold; }
     .fieldrow Input.several > .input--placeholder { color: darkorange; text-style: bold; }
     #bulkkind { width: 30; }
@@ -774,13 +775,16 @@ class BulkScreen(ModalScreen):
 
     KINDS = [("series", "series"), ("one-shot", "oneshot")]
 
-    def __init__(self, heading: str, shared: dict, fields, files: list[tuple[str, str, str]], hints: Optional[dict] = None) -> None:
+    def __init__(self, heading: str, shared: dict, fields, files: list[tuple[str, str, str]], hints: Optional[dict] = None,
+                 restorable: bool = False) -> None:
         """``fields``: ``manual.FIELDS``-like rows ``(key, label, hint)``; ``shared``: what the albums agree on (``None``: they differ);
         ``files``: ``(path, number, note)`` for the list of numbers (``5``, or ``HS 1`` for a tome with no number); ``hints``: a grey text to suggest for a field the albums have no value for
         (a suggestion, never a value: nothing is set unless you type it)."""
         super().__init__()
         self.heading, self.shared, self.fields, self.files, self.hints = heading, shared, fields, files, hints or {}
         self.cleared: set[str] = set()  # fields to empty on every file (the Clear button)
+        self.restorable = restorable  # some albums come from the site: a field can go back to what the site says
+        self.restored: set[str] = set()  # fields to put back to the site's value, each album its own (the Restore button)
 
     def compose(self) -> ComposeResult:
         with Vertical(id="bulk"):
@@ -803,6 +807,8 @@ class BulkScreen(ModalScreen):
                         yield Input(value="", placeholder=holder, id=f"b-{key}", classes="several" if shared is None else "")
                         if shared != "":  # (when they all have none already, there is nothing to empty)
                             yield Button("Clear", id=f"clear-{key}", classes="emptier")
+                        if self.restorable and key not in ("series", "volume"):
+                            yield Button("Restore", id=f"restore-{key}", classes="restorer")
                 yield Label(Text("Volume of each file, one line each: its number in the series (5), or a word for a book with no number "
                                  "(HS 1 = hors-série, INT = intégrale). Fill the lines with:", style="dim"))
                 with Horizontal(id="volumebuttons"):
@@ -826,6 +832,8 @@ class BulkScreen(ModalScreen):
     def on_mount(self) -> None:
         for button in self.query(Button):
             tip = self.TIPS.get(button.id or "")
+            if tip is None and (button.id or "").startswith("restore-"):
+                tip = "Put this field back to what the site (Bédéthèque) says, for each album its own (click again to keep what they have)."
             if tip is None and (button.id or "").startswith("clear-"):
                 tip = "Empty this field on every file (click again to keep what they have). Typing a value instead sets that value."
             if tip:
@@ -840,6 +848,8 @@ class BulkScreen(ModalScreen):
             self.dismiss(None)
         elif (event.button.id or "").startswith("clear-"):
             self.toggle_clear(event.button.id[len("clear-"):])
+        elif (event.button.id or "").startswith("restore-"):
+            self.toggle_restore(event.button.id[len("restore-"):])
         elif event.button.id == "number":
             self.set_volumes([str(n) for n in range(1, len(self.files) + 1)])
         elif event.button.id == "hs":  # hors-série: no volume, a special that counts up
@@ -860,9 +870,28 @@ class BulkScreen(ModalScreen):
         box.focus()
         self.query_one("#bulkproblem", Label).update("The series name: change it if it is not the one these albums belong to")
 
+    def toggle_restore(self, key: str) -> None:
+        """Put this field back to the site's value on every album (or take it back): the box says so in green."""
+        box, button = self.query_one(f"#b-{key}", Input), self.query_one(f"#restore-{key}", Button)
+        if key in self.restored:
+            self.restored.discard(key)
+            box.remove_class("restoring")
+            box.placeholder = self.holder(key)
+            button.label = "Restore"
+            return
+        if key in self.cleared:
+            self.toggle_clear(key)
+        self.restored.add(key)
+        box.value = ""
+        box.add_class("restoring")
+        box.placeholder = "(will go back to the site's value, each album its own)"
+        button.label = "Keep"
+
     def toggle_clear(self, key: str) -> None:
         """Clear this field on every file (or take it back): the box says so in red, and typing a value instead is the other choice."""
         box, button = self.query_one(f"#b-{key}", Input), self.query_one(f"#clear-{key}", Button)
+        if key in self.restored:
+            self.toggle_restore(key)
         if key in self.cleared:
             self.cleared.discard(key)
             box.remove_class("emptied")
@@ -884,6 +913,8 @@ class BulkScreen(ModalScreen):
         key = (event.input.id or "")[2:]
         if event.value and key in self.cleared:  # typing a value is the other choice
             self.toggle_clear(key)
+        if event.value and key in self.restored:
+            self.toggle_restore(key)
 
     def set_volumes(self, numbers: list[str]) -> None:
         self.query_one("#bulkvolumes", TextArea).text = "\n".join(
@@ -922,4 +953,5 @@ class BulkScreen(ModalScreen):
             self.query_one("#bulkproblem", Label).update("Type the name of the series (above), or choose another kind")
             self.query_one("#b-series", Input).focus()
             return
-        self.dismiss({"values": values, "kind": kind or None, "volumes": volumes, "specials": specials})
+        self.dismiss({"values": values, "kind": kind or None, "volumes": volumes, "specials": specials,
+                      "restore": sorted(key for key in self.restored if key not in values)})

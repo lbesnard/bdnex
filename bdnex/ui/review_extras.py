@@ -513,14 +513,16 @@ class ReviewExtras:
         heading = f"{len(rows)} file(s): set what they share, the kind, a volume each"
         folders = {os.path.basename(os.path.dirname(r.path)) for r in rows}
         hints = {"series": folders.pop()} if len(folders) == 1 else {}  # (grey: the folder's name, only a suggestion for files with no series)
-        self.push_screen(panels.BulkScreen(heading, shared, fields, files, hints), lambda got: self.apply_bulk(rows, got) if got else None)
+        restorable = any(manual.is_site_album(self.library, r.album_id) for r in rows)
+        self.push_screen(panels.BulkScreen(heading, shared, fields, files, hints, restorable), lambda got: self.apply_bulk(rows, got) if got else None)
 
     def apply_bulk(self, rows, got: dict) -> None:
-        from bdnex.library import bulk
+        from bdnex.library import bulk, manual
 
         targets = [bulk.Target(r.path, r.album_id) for r in rows]
         try:
-            out = bulk.apply(self.library, targets, got["values"], got["kind"], got["volumes"], specials=got.get("specials"))
+            out = bulk.apply(self.library, targets, got["values"], got["kind"], got["volumes"], specials=got.get("specials"),
+                             restore=got.get("restore"), site_of=lambda album_id: manual.site_form(self.settings, self.library, album_id))
         except Exception as err:
             self.notify(f"Not saved ({err}): nothing was changed", severity="error", timeout=8)
             return
