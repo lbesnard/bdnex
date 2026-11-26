@@ -920,6 +920,7 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
         Binding("question_mark", "help", "Help"),
         Binding("f", "folders", "Folders on/off"),
         Binding("F", "find_folder", "Find a folder or file"),
+        Binding("S", "find_filter", "Find a filter"),
         Binding("R", "reviewed_folder", "Folder reviewed"),
         Binding("T", "show_ticked", "Show the ticked"),
         Binding("D", "duplicates", "Duplicates"),
@@ -1004,6 +1005,8 @@ class ReviewApp(ColumnsMixin, ReviewExtras, App):
                 yield Splitter("#facetbox", "y", id="split-filters", tooltip="Drag up or down to resize the trees and the filters.")
                 yield Static(legend(), id="legend")
                 with Vertical(id="facetbox"):
+                    yield Input(placeholder="Find a filter: author, series, genre...", id="facetfind",
+                                tooltip="Type part of an author, a series, a genre...: only the filter values that match stay. Key S; Enter goes on to the list.")
                     with Vertical(id="facetslot"):
                         yield Static("Filters: reading...", id="facetwait")
             yield Splitter("#folderpane", "x", id="split-left", tooltip="Drag left or right to resize the left panel.")

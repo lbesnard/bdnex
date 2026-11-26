@@ -315,18 +315,52 @@ class FacetTree(TickTree):
         super().__init__("Filters", **kwargs)
         self.show_root = False
         self.guide_depth = 3
+        self.words: list[str] = []  # what the find box says: only the values that match (the group's name counts: `author herg`)
+        self.found: dict = found
+        self.opened_before: Optional[set] = None  # what was open before the find box was used
         self.fill(found)
 
-    def fill(self, found: dict) -> None:
+    SHOWN_MAX = 200  # a find shows at most this many values of a group
+
+    def find(self, text: str) -> int:
+        """Show only the filter values that have every word of ``text`` (in the group's name or the value's); blank: everything again."""
+        words = text.casefold().split()
+        if words and not self.words:
+            self.opened_before = self.open_keys()
+        self.words = words
+        if not words and self.opened_before is not None:
+            self.fill(self.found, opened=self.opened_before)
+            self.opened_before = None
+            return 0
+        self.fill(self.found)
+        return sum(1 for node in self.all_nodes() if node.data and node.data[0] == "facet")
+
+    def matching(self, group: str, values: list) -> list:
+        if not self.words:
+            return values
+        found = [(value, count) for value, count in values if all(word in f"{group} {value}".casefold() for word in self.words)]
+        return found
+
+    def fill(self, found: dict, opened: Optional[set] = None) -> None:
         from bdnex.library import browse
 
+        self.found = found
         first = not any(True for _ in self.all_nodes())
-        opened = self.open_keys() or ({("group", "Colour")} if first else set())  # the counts are read again after a decision: what you had opened stays open; Colour starts open
+        if opened is None:
+            opened = self.open_keys() or ({("group", "Colour")} if first else set())  # the counts are read again after a decision: what you had opened stays open; Colour starts open
         self.clear()
         self.described = browse.DESCRIBED
         for group in browse.GROUPS:
-            values = found.get(group) or []
+            values = self.matching(group, found.get(group) or [])
             if not values:
+                continue
+            if self.words:  # a find: the groups that have a match open, a flat list, never the letters
+                node = self.root.add(Text(f"{group}  ({len(values)})", style="bold"), data=("group", group), allow_expand=True)
+                for value, count in values[:self.SHOWN_MAX]:
+                    node.add_leaf(self.value_label(group, value, count), data=("facet", (group, value), count))
+                if len(values) > self.SHOWN_MAX:
+                    node.add_leaf(Text(f"  ... {len(values) - self.SHOWN_MAX} more: type more letters", style="dim"))
+                node.expand()
                 continue
             node = self.root.add(Text(f"{group}  ({len(values)})" if group not in ("Colour", "Link", "Review", "Other") else group, style="bold"), data=("group", group),
                                  allow_expand=True)
@@ -415,6 +449,7 @@ HELP_SECTIONS = (
     ("SEARCH", (
         "[/] searches this page (file, folder, album, destination, state); then `]` and `[` go to the next / previous hit",
         "[F] types in the box above the tree: only the folders with that name, or holding a file with that name, stay (words in any order)",
+        "[S] types in the box above the filters: `herg` shows the authors and series with that in their name (the group counts too: `author herg`)",
         "[Ctrl+P] finds any action or filter by name: `series tintin`, `author hergé`, `link doubtful`",
         "[o] searches all the albums of the library (offline) to link the file to one",
     )),
@@ -450,6 +485,7 @@ KEY_SECTIONS = (
     ("MOVING AND LOOKING", (
         ("n  b", "next / previous page of 50 files (the arrows ◀ ▶ under the table too)"),
         ("f", "left panel (folders, organised, filters) on / off"),
+        ("S", "find a filter: type part of an author, a series, a genre... above the filters, only the values that match stay (Enter: on to the list)"),
         ("F", "find: type part of a folder or file name above the tree, only the folders that match stay (Enter: on to the tree)"),
         ("d", "album's metadata panel on / off"),
         ("C", "choose the columns (double-click a header changes one; click a header sorts)"),

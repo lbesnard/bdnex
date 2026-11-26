@@ -1188,3 +1188,37 @@ def test_every_button_and_clickable_word_of_the_screen_has_a_tooltip(env):
     drive(db, root, script)
     assert seen["count"] >= 8
     assert seen["missing"] == [] and seen["columns"] == [] and seen["edit"] == []
+
+
+def test_the_find_box_above_the_filters_keeps_only_the_values_that_match(env):
+    db, root, paths = env
+    seen = {}
+
+    def values(tree):
+        return [str(n.label) for n in tree.all_nodes() if n.data and n.data[0] == "facet"]
+
+    async def script(app, pilot, lib):
+        await settle(app, pilot)
+        tree = app.facet_tree
+        seen["all"] = len(values(tree))
+        seen["open0"] = tree.open_keys()
+        await pilot.press("S")
+        await pilot.pause()
+        seen["focus"] = app.focused.id
+        app.query_one("#facetfind").value = "tintin"
+        await pilot.pause()
+        seen["some"] = values(tree)
+        app.query_one("#facetfind").value = "zzzzqq"
+        await pilot.pause()
+        seen["none"] = values(tree)
+        app.query_one("#facetfind").value = ""
+        await pilot.pause()
+        seen["back"] = len(values(tree))
+        seen["open1"] = tree.open_keys()
+
+    drive(db, root, script)
+    assert seen["focus"] == "facetfind"
+    assert any("Tintin" in label for label in seen["some"]) and len(seen["some"]) <= seen["all"]
+    assert seen["none"] == []
+    assert seen["back"] == seen["all"]
+    assert seen["open1"] == seen["open0"]

@@ -179,8 +179,19 @@ class ReviewExtras:
             self.action_folders()
         self.query_one("#treefind", Input).focus()
 
+    def action_find_filter(self) -> None:
+        """``S``: the cursor goes to the find box above the filters."""
+        pane = self.query_one("#folderpane")
+        if not pane.display:
+            self.action_folders()
+        self.query_one("#facetfind", Input).focus()
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Enter in the find box: on to the tree, to pick a folder."""
+        """Enter in a find box: on to its list, to pick a value."""
+        if event.input.id == "facetfind":
+            event.stop()
+            (self.facet_tree or self.query_one("DataTable")).focus()
+            return
         if event.input.id == "treefind":
             event.stop()
             tree = self.folder_tree if self.query_one("#trees").active == "tab-folders" else self.move_tree
@@ -188,6 +199,11 @@ class ReviewExtras:
 
     def on_input_changed(self, event: Input.Changed) -> None:
         """The find box above the trees: as you type, only the folders that match (by their name or the name of a file in them) stay."""
+        if event.input.id == "facetfind":
+            event.stop()
+            if self.facet_tree is not None:
+                self.facet_tree.find(event.value)
+            return
         if event.input.id != "treefind":
             return
         event.stop()
@@ -242,7 +258,8 @@ class ReviewExtras:
     def action_folders(self) -> None:
         pane = self.query_one("#folderpane")
         pane.display = not pane.display
-        self.query_one("#treefind", Input).disabled = not pane.display  # (a hidden box would still take the keys)
+        for box in ("#treefind", "#facetfind"):
+            self.query_one(box, Input).disabled = not pane.display  # (a hidden box would still take the keys)
         self.remember_tree(pane.display)
         table = self.query_one("DataTable")
         keep = table.cursor_row
