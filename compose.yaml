@@ -25,3 +25,25 @@ services:
     #   - traefik.http.routers.bdnex.entrypoints=websecure
     #   - traefik.http.routers.bdnex.tls=true
     #   - traefik.http.services.bdnex.loadbalancer.server.port=8765
+
+  # OPTIONAL, but highly recommended: FlareSolverr, a page fetcher that gets past the site's anti-bot checks, so the album pages
+  # (authors, publisher, summary...) can be read. Uncomment it, then set `fetch.endpoint` in /config/bdnex.yaml to its address; from the
+  # bdnex container that is http://flaresolverr:8191 (the service name is the host name). Taken from FlareSolverr's own compose file:
+  # https://github.com/FlareSolverr/FlareSolverr/blob/master/docker-compose.yml
+  # flaresolverr:
+  #   # DockerHub mirror flaresolverr/flaresolverr:latest
+  #   image: ghcr.io/flaresolverr/flaresolverr:latest
+  #   container_name: flaresolverr
+  #   environment:
+  #     - LOG_LEVEL=${LOG_LEVEL:-info}
+  #     - LOG_FILE=${LOG_FILE:-none}
+  #     - LOG_HTML=${LOG_HTML:-false}
+  #     - CAPTCHA_SOLVER=${CAPTCHA_SOLVER:-none}
+  #     - TZ=Europe/London
+  #   ports:
+  #     - "${PORT:-8191}:8191"    # only needed to reach it from outside Docker: bdnex uses the service name
+  #   volumes:
+  #     - /var/lib/flaresolver:/config
+  #   tmpfs:
+  #     - /tmp:size=256M,mode=1777
+  #   restart: unless-stopped
