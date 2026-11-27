@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import importlib
 import io
+import os
 import threading
 
 from rich.text import Text
@@ -32,6 +33,7 @@ ENTRIES = (
     ("CHECK", (("quality", "Measure the quality (dpi)", "`bdnex check --quality`: the files that have no resolution yet. Then the Quality filter finds the low ones."),
                ("matches", "Weigh the matches", "`bdnex check --matches`: every match against its album's page; lists the ones that look wrong. Changes nothing."))),
     ("LIBRARY", (("update", "Read the changed files again", "`bdnex update`: files that another tool changed (size, checksum, pages, damage). A preview first."),
+                 ("undo_delete", "Undo the last delete", "Puts back the files the Delete key sent to the trash in this session (key U)."),
                  ("trash", "The trash", "`bdnex trash`: the files that were replaced. `bdnex trash --restore ID` puts one back."),
                  ("undo", "Undo the last move", "`bdnex undo last`: moves the files of the last `move` run back. A preview first."))),
     ("HELP", (("help", "Keys and the workflow", "The help screen (key ?)."),)),
@@ -213,9 +215,80 @@ class ReviewActions:
             self.organise_open(mode, scope)
         elif chosen == "help":
             self.action_help()
+        elif chosen == "undo_delete":
+            self.action_undo_delete()
         else:
             self.push_screen(TaskScreen(chosen), self.task_closed)
 
     def task_closed(self, ran) -> None:
         if ran:
             self.organise_refresh()
+
+    # -- Delete: any file goes to the trash (nothing is deleted for good), and the Actions panel (or U) puts the last ones back
+    def action_delete_files(self) -> None:
+        """The marked files, or the one under the cursor, to the trash after a yes / no. A file under a read-only ``copy`` source is refused."""
+        from bdnex.ui.review_tui import AskScreen
+
+        rows = [r for r in self.rows if id(r) in self.marked and not r.busy] or ([self.idle()] if self.idle() is not None else [])
+        rows = [r for r in rows if r.status != "trashed"]
+        if not rows:
+            return
+        refused = [r for r in rows if (self.settings.source_for(r.path) is not None and self.settings.source_for(r.path).mode == "copy")]
+        rows = [r for r in rows if r not in refused]
+        if refused:
+            self.notify(f"{len(refused)} file(s) are in a read-only `copy` source: bdnex never deletes there.", severity="warning", timeout=6)
+        if not rows:
+            return
+        names = "\n".join("  " + os.path.basename(r.path) for r in rows[:8]) + (f"\n  ... and {len(rows) - 8} more" if len(rows) > 8 else "")
+        self.push_screen(AskScreen(f"Move {len(rows)} file(s) to the trash?\n{names}\n(not deleted for good: Undo in the Actions panel, or `bdnex trash --restore`)", None),
+                         lambda yes: self.delete_files(rows) if yes else None)
+
+    def delete_files(self, rows: list) -> None:
+        from bdnex.library import twins
+
+        done, failed = [], []
+        for row in rows:
+            try:
+                entry = twins.trash_file(self.library, self.settings, row.path, "deleted in the review screen")
+            except Exception as err:
+                failed.append(f"{os.path.basename(row.path)}: {err}")
+                continue
+            done.append((row, entry, row.status))
+            row.status = "trashed"
+            self.marked.discard(id(row))
+            self.refresh_row(row)
+        if done:
+            self.trash_stack = [*getattr(self, "trash_stack", []), done]
+            self.refresh_album_rows({r.album_id for r, _, _ in done if r.album_id is not None})
+            self.schedule_counts()
+            self.notify(f"{len(done)} file(s) in the trash. Undo: U, or Actions, Undo the last delete.", timeout=6)
+        if failed:
+            self.notify("Not deleted: " + "; ".join(failed[:3]), severity="error", timeout=10)
+
+    def action_undo_delete(self) -> None:
+        from bdnex import trash
+
+        stack = getattr(self, "trash_stack", [])
+        if not stack:
+            self.notify("Nothing to undo in this session (`bdnex trash` lists what is in the trash).", timeout=5)
+            return
+        group = stack.pop()
+        back, failed = 0, []
+        for row, entry, status in group:
+            try:
+                path = trash.restore(self.library, entry, self.settings)
+            except Exception as err:
+                failed.append(f"{os.path.basename(row.path)}: {err}")
+                continue
+            if path is None:
+                failed.append(f"{os.path.basename(row.path)}: no longer in the trash folder")
+                continue
+            row.path, row.status = path, status
+            back += 1
+            self.refresh_row(row)
+        self.refresh_album_rows({r.album_id for r, _, _ in group if r.album_id is not None})
+        self.schedule_counts()
+        if back:
+            self.notify(f"{back} file(s) put back.", timeout=4)
+        if failed:
+            self.notify("Not put back: " + "; ".join(failed[:3]), severity="error", timeout=10)

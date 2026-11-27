@@ -506,6 +506,15 @@ bdnex ls --files spare:true     # the spare versions
 
 See [Duplicates, versions and the trash](versions.md).
 
+## …delete a file (a duplicate, a bad scan) from the review screen?
+
+```{how} tui
+```
+
+Put the cursor on the file (or mark several with space) and press **Delete**: after a yes / no it goes to the trash, never deleted for good.
+**U** (or **Actions, Undo the last delete**) puts the last ones back. For the duplicates of one album, **D** shows them side by side first
+(see [Checking matches](checking-matches.md)). Older ones are brought back with `bdnex trash --restore`.
+
 ## …get back a file I replaced?
 
 ```{how} cli

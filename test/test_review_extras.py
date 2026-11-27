@@ -1841,3 +1841,49 @@ def test_the_trash_and_the_quality_measure_run_from_the_panel(env):
     drive(db, root, script)
     assert seen["trash"][0] == "done" and seen["trash"][1].strip()
     assert not seen["quality_go"] and ("Measuring" in seen["quality"] or "resolution already" in seen["quality"])
+
+
+def test_delete_sends_the_file_to_the_trash_after_a_question_and_undo_puts_it_back(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        target = app.rows[0].path
+        await pilot.press("delete")
+        await pilot.pause(0.4)
+        seen["ask"] = type(app.screen).__name__
+        await pilot.press("n")  # no: nothing happens
+        await pilot.pause(0.4)
+        seen["kept"] = os.path.exists(target)
+        await pilot.press("delete")
+        await pilot.pause(0.4)
+        await pilot.press("y")
+        await pilot.pause(0.6)
+        seen["gone"] = (not os.path.exists(target), lib.get_file(target) is None, len(lib.trash_entries()), app.rows[0].status)
+        await press_action(app, pilot, "undo_delete")
+        await pilot.pause(0.6)
+        seen["back"] = (os.path.exists(target), lib.get_file(target) is not None, len(lib.trash_entries()), app.rows[0].status)
+
+    drive(db, root, script)
+    assert seen["ask"] == "AskScreen" and seen["kept"]
+    assert seen["gone"] == (True, True, 1, "trashed") and seen["back"][:3] == (True, True, 0) and seen["back"][3] != "trashed"
+
+
+def test_delete_refuses_a_file_of_a_read_only_copy_source(env, tmp_path):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        target = app.rows[0].path
+        app.settings.import_.sources.append(type("S", (), {"folder": os.path.dirname(target), "mode": "copy", "alias": "x"})())
+        await pilot.press("delete")
+        await pilot.pause(0.4)
+        seen["screen"] = type(app.screen).__name__
+        seen["exists"] = os.path.exists(target)
+
+    drive(db, root, script)
+    assert seen["screen"] == "Screen" and seen["exists"]  # no question: refused
