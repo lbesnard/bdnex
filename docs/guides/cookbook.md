@@ -399,8 +399,11 @@ copy of the PDF's own picture: see [Writing](writing.md#formats).
 
 ## …repair a damaged archive?
 
-```{how} cli
+```{how} cli tui
 ```
+
+In the review screen: the **damaged** filter (group *Other*) lists them, and **H** (the **Repair** chip) rebuilds the damaged files of the
+view, or of the whole collection (a choice at the top of the window), after a preview. From the command line:
 
 ```bash
 bdnex repair -n
