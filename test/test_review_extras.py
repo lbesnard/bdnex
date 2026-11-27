@@ -1755,3 +1755,89 @@ def test_repair_with_no_damaged_file_says_so_on_its_button(env):
 
     drive(db, root, script)
     assert seen["go"] == ("No files to repair", True, True)
+
+
+async def press_action(app, pilot, entry):
+    """Open the Actions panel and click an entry of it."""
+    await pilot.press("A")
+    await pilot.pause(0.5)
+    assert type(app.screen).__name__ == "ActionsScreen"
+    app.screen.query_one("#act-" + entry.replace(":", "-")).press()
+    await pilot.pause(0.5)
+
+
+def test_the_actions_panel_opens_a_window_for_the_whole_collection(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("A")
+        await pilot.pause(0.5)
+        seen["panel"] = [b.name for b in app.screen.query("Button")]
+        await pilot.press("escape")
+        await pilot.pause(0.3)
+        seen["closed"] = type(app.screen).__name__
+        await press_action(app, pilot, "write:all")
+        screen = app.screen
+        await organise_wait(screen, pilot, "ready")
+        seen["window"] = (type(screen).__name__, screen.mode, screen.scope, "5 file(s) looked at" in str(screen.query_one("#organisetext").render()))
+        screen.action_close()
+
+    drive(db, root, script)
+    assert {"write:view", "write:all", "move:all", "repair:all", "quality", "matches", "update", "trash", "undo", "help"} <= set(seen["panel"])
+    assert seen["closed"] == "Screen" and seen["window"] == ("OrganiseScreen", "write", "all", True)
+
+
+def test_a_task_of_the_panel_shows_a_preview_and_then_does_it(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        os.utime(paths["t1"], (1, 1))  # the file looks changed since it was recorded
+        await press_action(app, pilot, "update")
+        screen = app.screen
+        await organise_wait(screen, pilot, "ready")
+        screen.show_output()
+        seen["preview"] = str(screen.query_one("#tasktext").render())
+        seen["go"] = screen.query_one("#go").disabled
+        screen.query_one("#go").press()
+        await organise_wait(screen, pilot, "done")
+        screen.show_output()
+        seen["done"] = str(screen.query_one("#tasktext").render())
+        screen.query_one("#cancel").press()
+        await settle(app, pilot)
+        seen["closed"] = type(app.screen).__name__
+
+    drive(db, root, script)
+    assert "would be read" in seen["preview"] and not seen["go"]
+    assert "file(s)" in seen["done"] and "would be read" not in seen["done"] and seen["closed"] == "Screen"
+
+
+def test_the_trash_and_the_quality_measure_run_from_the_panel(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        await press_action(app, pilot, "trash")
+        screen = app.screen
+        await organise_wait(screen, pilot, "done")
+        screen.show_output()
+        seen["trash"] = (screen.stage, str(screen.query_one("#tasktext").render()))
+        screen.query_one("#cancel").press()
+        await settle(app, pilot)
+        with lib.conn:
+            lib.conn.execute("UPDATE files SET dpi = NULL")
+        await press_action(app, pilot, "quality")
+        screen = app.screen
+        seen["quality_go"] = screen.query_one("#go").disabled
+        screen.query_one("#go").press()
+        await organise_wait(screen, pilot, "done")
+        screen.show_output()
+        seen["quality"] = str(screen.query_one("#tasktext").render())
+        screen.query_one("#cancel").press()
+
+    drive(db, root, script)
+    assert seen["trash"][0] == "done" and seen["trash"][1].strip()
+    assert not seen["quality_go"] and ("Measuring" in seen["quality"] or "resolution already" in seen["quality"])

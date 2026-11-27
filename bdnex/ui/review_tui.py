@@ -44,6 +44,7 @@ from bdnex.ui.review_extras import ReviewExtras
 from bdnex.ui.review_organise import ReviewOrganise
 from bdnex.ui.cover_text import GRAPHICS, graphic
 from bdnex.ui import review_panels as panels
+from bdnex.ui.review_actions import ActionsChip, ReviewActions
 from bdnex.ui.review_panels import FacetCommands, HelpChip, PagerChip, Splitter, legend
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "green", "skipped": "yellow"}
@@ -992,7 +993,7 @@ class CoverScreen(Pictures, Modal):
 
 
 # ----------------------------------------------------------------------------- the table
-class ReviewApp(ColumnsMixin, ReviewOrganise, ReviewExtras, App):
+class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
     """The table of one batch, the detail of the row under the cursor, and the keys that decide."""
 
     TITLE = "bdnex review"
@@ -1001,6 +1002,7 @@ class ReviewApp(ColumnsMixin, ReviewOrganise, ReviewExtras, App):
     #topbar { dock: top; height: 1; }
     #topbar Header { dock: none; width: 1fr; }
     #helpchip { width: 8; height: 1; }
+    #actionschip { width: 11; height: 1; margin-right: 1; }
     #queue-badge { dock: right; width: auto; height: 1; padding: 0 1; background: red; color: white; text-style: bold; display: none; }
     #loading { height: 2fr; min-height: 8; content-align: center middle; text-align: left; }
     #main { height: 1fr; }
@@ -1042,6 +1044,7 @@ class ReviewApp(ColumnsMixin, ReviewOrganise, ReviewExtras, App):
         Binding("W", "write_view", "Write the view's tags", show=False),
         Binding("M", "move_view", "Move the view's files", show=False),
         Binding("H", "repair_view", "Repair the damaged files", show=False),
+        Binding("A", "actions", "Actions panel", show=False),
         Binding("x", "mark_none", "Unmark all"),
         Binding("v", "toggle_log", "Log"),
         Binding("y", "copy_log", "Copy the log"),
@@ -1122,6 +1125,7 @@ class ReviewApp(ColumnsMixin, ReviewOrganise, ReviewExtras, App):
     def compose(self) -> ComposeResult:
         with Horizontal(id="topbar"):
             yield Header()
+            yield ActionsChip()
             yield HelpChip()
         yield Static("", id="queue-badge")
         with Horizontal(id="main"):
