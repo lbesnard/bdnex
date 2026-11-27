@@ -47,10 +47,10 @@ class OrganiseScreen(Modal):
     #organisebuttons Button { margin-left: 2; }
     """
 
-    def __init__(self, mode: str, view: str) -> None:
+    def __init__(self, mode: str, view: str, scope: str = "view") -> None:
         super().__init__()
         self.mode, self.view = mode, view
-        self.scope = "view"  # or "all": the whole collection
+        self.scope = scope  # or "all": the whole collection
         self.stage = "preview"  # preview -> ready -> running -> done
         self.changed = False
 
@@ -60,8 +60,8 @@ class OrganiseScreen(Modal):
             yield Label(Text(f"{title}: {self.view}", style="bold"))
             yield Label(Text(what, style="dim"))
             with RadioSet(id="scope"):
-                yield RadioButton(f"This view: {self.view}", value=True, id="scope-view")
-                yield RadioButton("The whole collection", id="scope-all")
+                yield RadioButton(f"This view: {self.view}", value=self.scope == "view", id="scope-view")
+                yield RadioButton("The whole collection", value=self.scope == "all", id="scope-all")
             with VerticalScroll(id="organisebody"):
                 yield Static("Working out what would change (nothing is touched)...", id="organisetext")
             with Vertical(id="organisebuttons"):
@@ -141,14 +141,14 @@ class ReviewOrganise:
             return f"{selection[1]} ({total} file{'s' if total != 1 else ''})"
         return f"the batch ({len(self.rows)} file{'s' if len(self.rows) != 1 else ''})"
 
-    def organise_open(self, mode: str) -> None:
+    def organise_open(self, mode: str, scope: str = "view") -> None:
         if not self.rows or self.loading:
             self.notify(f"Nothing on the screen to {mode}.", timeout=3)
             return
         if getattr(self, "organising", False):
             return
         self.organising = True
-        screen = OrganiseScreen(mode, self.view_name())
+        screen = OrganiseScreen(mode, self.view_name(), scope)
         self.push_screen(screen, lambda changed: self.organise_closed(changed))
         self.organise_preview(screen)
 

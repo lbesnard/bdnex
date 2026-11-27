@@ -511,7 +511,8 @@ See [Duplicates, versions and the trash](versions.md).
 ```{how} cli
 ```
 
-Nothing replaced is deleted: it waits in `.bdnex-trash` in your library folder.
+Nothing replaced is deleted: it waits in `.bdnex-trash` in your library folder. (The review screen's **Actions** panel lists the trash;
+putting a file back is the command below.)
 
 ```bash
 bdnex trash                     # list
@@ -548,8 +549,10 @@ Paths under `collection_path` are stored relative to it, so nothing in the datab
 
 ## …take back a move, or find files I moved by hand?
 
-```{how} cli
+```{how} cli tui
 ```
+
+In the review screen: **Actions, Undo the last move** (a preview first). Finding files moved by hand is the command line.
 
 ```bash
 bdnex undo                 # the runs of `bdnex move` that can be taken back

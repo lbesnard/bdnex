@@ -518,6 +518,9 @@ KEY_SECTIONS = (
         ("M", "Move: `bdnex move` for every file of the view: the tags are written and the files go where your `paths` templates put them (the Organised tab shows it)"),
         ("H", "Repair: rebuild the damaged files of the view as clean CBZ files. In the three windows, a choice at the top: this view, or the whole collection"),
     )),
+    ("ACTIONS PANEL", (
+        ("A", "the Actions panel (also the ☰ Actions chip at the top): write, move and repair for the view or the whole collection; measure the quality, weigh the matches, read changed files again, the trash, undo the last move"),
+    )),
     ("MARKING AND EDITING", (
         ("space", "mark / unmark this row (a ✔ shows in the file column)"),
         ("Shift+↑ ↓", "mark a list of rows (shift-click too, ctrl-click one)"),
