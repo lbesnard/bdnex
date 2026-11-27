@@ -24,6 +24,8 @@ from bdnex.ui.review_modal import Modal
 
 # (group, ((id, label, tooltip), ...))
 ENTRIES = (
+    ("UNDO", (("undo_delete", "Undo the last delete", "Puts back the files the Delete key sent to the trash in this session (key U)."),
+              ("undo", "Undo the last move", "`bdnex undo last`: moves the files of the last `move` run back. A preview first."))),
     ("WRITE the tags", (("write:view", "This view", "`bdnex write` for the files of the view you are looking at (key W)."),
                         ("write:all", "The whole collection", "`bdnex write` for every file of the library."))),
     ("MOVE the files", (("move:view", "This view", "`bdnex move` for the files of the view (key M)."),
@@ -33,9 +35,7 @@ ENTRIES = (
     ("CHECK", (("quality", "Measure the quality (dpi)", "`bdnex check --quality`: the files that have no resolution yet. Then the Quality filter finds the low ones."),
                ("matches", "Weigh the matches", "`bdnex check --matches`: every match against its album's page; lists the ones that look wrong. Changes nothing."))),
     ("LIBRARY", (("update", "Read the changed files again", "`bdnex update`: files that another tool changed (size, checksum, pages, damage). A preview first."),
-                 ("undo_delete", "Undo the last delete", "Puts back the files the Delete key sent to the trash in this session (key U)."),
-                 ("trash", "The trash", "`bdnex trash`: the files that were replaced. `bdnex trash --restore ID` puts one back."),
-                 ("undo", "Undo the last move", "`bdnex undo last`: moves the files of the last `move` run back. A preview first."))),
+                 ("trash", "The trash", "`bdnex trash`: the files that were replaced. `bdnex trash --restore ID` puts one back."))),
     ("HELP", (("help", "Keys and the workflow", "The help screen (key ?)."),)),
 )
 
