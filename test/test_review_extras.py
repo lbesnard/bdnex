@@ -1786,7 +1786,7 @@ def test_the_actions_panel_opens_a_window_for_the_whole_collection(env):
         screen.action_close()
 
     drive(db, root, script)
-    assert seen["panel"][:2] == ["undo_delete", "undo"]  # the undo entries come first: no scrolling to find them
+    assert seen["panel"][:1] == ["undo"]  # the undo entries come first: no scrolling to find them
     assert {"write:view", "write:all", "move:all", "repair:all", "quality", "matches", "update", "trash", "undo", "help"} <= set(seen["panel"])
     assert seen["closed"] == "Screen" and seen["window"] == ("OrganiseScreen", "write", "all", True)
 
@@ -1863,7 +1863,7 @@ def test_delete_sends_the_file_to_the_trash_after_a_question_and_undo_puts_it_ba
         await pilot.press("y")
         await pilot.pause(0.6)
         seen["gone"] = (not os.path.exists(target), lib.get_file(target) is None, len(lib.trash_entries()), app.rows[0].status)
-        await press_action(app, pilot, "undo_delete")
+        await press_action(app, pilot, "undo")
         await pilot.pause(0.6)
         seen["back"] = (os.path.exists(target), lib.get_file(target) is not None, len(lib.trash_entries()), app.rows[0].status)
 
@@ -1888,3 +1888,42 @@ def test_delete_refuses_a_file_of_a_read_only_copy_source(env, tmp_path):
 
     drive(db, root, script)
     assert seen["screen"] == "Screen" and seen["exists"]  # no question: refused
+
+
+def test_one_undo_takes_back_the_last_delete_or_the_last_move(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        before = sorted(r.path for r in app.rows)
+        screen = await organise_through(app, pilot, "M")  # a move from the screen...
+        screen.query_one("#go").press()
+        await organise_wait(screen, pilot, "done")
+        screen.query_one("#cancel").press()
+        await settle(app, pilot)
+        moved = sorted(r.path for r in app.rows)
+        seen["stack"] = [kind for kind, _ in app.undo_stack]
+        target = app.rows[0].path
+        await pilot.press("delete")  # ...then a delete
+        await pilot.pause(0.4)
+        await pilot.press("y")
+        await pilot.pause(0.6)
+        seen["label"] = app.undo_label()
+        await press_action(app, pilot, "undo")  # the first undo takes the delete back
+        await pilot.pause(0.6)
+        seen["deleted_back"] = os.path.exists(target)
+        seen["label2"] = app.undo_label()
+        await press_action(app, pilot, "undo")  # the second takes the move back: a window with a preview
+        screen = app.screen
+        await organise_wait(screen, pilot, "ready")
+        seen["window"] = type(screen).__name__
+        screen.query_one("#go").press()
+        await organise_wait(screen, pilot, "done")
+        seen["moved_back"] = all(os.path.exists(p) for p in before) and not any(os.path.exists(p) for p in moved if p not in before)
+        screen.query_one("#cancel").press()
+
+    drive(db, root, script)
+    assert seen["stack"] == ["move"] and seen["label"].startswith("Undo: delete") and seen["deleted_back"]
+    assert seen["label2"] == "Undo: move (the last run)" and seen["window"] == "TaskScreen" and seen["moved_back"]

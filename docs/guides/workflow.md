@@ -58,7 +58,7 @@ it needs are downloaded in the background while you work. See [Checking matches]
 
 In the review screen, **W** (write) and **M** (move) act on the files of the view you are looking at: a folder, a filter, what you ticked (every
 page of it), and **H** (repair) rebuilds the damaged ones. The **☰ Actions** panel has them too. A window says
-what would change, and **Do it** does it. At the top of the window a choice says **this view** or **the whole collection**. The **☰ Actions** chip at the top (key **A**) lists these and a few more (measure the quality, read changed files again, undo the last move). To find the damaged
+what would change, and **Do it** does it. At the top of the window a choice says **this view** or **the whole collection**. The **☰ Actions** chip at the top (key **A**) lists these and a few more (measure the quality, read changed files again, undo the last delete or move). To find the damaged
 files first, use the **damaged** filter (group *Other*). The same from the command line, for the whole library or a query:
 
 ```bash

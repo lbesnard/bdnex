@@ -1045,7 +1045,7 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
         Binding("H", "repair_view", "Repair the damaged files", show=False),
         Binding("A", "actions", "Actions panel", show=False),
         Binding("delete", "delete_files", "To the trash", show=False),
-        Binding("U", "undo_delete", "Undo the last delete", show=False),
+        Binding("U", "undo", "Undo the last delete or move", show=False),
         Binding("x", "mark_none", "Unmark all"),
         Binding("v", "toggle_log", "Log"),
         Binding("y", "copy_log", "Copy the log"),

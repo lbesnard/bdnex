@@ -191,6 +191,7 @@ class ReviewOrganise:
                 damaged = sum(1 for row in rows if row.get("corrupted"))
                 organizer = Organizer(library, self.settings, prompter=None, pretend=preview, force=True)
                 tail = "\n\nNothing is touched yet." if preview else "\n\nThe window closes by itself when it is done: wait for it."
+                batch = organizer.batch if mode == "move" and not preview else None
                 results = organizer.run(
                     rows, WRITE if mode == "write" else MOVE, progress=lambda text: self.call_from_thread(screen.progress, text + tail),
                     on_result=None, repair=repair)
@@ -207,7 +208,7 @@ class ReviewOrganise:
             return
         if worker.is_cancelled:
             return
-        self.call_from_thread(self.organise_report, screen, mode, preview, results, skipped, hooked if not preview else 0, damaged, scope)
+        self.call_from_thread(self.organise_report, screen, mode, preview, results, skipped, hooked if not preview else 0, damaged, scope, batch)
 
     def organise_ids(self, library, picks, file_ids: list, scope: str = "view", repair: bool = False) -> list[int]:
         """The file ids to work on: the whole collection (only the damaged ones to repair), or the view: every page of the selection, or the
@@ -232,7 +233,7 @@ class ReviewOrganise:
         screen.finished(Text(f"It could not be done: {message}", style="red"), False)
 
     def organise_report(self, screen: OrganiseScreen, mode: str, preview: bool, results: list, skipped: int, hooks: int,
-                        damaged: int = 0, scope: str = "view") -> None:
+                        damaged: int = 0, scope: str = "view", batch=None) -> None:
         root = str(self.settings.collection_path or "")
         counts = Counter(r.outcome for r in results)
         text = Text()
@@ -265,6 +266,8 @@ class ReviewOrganise:
             screen.ready(text, bool(todo), "Do it anyway" if damaged and mode != "repair" and scope == "view" else label)
             return
         done = sum(counts.get(name, 0) for name in ("written", "moved", "copied", "repaired"))
+        if batch and counts.get("moved"):  # U / Actions, Undo takes this run back
+            self.undo_stack = [*getattr(self, "undo_stack", []), ("move", batch)]
         text.append(f"{done} file(s) done" + (": " if counts else "."), style="bold green")
         text.append(", ".join(f"{n} {name}" for name, n in counts.items()) + "\n")
         failed = [r for r in results if r.outcome == "failed"]

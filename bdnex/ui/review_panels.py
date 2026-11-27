@@ -523,7 +523,7 @@ KEY_SECTIONS = (
     )),
     ("DELETING", (
         ("delete", "send the file under the cursor (or the marked ones) to the trash, after a yes / no. Nothing is deleted for good"),
-        ("U", "undo: put back the files of the last Delete (this session). Also Actions, Undo the last delete"),
+        ("U", "undo the last Delete (the files come out of the trash) or the last Move done in this session. Also Actions, Undo"),
     )),
     ("MARKING AND EDITING", (
         ("space", "mark / unmark this row (a ✔ shows in the file column)"),
