@@ -146,3 +146,38 @@ def test_the_quality_filter_lists_the_files_by_tier_and_the_query_finds_them(lib
     assert [r.path for r in browse.rows_for(lib, settings, "facet", ("Quality", "low"))] == [made["soft.cbz"]]
     assert browse.rows_for(lib, settings, "facet", ("Quality", "not measured")).total == 1
     assert [r["path"] for r in lib.query(["dpi:..120"], files=True)] == [made["soft.cbz"]]
+
+
+def test_the_measuring_says_how_far_it_is_every_few_seconds():
+    import io
+    from bdnex.ui.check_cmd import _Ticker
+
+    now = [0.0]
+    out = io.StringIO()
+    tick = _Ticker(out, 100, clock=lambda: now[0])
+    for number in range(1, 101):
+        now[0] += 1.0  # one second a file: a line every 3 seconds, and the last one
+        tick(number, 100, [])
+    lines = out.getvalue().splitlines()
+    assert 30 <= len(lines) <= 40 and lines[-1].startswith("  100/100 (100%)") and "files/s" in lines[0] and "left" in lines[0]
+
+
+def test_on_a_terminal_the_bar_shows_the_files_being_read():
+    import io
+    from bdnex.ui.check_cmd import _Ticker
+
+    class Terminal(io.StringIO):
+        def isatty(self):
+            return True
+
+    now = [0.0]
+    out = Terminal()
+    tick = _Ticker(out, 10, clock=lambda: now[0])
+    now[0] = 1.0
+    tick(5, 10, [{"path": "/x/Tintin T6.cbz"}, {"path": "/x/Tintin T7.cbz"}])
+    text = out.getvalue()
+    assert "[###############...............]" in text and "5/10 (50%)" in text and "left" in text
+    assert "Tintin T6.cbz" in text and "Tintin T7.cbz" in text
+    now[0] = 2.0
+    tick(10, 10, [])  # the last: the files lines go, the bar stays
+    assert "10/10 (100%)" in out.getvalue()

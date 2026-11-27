@@ -22,18 +22,21 @@ def pending(library, query: list[str], again: bool = False) -> list[dict]:
 
 
 def measure_rows(library, rows: list[dict], workers: int = 1, height_in: Optional[float] = None,
-                 progress: Optional[Callable[[int, int], None]] = None) -> Counter:
-    """Measure ``rows`` and store each dpi. Returns how many files fall in each tier (``not measured`` for a file with no pictures to measure)."""
+                 progress: Optional[Callable[[int, int, list], None]] = None) -> Counter:
+    """Measure ``rows`` and store each dpi. ``progress(done, total, current)``: ``current`` are the rows being read now (about: the next ``workers``
+    after the ones done). Returns how many files fall in each tier (``not measured`` for a file with no pictures to measure)."""
     height = height_in or quality.page_height_in
 
     def one(row):
         return quality.measure(row["path"], row.get("format"), height)
 
     counts: Counter = Counter()
+    if progress:
+        progress(0, len(rows), rows[:workers])
     for number, (row, result) in enumerate(map_ordered(one, rows, workers), start=1):
         dpi = None if isinstance(result, Exception) else result
         library.set_dpi(row["path"], dpi)
         counts[quality.tier_of(dpi)] += 1
         if progress:
-            progress(number, len(rows))
+            progress(number, len(rows), rows[number:number + workers])
     return counts
