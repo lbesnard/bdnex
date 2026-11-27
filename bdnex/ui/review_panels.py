@@ -462,7 +462,7 @@ HELP_SECTIONS = (
         "[space] or ctrl-click marks a row, shift-click or shift+arrows a list, [m] all, [x] none · [k] confirms all the marked",
         "[e] one file by hand · [E] (or [e] on several) one form for the marked: any field, series or one-shot, a number each (`5`, or `HS 1`; buttons number them for you)",
         "[K] series or one-shot · [V] volume · [R] the folder on the screen is all confirmed",
-        "[W] write the tags of every file of the view · [M] move them where `paths` says: a preview first, then {bold:Do it} (also the Write and Move chips under the table)",
+        "[W] write the tags of every file of the view · [M] move them where `paths` says · [H] rebuild the damaged ones: a preview first, then {bold:Do it}; the window can also work on the whole collection (the Write, Move and Repair chips under the table)",
     )),
     ("COLOURS (a file you confirmed is green, the others by how bdnex linked them; a folder takes its worst file)", (
         "{green:● green}  confirmed by you      {cyan:○ cyan}  auto matched (a strong score) or an album you wrote",
@@ -513,9 +513,10 @@ KEY_SECTIONS = (
         ("a", "give the marked files the albums of a series, one number each"),
         ("D", "the other files of the same album: trash a duplicate, make main, keep as version"),
     )),
-    ("WRITING AND MOVING THE VIEW", (
+    ("WRITING, MOVING AND REPAIRING", (
         ("W", "Write: `bdnex write` for every file of the view (all its pages): the tags go into the files, where they are. You see what changes first"),
         ("M", "Move: `bdnex move` for every file of the view: the tags are written and the files go where your `paths` templates put them (the Organised tab shows it)"),
+        ("H", "Repair: rebuild the damaged files of the view as clean CBZ files. In the three windows, a choice at the top: this view, or the whole collection"),
     )),
     ("MARKING AND EDITING", (
         ("space", "mark / unmark this row (a ✔ shows in the file column)"),

@@ -1009,7 +1009,7 @@ class ReviewApp(ColumnsMixin, ReviewOrganise, ReviewExtras, App):
     #tickbar Button { min-width: 8; margin-right: 1; }
     #pager { height: 1; }
     #pager PagerChip { width: auto; }
-    #pager-write, #pager-move { margin-left: 1; }
+    #pager-write, #pager-move, #pager-repair { margin-left: 1; }
     #pager-where { width: 1fr; content-align: center middle; color: $text-muted; }
     #narrow { height: 1; border: none; padding: 0 1; background: transparent; }
     #trees { height: 1fr; }
@@ -1041,6 +1041,7 @@ class ReviewApp(ColumnsMixin, ReviewOrganise, ReviewExtras, App):
         Binding("m", "mark_all", "Mark all / none"),
         Binding("W", "write_view", "Write the view's tags", show=False),
         Binding("M", "move_view", "Move the view's files", show=False),
+        Binding("H", "repair_view", "Repair the damaged files", show=False),
         Binding("x", "mark_none", "Unmark all"),
         Binding("v", "toggle_log", "Log"),
         Binding("y", "copy_log", "Copy the log"),
@@ -1157,6 +1158,8 @@ class ReviewApp(ColumnsMixin, ReviewOrganise, ReviewExtras, App):
                                     tooltip="`bdnex write` for every file of this view (all its pages): the tags go into the files, where they are. You see what would change first (key W).")
                     yield PagerChip(" Move ", "action_move_view", id="pager-move",
                                     tooltip="`bdnex move` for every file of this view (all its pages): the tags are written and the files go where your `paths` templates put them. You see what would change first (key M).")
+                    yield PagerChip(" Repair ", "action_repair_view", id="pager-repair",
+                                    tooltip="`bdnex repair` for the damaged files of this view: each is rebuilt as a clean CBZ from its readable pages. You see what would be done first (key H).")
                 yield Splitter("#detailrow", "y", id="split-detail", tooltip="Drag up or down to resize the album's metadata panel.")
                 with Horizontal(id="detailrow"):
                     yield Pane("detail")

@@ -1672,3 +1672,70 @@ def test_write_on_the_batch_without_a_selection_works_on_the_rows_of_the_table(e
 
     drive(db, root, script, everything=True)
     assert seen["selection"] is None and seen["stage"] == "ready" and "file(s) looked at" in seen["text"] and seen["view"].startswith("the batch")
+
+
+async def organise_wait(screen, pilot, stage):
+    for _ in range(150):
+        if screen.stage == stage:
+            return
+        await pilot.pause(0.2)
+
+
+def test_the_window_can_work_on_the_whole_collection_not_only_the_view(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        screen = await organise_through(app, pilot, "M")
+        seen["view"] = (screen.scope, "3 file(s) looked at" in str(screen.query_one("#organisetext").render()))
+        screen.query_one("#scope-all").value = True  # the whole collection: Tintin and Klezmer
+        await pilot.pause(0.5)
+        await organise_wait(screen, pilot, "ready")
+        seen["all"] = (screen.scope, str(screen.query_one("#organisetext").render()), str(screen.query_one("#go").label))
+        screen.action_close()
+
+    drive(db, root, script)
+    assert seen["view"] == ("view", True)
+    assert seen["all"][0] == "all" and "5 file(s) looked at" in seen["all"][1] and "whole collection" in seen["all"][2]
+
+
+def test_repair_rebuilds_the_damaged_files_of_the_view_and_only_those(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        with lib.conn:
+            lib.conn.execute("UPDATE files SET corrupted = 1 WHERE path = ?", (lib._store(paths["t2"]),))
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        screen = await organise_through(app, pilot, "H")
+        seen["preview"] = str(screen.query_one("#organisetext").render())
+        screen.query_one("#go").press()
+        await organise_wait(screen, pilot, "done")
+        seen["done"] = str(screen.query_one("#organisetext").render())
+        seen["flag"] = lib.get_file(paths["t2"])["corrupted"]
+        screen.query_one("#cancel").press()
+
+    drive(db, root, script)
+    assert "1 file(s) looked at" in seen["preview"] and "would be changed" in seen["preview"]
+    assert "1 file(s) done" in seen["done"] and "repaired" in seen["done"] and not seen["flag"]
+
+
+def test_write_warns_that_some_files_are_damaged_and_points_to_repair(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        with lib.conn:
+            lib.conn.execute("UPDATE files SET corrupted = 1 WHERE path = ?", (lib._store(paths["t2"]),))
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        screen = await organise_through(app, pilot, "W")
+        seen["text"] = str(screen.query_one("#organisetext").render())
+        seen["label"] = str(screen.query_one("#go").label)
+        screen.action_close()
+
+    drive(db, root, script)
+    assert "1 of these files are damaged" in seen["text"] and "press H" in seen["text"] and seen["label"] == "Do it anyway"

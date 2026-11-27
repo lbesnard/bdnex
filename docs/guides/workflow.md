@@ -57,8 +57,9 @@ it needs are downloaded in the background while you work. See [Checking matches]
 ## 4. Write and move, when you are happy
 
 In the review screen, **W** (write) and **M** (move) act on the files of the view you are looking at: a folder, a filter, what you ticked (every
-page of it). The **Write** and **Move** chips under the table do the same. A window says what would change, and **Do it** does it. The same
-from the command line, for the whole library or a query:
+page of it), and **H** (repair) rebuilds the damaged ones. The **Write**, **Move** and **Repair** chips under the table do the same. A window says
+what would change, and **Do it** does it. At the top of the window a choice says **this view** or **the whole collection**. To find the damaged
+files first, use the **damaged** filter (group *Other*). The same from the command line, for the whole library or a query:
 
 ```bash
 bdnex write -n        # preview the tags that would be written into the files
