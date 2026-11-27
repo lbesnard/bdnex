@@ -44,7 +44,7 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run tests
-        run: uv run pytest
+        run: uv run pytest -n auto
 
   release:
     needs: test
