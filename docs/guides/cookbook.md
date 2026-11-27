@@ -512,7 +512,7 @@ See [Duplicates, versions and the trash](versions.md).
 ```
 
 Put the cursor on the file (or mark several with space) and press **Delete**: after a yes / no it goes to the trash, never deleted for good.
-**U** (or **Actions, Undo the last delete**) puts the last ones back. For the duplicates of one album, **D** shows them side by side first
+**U** (or **Actions, Undo**) puts the last ones back (and takes back the last move). For the duplicates of one album, **D** shows them side by side first
 (see [Checking matches](checking-matches.md)). Older ones are brought back with `bdnex trash --restore`.
 
 ## …get back a file I replaced?
@@ -561,7 +561,7 @@ Paths under `collection_path` are stored relative to it, so nothing in the datab
 ```{how} cli tui
 ```
 
-In the review screen: **Actions, Undo the last move** (a preview first). Finding files moved by hand is the command line.
+In the review screen: **U**, or **Actions, Undo** (a preview first). Finding files moved by hand is the command line.
 
 ```bash
 bdnex undo                 # the runs of `bdnex move` that can be taken back

@@ -24,8 +24,7 @@ from bdnex.ui.review_modal import Modal
 
 # (group, ((id, label, tooltip), ...))
 ENTRIES = (
-    ("UNDO", (("undo_delete", "Undo the last delete", "Puts back the files the Delete key sent to the trash in this session (key U)."),
-              ("undo", "Undo the last move", "`bdnex undo last`: moves the files of the last `move` run back. A preview first."))),
+    ("UNDO", (("undo", "Undo", "Takes back the last thing you did in this session: a Delete (the files come out of the trash) or a Move (the files go back where they were; a preview first). Key U."),)),
     ("WRITE the tags", (("write:view", "This view", "`bdnex write` for the files of the view you are looking at (key W)."),
                         ("write:all", "The whole collection", "`bdnex write` for every file of the library."))),
     ("MOVE the files", (("move:view", "This view", "`bdnex move` for the files of the view (key M)."),
@@ -47,7 +46,7 @@ TASKS = {
                 "(`bdnex check --matches --fix` flags them for review).", None, ["--matches"], "check_cmd", False),
     "update": ("Read the changed files again", "Reads the files that changed on disk since they were recorded (another tool changed them). "
                "No file is touched.", ["-n"], [], "update_cmd", True),
-    "undo": ("Undo the last move", "Moves the files of the last `move` run back to where they were.", ["last", "-n"], ["last"], "undo_cmd", True),
+    "undo": ("Undo the last move", "Moves the files of the move run back to where they were (tags written into a file stay).", ["last", "-n"], ["last"], "undo_cmd", True),
     "trash": ("The trash", "The files that were replaced. `bdnex trash --restore ID` puts one back where it came from.", None, [], "trash_cmd", False),
 }
 
@@ -80,7 +79,7 @@ class ActionsScreen(Modal):
             for group, entries in ENTRIES:
                 yield Label(group, classes="group")
                 for entry, label, tip in entries:
-                    yield Button(label, id="act-" + entry.replace(":", "-"), name=entry, tooltip=tip)
+                    yield Button(self.app.undo_label() if entry == "undo" else label, id="act-" + entry.replace(":", "-"), name=entry, tooltip=tip)
 
     def on_mount(self) -> None:
         panel = self.query_one("#actions")
@@ -114,10 +113,12 @@ class TaskScreen(Modal):
     #taskbuttons Button { margin-left: 2; }
     """
 
-    def __init__(self, key: str) -> None:
+    def __init__(self, key: str, batch: str = "last") -> None:
         super().__init__()
         self.key = key
         self.title_, self.what, self.preview_argv, self.run_argv, self.module, self.writes = TASKS[key]
+        if key == "undo":  # the run that was made from this screen, or the last one of the library
+            self.preview_argv, self.run_argv = [batch, "-n"], [batch]
         self.stage = "preview" if self.preview_argv else "ready"  # preview -> ready -> running -> done
         self.out = io.StringIO()
         self.lock = threading.Lock()
@@ -215,8 +216,8 @@ class ReviewActions:
             self.organise_open(mode, scope)
         elif chosen == "help":
             self.action_help()
-        elif chosen == "undo_delete":
-            self.action_undo_delete()
+        elif chosen == "undo":
+            self.action_undo()
         else:
             self.push_screen(TaskScreen(chosen), self.task_closed)
 
@@ -258,21 +259,38 @@ class ReviewActions:
             self.marked.discard(id(row))
             self.refresh_row(row)
         if done:
-            self.trash_stack = [*getattr(self, "trash_stack", []), done]
+            self.undo_stack = [*getattr(self, "undo_stack", []), ("delete", done)]
             self.refresh_album_rows({r.album_id for r, _, _ in done if r.album_id is not None})
             self.schedule_counts()
-            self.notify(f"{len(done)} file(s) in the trash. Undo: U, or Actions, Undo the last delete.", timeout=6)
+            self.notify(f"{len(done)} file(s) in the trash. Undo: U, or Actions, Undo.", timeout=6)
         if failed:
             self.notify("Not deleted: " + "; ".join(failed[:3]), severity="error", timeout=10)
 
-    def action_undo_delete(self) -> None:
+    def undo_label(self) -> str:
+        """What the Undo entry would take back: the last Delete or Move done in this session (else the last move run of the library)."""
+        stack = getattr(self, "undo_stack", [])
+        if not stack:
+            return "Undo the last move"
+        kind, what = stack[-1]
+        return f"Undo: delete ({len(what)} file(s))" if kind == "delete" else "Undo: move (the last run)"
+
+    def action_undo(self) -> None:
+        """One undo, as in any program: the last thing done in this session (a Delete or a Move), else the last move run of the library."""
+        stack = getattr(self, "undo_stack", [])
+        if isinstance(self.screen, (ActionsScreen, TaskScreen)) or getattr(self, "organising", False):
+            return
+        if not stack:
+            self.push_screen(TaskScreen("undo"), self.task_closed)  # nothing done here: the last move run, if there is one
+            return
+        kind, what = stack.pop()
+        if kind == "move":
+            self.push_screen(TaskScreen("undo", what), self.task_closed)
+        else:
+            self.undo_delete(what)
+
+    def undo_delete(self, group) -> None:
         from bdnex import trash
 
-        stack = getattr(self, "trash_stack", [])
-        if not stack:
-            self.notify("Nothing to undo in this session (`bdnex trash` lists what is in the trash).", timeout=5)
-            return
-        group = stack.pop()
         back, failed = 0, []
         for row, entry, status in group:
             try:
