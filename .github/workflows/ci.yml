@@ -28,7 +28,7 @@ jobs:
         run: uv sync --extra dev
 
       - name: Run tests
-        run: uv run pytest --cov=bdnex --cov-report=xml
+        run: uv run pytest -n auto --cov=bdnex --cov-report=xml  # the tests share nothing (each has its own home and temp folders): one process per core
 
       - name: Upload coverage to Codecov
         if: matrix.python-version == '3.12'

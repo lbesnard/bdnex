@@ -151,7 +151,7 @@ About 1900 tests; the whole suite takes ~6 minutes, so run the tests of what you
 - Terminal pictures (kitty, iTerm2, tmux) cannot be verified without the user's terminal: say so honestly.
 
 ## Checks before a PR
-`uv run pytest -q`, `uv run ruff check --select F bdnex` (catches undefined names the tests miss), `uv run python -m compileall -q bdnex`
+`uv run pytest -q -n 4` (parallel: about 2.5 minutes instead of 6; CI does the same with `-n auto`), `uv run ruff check --select F bdnex` (catches undefined names the tests miss), `uv run python -m compileall -q bdnex`
 (Python >= 3.10 syntax), and `uv run sphinx-build -W -E -q docs <scratch>/html` (needs `uv sync --extra docs`). CI also runs 3.10-3.13, the
 docs and a Docker build. PRs target `main`; **do not stack** (a PR based on another branch is merged into that branch and never ships):
 branch from `origin/main`, and if two changes touch the same code put them in one PR. Commit and PR trailers come from the session's
