@@ -1641,12 +1641,12 @@ def test_the_move_button_shows_what_would_change_and_then_moves_the_files_of_the
     assert all("Tintin - T0" in os.path.basename(p) for p in seen["after"])
 
 
-def test_the_write_chip_is_under_the_table_and_a_window_that_has_nothing_to_do_cannot_start(env):
+def test_write_and_move_live_in_the_actions_panel_and_a_window_with_nothing_to_do_cannot_start(env):
     db, root, paths = env
     seen = {}
 
     async def script(app, pilot, lib):
-        seen["chips"] = [bool(app.query("#pager-write")), bool(app.query("#pager-move"))]
+        seen["chips"] = [bool(app.query("#pager-write")), bool(app.query("#pager-move")), bool(app.query("#actionschip"))]
         app.open_folder("Series/Tintin")
         await settle(app, pilot)
         screen = await organise_through(app, pilot, "W")
@@ -1656,7 +1656,7 @@ def test_the_write_chip_is_under_the_table_and_a_window_that_has_nothing_to_do_c
         seen["closed"] = type(app.screen).__name__
 
     drive(db, root, script)
-    assert seen["chips"] == [True, True] and seen["buttons"][1] == "Cancel" and seen["closed"] == "Screen"
+    assert seen["chips"] == [False, False, True] and seen["buttons"][1] == "Cancel" and seen["closed"] == "Screen"
 
 
 def test_write_on_the_batch_without_a_selection_works_on_the_rows_of_the_table(env):
@@ -1786,6 +1786,7 @@ def test_the_actions_panel_opens_a_window_for_the_whole_collection(env):
         screen.action_close()
 
     drive(db, root, script)
+    assert seen["panel"][:2] == ["undo_delete", "undo"]  # the undo entries come first: no scrolling to find them
     assert {"write:view", "write:all", "move:all", "repair:all", "quality", "matches", "update", "trash", "undo", "help"} <= set(seen["panel"])
     assert seen["closed"] == "Screen" and seen["window"] == ("OrganiseScreen", "write", "all", True)
 
