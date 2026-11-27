@@ -1739,3 +1739,19 @@ def test_write_warns_that_some_files_are_damaged_and_points_to_repair(env):
 
     drive(db, root, script)
     assert "1 of these files are damaged" in seen["text"] and "press H" in seen["text"] and seen["label"] == "Do it anyway"
+
+
+def test_repair_with_no_damaged_file_says_so_on_its_button(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        screen = await organise_through(app, pilot, "H")
+        go = screen.query_one("#go")
+        seen["go"] = (str(go.label), go.disabled, "No damaged file" in str(screen.query_one("#organisetext").render()))
+        screen.action_close()
+
+    drive(db, root, script)
+    assert seen["go"] == ("No files to repair", True, True)

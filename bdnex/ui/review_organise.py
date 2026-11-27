@@ -256,10 +256,12 @@ class ReviewOrganise:
             if damaged and mode != "repair":
                 text.append(f"\n{damaged} of these files are damaged. A page with a wrong checksum is rebuilt on the way; a file that can not be repaired is left as it is. "
                             "To rebuild them all as clean CBZ files first, close this window and press H (Repair).\n", style="yellow")
-            if mode == "repair" and not results:
-                text.append("No damaged file here.\n", style="green")
+            if mode == "repair" and not todo:
+                text.append("No damaged file to repair here.\n", style="green")
             text.append("\nNothing was changed yet. 'Do it' does the above" + (" (`bdnex undo` can take a move back)." if mode == "move" else "."), style="dim")
             label = "Do it" if scope == "view" else f"Do it on the whole collection ({len(todo)} files)"
+            if mode == "repair" and not todo:
+                label = "No files to repair"
             screen.ready(text, bool(todo), "Do it anyway" if damaged and mode != "repair" and scope == "view" else label)
             return
         done = sum(counts.get(name, 0) for name in ("written", "moved", "copied", "repaired"))
