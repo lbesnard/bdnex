@@ -273,8 +273,12 @@ in [Querying](queries.md).
 
 ## …write the metadata into my files, without moving anything?
 
-```{how} cli
+```{how} cli tui
 ```
+
+In the review screen, press **W** (or click **Write** under the table): it writes the tags of every file of the view on the screen (a folder, a
+filter, what you ticked: all its pages, not only the page you see). A window says what would change first, then **Do it**. The command line is
+for the whole library or a query:
 
 ```bash
 bdnex write -n               # preview
@@ -292,8 +296,12 @@ erased from the file. `--force` lets the database win without asking. See
 
 ## …rename and organise my files into a tree?
 
-```{how} cli
+```{how} cli tui
 ```
+
+In the review screen, press **M** (or click **Move** under the table): it moves the files of the view on the screen to where your `paths`
+templates put them (the **Organised** tab of the left panel shows the result before you do it), writing their tags too. A window lists what
+would change, then **Do it**. From the command line:
 
 ```bash
 bdnex move -n                # preview: each file's new path on the `->` line, nothing is touched

@@ -56,6 +56,10 @@ it needs are downloaded in the background while you work. See [Checking matches]
 
 ## 4. Write and move, when you are happy
 
+In the review screen, **W** (write) and **M** (move) act on the files of the view you are looking at: a folder, a filter, what you ticked (every
+page of it). The **Write** and **Move** chips under the table do the same. A window says what would change, and **Do it** does it. The same
+from the command line, for the whole library or a query:
+
 ```bash
 bdnex write -n        # preview the tags that would be written into the files
 bdnex write           # write ComicInfo.xml into the files, where they are

@@ -49,13 +49,13 @@ def env(tmp_path, monkeypatch, make_cbz):
     return db, root, paths
 
 
-def drive(db, root, script, size=50, resume=None):
+def drive(db, root, script, size=50, resume=None, everything=False):
     settings = load_config().settings
     out = {}
 
     async def go():
         with Library(db, root=root) as lib:
-            app = review_tui.ReviewApp(lib, settings, FakeSource(), size, (), True, tree=True, resume=resume)
+            app = review_tui.ReviewApp(lib, settings, FakeSource(), size, (), True, everything, tree=True, resume=resume)
             async with app.run_test(size=(180, 50)) as pilot:
                 await settle(app, pilot)
                 await script(app, pilot, lib)
@@ -1597,3 +1597,78 @@ def test_the_dpi_column_and_the_quality_filter_tell_how_sharp_the_files_are(env)
     drive(db, root, script)
     assert seen["low"] == ["Tintin T1.cbz"] and seen["cell"] == "~90"
     assert seen["found"]["low"] == 1 and seen["found"]["good"] == 1 and seen["found"]["not measured"] == 3
+
+
+
+async def organise_through(app, pilot, key):
+    """Press the key of Write or Move, wait for the preview, press 'Do it', wait for the result: returns the window."""
+    await pilot.press(key)
+    screen = app.screen
+    for _ in range(60):
+        if getattr(screen, "stage", "") == "ready":
+            break
+        await pilot.pause(0.2)
+    return screen
+
+
+def test_the_move_button_shows_what_would_change_and_then_moves_the_files_of_the_view(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        before = sorted(r.path for r in app.rows)
+        screen = await organise_through(app, pilot, "M")
+        seen["stage"] = screen.stage
+        seen["preview"] = str(screen.query_one("#organisetext").render())
+        seen["go"] = screen.query_one("#go").disabled
+        seen["unchanged"] = all(os.path.exists(p) for p in before)  # a preview moves nothing
+        screen.query_one("#go").press()
+        for _ in range(100):
+            if screen.stage == "done":
+                break
+            await pilot.pause(0.2)
+        seen["done"] = str(screen.query_one("#organisetext").render())
+        screen.query_one("#cancel").press()  # Close
+        await settle(app, pilot)
+        seen["before"], seen["after"] = before, sorted(r.path for r in app.rows)
+
+    drive(db, root, script)
+    assert seen["stage"] == "ready" and not seen["go"] and "would be changed" in seen["preview"] and seen["unchanged"]
+    assert "file(s) done" in seen["done"]
+    assert seen["after"] != seen["before"] and all(os.path.exists(p) for p in seen["after"])  # the view shows the new places, and they exist
+    assert all("Tintin - T0" in os.path.basename(p) for p in seen["after"])
+
+
+def test_the_write_chip_is_under_the_table_and_a_window_that_has_nothing_to_do_cannot_start(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        seen["chips"] = [bool(app.query("#pager-write")), bool(app.query("#pager-move"))]
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        screen = await organise_through(app, pilot, "W")
+        seen["buttons"] = (screen.query_one("#go").disabled, screen.query_one("#cancel").label.plain)
+        screen.action_close()
+        await pilot.pause()
+        seen["closed"] = type(app.screen).__name__
+
+    drive(db, root, script)
+    assert seen["chips"] == [True, True] and seen["buttons"][1] == "Cancel" and seen["closed"] == "Screen"
+
+
+def test_write_on_the_batch_without_a_selection_works_on_the_rows_of_the_table(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        seen["selection"] = getattr(app.rows, "selection", None)
+        screen = await organise_through(app, pilot, "W")
+        seen["stage"] = screen.stage
+        seen["text"] = str(screen.query_one("#organisetext").render())
+        seen["view"] = screen.view
+
+    drive(db, root, script, everything=True)
+    assert seen["selection"] is None and seen["stage"] == "ready" and "file(s) looked at" in seen["text"] and seen["view"].startswith("the batch")
