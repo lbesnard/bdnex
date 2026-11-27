@@ -521,6 +521,10 @@ KEY_SECTIONS = (
     ("ACTIONS PANEL", (
         ("A", "the Actions panel (also the ☰ Actions chip at the top): write, move and repair for the view or the whole collection; measure the quality, weigh the matches, read changed files again, the trash, undo the last move"),
     )),
+    ("DELETING", (
+        ("delete", "send the file under the cursor (or the marked ones) to the trash, after a yes / no. Nothing is deleted for good"),
+        ("U", "undo: put back the files of the last Delete (this session). Also Actions, Undo the last delete"),
+    )),
     ("MARKING AND EDITING", (
         ("space", "mark / unmark this row (a ✔ shows in the file column)"),
         ("Shift+↑ ↓", "mark a list of rows (shift-click too, ctrl-click one)"),
