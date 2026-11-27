@@ -146,3 +146,17 @@ def test_the_quality_filter_lists_the_files_by_tier_and_the_query_finds_them(lib
     assert [r.path for r in browse.rows_for(lib, settings, "facet", ("Quality", "low"))] == [made["soft.cbz"]]
     assert browse.rows_for(lib, settings, "facet", ("Quality", "not measured")).total == 1
     assert [r["path"] for r in lib.query(["dpi:..120"], files=True)] == [made["soft.cbz"]]
+
+
+def test_the_measuring_says_how_far_it_is_every_few_seconds():
+    import io
+    from bdnex.ui.check_cmd import _Ticker
+
+    now = [0.0]
+    out = io.StringIO()
+    tick = _Ticker(out, 100, clock=lambda: now[0])
+    for number in range(1, 101):
+        now[0] += 1.0  # one second a file: a line every 3 seconds, and the last one
+        tick(number, 100)
+    lines = out.getvalue().splitlines()
+    assert 30 <= len(lines) <= 40 and lines[-1].startswith("  100/100 (100%)") and "files/s" in lines[0]

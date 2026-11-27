@@ -4,11 +4,37 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 
+from bdnex import formatting
 from bdnex.library import Library
 from bdnex.library.health import check, fix
 from bdnex.ui import color, context, results
 from bdnex.ui.output import add_workers
+
+
+class _Ticker:
+    """Says how far the measuring is every few seconds (a slow library must not look frozen): a line that is rewritten on a terminal."""
+
+    EVERY = 3.0
+
+    def __init__(self, out, total: int, clock=time.monotonic):
+        self.out, self.total, self.clock = out, total, clock
+        self.start = self.last = clock()
+        self.live = hasattr(out, "isatty") and out.isatty()
+
+    def __call__(self, number: int, total: int) -> None:
+        now = self.clock()
+        if number != total and now - self.last < self.EVERY:
+            return
+        self.last = now
+        elapsed = now - self.start
+        left = (total - number) * elapsed / number if number else 0
+        text = f"  {number}/{total} ({number * 100 // total}%), {number / elapsed:.1f} files/s, about {formatting.human_duration(left)} left" if elapsed else f"  {number}/{total}"
+        if self.live:
+            print("\r" + text + "  ", end="\n" if number == total else "", file=self.out, flush=True)
+        else:
+            print(text, file=self.out, flush=True)
 
 
 def _quality(args, settings, out) -> int:
@@ -29,10 +55,8 @@ def _quality(args, settings, out) -> int:
             return 0
         workers = (args.workers if args.workers is not None else settings.write.workers) or auto_workers()
         print(f"Measuring {len(rows)} file(s), {workers} at a time (page height {settings.quality.page_height_in} in for a CBZ / CBR)...", file=out, flush=True)
-        step = max(1, len(rows) // 10)
         counts = quality_scan.measure_rows(
-            library, rows, workers, settings.quality.page_height_in,
-            progress=lambda number, total: print(f"  {number}/{total}", file=out, flush=True) if number % step == 0 and number != total else None)
+            library, rows, workers, settings.quality.page_height_in, progress=_Ticker(out, len(rows)))
     for name, _, text in quality.TIERS:
         print(f"{counts.get(name, 0):>7}  {name}  ({text})", file=out)
     if counts.get(quality.NOT_MEASURED):
