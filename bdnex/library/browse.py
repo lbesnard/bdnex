@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 from typing import Any, Optional
 
+from bdnex import quality as _quality
 from bdnex.library.review_batch import CHECKED, Batch, Row, folder_of
 
 LIMIT = 50  # rows to a page by default (the screen passes its batch size): `n` and `b` turn the pages
@@ -34,12 +35,13 @@ ADDED = (("last day", "put in the library in the last 24 hours"), ("last 7 days"
          ("last 30 days", "put in the library in the last month"))
 ADDED_SQL = {"last day": "f.added >= datetime('now', '-1 day')", "last 7 days": "f.added >= datetime('now', '-7 days')",
              "last 30 days": "f.added >= datetime('now', '-30 days')"}  # (`added` is when the file was first registered, in UTC)
-DESCRIBED = {name: text for group in (LINKS, COLOURS, REVIEWS, OTHERS, ADDED) for name, text in group}
-NO_LETTERS = ("Colour", "Link", "Review", "Other", "Added")  # short groups: always a plain list, with what each value means
+QUALITY = tuple((name, text) for name, _, text in _quality.TIERS) + ((_quality.NOT_MEASURED, "`bdnex check --quality` measures the files that were not"),)
+DESCRIBED = {name: text for group in (LINKS, COLOURS, REVIEWS, OTHERS, ADDED, QUALITY) for name, text in group}
+NO_LETTERS = ("Colour", "Link", "Review", "Other", "Added", "Quality")  # short groups: always a plain list, with what each value means
 OTHER_SQL = {"duplicates": "(f.spare = 1 OR f.album_id IN (SELECT album_id FROM files WHERE album_id IS NOT NULL GROUP BY album_id HAVING COUNT(*) > 1))",
              "versions": "a.relation IS NOT NULL", "damaged": "f.corrupted = 1"}
 JOINS = "FROM files f LEFT JOIN albums a ON a.id = f.album_id LEFT JOIN series s ON s.id = a.series_id"
-GROUPS = ("Colour", "Link", "Review", "Other", "Added", "Kind", "Category", "Collection", "Genre", "Author", "Series", "Publisher", "Format", "Language")
+GROUPS = ("Colour", "Link", "Review", "Other", "Added", "Quality", "Kind", "Category", "Collection", "Genre", "Author", "Series", "Publisher", "Format", "Language")
 COLOUR_OF = {"auto matched": "cyan", "manual": "cyan", "medium match": "orange", "doubtful": "red", "no album": "red"}  # for a file not confirmed
 
 
@@ -87,6 +89,11 @@ def _text_condition(group: str, value: str, strong: float = 90.0) -> tuple[str, 
         return OTHER_SQL[value], []
     if group == "Added":
         return ADDED_SQL[value], []
+    if group == "Quality":
+        if value == _quality.NOT_MEASURED:
+            return "f.dpi IS NULL", []
+        low, high = _quality.tier_bounds(value)
+        return ("f.dpi >= ?", [low]) if high is None else ("(f.dpi >= ? AND f.dpi < ?)", [low, high])
     if group in simple:
         return (f"({simple[group]} IS NULL AND a.id IS NOT NULL)", []) if none else (f"{simple[group]} = ?", [value])
     if group == "Format":
@@ -115,6 +122,8 @@ def facets(library, strong: float = 90.0) -> dict[str, list[tuple[str, int]]]:
                        ("no album online", total(lambda link, ok, none: ok and none))]
     found["Other"] = [(name, conn.execute(f"SELECT COUNT(*) {JOINS} WHERE {OTHER_SQL[name]}").fetchone()[0]) for name, _ in OTHERS]
     found["Added"] = [(name, conn.execute(f"SELECT COUNT(*) {JOINS} WHERE {ADDED_SQL[name]}").fetchone()[0]) for name, _ in ADDED]
+    found["Quality"] = [(name, conn.execute(f"SELECT COUNT(*) {JOINS} WHERE {_text_condition('Quality', name)[0]}", _text_condition("Quality", name)[1]).fetchone()[0])
+                        for name, _ in QUALITY]
     rows = lambda sql: [(r[0], r[1]) for r in conn.execute(sql) if r[0] is not None]  # noqa: E731
     found["Kind"] = rows(f"SELECT a.kind, COUNT(*) {JOINS} WHERE a.id IS NOT NULL GROUP BY a.kind ORDER BY 2 DESC")
     found["Category"] = rows(f"SELECT COALESCE(a.category, '{NONE}'), COUNT(*) {JOINS} WHERE a.id IS NOT NULL GROUP BY 1 ORDER BY 2 DESC")

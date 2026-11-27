@@ -72,6 +72,9 @@ class Library:
 
         root = settings.collection_path if settings.collection_path not in ("", PLACEHOLDER_COLLECTION) else None
         library = cls(":memory:" if ephemeral else settings.library_path, root=root, readonly=readonly)
+        from bdnex import quality
+
+        quality.configure(settings.quality.page_height_in)  # the page a new file's pictures are measured against
         if settings.import_.sources and not readonly and sync_sources:  # files under a source are stored as @alias/…
             for problem in library.sync_sources([(source.alias, source.folder) for source in settings.import_.sources]):
                 print(f"warning: {problem}", file=sys.stderr)
@@ -922,8 +925,8 @@ class Library:
         with self.conn:
             self.conn.execute(
                 """INSERT INTO files(path, album_id, md5, size, format, page_count,
-                                     corrupted, has_metadata, mtime, embedded)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                     corrupted, has_metadata, mtime, embedded, dpi)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(path) DO UPDATE SET
                        review = CASE WHEN excluded.album_id IS NOT NULL AND excluded.album_id IS NOT files.album_id
                                      THEN NULL ELSE files.review END,
@@ -931,12 +934,17 @@ class Library:
                        md5 = excluded.md5, size = excluded.size, format = excluded.format,
                        page_count = excluded.page_count, corrupted = excluded.corrupted,
                        has_metadata = excluded.has_metadata, mtime = excluded.mtime,
-                       embedded = excluded.embedded, checked = CURRENT_TIMESTAMP""",
+                       embedded = excluded.embedded, dpi = excluded.dpi, checked = CURRENT_TIMESTAMP""",
                 (self._store(info.path), album_id, md5, info.size, info.format, info.page_count,
                  int(info.corrupted), int(info.has_metadata), info.mtime,
-                 json.dumps(info.embedded, ensure_ascii=False) if info.embedded else None))
+                 json.dumps(info.embedded, ensure_ascii=False) if info.embedded else None, getattr(info, "dpi", None)))
         return self.conn.execute("SELECT id FROM files WHERE path = ?",
                                  (self._store(info.path),)).fetchone()["id"]
+
+    def set_dpi(self, path, dpi: Optional[int]) -> None:
+        """The measured sharpness of a file (``bdnex check --quality``)."""
+        with self.conn:
+            self.conn.execute("UPDATE files SET dpi = ? WHERE path = ?", (dpi, self._store(path)))
 
     def flag_review(self, path, reason: str) -> None:
         """Mark a file for `bdnex review`, with the reason."""

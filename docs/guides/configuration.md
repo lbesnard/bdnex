@@ -102,6 +102,9 @@ duplicates:
   versions_place: top          # top: `_versions/<the album's path>`; beside: `_versions` inside the album's own folder
   version_labels: [Dossier, Cahier, Noir et blanc, Croquis]  # the names the review screen offers for a version of an album
 
+quality:
+  page_height_in: 11.7                   # inches of page height a CBZ / CBR picture stands for, to estimate its dpi (11.7 = A4); a PDF knows its own
+
 trash:
   dir: .bdnex-trash                      # replaced files wait here, inside `collection_path`
 

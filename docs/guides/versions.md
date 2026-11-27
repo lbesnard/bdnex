@@ -21,9 +21,9 @@ finds the destination name taken, you see both files:
 Nains - T01 - Redwin de la Forge.cbr
 This album already has a file in the library.
   existing  Series/Nains/Nains - T01 - Redwin de la Forge.cbz
-            cbz · 48 pages · 298.0 MB · ok
+            cbz · 48 pages · 298.0 MB · ~190 dpi (good) · ok
   new       /home/me/Downloads/Nains - T01 - Redwin de la Forge.cbr
-            cbr · 48 pages · 312.4 MB · ok
+            cbr · 48 pages · 312.4 MB · ~185 dpi (good) · ok
 
   same book: same page count and the same cover
   suggested: keep the existing file (cbz is preferred to cbr (duplicates.prefer))
@@ -34,8 +34,14 @@ This album already has a file in the library.
   Keep both (the new one becomes a spare version)
 ```
 
-The suggestion prefers a readable file, then more pages, then your format order (`duplicates.prefer`,
+The suggestion prefers a readable file, then more pages, then a **sharper** one, then your format order (`duplicates.prefer`,
 `cbz, cbr, pdf` by default). On a tie it keeps what you already have.
+
+**How sharp** is the resolution in dots per inch (dpi), worked out from a few pages of the file: a PDF says how big its pictures are on the
+page, so its number is real; a CBZ or CBR has only pixels, so its number is an estimate (`~`) made as if a page were `quality.page_height_in`
+inches high (11.7, an A4 page). The files are put in four tiers: *low* (under 120), *fair* (120 to 180), *good* (180 to 260), *high* (260 and
+more). Only a different tier counts as sharper (190 against 240 is a tie), and only when **both** files were measured: a file in an old
+library that nobody measured yet never loses to one that was. `bdnex check --quality` measures the files already in the library.
 
 - **Keep the existing file**: the new one is not imported and stays where it is.
 - **Keep the new file**: the existing one goes to the [trash](#the-trash), never deleted.

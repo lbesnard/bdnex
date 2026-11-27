@@ -8,6 +8,37 @@ import sys
 from bdnex.library import Library
 from bdnex.library.health import check, fix
 from bdnex.ui import color, context, results
+from bdnex.ui.output import add_workers
+
+
+def _quality(args, settings, out) -> int:
+    """``--quality``: the dpi of the files that have none yet (or all of them, with ``--again``), several files at once."""
+    from bdnex import quality
+    from bdnex.library import quality_scan
+    from bdnex.library.query import QueryError
+    from bdnex.organizer.organizer import auto_workers
+
+    on = color.enabled(out)
+    with Library.for_settings(settings) as library:
+        try:
+            rows = quality_scan.pending(library, args.query, args.again)
+        except QueryError as err:
+            return context.bad_query(err)
+        if not rows:
+            print(color.paint("Every file has its resolution already" + ("" if args.again else " (`--again` measures them again)") + ".", "green", on), file=out)
+            return 0
+        workers = (args.workers if args.workers is not None else settings.write.workers) or auto_workers()
+        print(f"Measuring {len(rows)} file(s), {workers} at a time (page height {settings.quality.page_height_in} in for a CBZ / CBR)...", file=out, flush=True)
+        step = max(1, len(rows) // 10)
+        counts = quality_scan.measure_rows(
+            library, rows, workers, settings.quality.page_height_in,
+            progress=lambda number, total: print(f"  {number}/{total}", file=out, flush=True) if number % step == 0 and number != total else None)
+    for name, _, text in quality.TIERS:
+        print(f"{counts.get(name, 0):>7}  {name}  ({text})", file=out)
+    if counts.get(quality.NOT_MEASURED):
+        print(f"{counts[quality.NOT_MEASURED]:>7}  {quality.NOT_MEASURED}  (no pictures to measure: drawn with vectors, or unreadable)", file=out)
+    print(color.hints("`bdnex review`: the Quality filter lists them; `bdnex ls --files dpi:..120` too.", on), file=out)
+    return 0
 
 
 def run(argv: list[str], out=sys.stdout) -> int:
@@ -24,10 +55,22 @@ def run(argv: list[str], out=sys.stdout) -> int:
                         help="apply the fixes listed as [fixable]: remove empty series and dead trash records, forget cover "
                              "records whose file is gone, move covers into the per-album layout; with --matches, also flag "
                              "doubtful matches for `bdnex review`")
+    parser.add_argument("--quality", action="store_true",
+                        help="measure how sharp the files are (dpi: a PDF's own, a CBZ / CBR's estimated from its page height, `quality.page_height_in`) "
+                             "and store it; new files are measured when they are imported, this fills in the ones that are already in the library "
+                             "(only the ones with no number yet unless --again); a query limits the files")
+    parser.add_argument("--again", action="store_true", help="with --quality: measure the files that already have a number too (after changing `quality.page_height_in`)")
+    add_workers(parser, "files measured", "write.workers", ", at most 4")
+    parser.add_argument("query", nargs="*", help="with --quality: only these files, same terms as `bdnex ls --files` (e.g. series:nains)")
     args = parser.parse_args(argv)
     settings = context.settings()
     if settings is None:
         return 1
+    if args.quality:
+        return _quality(args, settings, out)
+    if args.again or args.query:
+        print("--again and a query are for --quality.", file=sys.stderr)
+        return 2
 
     on = color.enabled(out)
     with Library.for_settings(settings, readonly=not args.fix) as library:

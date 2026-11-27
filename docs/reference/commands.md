@@ -348,10 +348,10 @@ options:
                    outside bdnex)
 
 fields: any, attr, author, category, collection, colorist, complete, corrupted, cover,
-coverartist, cycle, embedded, fileid, filename, filepages, files, format, genre, id,
-inker, isbn, kind, language, letterer, md5, metadata, pages, partial, path, penciller,
-publisher, rating, relation, review, series, size, source, spare, staged, subseries,
-summary, tagged, title, url, volume, writer, year
+coverartist, cycle, dpi, embedded, fileid, filename, filepages, files, format, genre,
+id, inker, isbn, kind, language, letterer, md5, metadata, pages, partial, path,
+penciller, publisher, rating, relation, review, series, size, source, spare, staged,
+subseries, summary, tagged, title, url, volume, writer, year
 
 Examples:
   bdnex ls series:nains                                           the albums of a series
@@ -566,19 +566,33 @@ Examples:
 Is the library consistent with itself and the disk? (--matches: do the matches look right?).
 
 ```text
-usage: bdnex check [-h] [--matches] [--fix]
+usage: bdnex check [-h] [--matches] [--fix] [--quality] [--again] [--workers N]
+                   [query ...]
 
 ``bdnex check``: is the library consistent with itself and with the disk?
 
+positional arguments:
+  query        with --quality: only these files, same terms as `bdnex ls --files`
+               (e.g. series:nains)
+
 options:
-  -h, --help  show this help message and exit
-  --matches   also weigh every match against its album's page (the file's own tags,
-              volume, year, authors, its folder) and list the ones that look wrong;
-              with --fix they are flagged for `bdnex review`
-  --fix       apply the fixes listed as [fixable]: remove empty series and dead trash
-              records, forget cover records whose file is gone, move covers into the
-              per-album layout; with --matches, also flag doubtful matches for `bdnex
-              review`
+  -h, --help   show this help message and exit
+  --matches    also weigh every match against its album's page (the file's own tags,
+               volume, year, authors, its folder) and list the ones that look wrong;
+               with --fix they are flagged for `bdnex review`
+  --fix        apply the fixes listed as [fixable]: remove empty series and dead trash
+               records, forget cover records whose file is gone, move covers into the
+               per-album layout; with --matches, also flag doubtful matches for `bdnex
+               review`
+  --quality    measure how sharp the files are (dpi: a PDF's own, a CBZ / CBR's
+               estimated from its page height, `quality.page_height_in`) and store it;
+               new files are measured when they are imported, this fills in the ones
+               that are already in the library (only the ones with no number yet
+               unless --again); a query limits the files
+  --again      with --quality: measure the files that already have a number too (after
+               changing `quality.page_height_in`)
+  --workers N  files measured at once (0: the cores less one, at most 4; 1: one by
+               one); default: `write.workers`
 
 Looks at the database (integrity, links between tables), at the files it points to
 (missing, changed), at covers, the trash and leftovers of interrupted writes. Nothing
@@ -587,9 +601,11 @@ trash records, covers that are gone, temporary files (and, with --matches, flags
 doubtful matches for `bdnex review`).
 
 Examples:
-  bdnex check            is the library consistent with itself and the disk?
-  bdnex check --matches  also weigh every match against its album's page
-  bdnex check --fix      remove empty series, dead trash records, gone covers
+  bdnex check                                     is the library consistent with itself and the disk?
+  bdnex check --matches                           also weigh every match against its album's page
+  bdnex check --fix                               remove empty series, dead trash records, gone covers
+  bdnex check --quality                           measure how sharp (dpi) the files already in the library are; new ones are measured on import
+  bdnex check --quality --workers 4 series:nains  the same, four files at a time, for one series
 ```
 
 ## Change the files

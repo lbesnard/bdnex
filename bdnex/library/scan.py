@@ -30,6 +30,7 @@ class FileInfo:
     readable: bool = True  # False when the archive can not even be opened (nothing can be done with it)
     problem: Optional[str] = None  # why it is corrupted, in words
     embedded: Optional[dict] = None  # the simple fields of the file's own ComicInfo.xml
+    dpi: Optional[int] = None  # how sharp it is (`bdnex/quality.py`); None: not measured, or not measurable
 
 
 def detect_format(path) -> Optional[str]:
@@ -139,9 +140,14 @@ def inspect_file(path) -> FileInfo:
         corrupted, readable, problem = True, False, f"can not be opened: {err}"
         fmt = fmt or "unknown"
 
+    dpi = None
+    if readable and not corrupted:
+        from bdnex import quality
+
+        dpi = quality.measure(path, fmt)
     return FileInfo(path=path, format=fmt, size=stat.st_size, mtime=stat.st_mtime,
                     page_count=page_count, corrupted=corrupted, has_metadata=has_metadata,
-                    readable=readable, problem=problem, embedded=embedded)
+                    readable=readable, problem=problem, embedded=embedded, dpi=dpi)
 
 
 def read_embedded(path) -> Optional[dict]:

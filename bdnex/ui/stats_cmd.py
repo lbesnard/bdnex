@@ -24,6 +24,7 @@ FIELD_HELP = {
     "penciller": "a credit with that role", "writer": "a credit with that role",
     "complete": "the album's page was read", "partial": "only the sitemap address is known (the page was not read)",
     "corrupted": "the file is damaged", "cover": "similarity of the file's cover with the album's (0-100)",
+    "dpi": "how sharp the file is, in dots per inch (a PDF's own; a CBZ / CBR's estimate)",
     "embedded": "text of the ComicInfo.xml the file already had", "fileid": "the file's number in the library",
     "filename": "the file's name", "filepages": "number of pages of the file", "files": "number of files of the album",
     "format": "cbz, cbr or pdf", "genre": "a genre of the album", "id": "the album's number in the library",

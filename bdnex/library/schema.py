@@ -294,4 +294,11 @@ MIGRATIONS = [
     CREATE INDEX idx_files_review ON files(review) WHERE review IS NOT NULL;
     CREATE INDEX idx_files_corrupted ON files(corrupted) WHERE corrupted = 1;
     """,
+    # --- version 18 ------------------------------------------------------
+    # `files.dpi`: how sharp the file is, in dots per inch (a PDF's real one; a CBZ / CBR's estimated from its page height, see
+    # `bdnex/quality.py`). NULL = not measured yet (`bdnex check --quality` fills it for the files already in the library).
+    """
+    ALTER TABLE files ADD COLUMN dpi INTEGER;
+    CREATE INDEX idx_files_dpi ON files(dpi) WHERE dpi IS NOT NULL;
+    """,
 ]

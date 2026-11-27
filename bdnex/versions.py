@@ -32,6 +32,7 @@ class FileFacts:
     md5: Optional[str]
     cover: Optional[int]  # 64-bit cover hash
     spare: bool = False
+    dpi: Optional[int] = None  # how sharp it is (`bdnex/quality.py`): a PDF's real dpi, a CBZ / CBR's estimate
 
     @property
     def name(self) -> str:
@@ -43,10 +44,10 @@ def facts_of(library, path: str) -> FileFacts:
     row = library.get_file(path)
     if row is not None:
         return FileFacts(row["path"], row["format"], row["size"], row["page_count"], bool(row["corrupted"]),
-                         row["md5"], covers.library_cover_hash(library, path), bool(row.get("spare")))
+                         row["md5"], covers.library_cover_hash(library, path), bool(row.get("spare")), row.get("dpi"))
     info = inspect_file(path)
     return FileFacts(info.path, info.format, info.size, info.page_count, bool(info.corrupted), file_md5(info.path),
-                     covers.path_cover_hash(info.path, info.format))
+                     covers.path_cover_hash(info.path, info.format), dpi=info.dpi)
 
 
 @dataclass
@@ -58,10 +59,11 @@ class Comparison:
     reason: str
 
 
-def _rank(facts: FileFacts, prefer: list[str]) -> tuple:
-    """Higher is better: a readable file, then more pages, then the preferred format."""
+def _rank(facts: FileFacts, prefer: list[str], sharpness: bool = False) -> tuple:
+    """Higher is better: a readable file, then more pages, then (``sharpness``) a sharper one by tier (a few dpi more is no difference), then the
+    preferred format. Sharpness counts only when every file was measured: a file nobody measured yet (an old library) never loses to one that was."""
     order = prefer.index(facts.format) if facts.format in prefer else len(prefer)
-    return (not facts.corrupted, facts.pages or 0, -order)
+    return (not facts.corrupted, facts.pages or 0, _tier_index(facts) if sharpness else 0, -order)
 
 
 def _why(better: FileFacts, worse: FileFacts, prefer: list[str], worse_is: str) -> str:
@@ -70,9 +72,26 @@ def _why(better: FileFacts, worse: FileFacts, prefer: list[str], worse_is: str) 
         return f"the {worse_is} file is damaged"
     if (better.pages or 0) != (worse.pages or 0):
         return f"{better.pages} pages against {worse.pages}"
+    if better.dpi and worse.dpi and _tier_index(better) != _tier_index(worse):
+        return f"sharper: {quality_text(better)} against {quality_text(worse)}"
     if better.format != worse.format:
         return f"{better.format} is preferred to {worse.format} (duplicates.prefer)"
     return "nothing tells them apart"
+
+
+def _tier_index(facts: FileFacts) -> int:
+    from bdnex import quality
+
+    return [name for name, _, _ in quality.TIERS].index(quality.tier_of(facts.dpi)) if facts.dpi else -1
+
+
+def quality_text(facts: FileFacts) -> str:
+    """``~190 dpi (good)``: a PDF's dpi is real, a CBZ / CBR's an estimate (the ``~``)."""
+    from bdnex import quality
+
+    if not facts.dpi:
+        return ""
+    return f"{quality.describe(facts.dpi, facts.format != 'pdf')} ({quality.tier_of(facts.dpi)})"
 
 
 def relation(a: FileFacts, b: FileFacts) -> str:
@@ -88,9 +107,10 @@ def relation(a: FileFacts, b: FileFacts) -> str:
 def compare(existing: list[FileFacts], new: FileFacts, prefer: list[str]) -> Comparison:
     """``new`` against the files already there. The suggestion keeps the existing best file unless the
     new one is better (never on a tie: the library is left as it is)."""
-    best = max(existing, key=lambda f: _rank(f, prefer))
+    sharp = all(f.dpi for f in (*existing, new))
+    best = max(existing, key=lambda f: _rank(f, prefer, sharp))
     kind = relation(best, new)
-    if _rank(new, prefer) > _rank(best, prefer):
+    if _rank(new, prefer, sharp) > _rank(best, prefer, sharp):
         return Comparison(new, existing, kind, KEEP_NEW, _why(new, best, prefer, "existing"))
     return Comparison(new, existing, kind, KEEP_EXISTING, _why(best, new, prefer, "new"))
 
@@ -105,7 +125,7 @@ def table(comparison: Comparison, root: Optional[str] = None) -> str:
 
     def details(facts: FileFacts) -> str:
         pages = f"{facts.pages} pages" if facts.pages is not None else "pages unknown"
-        parts = [facts.format, pages, human_size(facts.size), "damaged" if facts.corrupted else "ok"]
+        parts = [facts.format, pages, human_size(facts.size), *([quality_text(facts)] if facts.dpi else []), "damaged" if facts.corrupted else "ok"]
         return " · ".join(parts + (["spare version"] if facts.spare else []))
 
     labels = [f"existing {i}" if len(comparison.existing) > 1 else "existing"

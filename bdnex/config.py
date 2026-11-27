@@ -142,6 +142,10 @@ class Duplicates(_Section):
     version_labels: list[str] = ["Dossier", "Cahier", "Noir et blanc", "Croquis"]  # the names the review screen offers for a version of an album
 
 
+class Quality(_Section):
+    page_height_in: float = Field(ge=4, le=30)  # the page a CBZ / CBR picture is spread over, to say its dpi (a PDF knows its own)
+
+
 class Trash(_Section):
     dir: str = Field(min_length=1)
 
@@ -358,6 +362,7 @@ class Settings(_Section):
     import_: Import = Field(alias="import")
     duplicates: Duplicates
     trash: Trash
+    quality: Quality
     watch: Watch
     hooks: Hooks
     cover: Cover

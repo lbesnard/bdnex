@@ -89,6 +89,8 @@ EXAMPLES: dict[str, list[tuple[str, str]]] = {
         ("bdnex check", "is the library consistent with itself and the disk?"),
         ("bdnex check --matches", "also weigh every match against its album's page"),
         ("bdnex check --fix", "remove empty series, dead trash records, gone covers"),
+        ("bdnex check --quality", "measure how sharp (dpi) the files already in the library are; new ones are measured on import"),
+        ("bdnex check --quality --workers 4 series:nains", "the same, four files at a time, for one series"),
     ],
     "write": [
         ("bdnex write -n", "preview: which files would get a ComicInfo.xml"),
