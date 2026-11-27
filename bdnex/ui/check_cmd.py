@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import sys
 import time
 
@@ -14,27 +16,50 @@ from bdnex.ui.output import add_workers
 
 
 class _Ticker:
-    """Says how far the measuring is every few seconds (a slow library must not look frozen): a line that is rewritten on a terminal."""
+    """How far the measuring is: on a terminal a bar with the time left and, under it, the files being read now (redrawn in place);
+    in a pipe or a log a plain line every few seconds."""
 
     EVERY = 3.0
+    WIDTH = 30
 
     def __init__(self, out, total: int, clock=time.monotonic):
         self.out, self.total, self.clock = out, total, clock
         self.start = self.last = clock()
         self.live = hasattr(out, "isatty") and out.isatty()
+        self.drawn = 0  # lines of the block on the screen
 
-    def __call__(self, number: int, total: int) -> None:
+    def summary(self, number: int, total: int) -> str:
+        elapsed = self.clock() - self.start
+        left = (total - number) * elapsed / number if number and elapsed else None
+        rate = f"{number / elapsed:.1f} files/s" if number and elapsed else "starting"
+        eta = f", about {formatting.human_duration(left)} left" if left is not None else ""
+        return f"{number}/{total} ({number * 100 // total}%), {rate}{eta}"
+
+    def __call__(self, number: int, total: int, current: list) -> None:
         now = self.clock()
-        if number != total and now - self.last < self.EVERY:
+        if self.live:
+            if number != total and number and now - self.last < 0.2:
+                return
+        elif number == 0 or (number != total and now - self.last < self.EVERY):
             return
         self.last = now
-        elapsed = now - self.start
-        left = (total - number) * elapsed / number if number else 0
-        text = f"  {number}/{total} ({number * 100 // total}%), {number / elapsed:.1f} files/s, about {formatting.human_duration(left)} left" if elapsed else f"  {number}/{total}"
-        if self.live:
-            print("\r" + text + "  ", end="\n" if number == total else "", file=self.out, flush=True)
-        else:
-            print(text, file=self.out, flush=True)
+        if not self.live:
+            print("  " + self.summary(number, total), file=self.out, flush=True)
+            return
+        width = shutil.get_terminal_size((100, 20)).columns - 4
+        filled = self.WIDTH * number // total
+        lines = [f"  [{'#' * filled}{'.' * (self.WIDTH - filled)}] {self.summary(number, total)}"]
+        lines += [f"    {os.path.basename(str(row['path']))}"[:width] for row in current] if number != total else []
+        if self.drawn:
+            print(f"\x1b[{self.drawn}A", end="", file=self.out)
+        for line in lines:
+            print("\r\x1b[K" + line, file=self.out)
+        for _ in range(self.drawn - len(lines)):  # the block shrank at the end: clear what is left of it
+            print("\r\x1b[K", file=self.out)
+        if self.drawn > len(lines):
+            print(f"\x1b[{self.drawn - len(lines)}A", end="", file=self.out)
+        self.drawn = len(lines)
+        self.out.flush()
 
 
 def _quality(args, settings, out) -> int:
