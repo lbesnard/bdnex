@@ -22,10 +22,10 @@ from textual.widgets.option_list import Option
 from bdnex.importer import comicvine
 from bdnex.library import review_batch as batch
 from bdnex.ui.review_modal import Modal
+from bdnex.ui.review_volumes import ChoiceScreen, VolumesScreen
 
 logger = logging.getLogger(__name__)
 
-SHOWN = 8
 
 
 class ComicvineSearchScreen(Modal):
@@ -128,8 +128,6 @@ class ReviewComicvine:
 
     async def comicvine_address(self, chosen: list, text: str) -> None:
         """``i`` or ``a`` was given a Comic Vine address."""
-        from bdnex.ui.review_tui import AskScreen  # (a circular import at the top)
-
         kind = comicvine.parse(text)[0]
         text = text.strip()
         if kind == "issue":
@@ -159,17 +157,35 @@ class ReviewComicvine:
         finally:
             self.comicvine_busy(chosen, False)
         pairs = [(r, answer.matches[r.path]) for r in chosen if r.path in answer.matches]
-        if not pairs:
-            self.notify(f"{answer.name}: no file has a volume number the series has (T03, Tome 3, #3...).", severity="warning", timeout=10)
+        if not pairs and not getattr(answer.volume, "issues", None):
+            self.notify(f"{answer.name}: Comic Vine lists no issue for this volume.", severity="warning", timeout=10)
             return
-        lines = [f"{os.path.basename(r.path)}  ->  {ref.name or 'issue'} (#{ref.number})" for r, ref in pairs[:SHOWN]]
-        more = f"\n... and {len(pairs) - SHOWN} more" if len(pairs) > SHOWN else ""
         left = len(chosen) - len(pairs)
         question = (f"{answer.name} (Comic Vine): {len(pairs)} of {len(chosen)} file(s) find their issue"
-                    + (f" ({left} left as they are)" if left else "") + ".\n" + "\n".join(lines) + more
-                    + f"\n\nLink them? That reads {len(pairs)} issue page(s): {len(pairs)} of Comic Vine's 200 requests an hour (one was used to read the volume).")
-        self.ask_later(f"link {len(pairs)} file(s) to {answer.name}?", lambda: AskScreen(question, None),
-                       lambda yes: self.run_worker(self.guarded(self.comicvine_issues(pairs, answer), "the issues")) if yes else None)
+                    + (f" ({left} left as they are)" if left else "") + ". Check each issue; change one with Enter.")
+        every = [(r, answer.matches.get(r.path)) for r in chosen]  # the files with no number are listed too: they can be matched by hand
+        issues = sorted((e for e in answer.volume.issues if getattr(e, "id", None)), key=lambda e: (not str(e.number or "").isdigit(), int(e.number) if str(e.number or "").isdigit() else 0))
+        options = [(self.issue_text(e), e) for e in issues]
+
+        def pick(index: int, done) -> None:  # the issues of the volume are already here (the one request): no search, no cost
+            self.push_screen(ChoiceScreen(f"Which issue of {answer.name}?", options), done)
+
+        def make():
+            return VolumesScreen(question, every, None, answer.name, describe=self.issue_text, pick=pick,
+                                 note=lambda count: f"Linking reads {count} issue page(s): {count} of Comic Vine's 200 requests an hour (one was used to read the volume).")
+
+        def chosen_issues(picked) -> None:
+            if not picked:
+                return
+            for row, ref in picked:
+                answer.matches[row.path] = ref  # a hand-picked issue is what the second step reads
+            self.run_worker(self.guarded(self.comicvine_issues(picked, answer), "the issues"))
+
+        self.ask_later(f"link {len(pairs)} file(s) to {answer.name}?", make, chosen_issues)
+
+    @staticmethod
+    def issue_text(ref) -> str:
+        return f"{ref.name or 'issue'} (#{ref.number})"
 
     async def comicvine_issues(self, pairs: list, answer) -> None:
         """The matching was confirmed: the issue of each file is read (one request each), then the files are linked. A stop by the limit keeps the files
