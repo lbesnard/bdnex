@@ -67,6 +67,7 @@ Most collections have a folder per series with many albums in it, so you rarely 
 | nothing: no site has it | `e` or `E` | one form for the series, a line per file for its volume |
 | the files are **one-shots** (or the reverse) | `K` | series ⇄ one-shot |
 | the series is right, a detail is wrong | `E` | publisher, collection, category... on all files; **Restore** puts the site's value back |
+| the **collection** (or cycle) is odd and gives a bad destination path | `E`, **Clear** on that row | the value is emptied on all marked files, and, when your `paths.series` template uses `%ifdef{collection,$collection}`, its folder level is left out ([Writing](writing.md)) |
 | a file is only another edition | `e`, *Version of the album* | linked as a version ([Versions](versions.md)) |
 
 4. **Answer the question** the screen shows ("Nains: 12 of 12 files find their volume. Link them?"). Nothing is linked before you say yes.
