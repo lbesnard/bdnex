@@ -51,6 +51,8 @@ What you do there:
 - **Duplicates** (`D`): the files of one album side by side; trash one, make one the main file, keep one as a version.
 - **Find** a folder or file (`F`) or a filter value (`S`) as you type. Press `?` for every key.
 
+To do a whole series in a few keys (mark the folder's files, then `a`, `i`, `o` or `e`), see [A whole series at once](series-at-once.md).
+
 Every decision is saved at once. You can close the screen at any time; it remembers its columns and panes, and the album pages and covers
 it needs are downloaded in the background while you work. See [Checking matches](checking-matches.md) for every key.
 
