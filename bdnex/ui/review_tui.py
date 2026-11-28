@@ -1012,6 +1012,10 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
     #pager { height: 1; }
     #pager PagerChip { width: auto; }
     #pager-where { width: 1fr; content-align: center middle; color: $text-muted; }
+    /* the two find boxes: Textual's default frame is nearly the colour of the background, so they looked like plain text */
+    #treefind, #facetfind { border: tall $accent; background: $boost; }
+    #treefind:focus, #facetfind:focus { border: double $success; background: $panel; }
+    #treefind > .input--placeholder, #facetfind > .input--placeholder { color: $text-muted; text-style: italic; }
     #narrow { height: 1; border: none; padding: 0 1; background: transparent; }
     #trees { height: 1fr; }
     #legend { height: 2; padding: 0 1; }
@@ -1136,7 +1140,7 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
                     yield Button("Clear ticks", id="clear-ticks", tooltip="Untick every folder and filter.")
                 yield Checkbox("Apply filters to folders (both)", id="narrow",
                                tooltip="Ticked: a click on a folder and a click on a filter work together (the files that match both). Not ticked: a click shows only what you clicked.")
-                yield Input(placeholder="Find a folder or a file...  (words, any order)", id="treefind", tooltip="Type part of a folder or file name: only the folders that match stay. Key F; Enter goes on to the tree.")
+                yield Input(placeholder="Find a folder or a file...", id="treefind", tooltip="Type part of a folder or file name: only the folders that match stay. Key F; Enter goes on to the tree.")
                 with TabbedContent(id="trees"):
                     with TabPane("Folders", id="tab-folders"):
                         with Vertical(id="folderslot"):
@@ -1147,7 +1151,7 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
                 yield Splitter("#facetbox", "y", id="split-filters", tooltip="Drag up or down to resize the trees and the filters.")
                 yield Static(legend(), id="legend")
                 with Vertical(id="facetbox"):
-                    yield Input(placeholder="Find a filter: author, series, genre...", id="facetfind",
+                    yield Input(placeholder="Find a filter: author, series", id="facetfind",
                                 tooltip="Type part of an author, a series, a genre...: only the filter values that match stay. Key S; Enter goes on to the list.")
                     with Vertical(id="facetslot"):
                         yield Static("Filters: reading...", id="facetwait")
