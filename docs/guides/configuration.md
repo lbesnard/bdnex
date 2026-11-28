@@ -34,7 +34,7 @@ still converted. To keep them as PDFs, remove the `# ` and write `pdf: tag` (the
 
 **From the web page.** With `bdnex serve --allow-changes` the **Settings** page shows every option with its possible values and
 default, and saves a change into this same file (checked as a whole first, the previous file kept as `bdnex.yaml.bak`, your
-comments kept). Folders (`collection_path`, `library`), secrets (`api.token`, `api.password`, `komga.api_key`, `komga.password`, the fetcher address) and lists
+comments kept). Folders (`collection_path`, `library`), secrets (`api.token`, `api.password`, `komga.api_key`, `komga.password`, `comicvine.api_key`, the fetcher address) and lists
 (`paths.rules`, `import.sources`) are edited in the file.
 
 ## Commands
@@ -143,6 +143,11 @@ api:
   allowed_hosts: []                      # names the server answers to (the `Host` header): empty = localhost names while it listens on 127.0.0.1, any name otherwise; a DNS-rebinding page is refused
   password: null                         # when set, the web page asks for `username` and this password (HTTP Basic: use HTTPS beyond your LAN)
   allow_changes: false                   # true: the web page can run jobs and change the library (see the docs)
+
+comicvine:
+  api_key: null                          # your key (https://comicvine.gamespot.com/api/): or set BDNEX_COMICVINE_API_KEY, which wins. Comic Vine allows 200 requests an hour
+  timeout: 20                            # seconds to wait for each answer
+  cache_days: 14                         # an answer is kept this long next to the library (comicvine-cache.sqlite), so a second look costs no request
 
 komga:
   url: null                              # your Komga server, e.g. http://localhost:25600 (`bdnex komga` sends the library's metadata there)

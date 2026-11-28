@@ -39,6 +39,11 @@ duplicates:
 quality:
   page_height_in: 11.7                  # inches of page height a CBZ / CBR picture stands for, to estimate its dpi (11.7 = A4; an album is 11.5 to 12.2); a PDF knows its own
 
+comicvine:                              # Comic Vine, by address (the review screen's `i` and `a`); needs `pip install "bdnex[comicvine]"`
+  api_key: null                         # your key (https://comicvine.gamespot.com/api/): or set BDNEX_COMICVINE_API_KEY. Comic Vine allows 200 requests an hour
+  timeout: 20                           # seconds to wait for each answer
+  cache_days: 14                        # an answer is kept this long next to the library (comicvine-cache.sqlite), so a second look costs no request
+
 trash:
   dir: .bdnex-trash                     # replaced files wait here, inside `collection_path` (see `bdnex trash`)
 

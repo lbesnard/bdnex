@@ -515,6 +515,15 @@ Put the cursor on the file (or mark several with space) and press **Delete**: af
 **U** (or **Actions, Undo**) puts the last ones back (and takes back the last move). For the duplicates of one album, **D** shows them side by side first
 (see [Checking matches](checking-matches.md)). Older ones are brought back with `bdnex trash --restore`.
 
+## …link a file to Comic Vine (an American comic)?
+
+```{how} tui
+```
+
+Install the extra (`pip install "bdnex[comicvine]"`, Python 3.11 or newer), put your key in `comicvine.api_key` (or `BDNEX_COMICVINE_API_KEY`), then
+in the review screen press `i` and paste the address of the **issue** page for one file, or `a` and the address of the **volume** page for a whole
+folder (mark the files with `m`). See [Comic Vine](comicvine.md).
+
 ## …get back a file I replaced?
 
 ```{how} cli

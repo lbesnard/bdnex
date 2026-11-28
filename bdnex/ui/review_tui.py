@@ -45,6 +45,7 @@ from bdnex.ui.review_organise import ReviewOrganise
 from bdnex.ui.cover_text import GRAPHICS, graphic
 from bdnex.ui import review_panels as panels
 from bdnex.ui.review_actions import ActionsChip, ReviewActions
+from bdnex.ui.review_comicvine import ReviewComicvine
 from bdnex.ui.review_panels import FacetCommands, HelpChip, PagerChip, Splitter, legend
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "green", "skipped": "yellow"}
@@ -482,8 +483,10 @@ class FuzzyScreen(Modal):
             box.value = not box.value  # its change searches again
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        if self.series_ok and is_series_address(event.value):
-            self.dismiss(event.value.strip())  # the address of a series page: its albums are read from that page
+        from bdnex.importer import comicvine
+
+        if self.series_ok and (is_series_address(event.value) or comicvine.is_address(event.value)):
+            self.dismiss(event.value.strip())  # the address of a series page (or a Comic Vine volume): its albums are read from that page
             return
         self.pick(self.query_one(OptionList).highlighted)
 
@@ -993,7 +996,7 @@ class CoverScreen(Pictures, Modal):
 
 
 # ----------------------------------------------------------------------------- the table
-class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
+class ReviewApp(ColumnsMixin, ReviewComicvine, ReviewActions, ReviewOrganise, ReviewExtras, App):
     """The table of one batch, the detail of the row under the cursor, and the keys that decide."""
 
     TITLE = "bdnex review"
@@ -2049,9 +2052,9 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
             return
         if len(chosen) == 1:
             heading = ("Pick this file's album, or a SERIES to give it its volume by the number in its name "
-                       "(or paste the address of the series page)")
+                       "(or paste the address of a Bédéthèque series page, or a Comic Vine volume)")
         else:
-            heading = f"These {len(chosen)} marked files: pick a SERIES (or an album of it, or the address of the series page): each gets its volume"
+            heading = f"These {len(chosen)} marked files: pick a SERIES (or an album of it, or the address of a Bédéthèque series page or a Comic Vine volume): each gets its volume"
         self.push_screen(FuzzyScreen(self.hub, self.search_start(chosen[0]), heading, series_ok=True, about=self.about_files(chosen)),
                          lambda candidate: self.run_worker(self.guarded(self.propose(chosen, candidate), "the series")) if candidate is not None else None)
 
@@ -2127,11 +2130,16 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
                         self.refresh_row(row)
 
     async def propose_for(self, chosen: list, candidate) -> None:
+        from bdnex.importer import comicvine
+
         paths = [r.path for r in chosen]
         if len(chosen) == 1 and not isinstance(candidate, str) and not chosen[0].busy:
             # one file and one album picked: that album is the answer. Looking up "the volume of the file in the album's series" would
             # second-guess the pick with a number read from the name (`CYCLE 2 - Tome 01` reads as 2): a SERIES pick is what does that.
             self.link(chosen[0], candidate.url, candidate)
+            return
+        if isinstance(candidate, str) and comicvine.is_address(candidate):
+            await self.comicvine_address(chosen, candidate)
             return
         if isinstance(candidate, str):
             self.notify("Reading the series page (from the library, or fetched once)...", timeout=6)
@@ -2262,8 +2270,13 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
                 if chosen:
                     await self.propose(chosen, text.strip())
                 return
-            from bdnex.importer import bdtheque
+            from bdnex.importer import bdtheque, comicvine
 
+            if comicvine.is_address(text):  # Comic Vine: an issue is this file's album, a volume gives each marked file its issue
+                chosen = self.files_to_attach() if comicvine.parse(text)[0] == "volume" else [row]
+                if chosen:
+                    await self.comicvine_address(chosen, text)
+                return
             if bdtheque.is_address(text):  # another site: its page is read (fetched once) and the file is linked to what it says
                 row.busy, row.busy_what, row.started_at = True, "fetching the page", time.monotonic()  # the state column says so, and counts
                 self.refresh_row(row)
@@ -2283,7 +2296,7 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
                 return
             self.link(row, candidate.url, candidate)
 
-        self.push_screen(AskScreen("The album's page address (Bédéthèque, or a bdtheque.com series page), or its number:", ""),
+        self.push_screen(AskScreen("The address of a page: a Bédéthèque album, a bdtheque.com series, a Comic Vine issue (or volume), or an album number (Bédéthèque):", ""),
                          lambda text: self.run_worker(self.guarded(given(text), "that address")) if text else None)
 
     # -- linking: the match is written at once; the album page and the cover are fetched in the background, one at a time

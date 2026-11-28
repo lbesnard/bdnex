@@ -1825,3 +1825,101 @@ def test_the_folders_and_the_album_list_load_only_after_the_first_batch_is_on_sc
 
     asyncio.run(go())
     assert seen["before"] == (False, None) and seen["after"] == (True, True)
+
+
+def comicvine_info(number, title="Feral City"):
+    from bdnex.importer import comicvine
+    from types import SimpleNamespace as NS
+    import datetime
+
+    vol = NS(id=18040, name="Fell", issue_count=9, start_year=2005, publisher=NS(name="Image"), summary=None, description=None,
+             site_url="https://comicvine.gamespot.com/fell/4050-18040/")
+    issue = NS(id=100 + number, number=str(number), name=title, cover_date=datetime.date(2005, 7, 1), store_date=None, description=None,
+               summary=None, image=None, site_url=f"https://comicvine.gamespot.com/fell/4000-{100 + number}/", creators=[])
+    return comicvine.album_info(issue, vol)
+
+
+def test_i_with_a_comic_vine_issue_address_links_the_file_to_that_issue(env, monkeypatch):
+    from bdnex.importer import comicvine
+
+    db, files = env
+    asked = []
+
+    def read(settings, text):
+        asked.append(text)
+        return comicvine_info(1)
+
+    monkeypatch.setattr(comicvine, "read_issue", read)
+
+    async def script(app, pilot):
+        await pilot.press("i")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = "https://comicvine.gamespot.com/fell-1-feral-city/4000-101/"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert asked == ["https://comicvine.gamespot.com/fell-1-feral-city/4000-101/"] and result["cells"][0][8] == "confirmed · linked"
+    with Library(db) as lib:
+        albums = [lib.get_album(lib.get_file(p)["album_id"]) for p in files.values() if lib.get_file(p)["album_id"]]
+    assert any(a["source"] == "comicvine" and a["title"] == "Feral City" and a["publisher"] == "Image" for a in albums)
+
+
+def test_a_comic_vine_error_is_said_and_nothing_is_linked(env, monkeypatch):
+    from bdnex.importer import comicvine
+
+    db, files = env
+
+    def read(settings, text):
+        raise comicvine.ComicvineError("no Comic Vine API key: set `comicvine.api_key`")
+
+    monkeypatch.setattr(comicvine, "read_issue", read)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("i")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = "https://comicvine.gamespot.com/x/4000-101/"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+        seen["rows"] = [r.busy for r in app.rows]
+
+    result, _ = drive(db, script)
+    assert not any(seen["rows"]) and result["cells"][0][8] != "confirmed · linked"
+    with Library(db) as lib:
+        assert not any(lib.get_album(lib.get_file(p)["album_id"])["source"] == "comicvine" for p in files.values() if lib.get_file(p)["album_id"])
+
+
+def test_a_with_a_comic_vine_volume_address_links_the_marked_files_after_a_question(env, monkeypatch):
+    from bdnex.importer import comicvine
+
+    db, files = env
+
+    def read(settings, text, paths, progress=None):
+        return comicvine.VolumeAnswer("Fell", {p: comicvine_info(2 if "T02" in p else 5) for p in paths})
+
+    monkeypatch.setattr(comicvine, "read_volume", read)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("m")  # every file of the screen
+        await pilot.press("a")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = "https://comicvine.gamespot.com/fell/4050-18040/"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+        seen["waiting"] = len(app.waiting)
+        await pilot.press("w")
+        await pilot.pause(0.3)
+        seen["question"] = str(app.screen.query_one("#ask Label").render())
+        await pilot.press("y")
+        await settle(app, pilot)
+
+    drive(db, script)
+    assert seen["waiting"] == 1 and "Fell (Comic Vine): 3 of 3 file(s) find their issue" in seen["question"]
+    with Library(db) as lib:
+        sources = {lib.get_album(lib.get_file(p)["album_id"])["source"] for p in files.values()}
+    assert sources == {"comicvine"}

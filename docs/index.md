@@ -32,6 +32,7 @@ guides/queries
 guides/writing
 guides/maintaining
 guides/komga
+guides/comicvine
 guides/api
 guides/docker
 guides/configuration
