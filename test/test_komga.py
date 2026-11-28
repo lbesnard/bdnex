@@ -497,3 +497,41 @@ def test_a_push_stops_after_five_failures_in_a_row_and_says_how_to_finish_it():
     text = out.getvalue()
     assert text.count("the server is down") == komga_cmd.GIVE_UP_AFTER and "35 more not tried" in text  # not forty requests that all fail
     assert "again" in text  # it only sends what differs, so a second run finishes it
+
+
+def test_an_isbn_is_sent_only_when_it_is_a_valid_one_in_thirteen_digits():
+    assert komga.valid_isbn("978-2-205-07352-2") == "9782205073522"
+    assert komga.valid_isbn("2-205-07352-X") is None and komga.valid_isbn("2205073524") == "9782205073522"  # ISBN-10 becomes ISBN-13
+    assert komga.valid_isbn("9782205073523") is None and komga.valid_isbn("123") is None and komga.valid_isbn(None) is None
+    album = {**ALBUM, "isbn": "9782205073523"} if "ALBUM" in globals() else None
+    if album:
+        assert "isbn" not in komga.book_fields(album, {})
+
+
+class Refusing:
+    """A Komga that answers 400 to the first update of a book, naming the field (what an invalid ISBN does)."""
+
+    def __init__(self, body):
+        self.headers, self.auth, self.calls, self.body = {}, None, [], body
+
+    def request(self, method, url, **kwargs):
+        self.calls.append(kwargs.get("json"))
+        if len(self.calls) == 1:
+            response = FakeResponse(self.body, 400)
+            response.text = self.body
+            return response
+        return FakeResponse(None)
+
+
+def test_a_field_komga_refuses_is_left_out_and_the_rest_is_sent_again():
+    body = '{"violations":[{"fieldName":"isbn","message":"invalid ISBN"},{"fieldName":"isbn","message":"must be null"}]}'
+    session = Refusing(body)
+    left_out = komga.Client(CONFIG, session).patch_book("b1", {"title": "T", "titleLock": True, "isbn": "9", "isbnLock": True})
+    assert left_out == ["isbn"] and session.calls[1] == {"title": "T", "titleLock": True}
+
+
+def test_a_refusal_that_names_no_field_of_ours_is_still_an_error():
+    import pytest
+
+    with pytest.raises(komga.KomgaError, match="400"):
+        komga.Client(CONFIG, Refusing('{"error": "nope"}')).patch_book("b1", {"title": "T"})

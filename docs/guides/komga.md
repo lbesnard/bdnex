@@ -151,3 +151,5 @@ Komga answers with one, set `komga.url` to the address it redirects to. `komga.u
 In `bdnex review`, the **☰ Actions** panel (key `A`) has **Send the tags to Komga**: *this view* (the folder, filter or ticks you are looking at) or *the whole
 collection*. It is `bdnex komga push`, so the same rules hold: a preview first, then **Do it**; only what differs is sent; files whose match waits
 for a review are left out. It needs `komga.url` and a login in the configuration; without them the window says so.
+
+The window shows a preview, then **Send metadata** and **Cancel** side by side (Esc closes it too). Komga refuses a whole update for one invalid value, so an ISBN is sent only when it is a valid one (an ISBN-10 is sent as its ISBN-13); if Komga still refuses a field, that field is left out and the rest is sent again, and the window says so.

@@ -8,6 +8,7 @@ the same folders. Nothing here reads or changes a comic file.
 
 from __future__ import annotations
 
+import json
 import os
 from collections import Counter
 from typing import Any, Iterable, Optional
@@ -30,9 +31,10 @@ SERIES_LOCKS = {"title": "titleLock", "publisher": "publisherLock", "language": 
 class KomgaError(Exception):
     """Komga can not be reached, or refused: the message says what to check. ``status``: the HTTP status, when there was one."""
 
-    def __init__(self, message: str, status: Optional[int] = None):
+    def __init__(self, message: str, status: Optional[int] = None, body: str = ""):
         super().__init__(message)
         self.status = status
+        self.body = body  # what Komga answered, whole (the message holds only its start)
 
 
 class Client:
@@ -67,7 +69,7 @@ class Client:
             raise KomgaError(f"Komga refused the login ({response.status_code}): check komga.api_key or the "
                              "username and password, and that the account may edit metadata", response.status_code)
         if response.status_code >= 400:
-            raise KomgaError(f"Komga answered {response.status_code} to {method} {path}: {response.text[:200]}", response.status_code)
+            raise KomgaError(f"Komga answered {response.status_code} to {method} {path}: {response.text[:200]}", response.status_code, response.text)
         return response.json() if response.content else None
 
     def books(self) -> Iterable[dict[str, Any]]:
@@ -100,11 +102,52 @@ class Client:
     def series(self, series_id: str) -> dict[str, Any]:
         return self._call("GET", f"/api/v1/series/{series_id}")
 
-    def patch_book(self, book_id: str, payload: dict[str, Any]) -> None:
-        self._call("PATCH", f"/api/v1/books/{book_id}/metadata", json=payload)
+    def patch_book(self, book_id: str, payload: dict[str, Any]) -> list[str]:
+        """Send the metadata of one book. Komga checks a few fields (an ISBN must be a valid one) and refuses the WHOLE request for one bad
+        value: the fields it names are taken out and the rest is sent again, once. Returns the fields that were left out."""
+        try:
+            self._call("PATCH", f"/api/v1/books/{book_id}/metadata", json=payload)
+            return []
+        except KomgaError as err:
+            bad = refused_fields(err, payload)
+            if not bad:
+                raise
+            rest = {k: v for k, v in payload.items() if k not in bad and k not in {BOOK_LOCKS.get(b) for b in bad}}
+            if not any(k in rest for k in BOOK_LOCKS):  # nothing but the refused values was left to send
+                return bad
+            self._call("PATCH", f"/api/v1/books/{book_id}/metadata", json=rest)
+            return bad
 
     def patch_series(self, series_id: str, payload: dict[str, Any]) -> None:
         self._call("PATCH", f"/api/v1/series/{series_id}/metadata", json=payload)
+
+
+def refused_fields(err: "KomgaError", payload: dict[str, Any]) -> list[str]:
+    """The fields of ``payload`` that Komga named in a 400 (``{"violations": [{"fieldName": "isbn", ...}]}``)."""
+    if err.status != 400:
+        return []
+    try:
+        violations = json.loads(err.body).get("violations") or []
+    except (ValueError, AttributeError):
+        return []
+    return sorted({v.get("fieldName") for v in violations if isinstance(v, dict) and v.get("fieldName") in payload})
+
+
+def valid_isbn(text) -> Optional[str]:
+    """The ISBN as Komga takes it (13 digits, no hyphens), or ``None`` when it is not a valid one (a wrong check digit, a wrong length): Komga
+    refuses a whole update for one bad ISBN. An ISBN-10 is turned into its ISBN-13."""
+    digits = "".join(ch for ch in str(text or "").upper() if ch.isdigit() or ch == "X")
+    if len(digits) == 10 and (digits[:9].isdigit()) and (digits[9].isdigit() or digits[9] == "X"):
+        total = sum((10 - i) * (10 if c == "X" else int(c)) for i, c in enumerate(digits))
+        if total % 11:
+            return None
+        digits = "978" + digits[:9]
+        digits += str((10 - sum(int(c) * (1 if i % 2 == 0 else 3) for i, c in enumerate(digits)) % 10) % 10)
+        return digits
+    if len(digits) == 13 and digits.isdigit():
+        total = sum(int(c) * (1 if i % 2 == 0 else 3) for i, c in enumerate(digits))
+        return digits if total % 10 == 0 else None
+    return None
 
 
 # --------------------------------------------------------------------------------------------------- matching
@@ -201,8 +244,8 @@ def book_fields(album: dict[str, Any], current: Optional[dict[str, Any]] = None)
         said = {a["role"].lower() for a in mine}
         # the roles the library has names for are replaced; the other roles Komga holds (a colorist someone added there) are kept
         fields["authors"] = mine + [a for a in (current or {}).get("authors") or [] if str(a.get("role", "")).lower() not in said]
-    if album.get("isbn"):
-        fields["isbn"] = album["isbn"]
+    if valid_isbn(album.get("isbn")):  # an invalid one would make Komga refuse the whole update
+        fields["isbn"] = valid_isbn(album["isbn"])
     if album.get("url"):
         fields["links"] = [{"label": link_label(album["url"]), "url": album["url"]}]
     if album["genres"]:

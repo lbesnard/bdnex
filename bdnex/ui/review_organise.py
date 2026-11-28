@@ -18,7 +18,7 @@ from collections import Counter
 from rich.text import Text
 from textual.app import ComposeResult
 from textual.binding import Binding
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Label, RadioButton, RadioSet, Static
 from textual.worker import get_current_worker
 
@@ -64,7 +64,7 @@ class OrganiseScreen(Modal):
                 yield RadioButton("The whole collection", value=self.scope == "all", id="scope-all")
             with VerticalScroll(id="organisebody"):
                 yield Static("Working out what would change (nothing is touched)...", id="organisetext")
-            with Vertical(id="organisebuttons"):
+            with Horizontal(id="organisebuttons"):
                 yield Button("Do it", id="go", variant="success", disabled=True,
                              tooltip="Do it for every file listed. Nothing is asked per file: a name already taken gets a number and originals are kept.")
                 yield Button("Cancel", id="cancel", tooltip="Close without changing anything (Esc).")
@@ -141,12 +141,39 @@ class ReviewOrganise:
             return f"{selection[1]} ({total} file{'s' if total != 1 else ''})"
         return f"the batch ({len(self.rows)} file{'s' if len(self.rows) != 1 else ''})"
 
+    organise_all_pages = True  # the view's other pages are worked on too (the answer to `ask_pages`)
+
+    def ask_pages(self, what: str, go) -> None:
+        """A view can be longer than the page on the screen. When it is, ask once: every page of it (yes), or only the files shown (no).
+        ``go`` runs with the answer kept in ``organise_all_pages``; Esc stops."""
+        total, shown = getattr(self.rows, "total", len(self.rows)), len(self.rows)
+        if not getattr(self.rows, "selection", None) or total <= shown:
+            self.organise_all_pages = True
+            go()
+            return
+        from bdnex.ui.review_tui import AskScreen
+
+        def answered(yes) -> None:
+            if yes is None:
+                return
+            self.organise_all_pages = bool(yes)
+            go()
+
+        self.push_screen(AskScreen(f"This view has {total} files over several pages; {shown} are on the screen.\n"
+                                   f"{what} every page of it ({total} files)?\nYes: all {total}.  No: only the {shown} on the screen.", None), answered)
+
     def organise_open(self, mode: str, scope: str = "view") -> None:
         if not self.rows or self.loading:
             self.notify(f"Nothing on the screen to {mode}.", timeout=3)
             return
         if getattr(self, "organising", False):
             return
+        if scope == "view":
+            self.ask_pages(mode.capitalize(), lambda: self.organise_open_now(mode, scope))
+        else:
+            self.organise_open_now(mode, scope)
+
+    def organise_open_now(self, mode: str, scope: str) -> None:
         self.organising = True
         screen = OrganiseScreen(mode, self.view_name(), scope)
         self.push_screen(screen, lambda changed: self.organise_closed(changed))
@@ -218,7 +245,7 @@ class ReviewOrganise:
         if scope == "all":
             return [row[0] for row in library.conn.execute("SELECT id FROM files WHERE corrupted = 1 ORDER BY path" if repair
                                                            else "SELECT id FROM files ORDER BY path")]
-        if not picks:
+        if not picks or not self.organise_all_pages:
             return [i for i in file_ids if i is not None]
         ids: list[int] = []
         offset = 0

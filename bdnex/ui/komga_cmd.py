@@ -287,7 +287,9 @@ def _send(client, todo, out, on) -> int:
     for number, step in enumerate(todo):
         send = client.patch_book if step["kind"] == "book" else client.patch_series
         try:
-            send(step["id"], step["payload"])
+            left_out = send(step["id"], step["payload"])
+            if left_out:  # Komga refused these values (an invalid ISBN...): the rest was sent
+                print(results.block("skipped", f"{step['kind']}  {step['label']}", [f"Komga refused {', '.join(left_out)}: left out, the rest was sent"], on), file=out)
             sent += 1
             row = 0
         except komga.KomgaError as err:
