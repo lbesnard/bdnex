@@ -550,6 +550,7 @@ class AskScreen(Modal):
     CSS = """
     AskScreen { align: center middle; }
     #ask { width: 80%; height: auto; border: round $accent; padding: 1 2; background: $surface; }
+    #ask Label { width: 100%; }
     #askbuttons { height: 3; align-horizontal: right; }
     #askbuttons Button { margin-left: 2; }
     """
@@ -1318,6 +1319,7 @@ class ReviewApp(ColumnsMixin, ReviewComicvine, ReviewActions, ReviewOrganise, Re
             return
         self.background_started = True
         self.start_folders()
+        self.look_for_repairs()
         self.hub.load_list().add_done_callback(self.list_loaded)
         self.remember_place(terms=list(self.terms), unmatched=self.unmatched, everything=self.everything, again=self.again)
         if self.resume:

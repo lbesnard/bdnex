@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
+import re
 import string
 import sys
 from typing import Any
@@ -27,6 +29,8 @@ def decorate(row: dict[str, Any]) -> dict[str, Any]:
         row["label"] = title or series
     if not row.get("id") and "file_id" in row:
         row["label"] = "(not imported)"
+    if row.get("path"):
+        row["filename"] = os.path.basename(str(row["path"]))
     row["flag"] = " [not fetched]" if row.get("partial") else ""
     n = row.get("files", 0)
     row["files_label"] = f"{n} file{'s' if n != 1 else ''}" if n != "" else ""
@@ -41,7 +45,7 @@ def run(argv: list[str], out=sys.stdout) -> int:
     parser.add_argument("query", nargs="*", help="terms such as  series:nains  author:uderzo  year:2010..2015  ^genre:humour")
     parser.add_argument("--fields", action="store_true", help="list the fields a query can use, with their kind and what they mean (nothing else)")
     parser.add_argument("--files", action="store_true", help="list files instead of albums")
-    parser.add_argument("--format", help="output template, e.g. '$series T$vol $title'")
+    parser.add_argument("--format", help="output template, e.g. '$series T$vol $title' ($summary and, with --files, $filename work too)")
     parser.add_argument("--limit", type=int, metavar="N", help="at most N results (after sorting: `year-` puts the newest first)")
     parser.add_argument("-c", "--count", action="store_true", help="print only the number of results")
     parser.add_argument("-l", "--long", action="store_true",
@@ -88,6 +92,9 @@ def run(argv: list[str], out=sys.stdout) -> int:
         except QueryError as err:
             return context.bad_query(err)
         details = _details(library, rows, args) if args.long else None
+        if args.format and re.search(r"\$\{?summary\b", args.format):  # the listing does not carry the (long) summary: read it only when asked for
+            for row in rows:
+                row["summary"] = (library.conn.execute("SELECT summary FROM albums WHERE id = ?", (row.get("id"),)).fetchone() or [None])[0]
 
     if args.count:
         print(len(rows), file=out)

@@ -34,6 +34,7 @@ class VolumesScreen(Modal):
     VolumesScreen { align: center middle; }
     #volumes { width: 90%; height: 85%; border: round $accent; padding: 1 2; background: $surface; }
     #volumestable { height: 1fr; margin: 1 0; }
+    #volumes Label { width: 100%; }
     #volumesbuttons { height: 3; align-horizontal: right; }
     #volumesbuttons Button { margin-left: 2; }
     """
@@ -136,6 +137,7 @@ class ChoiceScreen(Modal):
     ChoiceScreen { align: center middle; }
     #choice { width: 70%; height: 80%; border: round $accent; padding: 1 2; background: $surface; }
     #choices { height: 1fr; margin-top: 1; }
+    #choice Label { width: 100%; }
     """
 
     def __init__(self, heading: str, options: list[tuple[str, object]]):

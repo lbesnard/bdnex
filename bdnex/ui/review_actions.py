@@ -11,6 +11,7 @@ import importlib
 import io
 import os
 import threading
+import time
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -114,6 +115,8 @@ class TaskScreen(Modal):
     TaskScreen { align: center middle; }
     #task { width: 90%; height: 80%; border: round $accent; padding: 1 2; background: $surface; }
     #taskbody { height: 1fr; }
+    #task Label, #task Static { width: 100%; }  /* a Label is as wide as its text: a long line would run past the border */
+    #taskstep { height: auto; margin-top: 1; text-style: bold; }
     #taskbuttons { height: 3; align-horizontal: right; }
     #taskbuttons Button { margin-left: 2; }
     """
@@ -127,6 +130,7 @@ class TaskScreen(Modal):
         if key == "undo":  # the run that was made from this screen, or the last one of the library
             self.preview_argv, self.run_argv = [batch, "-n"], [batch]
         self.stage = "preview" if self.preview_argv else "ready"  # preview -> ready -> running -> done
+        self.working: tuple[str, str, float] | None = None  # (what is going on, its colour, when it started): drawn with a spinner until it ends
         self.out = io.StringIO()
         self.lock = threading.Lock()
         self.ran = False
@@ -137,6 +141,7 @@ class TaskScreen(Modal):
             yield Label(Text(self.what, style="dim"))
             with VerticalScroll(id="taskbody"):
                 yield Static("Working out what would change (nothing is touched)..." if self.preview_argv else "", id="tasktext")
+            yield Label("", id="taskstep")  # which step this is: the preview (nothing sent), the work, or done
             with Horizontal(id="taskbuttons"):
                 yield Button("Send metadata" if self.key == "komga" else "Do it", id="go", variant="success", disabled=bool(self.preview_argv) or not self.run_argv and self.key == "trash")
                 yield Button("Cancel", id="cancel", tooltip="Close (Esc).")
@@ -149,15 +154,23 @@ class TaskScreen(Modal):
             self.begin(self.preview_argv, final=False)
         else:
             self.query_one("#go", Button).focus()
-        self.set_interval(0.5, self.show_output)
+        self.set_interval(0.2, self.show_output)
 
     def begin(self, argv: list[str], final: bool) -> None:
         with self.lock:
             self.out = io.StringIO()
+        self.working = None
         if final:
             self.stage = "running"
             self.query_one("#cancel", Button).disabled = True
             self.ran = self.writes
+            if self.preview_argv:
+                self.query_one("#tasktext", Static).update("Working... (the list you saw was the preview; this is the real run)")
+                self.working = ("Step 2 of 2: doing it now. Wait for it to finish.", "bold yellow", time.monotonic())
+            else:
+                self.working = ("Working. Wait for it to finish.", "bold yellow", time.monotonic())
+        elif self.preview_argv:
+            self.working = ("Step 1 of 2: reading and comparing, for a preview. Nothing is changed.", "bold cyan", time.monotonic())
         self.run_worker(lambda: self.work(argv, final), thread=True, group="task", exclusive=True)
 
     def work(self, argv: list[str], final: bool) -> None:
@@ -172,7 +185,13 @@ class TaskScreen(Modal):
             code = 1
         self.app.call_from_thread(self.finished, final, code)
 
+    SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
     def show_output(self) -> None:
+        if self.working is not None:  # something is going on: a turning mark and the seconds, so that a wait is never silent
+            what, style, since = self.working
+            now = time.monotonic()
+            self.query_one("#taskstep", Label).update(Text(f"{self.SPINNER[int(now * 10) % len(self.SPINNER)]}  {what}  ({int(now - since)} s)", style=style))
         with self.lock:
             text = self.out.getvalue()
         if text:
@@ -183,14 +202,19 @@ class TaskScreen(Modal):
     def finished(self, final: bool, code) -> None:
         self.show_output()
         go, cancel = self.query_one("#go", Button), self.query_one("#cancel", Button)
+        step = self.query_one("#taskstep", Label)
+        self.working = None  # (the spinner stops)
         if final:
             self.stage = "done"
+            step.update(Text("Finished. Close the window." if not code else "It stopped with an error (above). Close the window.", style="bold green" if not code else "bold red"))
             go.display = False
             cancel.label, cancel.disabled = "Close", False
             cancel.focus()
         else:
             self.stage = "ready"
             go.disabled = bool(code)
+            step.update(Text(f"Step 1 of 2 done: this was only a preview, nothing was changed. Press {str(go.label)!r} to do it for real."
+                             if not code else "The preview did not work: nothing was changed.", style="bold cyan" if not code else "bold red"))
             go.focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -253,6 +277,46 @@ class ReviewActions:
                 return
             terms = ["fileid:" + ",".join(str(i) for i in ids)]
         self.push_screen(TaskScreen("komga", terms=terms), self.task_closed)
+
+    # -- a record that looks unfetched because its file sits on the wrong one: found in the background, offered with `w`
+    def look_for_repairs(self) -> None:
+        """Once, after the screen is up: count the albums stored under another edition's address (``bdnex check --fix`` settles them). A cheap
+        read in a worker; when there are some, the offer waits behind the red ``w`` mark like any other question."""
+        def count() -> None:
+            from bdnex.library import Library
+
+            try:
+                with Library.for_settings(self.settings, readonly=True) as library:
+                    found = len(library.wrong_album_addresses())
+            except Exception:  # a help: never a reason for the screen to fail
+                return
+            if found:
+                self.call_from_thread(self.offer_repairs, found)
+
+        self.run_worker(count, thread=True, group="repairs", exclusive=True)
+
+    def offer_repairs(self, found: int) -> None:
+        from bdnex.ui.review_tui import AskScreen
+
+        text = (f"{found} album(s) are stored under the address of another edition, so a file linked that way can look unfetched (no summary, no year).\n"
+                "Fix them now? Each album gets its own address back, and the files on the empty record move to it. "
+                "Nothing else is changed (a copy of the library is not needed: it is the same as `bdnex check --fix`).")
+        self.ask_later(f"fix {found} album address(es)?", lambda: AskScreen(text, None), lambda yes: self.repair_addresses() if yes else None)
+
+    def repair_addresses(self) -> None:
+        def work() -> None:
+            from bdnex.library import Library
+
+            try:
+                with Library.for_settings(self.settings) as library:
+                    restored, merged = library.repair_album_addresses()
+            except Exception as err:
+                self.call_from_thread(self.notify, f"Could not fix the addresses: {err}", severity="error", timeout=8)
+                return
+            self.call_from_thread(self.notify, f"Fixed: {restored} address(es) restored, {merged} empty record(s) merged.", timeout=6)
+            self.call_from_thread(self.organise_refresh)
+
+        self.run_worker(work, thread=True, group="repairs", exclusive=True)
 
     def task_closed(self, ran) -> None:
         if ran:

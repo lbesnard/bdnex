@@ -43,6 +43,7 @@ class OrganiseScreen(Modal):
     #organise { width: 90%; height: 80%; border: round $accent; padding: 1 2; background: $surface; }
     #scope { height: auto; margin: 1 0; }
     #organisebody { height: 1fr; }
+    #organise Label, #organise Static { width: 100%; }  /* a Label is as wide as its text: a long line would run past the border */
     #organisebuttons { height: 3; align-horizontal: right; }
     #organisebuttons Button { margin-left: 2; }
     """

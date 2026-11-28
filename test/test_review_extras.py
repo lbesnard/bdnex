@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import time
 import shutil
 
 import pytest
@@ -1811,6 +1812,11 @@ def test_the_panel_sends_the_tags_to_komga_for_the_view_or_the_collection(env):
             await organise_wait(screen, pilot, "ready")
             screen.show_output()
             seen["go_label"] = str(screen.query_one("#go").label)
+            seen["stopped"] = screen.working is None  # the spinner stops with the work
+            screen.working = ("Reading Komga", "bold", time.monotonic() - 3)  # while it works: a turning mark and the seconds
+            screen.show_output()
+            seen["spinner"] = str(screen.query_one("#taskstep").render())
+            screen.working = None
             seen["cancel_seen"] = screen.query_one("#cancel").region.height > 0 and screen.query_one("#cancel").region.y == screen.query_one("#go").region.y
             seen[scope] = (screen.preview_argv, screen.run_argv, str(screen.query_one("#tasktext").render()), screen.query_one("#go").disabled)
             screen.query_one("#cancel").press()
@@ -1823,7 +1829,66 @@ def test_the_panel_sends_the_tags_to_komga_for_the_view_or_the_collection(env):
     assert whole[0] == ["push", "-n"] and whole[1] == ["push", "-y"]
     assert "komga.url is not set" in view[2] and view[3]
     assert seen["cancel_seen"]  # Cancel is on screen, beside the button (it was clipped under it)
+    assert seen["stopped"] and "Reading Komga" in seen["spinner"] and "(3 s)" in seen["spinner"] and seen["spinner"][0] in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
     assert seen["go_label"] == "Send metadata"  # not "Do it": what the button does  # not configured: the reason is in the window, nothing can be sent
+
+
+def test_albums_under_another_editions_address_are_offered_for_repair_with_w(env):
+    db, root, paths = env
+    base = "https://www.bedetheque.com/BD-Batman-Annee-un-INT-"
+    seen = {}
+    with Library(db, root=root) as lib:  # what an older version left: the album under the edition's address, a file on the empty record
+        stub = lib.add_album(AlbumInfo("bedetheque", "167752", "Annee un", url=base + "d2012-Annee-un-167752.html", extra={"partial": True}))
+        real = lib.add_album(AlbumInfo("bedetheque", "45144", "Vengeance Oblige", url=base + "Vengeance-Oblige-45144.html", summary="Quand il avait six ans"))
+        lib.cache_put("bedetheque", "album", base + "Vengeance-Oblige-45144.html", "<html>")
+        with lib.conn:  # (this version would not store it so: it is what an older one left)
+            lib.conn.execute("UPDATE albums SET url = ? WHERE id = ?", (base + "d2012-Annee-un-167752.html", real))
+        lib.set_file_album(paths["t1"], stub)
+    seen["ids"] = (stub, real)
+
+    async def script(app, pilot, lib):
+        await settle(app, pilot)
+        await pilot.pause(1.0)
+        seen["waiting"] = [w.title for w in app.waiting]
+        await pilot.press("w")
+        await pilot.pause(0.5)
+        seen["window"] = type(app.screen).__name__
+        await pilot.press("y")
+        await pilot.pause(1.5)
+
+    drive(db, root, script)
+    assert len(seen["waiting"]) == 1 and "album address" in seen["waiting"][0] and seen["window"] == "AskScreen"
+    with Library(db, root=root) as lib:
+        assert lib.get_file(paths["t1"])["album_id"] == seen["ids"][1] and lib.wrong_album_addresses() == []
+
+
+def test_long_text_in_the_windows_stays_inside_their_border(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await press_action(app, pilot, "write:all")
+        window = app.screen
+        await organise_wait(window, pilot, "ready")
+        window.query_one("#organisetext").update("z " * 400)
+        await pilot.pause(0.3)
+        seen["organise"] = [w.region.right <= window.query_one("#organise").region.right for w in window.query("#organise Label, #organise Static")]
+        window.action_close()
+        await settle(app, pilot)
+        await press_action(app, pilot, "komga:all")
+        screen = app.screen
+        await organise_wait(screen, pilot, "ready")
+        screen.query_one("#taskstep").update("x " * 200)
+        screen.query_one("#tasktext").update("y " * 400)
+        await pilot.pause(0.3)
+        box = screen.query_one("#task").region
+        seen["task"] = [w.region.right <= box.right for w in screen.query("#task Label, #task Static")]
+        screen.query_one("#cancel").press()
+
+    drive(db, root, script)
+    assert seen["task"] and all(seen["task"]) and seen["organise"] and all(seen["organise"])
 
 
 def test_a_view_longer_than_its_page_asks_whether_to_do_every_page(env):

@@ -17,7 +17,8 @@ def setup(tmp_path, monkeypatch, make_cbz):
     with Library(db) as lib:
         a = lib.add_album(AlbumInfo("bedetheque", "1", "Redwin de la Forge",
                                     series=SeriesInfo("bedetheque", "47467", "Nains"), volume=1,
-                                    year=2015, credits={"Writer": ["Jarry, Nicolas"]}, genres=["Fantasy"]))
+                                    year=2015, credits={"Writer": ["Jarry, Nicolas"]}, genres=["Fantasy"],
+                                    summary="Des nains partent en guerre."))
         b = lib.add_album(AlbumInfo("bedetheque", "2", "La bibliomule de Cordoue", year=2021,
                                     credits={"Writer": ["Lupano, Wilfrid"]}, extra={"partial": True}))
         lib.add_file(make_cbz("nains1.cbz", pages=3), a)
@@ -49,6 +50,13 @@ def test_query_and_count(setup):
 def test_custom_format(setup):
     assert run("--format", "$series|$vol|$title", "series:nains") == (0, "Nains|01|Redwin de la Forge\n")
     assert run("--format", "$unknown-$year", "year:2021") == (0, "$unknown-2021\n")  # safe_substitute
+
+
+def test_format_can_print_the_summary_and_the_file_name(setup):
+    code, text = run("--format", "$title | $summary", "series:nains")
+    assert (code, text) == (0, "Redwin de la Forge | Des nains partent en guerre.\n")
+    code, text = run("--files", "--format", "$filename", "tagged:false")
+    assert code == 0 and "loose.cbz" in text and "$filename" not in text and "/" not in text.strip()
 
 
 def test_files_listing_shows_untagged(setup):

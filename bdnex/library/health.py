@@ -106,6 +106,13 @@ def check(library: Library, settings, matches: bool = False) -> list[Finding]:
     if series:
         found.append(Finding("empty-series", f"{len(series)} series have no album", series[:SHOWN], fixable=True))
 
+    wrong = library.wrong_album_addresses()
+    if wrong:
+        found.append(Finding("album-address", f"{len(wrong)} album(s) are stored under the address of another edition",
+                             [f"{r['title']} ({r['source_id']})" for r in wrong[:SHOWN]],
+                             "a file linked to the empty record of that other address looks unfetched; `--fix` gives the album its own address back "
+                             "and moves the files to it", fixable=True))
+
     gone_sources = [f"{alias}: {folder}" for alias, folder in library.roots.items() if not os.path.isdir(folder)]
     if gone_sources:
         found.append(Finding("source-missing", f"{len(gone_sources)} import source folder(s) do not exist", gone_sources[:SHOWN],
@@ -189,6 +196,9 @@ def fix(library: Library, settings, findings: list[Finding]) -> list[str]:
     keys = {f.key for f in findings if f.fixable}
     if "empty-series" in keys:
         done.append(f"removed {library.prune_orphan_series()} empty series")
+    if "album-address" in keys:
+        restored, merged = library.repair_album_addresses()
+        done.append(f"gave {restored} album(s) their own address back and merged {merged} empty record(s) into them")
     if "cover-layout" in keys:
         done.append(f"moved {covers.migrate_flat_covers(library, settings.cover_path)} cover file(s) into a folder per album")
     if "cover-missing" in keys:
