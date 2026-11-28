@@ -128,12 +128,13 @@ curl -fsSL https://raw.githubusercontent.com/lbesnard/bdnex/main/install.sh | sh
 ```
 
 The script fetches the latest GitHub release wheel and installs it with `uv tool`
-(falling back to `pipx`, then `pip`).
+(falling back to `pipx`, then `pip`), **with every optional part** (`bdnex[all]`: the web page, `bdnex serve`, and
+Comic Vine). **With uv, use the `all` extra**: you do not have to pick `api`, `comicvine`... one by one.
 
 Or with uv alone, always the **latest release** (no version to type):
 
 ```bash
-uv tool install --force "$(curl -fsSL https://api.github.com/repos/lbesnard/bdnex/releases/latest \
+uv tool install --force "bdnex[all] @ $(curl -fsSL https://api.github.com/repos/lbesnard/bdnex/releases/latest \
   | grep -o 'https://[^"]*\.whl')"
 ```
 
@@ -141,13 +142,13 @@ The same line upgrades an installed bdnex to the newest release. A specific rele
 [Releases page](https://github.com/lbesnard/bdnex/releases):
 
 ```bash
-uv tool install --force https://github.com/lbesnard/bdnex/releases/download/vX.Y.Z/bdnex-X.Y.Z-py3-none-any.whl
+uv tool install --force "bdnex[all] @ https://github.com/lbesnard/bdnex/releases/download/vX.Y.Z/bdnex-X.Y.Z-py3-none-any.whl"
 ```
 
 ### Latest from source (the `main` branch)
 
 ```bash
-uv tool install git+https://github.com/lbesnard/bdnex.git
+uv tool install "bdnex[all] @ git+https://github.com/lbesnard/bdnex.git"
 uv tool upgrade bdnex          # later: pulls the newest commit of the branch
 ```
 
@@ -156,7 +157,7 @@ uv tool upgrade bdnex          # later: pulls the newest commit of the branch
 ```bash
 git clone https://github.com/lbesnard/bdnex.git
 cd bdnex
-uv sync --extra dev
+uv sync --extra dev --extra all
 uv run pytest
 uv run bdnex --help
 ```

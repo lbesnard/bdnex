@@ -1825,3 +1825,244 @@ def test_the_folders_and_the_album_list_load_only_after_the_first_batch_is_on_sc
 
     asyncio.run(go())
     assert seen["before"] == (False, None) and seen["after"] == (True, True)
+
+
+def comicvine_info(number, title="Feral City"):
+    from bdnex.importer import comicvine
+    from types import SimpleNamespace as NS
+    import datetime
+
+    vol = NS(id=18040, name="Fell", issue_count=9, start_year=2005, publisher=NS(name="Image"), summary=None, description=None,
+             site_url="https://comicvine.gamespot.com/fell/4050-18040/")
+    issue = NS(id=100 + number, number=str(number), name=title, cover_date=datetime.date(2005, 7, 1), store_date=None, description=None,
+               summary=None, image=None, site_url=f"https://comicvine.gamespot.com/fell/4000-{100 + number}/", creators=[])
+    return comicvine.album_info(issue, vol)
+
+
+def comicvine_volume(monkeypatch, number=lambda path: 2):
+    """Comic Vine's two steps, answered from memory: the volume (one request: which issue each file is), then each issue. Returns the lists of paths asked."""
+    from types import SimpleNamespace as NS
+
+    from bdnex.importer import comicvine
+
+    volumes, issues = [], []
+
+    def volume(settings, text, paths):
+        volumes.append(list(paths))
+        return comicvine.VolumeAnswer("Fell", None, {p: NS(id=100 + number(p), number=str(number(p)), name="Feral City") for p in paths})
+
+    def read(settings, answer, paths, progress=None):
+        issues.append(list(paths))
+        return comicvine.IssuesAnswer({p: comicvine_info(number(p)) for p in paths})
+
+    monkeypatch.setattr(comicvine, "read_volume", volume)
+    monkeypatch.setattr(comicvine, "read_issues", read)
+    return volumes, issues
+
+
+def test_i_with_a_comic_vine_issue_address_links_the_file_to_that_issue(env, monkeypatch):
+    from bdnex.importer import comicvine
+
+    db, files = env
+    asked = []
+
+    def read(settings, text):
+        asked.append(text)
+        return comicvine_info(1)
+
+    monkeypatch.setattr(comicvine, "read_issue", read)
+
+    async def script(app, pilot):
+        await pilot.press("i")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = "https://comicvine.gamespot.com/fell-1-feral-city/4000-101/"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert asked == ["https://comicvine.gamespot.com/fell-1-feral-city/4000-101/"] and result["cells"][0][8] == "confirmed · linked"
+    with Library(db) as lib:
+        albums = [lib.get_album(lib.get_file(p)["album_id"]) for p in files.values() if lib.get_file(p)["album_id"]]
+    assert any(a["source"] == "comicvine" and a["title"] == "Feral City" and a["publisher"] == "Image" for a in albums)
+
+
+def test_a_comic_vine_error_is_said_and_nothing_is_linked(env, monkeypatch):
+    from bdnex.importer import comicvine
+
+    db, files = env
+
+    def read(settings, text):
+        raise comicvine.ComicvineError("no Comic Vine API key: set `comicvine.api_key`")
+
+    monkeypatch.setattr(comicvine, "read_issue", read)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("i")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = "https://comicvine.gamespot.com/x/4000-101/"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+        seen["rows"] = [r.busy for r in app.rows]
+
+    result, _ = drive(db, script)
+    assert not any(seen["rows"]) and result["cells"][0][8] != "confirmed · linked"
+    with Library(db) as lib:
+        assert not any(lib.get_album(lib.get_file(p)["album_id"])["source"] == "comicvine" for p in files.values() if lib.get_file(p)["album_id"])
+
+
+def test_a_with_a_comic_vine_volume_address_reads_the_volume_asks_and_only_then_reads_the_issues(env, monkeypatch):
+    db, files = env
+    volumes, issues = comicvine_volume(monkeypatch, lambda p: 2 if "T02" in p else 5)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("m")  # every file of the screen
+        await pilot.press("a")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = "https://comicvine.gamespot.com/fell/4050-18040/"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+        seen["waiting"] = len(app.waiting)
+        seen["issues_before_yes"] = list(issues)  # nothing per issue is read before the person says yes
+        await pilot.press("w")
+        await pilot.pause(0.3)
+        seen["question"] = str(app.screen.query_one("#ask Label").render())
+        await pilot.press("y")
+        await settle(app, pilot)
+        await settle(app, pilot)
+
+    drive(db, script)
+    assert seen["waiting"] == 1 and seen["issues_before_yes"] == [] and len(volumes) == 1 and len(issues) == 1 and len(issues[0]) == 3
+    assert "Fell (Comic Vine): 3 of 3 file(s) find their issue" in seen["question"] and "Feral City (#5)" in seen["question"]
+    assert "reads 3 issue page(s)" in seen["question"]
+    with Library(db) as lib:
+        sources = {lib.get_album(lib.get_file(p)["album_id"])["source"] for p in files.values()}
+    assert sources == {"comicvine"}
+
+
+
+def test_the_o_window_can_search_comic_vine_and_a_picked_volume_is_used_like_an_address(env, monkeypatch):
+    from bdnex.importer import comicvine
+
+    db, files = env
+    searched = []
+
+    def search(settings, text, limit=20):
+        searched.append(text)
+        return [comicvine.VolumeHit(18040, "Fell", 2005, "Image", 9, "https://comicvine.gamespot.com/fell/4050-18040/")]
+
+    monkeypatch.setattr(comicvine, "search_volumes", search)
+    read, _ = comicvine_volume(monkeypatch)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("o")
+        await settle(app, pilot)
+        await pilot.press("f4")
+        await pilot.pause(0.3)
+        seen["screen"] = type(app.screen).__name__
+        app.screen.query_one("#cvwords").value = "fell"
+        await pilot.press("enter")  # searches
+        for _ in range(20):
+            if app.screen.hits:
+                break
+            await pilot.pause(0.1)
+        seen["hits"] = [h.name for h in app.screen.hits]
+        await pilot.press("enter")  # the same text: picks the highlighted volume
+        await settle(app, pilot)
+        await settle(app, pilot)
+        seen["waiting"] = len(app.waiting)
+
+    drive(db, script)
+    assert seen["screen"] == "ComicvineSearchScreen" and seen["hits"] == ["Fell"] and searched == ["fell"]
+    assert len(read) == 1 and len(read[0]) == 1 and seen["waiting"] == 1  # the picked volume was read (for the one file)
+
+
+def test_the_cover_of_a_comic_vine_issue_is_kept_and_the_album_points_at_it(env, monkeypatch):
+    from bdnex.importer import comicvine
+
+    db, files = env
+    monkeypatch.setattr(comicvine, "read_issue", lambda settings, text: comicvine_info(1))
+    monkeypatch.setattr(comicvine, "fetch_cover", lambda settings, info: f"comicvine/{info.source_id}/cover.jpg")
+
+    async def script(app, pilot):
+        await pilot.press("i")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = "https://comicvine.gamespot.com/fell/4000-101/"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+
+    drive(db, script)
+    with Library(db) as lib:
+        albums = [lib.get_album(lib.get_file(p)["album_id"]) for p in files.values() if lib.get_file(p)["album_id"]]
+    assert any(a["source"] == "comicvine" and a["cover_file"] == "comicvine/101/cover.jpg" for a in albums)
+
+
+def test_a_volume_picked_in_the_comic_vine_search_closes_both_windows_without_an_error(env, monkeypatch):
+    """Opened with the button, the search window calls back in the `o` window's own message handler, where that window closes itself: returning
+    the (awaitable) dismissal from the callback was a ScreenError (the screen came down after a real search)."""
+    from bdnex.importer import comicvine
+
+    db, files = env
+    monkeypatch.setattr(comicvine, "search_volumes", lambda s, t, limit=20: [comicvine.VolumeHit(1, "Fell", 2005, "Image", 9, "https://comicvine.gamespot.com/fell/4050-18040/")])
+    comicvine_volume(monkeypatch)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("o")
+        await settle(app, pilot)
+        app.screen.query_one("#tocv").press()  # the button, not the F4 key: its handler is the window's own, where the callback runs
+        await pilot.pause(0.3)
+        app.screen.query_one("#cvwords").value = "fell"
+        await pilot.press("enter")
+        for _ in range(20):
+            if app.screen.hits:
+                break
+            await pilot.pause(0.1)
+        app.screen.query_one("OptionList").focus()
+        await pilot.press("enter")  # Enter on the list itself (the other way to pick)
+        await settle(app, pilot)
+        await settle(app, pilot)
+        seen["screen"] = type(app.screen).__name__
+        seen["waiting"] = len(app.waiting)
+
+    drive(db, script)
+    assert seen == {"screen": "Screen", "waiting": 1}
+
+
+def test_a_comic_vine_volume_found_from_o_goes_to_every_marked_file_not_only_the_one_under_the_cursor(env, monkeypatch):
+    from bdnex.importer import comicvine
+
+    db, files = env
+    monkeypatch.setattr(comicvine, "search_volumes", lambda s, t, limit=20: [comicvine.VolumeHit(1, "Fell", 2005, "Image", 9, "https://comicvine.gamespot.com/fell/4050-18040/")])
+    read, _ = comicvine_volume(monkeypatch)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("m")  # every file of the screen
+        await pilot.press("o")
+        await settle(app, pilot)
+        seen["heading"] = str(app.screen.query_one("Label").render())
+        app.screen.query_one("#tocv").press()
+        await pilot.pause(0.3)
+        app.screen.query_one("#cvwords").value = "fell"
+        await pilot.press("enter")
+        for _ in range(20):
+            if app.screen.hits:
+                break
+            await pilot.pause(0.1)
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+        await pilot.press("w")
+        await pilot.pause(0.3)
+        seen["question"] = str(app.screen.query_one("#ask Label").render())
+
+    drive(db, script)
+    assert len(read) == 1 and len(read[0]) == 3  # one reading for the three marked files
+    assert "3 of 3 file(s) find their issue" in seen["question"] and "3 marked files" in seen["heading"]

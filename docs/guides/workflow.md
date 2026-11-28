@@ -51,6 +51,32 @@ What you do there:
 - **Duplicates** (`D`): the files of one album side by side; trash one, make one the main file, keep one as a version.
 - **Find** a folder or file (`F`) or a filter value (`S`) as you type. Press `?` for every key.
 
+### Fixing a whole folder at once
+
+Most collections have a folder per series with many albums in it, so you rarely fix files one by one. The routine:
+
+1. Click a folder or subfolder in the left panel (red means something there is doubtful). Its files, subfolders included, fill the table.
+2. **`m`** marks every file on the screen (`space` one file, `Shift+↑ ↓` a run). With nothing marked, a key acts on the file under the cursor only.
+3. Press the key for what you know:
+
+| You know | Press | Result |
+|---|---|---|
+| the **series** (name, or the address of its page) | `a`, then the line marked `SERIES` | every file gets the album with its **volume number** (`T03`) |
+| the series is on **Comic Vine** | `a`, then `F4`, type the name | the issues are matched to the files by number ([Comic Vine](comicvine.md)) |
+| the **album** of one file | `i` (address) or `o` (search) | that file is linked |
+| nothing: no site has it | `e` or `E` | one form for the series, a line per file for its volume |
+| the files are **one-shots** (or the reverse) | `K` | series ⇄ one-shot |
+| the series is right, a detail is wrong | `E` | publisher, collection, category... on all files; **Restore** puts the site's value back |
+| the **collection** (or cycle) is odd and gives a bad destination path | `E`, **Clear** on that row | the value is emptied on all marked files, and, when your `paths.series` template uses `%ifdef{collection,$collection}`, its folder level is left out ([Writing](writing.md)) |
+| a file is only another edition | `e`, *Version of the album* | linked as a version ([Versions](versions.md)) |
+
+4. **Answer the question** the screen shows ("Nains: 12 of 12 files find their volume. Link them?"). Nothing is linked before you say yes.
+   A question from background work waits behind a red **N questions waiting · w** badge.
+5. **`k`** confirms the marked files (green). Next red folder.
+
+A file whose volume the series does not have is left as it is, and the question says how many. Files that already have a site album cannot be
+written by hand: unlink them (`u`) or use `E`. Comic Vine reads the volume with one request, then asks before it reads each issue.
+
 Every decision is saved at once. You can close the screen at any time; it remembers its columns and panes, and the album pages and covers
 it needs are downloaded in the background while you work. See [Checking matches](checking-matches.md) for every key.
 

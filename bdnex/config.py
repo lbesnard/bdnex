@@ -146,6 +146,12 @@ class Quality(_Section):
     page_height_in: float = Field(ge=4, le=30)  # the page a CBZ / CBR picture is spread over, to say its dpi (a PDF knows its own)
 
 
+class Comicvine(_Section):
+    api_key: Optional[str] = None  # your Comic Vine API key (https://comicvine.gamespot.com/api/); BDNEX_COMICVINE_API_KEY wins over it
+    timeout: float = Field(gt=0, le=300)  # seconds to wait for each answer
+    cache_days: int = Field(ge=1, le=3650)  # how long an answer is kept (Simyan's own cache, next to the library): fewer of the 200 requests an hour
+
+
 class Trash(_Section):
     dir: str = Field(min_length=1)
 
@@ -362,6 +368,7 @@ class Settings(_Section):
     import_: Import = Field(alias="import")
     duplicates: Duplicates
     trash: Trash
+    comicvine: Comicvine
     quality: Quality
     watch: Watch
     hooks: Hooks
@@ -714,7 +721,7 @@ FIRST_RUN_MESSAGE = (
 
 
 # Options that hold a secret: ``bdnex config`` hides them (``--clear`` shows them) and the web page never sends them.
-SECRET_KEYS = {"api.token", "api.password", "komga.api_key", "komga.password", "fetch.endpoint"}
+SECRET_KEYS = {"api.token", "api.password", "komga.api_key", "komga.password", "fetch.endpoint", "comicvine.api_key"}
 HIDDEN_VALUE = "<hidden>"
 
 

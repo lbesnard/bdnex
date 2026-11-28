@@ -45,6 +45,7 @@ from bdnex.ui.review_organise import ReviewOrganise
 from bdnex.ui.cover_text import GRAPHICS, graphic
 from bdnex.ui import review_panels as panels
 from bdnex.ui.review_actions import ActionsChip, ReviewActions
+from bdnex.ui.review_comicvine import ReviewComicvine
 from bdnex.ui.review_panels import FacetCommands, HelpChip, PagerChip, Splitter, legend
 
 STATUS_STYLE = {"keep": "green", "linked": "green", "unlinked": "red", "left": "green", "skipped": "yellow"}
@@ -356,9 +357,11 @@ class FuzzyScreen(Modal):
 
     BINDINGS = [Binding("escape", "back", "Back"), Binding("ctrl+o", "open", "Open the page"),
                 Binding("f2", "tick('series')", "Series on/off", show=False), Binding("f3", "tick('albums')", "Albums on/off", show=False),
+                Binding("f4", "comicvine", "Search Comic Vine", show=False),
                 Binding("down", "move(1)", show=False, priority=True), Binding("up", "move(-1)", show=False, priority=True)]
     CSS = """
     FuzzyScreen { align: center middle; }
+    #tocv { margin-top: 1; }
     #search { width: 90%; height: 85%; border: round $accent; padding: 1 2; background: $surface; }
     #hits { height: 1fr; }
     #kinds { height: 3; }
@@ -385,6 +388,8 @@ class FuzzyScreen(Modal):
                 with Horizontal(id="kinds"):  # what is searched (not only what is shown): many series cannot push every album out of the list
                     yield Tick("SERIES  (F2)", True, id="show-series")
                     yield Tick("Albums  (F3)", True, id="show-albums")
+            yield Button("Search Comic Vine instead  (F4)", id="tocv",
+                         tooltip="Look for the series on Comic Vine (one request, by name) instead of in Bédéthèque's list: the volume you pick is used like a pasted address.")
             yield Label("", id="count")
             if self.series_ok:
                 yield Label(Text("score  type    year  author                  name   (a SERIES gives each file its volume; an album is just that one book)", style="dim"))
@@ -469,6 +474,23 @@ class FuzzyScreen(Modal):
         self.text = event.value
         self.search(event.value)
 
+    def action_comicvine(self) -> None:
+        """Comic Vine's own search: a volume is picked there and comes back as its address (what a pasted address does)."""
+        from bdnex.ui.review_comicvine import ComicvineSearchScreen
+
+        self.app.push_screen(ComicvineSearchScreen(self.query_one("#words", Input).value.strip(), self.about), self.comicvine_picked)
+
+    def comicvine_picked(self, address) -> None:
+        # a method that returns nothing, not a lambda that returns `self.dismiss(...)`: Textual awaits what a callback returns, and awaiting the
+        # dismissal of a screen from its own message handler is a ScreenError (the whole screen came down)
+        if address:
+            self.dismiss(address)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "tocv":
+            event.stop()
+            self.action_comicvine()
+
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         if event.checkbox.id == "show-series":
             self.show_series = event.value
@@ -482,8 +504,10 @@ class FuzzyScreen(Modal):
             box.value = not box.value  # its change searches again
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        if self.series_ok and is_series_address(event.value):
-            self.dismiss(event.value.strip())  # the address of a series page: its albums are read from that page
+        from bdnex.importer import comicvine
+
+        if self.series_ok and (is_series_address(event.value) or comicvine.is_address(event.value)):
+            self.dismiss(event.value.strip())  # the address of a series page (or a Comic Vine volume): its albums are read from that page
             return
         self.pick(self.query_one(OptionList).highlighted)
 
@@ -993,7 +1017,7 @@ class CoverScreen(Pictures, Modal):
 
 
 # ----------------------------------------------------------------------------- the table
-class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
+class ReviewApp(ColumnsMixin, ReviewComicvine, ReviewActions, ReviewOrganise, ReviewExtras, App):
     """The table of one batch, the detail of the row under the cursor, and the keys that decide."""
 
     TITLE = "bdnex review"
@@ -2049,9 +2073,9 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
             return
         if len(chosen) == 1:
             heading = ("Pick this file's album, or a SERIES to give it its volume by the number in its name "
-                       "(or paste the address of the series page)")
+                       "(or paste the address of a Bédéthèque series page, or a Comic Vine volume)")
         else:
-            heading = f"These {len(chosen)} marked files: pick a SERIES (or an album of it, or the address of the series page): each gets its volume"
+            heading = f"These {len(chosen)} marked files: pick a SERIES (or an album of it, or the address of a Bédéthèque series page or a Comic Vine volume): each gets its volume"
         self.push_screen(FuzzyScreen(self.hub, self.search_start(chosen[0]), heading, series_ok=True, about=self.about_files(chosen)),
                          lambda candidate: self.run_worker(self.guarded(self.propose(chosen, candidate), "the series")) if candidate is not None else None)
 
@@ -2127,11 +2151,16 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
                         self.refresh_row(row)
 
     async def propose_for(self, chosen: list, candidate) -> None:
+        from bdnex.importer import comicvine
+
         paths = [r.path for r in chosen]
         if len(chosen) == 1 and not isinstance(candidate, str) and not chosen[0].busy:
             # one file and one album picked: that album is the answer. Looking up "the volume of the file in the album's series" would
             # second-guess the pick with a number read from the name (`CYCLE 2 - Tome 01` reads as 2): a SERIES pick is what does that.
             self.link(chosen[0], candidate.url, candidate)
+            return
+        if isinstance(candidate, str) and comicvine.is_address(candidate):
+            await self.comicvine_address(chosen, candidate)
             return
         if isinstance(candidate, str):
             self.notify("Reading the series page (from the library, or fetched once)...", timeout=6)
@@ -2222,8 +2251,21 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
         row = self.idle()
         if row is None:
             return
-        self.push_screen(FuzzyScreen(self.hub, self.search_start(row), "Which album is this file?", about=self.about_files([row])),
-                         lambda candidate: self.link(row, candidate.url, candidate) if candidate is not None else None)
+        marked = [r for r in self.rows if id(r) in self.marked and not r.busy]
+        heading = "Which album is this file?"
+        if len(marked) > 1:  # an album is picked for the file under the cursor; a Comic Vine volume (F4) is for all the marked files
+            heading += f"  (F4, the Comic Vine search, is for the {len(marked)} marked files)"
+        self.push_screen(FuzzyScreen(self.hub, self.search_start(row), heading, about=self.about_files(marked if len(marked) > 1 else [row])),
+                         lambda candidate: self.other_picked(row, candidate))
+
+    def other_picked(self, row, candidate) -> None:
+        if candidate is None:
+            return
+        if isinstance(candidate, str):  # a Comic Vine volume, found by its search (F4): each marked file gets the issue with its number
+            chosen = [r for r in self.rows if id(r) in self.marked and not r.busy] or [row]
+            self.run_worker(self.guarded(self.comicvine_address(chosen, candidate), "that volume"))
+            return
+        self.link(row, candidate.url, candidate)
 
     def action_other_fzf(self) -> None:
         """The real ``fzf`` (when installed): the screen steps aside for it and comes back."""
@@ -2262,8 +2304,13 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
                 if chosen:
                     await self.propose(chosen, text.strip())
                 return
-            from bdnex.importer import bdtheque
+            from bdnex.importer import bdtheque, comicvine
 
+            if comicvine.is_address(text):  # Comic Vine: an issue is this file's album, a volume gives each marked file its issue
+                chosen = self.files_to_attach() if comicvine.parse(text)[0] == "volume" else [row]
+                if chosen:
+                    await self.comicvine_address(chosen, text)
+                return
             if bdtheque.is_address(text):  # another site: its page is read (fetched once) and the file is linked to what it says
                 row.busy, row.busy_what, row.started_at = True, "fetching the page", time.monotonic()  # the state column says so, and counts
                 self.refresh_row(row)
@@ -2283,7 +2330,7 @@ class ReviewApp(ColumnsMixin, ReviewActions, ReviewOrganise, ReviewExtras, App):
                 return
             self.link(row, candidate.url, candidate)
 
-        self.push_screen(AskScreen("The album's page address (Bédéthèque, or a bdtheque.com series page), or its number:", ""),
+        self.push_screen(AskScreen("The address of a page: a Bédéthèque album, a bdtheque.com series, a Comic Vine issue (or volume), or an album number (Bédéthèque):", ""),
                          lambda text: self.run_worker(self.guarded(given(text), "that address")) if text else None)
 
     # -- linking: the match is written at once; the album page and the cover are fetched in the background, one at a time

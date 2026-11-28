@@ -242,6 +242,14 @@ hooks:
 See [Hooks](configuration.md#hooks-your-own-commands-after-bdnex-did-something): the command runs after an import that
 linked files, never for a preview, and its failure never fails the import.
 
+## …link a whole folder (a series) to its albums in a few keys?
+
+```{how} tui
+```
+
+In `bdnex review`: click the folder, **`m`** to mark all its files, **`a`** and pick the series (or `e` to write it by hand), answer yes, **`k`** to
+confirm. The table of keys is in [Fixing a whole folder at once](workflow.md#fixing-a-whole-folder-at-once).
+
 ## …say which album a file is, when the match is wrong?
 
 ```{how} cli tui
@@ -514,6 +522,15 @@ See [Duplicates, versions and the trash](versions.md).
 Put the cursor on the file (or mark several with space) and press **Delete**: after a yes / no it goes to the trash, never deleted for good.
 **U** (or **Actions, Undo**) puts the last ones back (and takes back the last move). For the duplicates of one album, **D** shows them side by side first
 (see [Checking matches](checking-matches.md)). Older ones are brought back with `bdnex trash --restore`.
+
+## …link a file to Comic Vine (an American comic)?
+
+```{how} tui
+```
+
+Install bdnex with the `all` extra (`uv tool install "bdnex[all] @ ..."`, see the README), put your key in `comicvine.api_key` (or `BDNEX_COMICVINE_API_KEY`), then
+in the review screen press `i` and paste the address of the **issue** page for one file, or `a` and the address of the **volume** page for a whole
+folder (mark the files with `m`). No address at hand: in `o` or `a`, **F4** searches Comic Vine by name. See [Comic Vine](comicvine.md).
 
 ## …get back a file I replaced?
 

@@ -21,13 +21,13 @@ WHEEL_URL="https://github.com/${REPO}/releases/download/v${VERSION}/bdnex-${VERS
 
 if command -v uv >/dev/null 2>&1; then
   echo "Installing via uv..."
-  uv tool install "$WHEEL_URL" --force
+  uv tool install "bdnex[all] @ ${WHEEL_URL}" --force  # [all]: the web page and Comic Vine too
 elif command -v pipx >/dev/null 2>&1; then
   echo "Installing via pipx..."
-  pipx install "$WHEEL_URL" --force
+  pipx install "bdnex[all] @ ${WHEEL_URL}" --force
 elif command -v pip >/dev/null 2>&1; then
   echo "Installing via pip..."
-  pip install "$WHEEL_URL" --upgrade
+  pip install "bdnex[all] @ ${WHEEL_URL}" --upgrade
 else
   echo "Error: none of uv, pipx or pip was found. Install uv first: https://docs.astral.sh/uv/" >&2
   exit 1

@@ -8,9 +8,10 @@ The recommended way is [uv](https://docs.astral.sh/uv/):
 curl -fsSL https://raw.githubusercontent.com/lbesnard/bdnex/main/install.sh | sh
 ```
 
-This installs the latest release wheel as an isolated tool; run it again to upgrade. With uv alone, see *Installation* in
-the README (`uv tool install --force` with the latest release address, or `uv tool install git+https://github.com/lbesnard/bdnex.git`
-for the `main` branch, then `uv tool upgrade bdnex`). `pipx` and `pip`
+This installs the latest release wheel as an isolated tool, **with every optional part** (`bdnex[all]`: the web page and Comic Vine);
+run it again to upgrade. With uv alone, see *Installation* in the README: **use the `all` extra**, so that you do not pick `api`, `comicvine`...
+one by one (`uv tool install --force "bdnex[all] @ <the latest release address>"`, or
+`uv tool install "bdnex[all] @ git+https://github.com/lbesnard/bdnex.git"` for the `main` branch, then `uv tool upgrade bdnex`). `pipx` and `pip`
 work too. Python 3.11 to 3.13 is required.
 
 From a clone, for development:
@@ -18,7 +19,7 @@ From a clone, for development:
 ```bash
 git clone https://github.com/lbesnard/bdnex.git
 cd bdnex
-uv sync --extra dev
+uv sync --extra dev --extra all
 uv run bdnex --help        # `uv run` uses the clone; a bdnex installed earlier may be older
 ```
 

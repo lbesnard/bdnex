@@ -15,7 +15,7 @@ WORKDIR /src
 COPY pyproject.toml README.md LICENSE ./
 COPY bdnex ./bdnex
 # OpenCV (the cover check, about 100 MB) is a normal dependency
-ARG EXTRAS=api
+ARG EXTRAS=api,comicvine
 RUN pip install --no-cache-dir ".[${EXTRAS}]" && rm -rf /src
 
 # The container runs as the user and group the compose file gives (PUID / PGID), so the files it writes in

@@ -36,9 +36,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "pytest-cov", "pytest-xdist", "ipdb", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
+dev = ["Simyan>=4.2", "pytest", "pytest-cov", "pytest-xdist", "ipdb", "fastapi>=0.110", "uvicorn>=0.29", "httpx>=0.27"]
 docs = ["sphinx>=7", "furo", "myst-parser"]
 api = ["fastapi>=0.110", "uvicorn>=0.29"]  # `bdnex serve`: read-only HTTP API and web page
+all = ["fastapi>=0.110", "uvicorn>=0.29", "Simyan>=4.2"]  # everything optional: `uv tool install "bdnex[all] @ ..."`, `uv sync --extra all`
+comicvine = ["Simyan>=4.2"]  # a Comic Vine source by address (`i` and `a` in the review screen): see docs/guides/comicvine.md
 tui = []  # kept so that `bdnex[tui]` still installs: Textual is now a normal dependency
 cover = []  # kept so that `bdnex[cover]` still installs: OpenCV is now a normal dependency
 
