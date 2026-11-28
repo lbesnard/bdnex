@@ -158,7 +158,6 @@ class TaskScreen(Modal):
     def begin(self, argv: list[str], final: bool) -> None:
         with self.lock:
             self.out = io.StringIO()
-        step = self.query_one("#taskstep", Label)
         self.working = None
         if final:
             self.stage = "running"
