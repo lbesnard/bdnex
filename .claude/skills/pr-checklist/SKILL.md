@@ -1,14 +1,14 @@
 ---
 name: pr-checklist
-description: Run the bdnex checks and publish a change as a PR (tests, py3.10 compile, Sphinx -W, review the staged diff, explicit git add, PR against main). Use when asked to commit, push or open a PR in this repo.
+description: Run the bdnex checks and publish a change as a PR (tests, py3.11 compile, Sphinx -W, review the staged diff, explicit git add, PR against main). Use when asked to commit, push or open a PR in this repo.
 ---
 
 1. `git status`; the user's `TODO.md` stays untracked.
 2. `uv run pytest -q` (all green, ~6 min; `test/test_docs_in_sync.py` and `test/test_examples.py` fail when docs drift; run the tests of what you touched first).
 3. `uv run ruff check --select F bdnex` (undefined names) and `uv run python -m compileall -q bdnex`.
-   CI also runs Python 3.10-3.13 and `argparse` differs (options after positionals fail before 3.13). To try another
-   version: `uv sync --python 3.10 --extra dev --extra docs`, run the tests, then `uv sync --python 3.12 --extra dev
-   --extra docs` back. `uv run --python 3.10 ...` alone leaves a venv without the extras and breaks the next run.
+   CI also runs Python 3.11-3.13 and `argparse` differs (options after positionals fail before 3.13). To try another
+   version: `uv sync --python 3.11 --extra dev --extra docs`, run the tests, then `uv sync --python 3.12 --extra dev
+   --extra docs` back. `uv run --python 3.11 ...` alone leaves a venv without the extras and breaks the next run.
 4. `uv run sphinx-build -W -E -q docs "$SCRATCH/html"` (warnings are errors).
 5. Read `git diff` for anything private (the user's fetcher address, paths of their library) before staging.
 6. Branch from `origin/main` (never commit on `main`, never stack on an unmerged branch: it would be merged into that
