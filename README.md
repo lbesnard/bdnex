@@ -107,7 +107,7 @@ albums from the stored pages later without any network. See the documentation, *
 
 ## Installation
 
-Requires Python 3.10 to 3.13. [uv](https://docs.astral.sh/uv/) is the recommended installer.
+Requires Python 3.11 to 3.13. [uv](https://docs.astral.sh/uv/) is the recommended installer.
 
 **Programs bdnex needs on your system**
 

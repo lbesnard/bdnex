@@ -2,7 +2,7 @@
 
 A beets-like library manager for French comics (Bédéthèque): SQLite library, `import` (match + fetch), `ls`, `write`/`move`/
 `repair`/`convert`, `edit`, `review`, `check`, `komga`, `serve` (web page + JSON API) and more (`bdnex --help`; the table of
-commands is `bdnex/ui/commands.py`). Python 3.10-3.13, run with **uv** (`uv run ...`). Docs: Sphinx in `docs/` (Read the Docs).
+commands is `bdnex/ui/commands.py`). Python 3.11-3.13, run with **uv** (`uv run ...`). Docs: Sphinx in `docs/` (Read the Docs).
 About 1900 tests; the whole suite takes ~6 minutes, so run the tests of what you touched while working and everything before a PR.
 
 ## Layout
@@ -152,7 +152,7 @@ About 1900 tests; the whole suite takes ~6 minutes, so run the tests of what you
 
 ## Checks before a PR
 `uv run pytest -q -n 4` (parallel: about 2.5 minutes instead of 6; CI does the same with `-n auto`), `uv run ruff check --select F bdnex` (catches undefined names the tests miss), `uv run python -m compileall -q bdnex`
-(Python >= 3.10 syntax), and `uv run sphinx-build -W -E -q docs <scratch>/html` (needs `uv sync --extra docs`). CI also runs 3.10-3.13, the
+(Python >= 3.11 syntax), and `uv run sphinx-build -W -E -q docs <scratch>/html` (needs `uv sync --extra docs`). CI also runs 3.11-3.13, the
 docs and a Docker build. PRs target `main`; **do not stack** (a PR based on another branch is merged into that branch and never ships):
 branch from `origin/main`, and if two changes touch the same code put them in one PR. Commit and PR trailers come from the session's
 attribution reminder. See the `pr-checklist` skill.
