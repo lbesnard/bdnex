@@ -11,6 +11,7 @@ import importlib
 import io
 import os
 import threading
+import time
 
 from rich.text import Text
 from textual.app import ComposeResult
@@ -128,6 +129,7 @@ class TaskScreen(Modal):
         if key == "undo":  # the run that was made from this screen, or the last one of the library
             self.preview_argv, self.run_argv = [batch, "-n"], [batch]
         self.stage = "preview" if self.preview_argv else "ready"  # preview -> ready -> running -> done
+        self.working: tuple[str, str, float] | None = None  # (what is going on, its colour, when it started): drawn with a spinner until it ends
         self.out = io.StringIO()
         self.lock = threading.Lock()
         self.ran = False
@@ -151,23 +153,24 @@ class TaskScreen(Modal):
             self.begin(self.preview_argv, final=False)
         else:
             self.query_one("#go", Button).focus()
-        self.set_interval(0.5, self.show_output)
+        self.set_interval(0.2, self.show_output)
 
     def begin(self, argv: list[str], final: bool) -> None:
         with self.lock:
             self.out = io.StringIO()
         step = self.query_one("#taskstep", Label)
+        self.working = None
         if final:
             self.stage = "running"
             self.query_one("#cancel", Button).disabled = True
             self.ran = self.writes
             if self.preview_argv:
                 self.query_one("#tasktext", Static).update("Working... (the list you saw was the preview; this is the real run)")
-                step.update(Text("Step 2 of 2: doing it now. Wait for it to finish.", style="bold yellow"))
+                self.working = ("Step 2 of 2: doing it now. Wait for it to finish.", "bold yellow", time.monotonic())
             else:
-                step.update(Text("Working. Wait for it to finish.", style="bold yellow"))
+                self.working = ("Working. Wait for it to finish.", "bold yellow", time.monotonic())
         elif self.preview_argv:
-            step.update(Text("Step 1 of 2: a preview. Nothing is changed.", style="bold cyan"))
+            self.working = ("Step 1 of 2: reading and comparing, for a preview. Nothing is changed.", "bold cyan", time.monotonic())
         self.run_worker(lambda: self.work(argv, final), thread=True, group="task", exclusive=True)
 
     def work(self, argv: list[str], final: bool) -> None:
@@ -182,7 +185,13 @@ class TaskScreen(Modal):
             code = 1
         self.app.call_from_thread(self.finished, final, code)
 
+    SPINNER = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+
     def show_output(self) -> None:
+        if self.working is not None:  # something is going on: a turning mark and the seconds, so that a wait is never silent
+            what, style, since = self.working
+            now = time.monotonic()
+            self.query_one("#taskstep", Label).update(Text(f"{self.SPINNER[int(now * 10) % len(self.SPINNER)]}  {what}  ({int(now - since)} s)", style=style))
         with self.lock:
             text = self.out.getvalue()
         if text:
@@ -194,6 +203,7 @@ class TaskScreen(Modal):
         self.show_output()
         go, cancel = self.query_one("#go", Button), self.query_one("#cancel", Button)
         step = self.query_one("#taskstep", Label)
+        self.working = None  # (the spinner stops)
         if final:
             self.stage = "done"
             step.update(Text("Finished. Close the window." if not code else "It stopped with an error (above). Close the window.", style="bold green" if not code else "bold red"))

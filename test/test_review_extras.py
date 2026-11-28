@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import time
 import shutil
 
 import pytest
@@ -1811,6 +1812,11 @@ def test_the_panel_sends_the_tags_to_komga_for_the_view_or_the_collection(env):
             await organise_wait(screen, pilot, "ready")
             screen.show_output()
             seen["go_label"] = str(screen.query_one("#go").label)
+            seen["stopped"] = screen.working is None  # the spinner stops with the work
+            screen.working = ("Reading Komga", "bold", time.monotonic() - 3)  # while it works: a turning mark and the seconds
+            screen.show_output()
+            seen["spinner"] = str(screen.query_one("#taskstep").render())
+            screen.working = None
             seen["cancel_seen"] = screen.query_one("#cancel").region.height > 0 and screen.query_one("#cancel").region.y == screen.query_one("#go").region.y
             seen[scope] = (screen.preview_argv, screen.run_argv, str(screen.query_one("#tasktext").render()), screen.query_one("#go").disabled)
             screen.query_one("#cancel").press()
@@ -1823,6 +1829,7 @@ def test_the_panel_sends_the_tags_to_komga_for_the_view_or_the_collection(env):
     assert whole[0] == ["push", "-n"] and whole[1] == ["push", "-y"]
     assert "komga.url is not set" in view[2] and view[3]
     assert seen["cancel_seen"]  # Cancel is on screen, beside the button (it was clipped under it)
+    assert seen["stopped"] and "Reading Komga" in seen["spinner"] and "(3 s)" in seen["spinner"] and seen["spinner"][0] in "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
     assert seen["go_label"] == "Send metadata"  # not "Do it": what the button does  # not configured: the reason is in the window, nothing can be sent
 
 
