@@ -1927,3 +1927,20 @@ def test_one_undo_takes_back_the_last_delete_or_the_last_move(env):
     drive(db, root, script)
     assert seen["stack"] == ["move"] and seen["label"].startswith("Undo: delete") and seen["deleted_back"]
     assert seen["label2"] == "Undo: move (the last run)" and seen["window"] == "TaskScreen" and seen["moved_back"]
+
+
+def test_the_two_find_boxes_have_a_frame_you_can_see_and_a_brighter_one_when_typing(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        for name in ("treefind", "facetfind"):
+            box = app.query_one("#" + name)
+            seen[name] = (box.styles.border_top[0], box.styles.border_top[1].hex)  # (frame, colour)
+        await pilot.press("F")  # the key of the folder find box
+        await pilot.pause(0.3)
+        seen["focused"] = (app.focused.id, app.focused.styles.border_top[0])
+
+    drive(db, root, script)
+    assert seen["treefind"][0] == "tall" and seen["facetfind"][0] == "tall"
+    assert seen["focused"][0] == "treefind" and seen["focused"][1] == "double"  # another frame when it has the focus
