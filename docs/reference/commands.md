@@ -329,7 +329,8 @@ options:
   --fields         list the fields a query can use, with their kind and what they mean
                    (nothing else)
   --files          list files instead of albums
-  --format FORMAT  output template, e.g. '$series T$vol $title'
+  --format FORMAT  output template, e.g. '$series T$vol $title' ($summary and, with
+                   --files, $filename work too)
   --limit N        at most N results (after sorting: `year-` puts the newest first)
   -c, --count      print only the number of results
   -l, --long       show everything known about each result (with --json: the complete

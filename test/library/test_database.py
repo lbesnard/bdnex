@@ -227,3 +227,63 @@ def test_one_series_is_deleted_only_when_no_album_refers_to_it(lib):
     assert lib.delete_series_if_unused(first) is True and lib.delete_series_if_unused(first) is False  # gone, nothing to do twice
     assert lib.delete_series_if_unused(None) is False
     assert lib.series_id_of(other) == second and lib.stats()["series"] == 1  # the other series is left alone
+
+
+BASE = "https://www.bedetheque.com/BD-Batman-Annee-un-INT-"
+OWN = BASE + "Vengeance-Oblige-45144.html"
+EDITION = BASE + "d2012-Annee-un-167752.html"
+
+
+def batman(url):
+    return AlbumInfo(source="bedetheque", source_id="45144", title="Vengeance Oblige", url=url, summary="Quand il avait six ans")
+
+
+def stub():
+    return AlbumInfo(source="bedetheque", source_id="167752", title="Batman Annee un INT d2012 Annee un", url=EDITION, extra={"partial": True})
+
+
+def test_a_page_read_at_another_editions_address_does_not_replace_the_albums_own_address(lib):
+    album = lib.add_album(batman(OWN))
+    lib.add_album(batman(EDITION))  # the same album, seen through the page of another edition
+    assert lib.get_album(album)["url"] == OWN
+
+
+def test_the_stub_made_from_the_editions_address_is_folded_into_the_real_album(lib, tmp_path):
+    made = lib.add_album(stub())
+    path = tmp_path / "Batman - Année Un (Digital).cbz"
+    path.write_bytes(b"x")
+    lib.add_unread_file(path, made)
+    lib.set_attr("file", lib.get_file(path)["id"], "checked", f"other:{made}")
+    real = lib.add_album(batman(EDITION))  # its page says it is album 45144
+    assert lib.find_album("bedetheque", "167752") is None  # the stub is gone
+    assert lib.get_file(path)["album_id"] == real  # the file is on the album that holds the data
+    assert lib.attrs_of("file", lib.get_file(path)["id"]).get("checked") == f"other:{real}"
+
+
+def test_the_second_file_of_a_folded_stub_becomes_a_spare_version(lib, tmp_path):
+    real = lib.add_album(batman(OWN))
+    first, second = tmp_path / "a.cbz", tmp_path / "b.cbz"
+    for path in (first, second):
+        path.write_bytes(b"x")
+    lib.add_unread_file(first, real)
+    made = lib.add_album(stub())
+    lib.add_unread_file(second, made)
+    lib.add_album(batman(EDITION))
+    assert lib.get_file(first)["spare"] == 0 and lib.get_file(second)["album_id"] == real and lib.get_file(second)["spare"] == 1
+
+
+def test_check_fix_repairs_an_album_already_stored_under_another_address(lib, tmp_path):
+    from bdnex.library import health
+
+    made = lib.add_album(stub())
+    path = tmp_path / "Batman - Année Un (Digital).cbz"
+    path.write_bytes(b"x")
+    lib.add_unread_file(path, made)
+    real = lib.add_album(batman(OWN))
+    lib.cache_put("bedetheque", "album", OWN, "<html>")
+    with lib.conn:  # what an older version left behind: the album under the edition's address, the file on the stub
+        lib.conn.execute("UPDATE albums SET url = ? WHERE id = ?", (EDITION, real))
+    assert [r["id"] for r in lib.wrong_album_addresses()] == [real]
+    assert lib.repair_album_addresses() == (1, 1)
+    assert lib.get_album(real)["url"] == OWN and lib.get_file(path)["album_id"] == real and lib.wrong_album_addresses() == []
+    assert lib.repair_album_addresses() == (0, 0)  # nothing left to do

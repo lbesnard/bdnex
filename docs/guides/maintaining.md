@@ -223,7 +223,7 @@ album), at the [trash](versions.md#the-trash) (records whose file is gone) and a
 write. Each finding says what to do about it. It exits with status 1 when it finds something, so it can run from a
 script.
 
-`--fix` only does what cannot lose anything, and marks it `[fixable]` in the report: remove empty series, forget cover
+`--fix` only does what cannot lose anything, and marks it `[fixable]` in the report: remove empty series, **give an album its own address back** (a page read through another edition's address used to replace it, and a file linked from that address stayed on an empty record that looks unfetched: the file moves to the real album and the empty record goes) (the review screen looks for these when it opens and offers the same fix behind its red **questions waiting · w** mark), forget cover
 files that are gone (the next `bdnex import --fetch` downloads them), remove dead trash records, and delete the
 temporary files (bdnex's own `.bdnex-tmp` in your collection, and the `.part` and `.bdnex-tmp` files of the covers folder: a `.part`
 file of yours in the collection, a download that is still going on, is left alone). Files, albums and covers that exist are never

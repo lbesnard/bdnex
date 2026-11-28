@@ -89,7 +89,7 @@ A word before a colon that is not a field name (as in `Tintin: Le Lotus`) is sea
 | Option | Effect |
 |---|---|
 | `--files` | one line per file instead of per album |
-| `--format TEMPLATE` | custom line, e.g. `'$series T$vol - $title ($year)'` |
+| `--format TEMPLATE` | custom line, e.g. `'$series T$vol - $title ($year)'`; `$summary` prints the album summary, and `$filename` (with `--files`) the file name |
 | `-c`, `--count` | only the number of results |
 | `-l`, `--long` | everything known about each result: credits by role, publisher, date, pages, genres, rating, ISBN, summary, source and URL, and the linked files. With `--files`: each file and its album |
 | `--json` | machine-readable output (with `--long`: the complete records, credits and files included) |

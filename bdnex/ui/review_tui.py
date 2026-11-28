@@ -1318,6 +1318,7 @@ class ReviewApp(ColumnsMixin, ReviewComicvine, ReviewActions, ReviewOrganise, Re
             return
         self.background_started = True
         self.start_folders()
+        self.look_for_repairs()
         self.hub.load_list().add_done_callback(self.list_loaded)
         self.remember_place(terms=list(self.terms), unmatched=self.unmatched, everything=self.everything, again=self.again)
         if self.resume:

@@ -452,6 +452,11 @@ class Library:
         edits = self._edits_of(existing) if existing is not None else {}
         if edits:
             info = self._apply_edits(info, edits)
+        url = info.url
+        if existing is not None and url and not self._ends_with_id(url, info.source_id):
+            kept = self.conn.execute("SELECT url FROM albums WHERE id = ?", (existing,)).fetchone()["url"]
+            if kept and self._ends_with_id(kept, info.source_id):
+                url = kept  # the page came through ANOTHER EDITION's address: the album keeps its own
         with self.conn:
             series_id = self.add_series(info.series) if info.series else None
             publisher_id = self._get_or_create("publishers", info.publisher) if info.publisher else None
@@ -474,7 +479,7 @@ class Library:
                 (info.kind, series_id, info.title, info.volume, info.alternate_number,
                  publisher_id, info.isbn, info.year, info.month, info.day, info.pages,
                  info.language, info.format, info.subseries, info.collection, info.cycle, info.category, info.summary, info.rating, info.cover_url,
-                 info.url, info.source, info.source_id,
+                 url, info.source, info.source_id,
                  json.dumps(info.extra, ensure_ascii=False, default=str, sort_keys=True)))
             album_id = self.conn.execute(
                 "SELECT id FROM albums WHERE source = ? AND source_id = ?",
@@ -492,7 +497,60 @@ class Library:
                 self.conn.execute(
                     "INSERT OR IGNORE INTO album_genres(album_id, genre_id) VALUES (?, ?)",
                     (album_id, self._get_or_create("genres", genre)))
+        self._absorb_alias_stub(info, album_id)
         return album_id
+
+    @staticmethod
+    def _ends_with_id(url: str, source_id) -> bool:
+        return bool(re.search(rf"-{re.escape(str(source_id))}\.html$", url or ""))
+
+    def _absorb_alias_stub(self, info: AlbumInfo, album_id: int) -> None:
+        """A page read at the address of ANOTHER EDITION says which album it is (``info.source_id``); an album known only from that address
+        (a stub made when the file was linked from the list) is the same album under another name. Its files go to the real one and the stub
+        goes, so that the file is not left on an empty record while the data sits on the other."""
+        match = re.search(r"-(\d+)\.html$", info.url or "") if info.source == "bedetheque" else None
+        if match is None or match.group(1) == str(info.source_id):
+            return
+        stub = self.find_album(info.source, match.group(1))
+        if stub is None or stub == album_id or not (self.get_album(stub) or {}).get("extra", {}).get("partial"):
+            return
+        self.merge_into(stub, album_id)
+
+    def wrong_album_addresses(self) -> list[dict[str, Any]]:
+        """The Bédéthèque albums whose stored address is not their own (it ends with another number: the page of another edition)."""
+        rows = self.conn.execute("SELECT id, title, source_id, url FROM albums WHERE source = 'bedetheque' AND url IS NOT NULL").fetchall()
+        return [dict(r) for r in rows if not self._ends_with_id(r["url"], r["source_id"])]
+
+    def repair_album_addresses(self) -> tuple[int, int]:
+        """Give those albums their own address back (from a page of theirs the library has kept), and fold the stub made from the other
+        address into them. Returns ``(addresses restored, stubs merged)``."""
+        restored = merged = 0
+        for row in self.wrong_album_addresses():
+            own = self.conn.execute("SELECT url FROM source_cache WHERE source = 'bedetheque' AND kind = 'album' AND url LIKE ? ORDER BY fetched DESC",
+                                    (f"%-{row['source_id']}.html",)).fetchone()
+            if own is not None:
+                with self.conn:
+                    self.conn.execute("UPDATE albums SET url = ? WHERE id = ?", (own["url"], row["id"]))
+                restored += 1
+            match = re.search(r"-(\d+)\.html$", row["url"])
+            stub = self.find_album("bedetheque", match.group(1)) if match else None
+            if stub is not None and stub != row["id"] and (self.get_album(stub) or {}).get("extra", {}).get("partial"):
+                self.merge_into(stub, row["id"])
+                merged += 1
+        return restored, merged
+
+    def merge_into(self, stub_id: int, album_id: int) -> None:
+        """Move every file of ``stub_id`` to ``album_id`` (a spare version when that album already has a main file), keep what points at the
+        stub (a decision stored as ``other:<id>``, a parent), and remove the stub when it holds nothing of yours."""
+        stub_series = self.series_id_of(stub_id)
+        with self.conn:
+            has_main = self.conn.execute("SELECT 1 FROM files WHERE album_id = ? AND spare = 0", (album_id,)).fetchone() is not None
+            self.conn.execute("UPDATE files SET album_id = ?, review = NULL, spare = CASE WHEN ? THEN 1 ELSE spare END WHERE album_id = ?",
+                              (album_id, has_main, stub_id))
+            self.conn.execute("UPDATE file_attrs SET value = ? WHERE key = 'checked' AND value = ?", (f"other:{album_id}", f"other:{stub_id}"))
+            self.conn.execute("UPDATE albums SET parent_id = ? WHERE parent_id = ?", (album_id, stub_id))
+        self.delete_album_if_unused(stub_id)
+        self.delete_series_if_unused(stub_series)
 
     # ------------------------------------------------------------ hand edits
     EDIT_SCALARS = ("title", "volume", "alternate_number", "publisher", "isbn", "year", "month", "day",
