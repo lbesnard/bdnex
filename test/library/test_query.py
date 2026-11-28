@@ -83,6 +83,14 @@ def test_numeric_fields_and_ranges(lib):
     assert titles(lib.query(["rating:4.."])) == ["Redwin de la Forge"]
 
 
+def test_a_list_of_numbers(lib):
+    ids = [r["file_id"] for r in lib.query([], files=True)][:2]
+    found = lib.query([f"fileid:{ids[0]},{ids[1]}"], files=True)
+    assert sorted(r["file_id"] for r in found) == sorted(ids)
+    with pytest.raises(QueryError):
+        lib.query(["fileid:1,x"], files=True)
+
+
 def test_credits_any_and_by_role(lib):
     assert len(lib.query(["author:jarry"])) == 2
     assert titles(lib.query(["penciller:uderzo"])) == ["Astérix le Gaulois"]

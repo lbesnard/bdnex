@@ -80,6 +80,8 @@ def run(argv: list[str], out=sys.stdout, prompter=None, session=None) -> int:
             plan = _plan(client, found["pairs"], albums, args, lock)
     except komga.KomgaError as err:
         print(err, file=sys.stderr)
+        if out is not sys.stdout:
+            print(err, file=out)  # a window shows `out`, not stderr
         return 1
 
     _show(plan, found, args, out, on)

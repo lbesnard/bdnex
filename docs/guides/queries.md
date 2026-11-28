@@ -49,6 +49,7 @@ saying what moved its score and which searches found it. To link a file to an al
 | `any:text`, `any::regex` | the text in **any** text field: title, series, publisher, ISBN, summary, URL, credits, genres, file name and path |
 | `::regex` or `/regex/` | a regular expression on any text field |
 | `field:2010..2015` | numeric range; `2010..` and `..2015` are open ended |
+| `fileid:3,7,12` | a list of numbers: those files only (the review screen sends the files of its view to Komga this way) |
 | `field:true` / `false` | yes/no fields |
 | `^term` | negation |
 | `a b , c` | a lone comma is **or**: albums matching `a` and `b`, or `c` (each side is ANDed). The comma must be a word of its own |
