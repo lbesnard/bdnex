@@ -17,7 +17,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.css.scalar import ScalarOffset
 from textual.geometry import Offset
-from textual.containers import Vertical, VerticalScroll
+from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.widgets import Button, Label, Static
 
 from bdnex.ui.review_modal import Modal
@@ -137,8 +137,8 @@ class TaskScreen(Modal):
             yield Label(Text(self.what, style="dim"))
             with VerticalScroll(id="taskbody"):
                 yield Static("Working out what would change (nothing is touched)..." if self.preview_argv else "", id="tasktext")
-            with Vertical(id="taskbuttons"):
-                yield Button("Do it", id="go", variant="success", disabled=bool(self.preview_argv) or not self.run_argv and self.key == "trash")
+            with Horizontal(id="taskbuttons"):
+                yield Button("Send metadata" if self.key == "komga" else "Do it", id="go", variant="success", disabled=bool(self.preview_argv) or not self.run_argv and self.key == "trash")
                 yield Button("Cancel", id="cancel", tooltip="Close (Esc).")
 
     def on_mount(self) -> None:
@@ -232,11 +232,17 @@ class ReviewActions:
 
     def komga_open(self, scope: str) -> None:
         """Send the tags to Komga: the whole collection (no query), or the files of the view (``fileid:`` and their numbers)."""
-        terms: list[str] = []
         if scope == "view":
             if not self.rows or self.loading:
                 self.notify("Nothing on the screen to send.", timeout=3)
                 return
+            self.ask_pages("Send", lambda: self.komga_open_now(scope))
+        else:
+            self.komga_open_now(scope)
+
+    def komga_open_now(self, scope: str) -> None:
+        terms: list[str] = []
+        if scope == "view":
             from bdnex.library import Library
 
             selection = getattr(self.rows, "selection", None)
