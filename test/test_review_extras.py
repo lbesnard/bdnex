@@ -1791,6 +1791,35 @@ def test_the_actions_panel_opens_a_window_for_the_whole_collection(env):
     assert seen["closed"] == "Screen" and seen["window"] == ("OrganiseScreen", "write", "all", True)
 
 
+def test_the_panel_sends_the_tags_to_komga_for_the_view_or_the_collection(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await pilot.press("A")
+        await pilot.pause(0.5)
+        seen["labels"] = {b.name: str(b.label) for b in app.screen.query("Button")}
+        await pilot.press("escape")
+        await pilot.pause(0.3)
+        for scope in ("view", "all"):
+            await press_action(app, pilot, "komga:" + scope)
+            screen = app.screen
+            await organise_wait(screen, pilot, "ready")
+            screen.show_output()
+            seen[scope] = (screen.preview_argv, screen.run_argv, str(screen.query_one("#tasktext").render()), screen.query_one("#go").disabled)
+            screen.query_one("#cancel").press()
+            await settle(app, pilot)
+
+    drive(db, root, script)
+    assert seen["labels"]["komga:view"] == "This view" and seen["labels"]["komga:all"] == "The whole collection"
+    view, whole = seen["view"], seen["all"]
+    assert view[0][:2] == ["push", "-n"] and view[0][2].startswith("fileid:") and view[1][:2] == ["push", "-y"] and len(view[0][2].split(",")) > 1
+    assert whole[0] == ["push", "-n"] and whole[1] == ["push", "-y"]
+    assert "komga.url is not set" in view[2] and view[3]  # not configured: the reason is in the window, nothing can be sent
+
+
 def test_a_task_of_the_panel_shows_a_preview_and_then_does_it(env):
     db, root, paths = env
     seen = {}

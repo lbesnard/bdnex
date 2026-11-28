@@ -25,8 +25,10 @@ from bdnex.ui.review_modal import Modal
 # (group, ((id, label, tooltip), ...))
 ENTRIES = (
     ("UNDO", (("undo", "Undo", "Takes back the last thing you did in this session: a Delete (the files come out of the trash) or a Move (the files go back where they were; a preview first). Key U."),)),
-    ("WRITE the tags", (("write:view", "This view", "`bdnex write` for the files of the view you are looking at (key W)."),
+    ("WRITE the tags into the files", (("write:view", "This view", "`bdnex write` for the files of the view you are looking at (key W): the tags go into each file's ComicInfo.xml."),
                         ("write:all", "The whole collection", "`bdnex write` for every file of the library."))),
+    ("SEND the tags to Komga", (("komga:view", "This view", "`bdnex komga push` for the files of the view: Komga's title, summary and credits. No file is changed. A preview first."),
+                                ("komga:all", "The whole collection", "`bdnex komga push` for every file of the library. A preview first."))),
     ("MOVE the files", (("move:view", "This view", "`bdnex move` for the files of the view (key M)."),
                         ("move:all", "The whole collection", "`bdnex move` for every file of the library."))),
     ("REPAIR the damaged files", (("repair:view", "This view", "`bdnex repair` for the damaged files of the view (key H)."),
@@ -46,6 +48,9 @@ TASKS = {
                 "(`bdnex check --matches --fix` flags them for review).", None, ["--matches"], "check_cmd", False),
     "update": ("Read the changed files again", "Reads the files that changed on disk since they were recorded (another tool changed them). "
                "No file is touched.", ["-n"], [], "update_cmd", True),
+    "komga": ("Send the tags to Komga", "Sends the library's title, summary, credits and the rest to the Komga server named in `komga.url`, for the files "
+              "Komga also holds (paired by file name and size). Only what differs is sent. No comic file is changed; a file whose match waits for a review is left out.",
+              None, [], "komga_cmd", False),
     "undo": ("Undo the last move", "Moves the files of the move run back to where they were (tags written into a file stay).", ["last", "-n"], ["last"], "undo_cmd", True),
     "trash": ("The trash", "The files that were replaced. `bdnex trash --restore ID` puts one back where it came from.", None, [], "trash_cmd", False),
 }
@@ -113,10 +118,12 @@ class TaskScreen(Modal):
     #taskbuttons Button { margin-left: 2; }
     """
 
-    def __init__(self, key: str, batch: str = "last") -> None:
+    def __init__(self, key: str, batch: str = "last", terms: list[str] | None = None) -> None:
         super().__init__()
         self.key = key
         self.title_, self.what, self.preview_argv, self.run_argv, self.module, self.writes = TASKS[key]
+        if key == "komga":  # `terms`: the query of the files to send (empty: the whole collection)
+            self.preview_argv, self.run_argv = ["push", "-n", *(terms or [])], ["push", "-y", *(terms or [])]
         if key == "undo":  # the run that was made from this screen, or the last one of the library
             self.preview_argv, self.run_argv = [batch, "-n"], [batch]
         self.stage = "preview" if self.preview_argv else "ready"  # preview -> ready -> running -> done
@@ -211,7 +218,9 @@ class ReviewActions:
     def actions_chosen(self, chosen) -> None:
         if not chosen:
             return
-        if ":" in chosen:
+        if chosen.startswith("komga:"):
+            self.komga_open(chosen.split(":")[1])
+        elif ":" in chosen:
             mode, scope = chosen.split(":")
             self.organise_open(mode, scope)
         elif chosen == "help":
@@ -220,6 +229,24 @@ class ReviewActions:
             self.action_undo()
         else:
             self.push_screen(TaskScreen(chosen), self.task_closed)
+
+    def komga_open(self, scope: str) -> None:
+        """Send the tags to Komga: the whole collection (no query), or the files of the view (``fileid:`` and their numbers)."""
+        terms: list[str] = []
+        if scope == "view":
+            if not self.rows or self.loading:
+                self.notify("Nothing on the screen to send.", timeout=3)
+                return
+            from bdnex.library import Library
+
+            selection = getattr(self.rows, "selection", None)
+            with Library.for_settings(self.settings, readonly=True) as library:
+                ids = self.organise_ids(library, selection[0] if selection else None, [r.file_id for r in self.rows], "view")
+            if not ids:
+                self.notify("No file in this view to send.", timeout=3)
+                return
+            terms = ["fileid:" + ",".join(str(i) for i in ids)]
+        self.push_screen(TaskScreen("komga", terms=terms), self.task_closed)
 
     def task_closed(self, ran) -> None:
         if ran:

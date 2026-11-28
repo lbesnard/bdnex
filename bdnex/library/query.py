@@ -127,6 +127,8 @@ def _numeric(expr: str, value: str) -> tuple[str, list[Any]]:
         except ValueError:
             raise QueryError(f"{text!r} is not a number") from None
 
+    if "," in value:  # fileid:3,7,12: a list of numbers (the screen sends the files of its view this way)
+        return f"{expr} IN ({','.join(str(int(num(part))) for part in value.split(',') if part)})", []
     if ".." in value:
         low, high = value.split("..", 1)
         parts, params = [], []

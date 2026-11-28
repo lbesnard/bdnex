@@ -145,3 +145,9 @@ Komga holds that the library has no names for, a colorist added there, stays), a
 fields are overwritten and locked, **even a field you locked in Komga yourself** (that is the point: the library wins; bdnex
 can not tell your lock from its own). Use `-n` first. bdnex never follows a redirect from Komga (your key would go with it): if
 Komga answers with one, set `komga.url` to the address it redirects to. `komga.url` can not be changed from the settings page.
+
+## From the review screen
+
+In `bdnex review`, the **☰ Actions** panel (key `A`) has **Send the tags to Komga**: *this view* (the folder, filter or ticks you are looking at) or *the whole
+collection*. It is `bdnex komga push`, so the same rules hold: a preview first, then **Do it**; only what differs is sent; files whose match waits
+for a review are left out. It needs `komga.url` and a login in the configuration; without them the window says so.
