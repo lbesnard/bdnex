@@ -242,6 +242,14 @@ hooks:
 See [Hooks](configuration.md#hooks-your-own-commands-after-bdnex-did-something): the command runs after an import that
 linked files, never for a preview, and its failure never fails the import.
 
+## …link a whole folder (a series) to its albums in a few keys?
+
+```{how} tui
+```
+
+In `bdnex review`: click the folder, **`m`** to mark all its files, **`a`** and pick the series (or `e` to write it by hand), answer yes, **`k`** to
+confirm. The table of keys is in [Fixing a whole folder at once](workflow.md#fixing-a-whole-folder-at-once).
+
 ## …say which album a file is, when the match is wrong?
 
 ```{how} cli tui
