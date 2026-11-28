@@ -95,15 +95,25 @@ def test_reading_an_issue_needs_its_volume_too(tmp_path, monkeypatch):
         comicvine.read_issue(settings(tmp_path), "https://comicvine.gamespot.com/fell/4050-18040/")
 
 
-def test_a_volume_gives_each_file_the_issue_with_the_number_in_its_name(tmp_path, monkeypatch):
+def test_a_volume_is_one_request_and_says_which_issue_each_file_is_before_any_issue_is_read(tmp_path, monkeypatch):
     fake = FakeClient()
     monkeypatch.setattr(comicvine, "client", lambda settings: fake)
     paths = ["/c/Fell/Fell T02.cbz", "/c/Fell/Fell T05.cbz", "/c/Fell/Fell T42.cbz", "/c/Fell/no number.cbz"]
     answer = comicvine.read_volume(settings(tmp_path), "https://comicvine.gamespot.com/fell/4050-18040/", paths)
-    assert sorted(answer.mapping) == ["/c/Fell/Fell T02.cbz", "/c/Fell/Fell T05.cbz"]
-    assert answer.mapping["/c/Fell/Fell T05.cbz"].volume == 5 and answer.mapping["/c/Fell/Fell T05.cbz"].series.name == "Fell"
-    assert sorted(answer.unmatched) == ["/c/Fell/Fell T42.cbz", "/c/Fell/no number.cbz"] and answer.stopped is None
-    assert fake.calls == [("volume", 18040), ("issue", 102), ("issue", 105)]  # one request for the volume, one per file that matched
+    assert {p: (ref.id, ref.number) for p, ref in answer.matches.items()} == {"/c/Fell/Fell T02.cbz": (102, "2"), "/c/Fell/Fell T05.cbz": (105, "5")}
+    assert sorted(answer.unmatched) == ["/c/Fell/Fell T42.cbz", "/c/Fell/no number.cbz"] and answer.name == "Fell"
+    assert fake.calls == [("volume", 18040)]  # one request, and no issue: the person confirms the matching first
+
+
+def test_the_issues_are_read_after_the_confirmation_one_request_each(tmp_path, monkeypatch):
+    fake = FakeClient()
+    monkeypatch.setattr(comicvine, "client", lambda settings: fake)
+    paths = ["/c/Fell/Fell T02.cbz", "/c/Fell/Fell T05.cbz"]
+    answer = comicvine.read_volume(settings(tmp_path), "https://comicvine.gamespot.com/fell/4050-18040/", paths)
+    said = []
+    result = comicvine.read_issues(settings(tmp_path), answer, paths, progress=said.append)
+    assert result.infos["/c/Fell/Fell T05.cbz"].volume == 5 and result.infos["/c/Fell/Fell T05.cbz"].series.name == "Fell" and result.stopped is None
+    assert fake.calls == [("volume", 18040), ("issue", 102), ("issue", 105)] and said[-1].endswith("issue 2 of 2...")  # the volume is not asked again
 
 
 def test_the_limit_stops_the_reading_and_keeps_the_files_done(tmp_path, monkeypatch):
@@ -111,7 +121,8 @@ def test_the_limit_stops_the_reading_and_keeps_the_files_done(tmp_path, monkeypa
     monkeypatch.setattr(comicvine, "client", lambda settings: fake)
     paths = [f"/c/Fell/Fell T0{n}.cbz" for n in (1, 2, 3)]
     answer = comicvine.read_volume(settings(tmp_path), "https://comicvine.gamespot.com/fell/4050-18040/", paths)
-    assert list(answer.mapping) == [paths[0]] and "limit" in answer.stopped and answer.unmatched == paths[1:]
+    result = comicvine.read_issues(settings(tmp_path), answer, paths)
+    assert list(result.infos) == [paths[0]] and "limit" in result.stopped
 
 
 def test_no_key_and_no_simyan_are_said_in_a_sentence(tmp_path, monkeypatch):

@@ -1839,6 +1839,27 @@ def comicvine_info(number, title="Feral City"):
     return comicvine.album_info(issue, vol)
 
 
+def comicvine_volume(monkeypatch, number=lambda path: 2):
+    """Comic Vine's two steps, answered from memory: the volume (one request: which issue each file is), then each issue. Returns the lists of paths asked."""
+    from types import SimpleNamespace as NS
+
+    from bdnex.importer import comicvine
+
+    volumes, issues = [], []
+
+    def volume(settings, text, paths):
+        volumes.append(list(paths))
+        return comicvine.VolumeAnswer("Fell", None, {p: NS(id=100 + number(p), number=str(number(p)), name="Feral City") for p in paths})
+
+    def read(settings, answer, paths, progress=None):
+        issues.append(list(paths))
+        return comicvine.IssuesAnswer({p: comicvine_info(number(p)) for p in paths})
+
+    monkeypatch.setattr(comicvine, "read_volume", volume)
+    monkeypatch.setattr(comicvine, "read_issues", read)
+    return volumes, issues
+
+
 def test_i_with_a_comic_vine_issue_address_links_the_file_to_that_issue(env, monkeypatch):
     from bdnex.importer import comicvine
 
@@ -1892,15 +1913,9 @@ def test_a_comic_vine_error_is_said_and_nothing_is_linked(env, monkeypatch):
         assert not any(lib.get_album(lib.get_file(p)["album_id"])["source"] == "comicvine" for p in files.values() if lib.get_file(p)["album_id"])
 
 
-def test_a_with_a_comic_vine_volume_address_links_the_marked_files_after_a_question(env, monkeypatch):
-    from bdnex.importer import comicvine
-
+def test_a_with_a_comic_vine_volume_address_reads_the_volume_asks_and_only_then_reads_the_issues(env, monkeypatch):
     db, files = env
-
-    def read(settings, text, paths, progress=None):
-        return comicvine.VolumeAnswer("Fell", {p: comicvine_info(2 if "T02" in p else 5) for p in paths})
-
-    monkeypatch.setattr(comicvine, "read_volume", read)
+    volumes, issues = comicvine_volume(monkeypatch, lambda p: 2 if "T02" in p else 5)
     seen = {}
 
     async def script(app, pilot):
@@ -1912,35 +1927,36 @@ def test_a_with_a_comic_vine_volume_address_links_the_marked_files_after_a_quest
         await settle(app, pilot)
         await settle(app, pilot)
         seen["waiting"] = len(app.waiting)
+        seen["issues_before_yes"] = list(issues)  # nothing per issue is read before the person says yes
         await pilot.press("w")
         await pilot.pause(0.3)
         seen["question"] = str(app.screen.query_one("#ask Label").render())
         await pilot.press("y")
         await settle(app, pilot)
+        await settle(app, pilot)
 
     drive(db, script)
-    assert seen["waiting"] == 1 and "Fell (Comic Vine): 3 of 3 file(s) find their issue" in seen["question"]
+    assert seen["waiting"] == 1 and seen["issues_before_yes"] == [] and len(volumes) == 1 and len(issues) == 1 and len(issues[0]) == 3
+    assert "Fell (Comic Vine): 3 of 3 file(s) find their issue" in seen["question"] and "Feral City (#5)" in seen["question"]
+    assert "reads 3 issue page(s)" in seen["question"]
     with Library(db) as lib:
         sources = {lib.get_album(lib.get_file(p)["album_id"])["source"] for p in files.values()}
     assert sources == {"comicvine"}
+
 
 
 def test_the_o_window_can_search_comic_vine_and_a_picked_volume_is_used_like_an_address(env, monkeypatch):
     from bdnex.importer import comicvine
 
     db, files = env
-    searched, read = [], []
+    searched = []
 
     def search(settings, text, limit=20):
         searched.append(text)
         return [comicvine.VolumeHit(18040, "Fell", 2005, "Image", 9, "https://comicvine.gamespot.com/fell/4050-18040/")]
 
-    def volume(settings, text, paths, progress=None):
-        read.append((text, paths))
-        return comicvine.VolumeAnswer("Fell", {p: comicvine_info(2) for p in paths})
-
     monkeypatch.setattr(comicvine, "search_volumes", search)
-    monkeypatch.setattr(comicvine, "read_volume", volume)
+    read, _ = comicvine_volume(monkeypatch)
     seen = {}
 
     async def script(app, pilot):
@@ -1963,7 +1979,7 @@ def test_the_o_window_can_search_comic_vine_and_a_picked_volume_is_used_like_an_
 
     drive(db, script)
     assert seen["screen"] == "ComicvineSearchScreen" and seen["hits"] == ["Fell"] and searched == ["fell"]
-    assert read and read[0][0] == "https://comicvine.gamespot.com/fell/4050-18040/" and len(read[0][1]) == 1 and seen["waiting"] == 1
+    assert len(read) == 1 and len(read[0]) == 1 and seen["waiting"] == 1  # the picked volume was read (for the one file)
 
 
 def test_the_cover_of_a_comic_vine_issue_is_kept_and_the_album_points_at_it(env, monkeypatch):
@@ -1994,7 +2010,7 @@ def test_a_volume_picked_in_the_comic_vine_search_closes_both_windows_without_an
 
     db, files = env
     monkeypatch.setattr(comicvine, "search_volumes", lambda s, t, limit=20: [comicvine.VolumeHit(1, "Fell", 2005, "Image", 9, "https://comicvine.gamespot.com/fell/4050-18040/")])
-    monkeypatch.setattr(comicvine, "read_volume", lambda s, t, paths, progress=None: comicvine.VolumeAnswer("Fell", {p: comicvine_info(2) for p in paths}))
+    comicvine_volume(monkeypatch)
     seen = {}
 
     async def script(app, pilot):
@@ -2024,13 +2040,7 @@ def test_a_comic_vine_volume_found_from_o_goes_to_every_marked_file_not_only_the
 
     db, files = env
     monkeypatch.setattr(comicvine, "search_volumes", lambda s, t, limit=20: [comicvine.VolumeHit(1, "Fell", 2005, "Image", 9, "https://comicvine.gamespot.com/fell/4050-18040/")])
-    read = []
-
-    def volume(s, t, paths, progress=None):
-        read.append(list(paths))
-        return comicvine.VolumeAnswer("Fell", {p: comicvine_info(2) for p in paths})
-
-    monkeypatch.setattr(comicvine, "read_volume", volume)
+    read, _ = comicvine_volume(monkeypatch)
     seen = {}
 
     async def script(app, pilot):

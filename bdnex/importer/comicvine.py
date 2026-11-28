@@ -156,46 +156,61 @@ def read_issue(settings, text: str) -> AlbumInfo:
 
 @dataclass
 class VolumeAnswer:
+    """The first step of linking files to a volume: ONE request (the volume, with the list of its issues), nothing per file yet."""
+
     name: str
-    mapping: dict = field(default_factory=dict)  # file path -> AlbumInfo
+    volume: object = None  # Simyan's Volume: what each issue's album needs (series, publisher), kept so that the second step does not ask again
+    matches: dict = field(default_factory=dict)  # file path -> the volume's list entry for the issue with the number in its name (id, number, name)
     unmatched: list = field(default_factory=list)  # files with no volume number, or a number the volume has no issue for
-    stopped: Optional[str] = None  # why the reading ended before every file was done (the limit, the network)
 
 
-def read_volume(settings, text: str, paths: list[str], progress: Optional[Callable[[str], None]] = None) -> VolumeAnswer:
-    """For each file the issue of the volume with the number in its name. One request for the volume, then one per matched file (each
-    kept in the cache): if the limit or the network stops it, the files done are returned with ``stopped`` saying why."""
+@dataclass
+class IssuesAnswer:
+    """The second step, after the person confirmed: one request per issue (each kept in the cache)."""
+
+    infos: dict = field(default_factory=dict)  # file path -> AlbumInfo
+    stopped: Optional[str] = None  # why it ended before every file was done (the hourly limit, the network)
+
+
+def read_volume(settings, text: str, paths: list[str]) -> VolumeAnswer:
+    """One request: the volume and its list of issues. Which issue each file is (by the number in its name) comes from that list, so the person
+    can look at the matching and say yes or no before any per-issue request is spent."""
     from bdnex.importer.folders import title_and_volume
 
     found = parse(text)
     if found is None or found[0] != "volume":
         raise ComicvineError(f"{text!r} is not the address of a Comic Vine volume (…/4050-NNNN/)")
-    cv = client(settings)
-    volume = _call(cv.get_volume, found[1])
+    volume = _call(client(settings).get_volume, found[1])
     by_number = {}
     for entry in volume.issues:
         number = (entry.number or "").strip()
         if number.isdigit():
             by_number.setdefault(int(number), entry)
-    answer = VolumeAnswer(volume.name)
-    wanted = []
+    answer = VolumeAnswer(volume.name, volume)
     for path in paths:
         number = title_and_volume(path)[1]
         if number in by_number:
-            wanted.append((path, by_number[number]))
+            answer.matches[path] = by_number[number]
         else:
             answer.unmatched.append(path)
-    for position, (path, entry) in enumerate(wanted, start=1):
-        if progress:
-            progress(f"{volume.name}: issue {position} of {len(wanted)}...")
-        try:
-            issue = _call(cv.get_issue, entry.id)
-        except ComicvineError as err:
-            answer.stopped = str(err)
-            answer.unmatched += [p for p, _ in wanted[position - 1:]]
-            break
-        answer.mapping[path] = album_info(issue, volume)
     return answer
+
+
+def read_issues(settings, answer: VolumeAnswer, paths: list[str], progress: Optional[Callable[[str], None]] = None) -> IssuesAnswer:
+    """One request per file: its issue, in full (credits, date, summary, cover). If the limit or the network stops it, the files done are
+    returned with ``stopped`` saying why."""
+    cv = client(settings)
+    result = IssuesAnswer()
+    for position, path in enumerate(paths, start=1):
+        if progress:
+            progress(f"{answer.name}: issue {position} of {len(paths)}...")
+        try:
+            issue = _call(cv.get_issue, answer.matches[path].id)
+        except ComicvineError as err:
+            result.stopped = str(err)
+            break
+        result.infos[path] = album_info(issue, answer.volume)
+    return result
 
 
 def fetch_cover(settings, info: AlbumInfo) -> Optional[str]:

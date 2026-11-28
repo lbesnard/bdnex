@@ -152,25 +152,40 @@ class ReviewComicvine:
         paths = [r.path for r in chosen]
         self.comicvine_busy(chosen, True)
         try:
-            answer = await asyncio.to_thread(comicvine.read_volume, self.settings, text, paths)
+            answer = await asyncio.to_thread(comicvine.read_volume, self.settings, text, paths)  # ONE request: the volume and its issue list
         except Exception as err:
             self.notify(f"Could not read that page: {err}", severity="error", timeout=10)
             return
         finally:
             self.comicvine_busy(chosen, False)
-        pairs = [(r, answer.mapping[r.path]) for r in chosen if r.path in answer.mapping]
-        if answer.stopped:
-            self.notify(f"{answer.stopped}. {len(pairs)} file(s) were read; link them, then give the address again for the rest.", severity="warning", timeout=12)
+        pairs = [(r, answer.matches[r.path]) for r in chosen if r.path in answer.matches]
         if not pairs:
             self.notify(f"{answer.name}: no file has a volume number the series has (T03, Tome 3, #3...).", severity="warning", timeout=10)
             return
-        lines = [f"{os.path.basename(r.path)}  ->  {info.title}" + (f" (#{info.volume})" if info.volume is not None else "") for r, info in pairs[:SHOWN]]
+        lines = [f"{os.path.basename(r.path)}  ->  {ref.name or 'issue'} (#{ref.number})" for r, ref in pairs[:SHOWN]]
         more = f"\n... and {len(pairs) - SHOWN} more" if len(pairs) > SHOWN else ""
         left = len(chosen) - len(pairs)
         question = (f"{answer.name} (Comic Vine): {len(pairs)} of {len(chosen)} file(s) find their issue"
-                    + (f" ({left} left as they are)" if left else "") + ". Link them?\n" + "\n".join(lines) + more)
+                    + (f" ({left} left as they are)" if left else "") + ".\n" + "\n".join(lines) + more
+                    + f"\n\nLink them? That reads {len(pairs)} issue page(s): {len(pairs)} of Comic Vine's 200 requests an hour (one was used to read the volume).")
         self.ask_later(f"link {len(pairs)} file(s) to {answer.name}?", lambda: AskScreen(question, None),
-                       lambda yes: self.link_infos(pairs) if yes else None)
+                       lambda yes: self.run_worker(self.guarded(self.comicvine_issues(pairs, answer), "the issues")) if yes else None)
+
+    async def comicvine_issues(self, pairs: list, answer) -> None:
+        """The matching was confirmed: the issue of each file is read (one request each), then the files are linked. A stop by the limit keeps the files
+        that were read; the rest is read from the cache next time."""
+        rows = [row for row, _ in pairs if not row.status and not row.busy]  # decided while the question was open
+        paths = [row.path for row in rows]
+        self.comicvine_busy(rows, True)
+        self.notify(f"Reading {len(rows)} issue(s) of {answer.name}...", timeout=5)
+        try:
+            result = await asyncio.to_thread(comicvine.read_issues, self.settings, answer, paths)
+        finally:
+            self.comicvine_busy(rows, False)
+        if result.stopped:
+            self.notify(f"{result.stopped}. {len(result.infos)} of {len(rows)} issue(s) were read and are linked now; give the volume again later for the rest.",
+                        severity="warning", timeout=12)
+        self.link_infos([(row, result.infos[row.path]) for row in rows if row.path in result.infos])
 
     def comicvine_busy(self, rows: list, on: bool) -> None:
         now = time.monotonic()
