@@ -35,7 +35,7 @@ Comic Vine's terms are for non-commercial use.
 No address at hand? In the `o` window (or the `a` window), press **F4** (or the button **Search Comic Vine instead**): a box asks for the name of the
 series. **Enter** searches (one request, not one per letter: the limit is 200 an hour), the arrows move, **Enter** picks, **Ctrl-O** opens the page
 in your browser. The list says the year, the publisher and the number of issues of each volume. The volume you pick is used exactly like a pasted
-volume address: with `o`, the file under the cursor gets the issue with the number in its name; with `a`, every marked file does. Answers are kept
+volume address: every **marked** file gets the issue with the number in its name (with `o` and no mark: the file under the cursor). An album picked in `o` from Bédéthèque's list is still only for the file under the cursor: that is `a`'s job for a series. Answers are kept
 (`comicvine.cache_days`), so the same search again costs nothing. Only volumes are searched, not issues.
 
 ## Link files

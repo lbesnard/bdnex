@@ -2017,3 +2017,42 @@ def test_a_volume_picked_in_the_comic_vine_search_closes_both_windows_without_an
 
     drive(db, script)
     assert seen == {"screen": "Screen", "waiting": 1}
+
+
+def test_a_comic_vine_volume_found_from_o_goes_to_every_marked_file_not_only_the_one_under_the_cursor(env, monkeypatch):
+    from bdnex.importer import comicvine
+
+    db, files = env
+    monkeypatch.setattr(comicvine, "search_volumes", lambda s, t, limit=20: [comicvine.VolumeHit(1, "Fell", 2005, "Image", 9, "https://comicvine.gamespot.com/fell/4050-18040/")])
+    read = []
+
+    def volume(s, t, paths, progress=None):
+        read.append(list(paths))
+        return comicvine.VolumeAnswer("Fell", {p: comicvine_info(2) for p in paths})
+
+    monkeypatch.setattr(comicvine, "read_volume", volume)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("m")  # every file of the screen
+        await pilot.press("o")
+        await settle(app, pilot)
+        seen["heading"] = str(app.screen.query_one("Label").render())
+        app.screen.query_one("#tocv").press()
+        await pilot.pause(0.3)
+        app.screen.query_one("#cvwords").value = "fell"
+        await pilot.press("enter")
+        for _ in range(20):
+            if app.screen.hits:
+                break
+            await pilot.pause(0.1)
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+        await pilot.press("w")
+        await pilot.pause(0.3)
+        seen["question"] = str(app.screen.query_one("#ask Label").render())
+
+    drive(db, script)
+    assert len(read) == 1 and len(read[0]) == 3  # one reading for the three marked files
+    assert "3 of 3 file(s) find their issue" in seen["question"] and "3 marked files" in seen["heading"]

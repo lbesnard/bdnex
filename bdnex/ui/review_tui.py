@@ -2251,14 +2251,19 @@ class ReviewApp(ColumnsMixin, ReviewComicvine, ReviewActions, ReviewOrganise, Re
         row = self.idle()
         if row is None:
             return
-        self.push_screen(FuzzyScreen(self.hub, self.search_start(row), "Which album is this file?", about=self.about_files([row])),
+        marked = [r for r in self.rows if id(r) in self.marked and not r.busy]
+        heading = "Which album is this file?"
+        if len(marked) > 1:  # an album is picked for the file under the cursor; a Comic Vine volume (F4) is for all the marked files
+            heading += f"  (F4, the Comic Vine search, is for the {len(marked)} marked files)"
+        self.push_screen(FuzzyScreen(self.hub, self.search_start(row), heading, about=self.about_files(marked if len(marked) > 1 else [row])),
                          lambda candidate: self.other_picked(row, candidate))
 
     def other_picked(self, row, candidate) -> None:
         if candidate is None:
             return
-        if isinstance(candidate, str):  # a Comic Vine volume, found by its search (F4): the file gets the issue with its number
-            self.run_worker(self.guarded(self.comicvine_address([row], candidate), "that volume"))
+        if isinstance(candidate, str):  # a Comic Vine volume, found by its search (F4): each marked file gets the issue with its number
+            chosen = [r for r in self.rows if id(r) in self.marked and not r.busy] or [row]
+            self.run_worker(self.guarded(self.comicvine_address(chosen, candidate), "that volume"))
             return
         self.link(row, candidate.url, candidate)
 
