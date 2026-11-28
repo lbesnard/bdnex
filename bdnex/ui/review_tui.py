@@ -550,6 +550,7 @@ class AskScreen(Modal):
     CSS = """
     AskScreen { align: center middle; }
     #ask { width: 80%; height: auto; border: round $accent; padding: 1 2; background: $surface; }
+    #ask Label { width: 100%; }
     #askbuttons { height: 3; align-horizontal: right; }
     #askbuttons Button { margin-left: 2; }
     """

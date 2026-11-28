@@ -1862,6 +1862,35 @@ def test_albums_under_another_editions_address_are_offered_for_repair_with_w(env
         assert lib.get_file(paths["t1"])["album_id"] == seen["ids"][1] and lib.wrong_album_addresses() == []
 
 
+def test_long_text_in_the_windows_stays_inside_their_border(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        app.open_folder("Series/Tintin")
+        await settle(app, pilot)
+        await press_action(app, pilot, "write:all")
+        window = app.screen
+        await organise_wait(window, pilot, "ready")
+        window.query_one("#organisetext").update("z " * 400)
+        await pilot.pause(0.3)
+        seen["organise"] = [w.region.right <= window.query_one("#organise").region.right for w in window.query("#organise Label, #organise Static")]
+        window.action_close()
+        await settle(app, pilot)
+        await press_action(app, pilot, "komga:all")
+        screen = app.screen
+        await organise_wait(screen, pilot, "ready")
+        screen.query_one("#taskstep").update("x " * 200)
+        screen.query_one("#tasktext").update("y " * 400)
+        await pilot.pause(0.3)
+        box = screen.query_one("#task").region
+        seen["task"] = [w.region.right <= box.right for w in screen.query("#task Label, #task Static")]
+        screen.query_one("#cancel").press()
+
+    drive(db, root, script)
+    assert seen["task"] and all(seen["task"]) and seen["organise"] and all(seen["organise"])
+
+
 def test_a_view_longer_than_its_page_asks_whether_to_do_every_page(env):
     db, root, paths = env
     seen = {}

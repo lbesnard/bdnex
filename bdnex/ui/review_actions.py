@@ -115,6 +115,7 @@ class TaskScreen(Modal):
     TaskScreen { align: center middle; }
     #task { width: 90%; height: 80%; border: round $accent; padding: 1 2; background: $surface; }
     #taskbody { height: 1fr; }
+    #task Label, #task Static { width: 100%; }  /* a Label is as wide as its text: a long line would run past the border */
     #taskstep { height: auto; margin-top: 1; text-style: bold; }
     #taskbuttons { height: 3; align-horizontal: right; }
     #taskbuttons Button { margin-left: 2; }
