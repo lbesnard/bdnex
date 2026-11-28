@@ -493,6 +493,18 @@ def user_config_path() -> Path:
     return Path(base) / "bdnex" / "bdnex.yaml"
 
 
+def config_source() -> str:
+    """Where :func:`user_config_path` got its answer: ``$BDNEX_CONFIG`` or the default place (so that two libraries are never mixed up)."""
+    return "from $BDNEX_CONFIG" if os.environ.get("BDNEX_CONFIG") else "the default place"
+
+
+def library_label(settings: "Settings") -> str:
+    """The library's file name when it is NOT the default library (``kids.sqlite``), else empty: shown in the review screen's title."""
+    default = Path(os.path.expanduser(load_defaults()["library"]))
+    path = Path(os.path.expanduser(str(settings.library)))
+    return "" if path == default else path.name
+
+
 def load_defaults() -> dict[str, Any]:
     with open(DEFAULTS_PATH, encoding="utf-8") as fh:
         return yaml.safe_load(fh)

@@ -3,7 +3,7 @@
 ## The file
 
 bdnex reads `~/.config/bdnex/bdnex.yaml` (or `$XDG_CONFIG_HOME/bdnex/bdnex.yaml`,
-or the file named by `$BDNEX_CONFIG`).
+or the file named by `$BDNEX_CONFIG`). `bdnex config --path` prints which one is in use and says whether it came from `$BDNEX_CONFIG`. To keep a second library, see [How do I…?](cookbook.md#keep-a-second-library-another-database-another-collection-folder).
 
 On the **first launch** bdnex creates the file there and tells you to edit it. The only
 required edit is `collection_path`, your comics folder. Every other option is listed below it,

@@ -214,6 +214,23 @@ def test_config_command_path_show_defaults(conf_path, capsys):
     assert "strong_threshold" in capsys.readouterr().out
 
 
+def test_config_path_says_where_the_path_came_from_without_touching_stdout(conf_path, capsys, monkeypatch):
+    assert config_cmd.run(["--path"]) == 0
+    out = capsys.readouterr()
+    assert out.out.strip() == str(conf_path) and "$BDNEX_CONFIG" in out.err  # (the fixture sets it)
+    monkeypatch.delenv("BDNEX_CONFIG")
+    assert config_cmd.run(["--path"]) == 0
+    assert "default place" in capsys.readouterr().err
+
+
+def test_library_label_names_a_library_that_is_not_the_default(tmp_path):
+    from bdnex.config import library_label
+    from types import SimpleNamespace
+
+    assert library_label(SimpleNamespace(library="~/.local/share/bdnex/bdnex.sqlite")) == ""
+    assert library_label(SimpleNamespace(library=str(tmp_path / "kids.sqlite"))) == "kids.sqlite"
+
+
 def test_config_path_works_even_when_file_is_invalid(conf_path, capsys):
     write(conf_path, {"config_version": 2, "oops": 1})
     assert config_cmd.run(["-p"]) == 0
