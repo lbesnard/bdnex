@@ -11,7 +11,7 @@ import sys
 
 import yaml
 
-from bdnex.config import ConfigError, load_config, load_defaults, masked, user_config_path
+from bdnex.config import ConfigError, config_source, load_config, load_defaults, masked, user_config_path
 
 
 def run(argv: list[str]) -> int:
@@ -34,6 +34,7 @@ def run(argv: list[str]) -> int:
 
     if args.path:  # never needs a valid file
         print(user_config_path())
+        print(f"({config_source()})", file=sys.stderr)  # not on stdout: `$(bdnex config --path)` stays the path alone
         return 0
 
     try:

@@ -1826,6 +1826,17 @@ def test_the_panel_sends_the_tags_to_komga_for_the_view_or_the_collection(env):
     assert seen["go_label"] == "Send metadata"  # not "Do it": what the button does  # not configured: the reason is in the window, nothing can be sent
 
 
+def test_the_title_names_a_library_that_is_not_the_default(env):
+    db, root, paths = env
+    seen = {}
+
+    async def script(app, pilot, lib):
+        seen["title"] = app.title
+
+    drive(db, root, script)
+    assert seen["title"] == "bdnex review · lib.sqlite"  # the test's library is not the default one
+
+
 def test_a_view_longer_than_its_page_asks_whether_to_do_every_page(env):
     db, root, paths = env
     seen = {}

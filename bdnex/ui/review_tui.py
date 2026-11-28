@@ -1202,6 +1202,11 @@ class ReviewApp(ColumnsMixin, ReviewComicvine, ReviewActions, ReviewOrganise, Re
         self.ui_thread = threading.get_ident()
         self.ui_loop = asyncio.get_running_loop()
         self.started = time.monotonic()
+        from bdnex.config import library_label
+
+        other = library_label(self.settings)
+        if other:  # not the default library: the title says which one, two terminals on two libraries look alike
+            self.title = f"bdnex review · {other}"
         self.take_the_log()
         self.set_interval(0.15, self.tick_pending)
         self.query_one("#meta").display = bool(self.view_extra.get("meta", True))  # the album's metadata is shown unless `d` hid it

@@ -41,6 +41,34 @@ Your file only lists what you change. bdnex checks it on every start and tells y
 unknown options, wrong values, or a file written by an older version. See
 [Configuration](configuration.md).
 
+## …keep a second library (another database, another collection folder)?
+
+```{how} cli tui
+```
+
+One config file per library, chosen with `$BDNEX_CONFIG`. The second file only lists what differs:
+
+```yaml
+# ~/.config/bdnex/kids.yaml
+config_version: 2
+library: ~/.local/share/bdnex/kids.sqlite     # its own database
+collection_path: /media/comics/kids           # its own collection folder
+cover:
+  dir: ~/.local/share/bdnex/kids-covers       # its own covers
+```
+
+```bash
+alias bdkids='BDNEX_CONFIG=~/.config/bdnex/kids.yaml uv run bdnex'    # one alias per library
+bdkids init            # once: the album list is downloaded into this database
+bdkids import --match --auto=all ~/comics/kids
+bdkids review          # the title says "bdnex review · kids.sqlite"
+bdkids config --path   # which file this is (and whether it came from $BDNEX_CONFIG)
+bdkids config --update # adds the options this file does not list yet; each file has its own
+```
+
+Give each library its own `collection_path` and `import.sources`, or the same folder would be imported into both. Without the variable,
+bdnex uses `~/.config/bdnex/bdnex.yaml`, your first library. `bdnex serve` follows the variable too (use another `api.port` for a second page).
+
 ## …import my comics, and check each match myself?
 
 ```{how} cli
