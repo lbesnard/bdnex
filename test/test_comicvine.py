@@ -138,3 +138,53 @@ def test_the_key_is_a_secret():
 
     assert "comicvine.api_key" in SECRET_KEYS
     assert masked({"comicvine": {"api_key": "abc"}})["comicvine"]["api_key"] == "<hidden>"
+
+
+def test_search_volumes_is_one_request_and_gives_the_name_year_publisher_and_address(tmp_path, monkeypatch):
+    asked = []
+
+    class Searching(FakeClient):
+        def search_volumes(self, query, max_results=500):
+            asked.append((query, max_results))
+            return [NS(id=18040, name="Fell", start_year=2005, publisher=NS(name="Image"), issue_count=9,
+                       site_url="https://comicvine.gamespot.com/fell/4050-18040/"),
+                    NS(id=5, name="Fell: Feral City", start_year=None, publisher=None, issue_count=1, site_url=None)]
+
+    monkeypatch.setattr(comicvine, "client", lambda settings: Searching())
+    hits = comicvine.search_volumes(settings(tmp_path), "  fell ")
+    assert asked == [("fell", 20)] and [(h.name, h.year, h.publisher, h.issues) for h in hits] == [("Fell", 2005, "Image", 9), ("Fell: Feral City", None, None, 1)]
+    assert hits[0].url == "https://comicvine.gamespot.com/fell/4050-18040/" and comicvine.parse(hits[1].url) == ("volume", 5)  # an address the keys know
+    assert comicvine.search_volumes(settings(tmp_path), "  ") == [] and len(asked) == 1  # nothing typed: no request
+
+
+def test_the_cover_is_kept_as_a_file_and_a_failure_is_only_a_missing_cover(tmp_path, monkeypatch):
+    import requests
+
+    from bdnex.importer import covers
+
+    info = comicvine.album_info(issue(), volume())
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 64
+    gets = []
+
+    class Answer:
+        content = png
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(requests, "get", lambda url, **kw: gets.append((url, kw["headers"]["User-Agent"])) or Answer())
+    monkeypatch.setattr(covers, "check_cover_image", lambda data: None)  # (a real picture is slow to make; its check has its own tests)
+    cfg = build_settings({"config_version": 2, "library": str(tmp_path / "l.sqlite"), "cover": {"dir": str(tmp_path / "covers"), "download": True}})[0]
+    kept = comicvine.fetch_cover(cfg, info)
+    assert kept == "comicvine/111/cover.png" and (tmp_path / "covers" / kept).read_bytes() == png
+    assert gets == [("https://x/c.jpg", comicvine.USER_AGENT)]
+    assert comicvine.fetch_cover(cfg, info) == kept and len(gets) == 1  # already kept: no second request
+    off = build_settings({"config_version": 2, "library": str(tmp_path / "l.sqlite"), "cover": {"dir": str(tmp_path / "c2"), "download": False}})[0]
+    assert comicvine.fetch_cover(off, info) is None and len(gets) == 1
+
+    def broken(url, **kw):
+        raise requests.ConnectionError("down")
+
+    monkeypatch.setattr(requests, "get", broken)
+    other = comicvine.album_info(issue(id_=222), volume())
+    assert comicvine.fetch_cover(cfg, other) is None  # said nowhere: a cover is a help

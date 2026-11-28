@@ -502,7 +502,7 @@ KEY_SECTIONS = (
     )),
     ("LINKING A FILE TO AN ALBUM", (
         ("t", "the candidates bdnex found for this file (from Bédéthèque's album list)"),
-        ("o  O", "search every album of Bédéthèque's list (O: with fzf)"),
+        ("o  O", "search every album of Bédéthèque's list (O: with fzf); F4 in that window searches Comic Vine by name instead"),
         ("i", "type the address of a page: a Bédéthèque album, a BDthèque series (bdtheque.com), a Comic Vine issue or volume; or a Bédéthèque album id"),
         ("p", "open the album's page in the browser"),
         ("c", "compare the file's cover with the album's; then z for the full size (+ - zoom, arrows move, Tab file / album)"),

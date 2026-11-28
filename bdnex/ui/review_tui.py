@@ -357,9 +357,11 @@ class FuzzyScreen(Modal):
 
     BINDINGS = [Binding("escape", "back", "Back"), Binding("ctrl+o", "open", "Open the page"),
                 Binding("f2", "tick('series')", "Series on/off", show=False), Binding("f3", "tick('albums')", "Albums on/off", show=False),
+                Binding("f4", "comicvine", "Search Comic Vine", show=False),
                 Binding("down", "move(1)", show=False, priority=True), Binding("up", "move(-1)", show=False, priority=True)]
     CSS = """
     FuzzyScreen { align: center middle; }
+    #tocv { margin-top: 1; }
     #search { width: 90%; height: 85%; border: round $accent; padding: 1 2; background: $surface; }
     #hits { height: 1fr; }
     #kinds { height: 3; }
@@ -386,6 +388,8 @@ class FuzzyScreen(Modal):
                 with Horizontal(id="kinds"):  # what is searched (not only what is shown): many series cannot push every album out of the list
                     yield Tick("SERIES  (F2)", True, id="show-series")
                     yield Tick("Albums  (F3)", True, id="show-albums")
+            yield Button("Search Comic Vine instead  (F4)", id="tocv",
+                         tooltip="Look for the series on Comic Vine (one request, by name) instead of in Bédéthèque's list: the volume you pick is used like a pasted address.")
             yield Label("", id="count")
             if self.series_ok:
                 yield Label(Text("score  type    year  author                  name   (a SERIES gives each file its volume; an album is just that one book)", style="dim"))
@@ -469,6 +473,18 @@ class FuzzyScreen(Modal):
     def on_input_changed(self, event: Input.Changed) -> None:
         self.text = event.value
         self.search(event.value)
+
+    def action_comicvine(self) -> None:
+        """Comic Vine's own search: a volume is picked there and comes back as its address (what a pasted address does)."""
+        from bdnex.ui.review_comicvine import ComicvineSearchScreen
+
+        self.app.push_screen(ComicvineSearchScreen(self.query_one("#words", Input).value.strip(), self.about),
+                             lambda address: self.dismiss(address) if address else None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "tocv":
+            event.stop()
+            self.action_comicvine()
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
         if event.checkbox.id == "show-series":
@@ -2231,7 +2247,15 @@ class ReviewApp(ColumnsMixin, ReviewComicvine, ReviewActions, ReviewOrganise, Re
         if row is None:
             return
         self.push_screen(FuzzyScreen(self.hub, self.search_start(row), "Which album is this file?", about=self.about_files([row])),
-                         lambda candidate: self.link(row, candidate.url, candidate) if candidate is not None else None)
+                         lambda candidate: self.other_picked(row, candidate))
+
+    def other_picked(self, row, candidate) -> None:
+        if candidate is None:
+            return
+        if isinstance(candidate, str):  # a Comic Vine volume, found by its search (F4): the file gets the issue with its number
+            self.run_worker(self.guarded(self.comicvine_address([row], candidate), "that volume"))
+            return
+        self.link(row, candidate.url, candidate)
 
     def action_other_fzf(self) -> None:
         """The real ``fzf`` (when installed): the screen steps aside for it and comes back."""

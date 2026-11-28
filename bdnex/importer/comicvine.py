@@ -25,6 +25,7 @@ logger = logging.getLogger(__name__)
 ADDRESS = re.compile(r"(?:comicvine\.gamespot\.com/(?:[^/\s?#]+/)?|^\s*)(?P<kind>4000|4050)-(?P<id>\d+)", re.I)
 KINDS = {"4000": "issue", "4050": "volume"}
 KEY_ENV = "BDNEX_COMICVINE_API_KEY"
+USER_AGENT = "bdnex (+https://github.com/lbesnard/bdnex)"
 
 # Comic Vine's credit words -> ComicInfo roles
 ROLES = {"writer": "Writer", "penciler": "Penciller", "penciller": "Penciller", "artist": "Penciller", "inker": "Inker", "colorist": "Colorist",
@@ -195,3 +196,47 @@ def read_volume(settings, text: str, paths: list[str], progress: Optional[Callab
             break
         answer.mapping[path] = album_info(issue, volume)
     return answer
+
+
+def fetch_cover(settings, info: AlbumInfo) -> Optional[str]:
+    """Keep the cover of ``info`` as a file (``cover.dir``), so that the review screen's ``c`` can compare it with the file's. A plain request to
+    the picture's address (not the API: it does not count against the hourly limit), checked to be a picture. Returns the relative path, or
+    ``None`` (downloads are off, no cover address, or the picture did not come): a cover is a help, never a reason for a link to fail."""
+    if not info.cover_url or not getattr(settings.cover, "download", False):
+        return None
+    from bdnex.importer import covers
+
+    try:
+        kept = covers.find_cover(settings.cover_path, SOURCE, info.source_id)
+        if kept:
+            return kept
+        import requests
+
+        response = requests.get(info.cover_url, headers={"User-Agent": USER_AGENT}, timeout=settings.comicvine.timeout)
+        response.raise_for_status()
+        covers.check_cover_image(response.content)
+        return covers.save_cover(settings.cover_path, SOURCE, info.source_id, response.content)
+    except Exception as err:
+        logger.debug("%s: no cover (%s)", info.cover_url, err)
+        return None
+
+
+@dataclass
+class VolumeHit:
+    id: int
+    name: str
+    year: Optional[int]
+    publisher: Optional[str]
+    issues: int
+    url: str
+
+
+def search_volumes(settings, text: str, limit: int = 20) -> list[VolumeHit]:
+    """The volumes (series) whose name looks like ``text``, best first: one request (cached). Slow: run it in a thread."""
+    text = (text or "").strip()
+    if not text:
+        return []
+    found = _call(client(settings).search_volumes, text, limit)
+    return [VolumeHit(v.id, v.name, v.start_year, getattr(getattr(v, "publisher", None), "name", None), v.issue_count,
+                      str(v.site_url) if getattr(v, "site_url", None) else f"https://comicvine.gamespot.com/volume/4050-{v.id}/")
+            for v in found[:limit]]

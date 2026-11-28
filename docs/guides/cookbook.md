@@ -520,9 +520,9 @@ Put the cursor on the file (or mark several with space) and press **Delete**: af
 ```{how} tui
 ```
 
-Install the extra (`pip install "bdnex[comicvine]"`, Python 3.11 or newer), put your key in `comicvine.api_key` (or `BDNEX_COMICVINE_API_KEY`), then
+Install bdnex with the `all` extra (`uv tool install "bdnex[all] @ ..."`, see the README), put your key in `comicvine.api_key` (or `BDNEX_COMICVINE_API_KEY`), then
 in the review screen press `i` and paste the address of the **issue** page for one file, or `a` and the address of the **volume** page for a whole
-folder (mark the files with `m`). See [Comic Vine](comicvine.md).
+folder (mark the files with `m`). No address at hand: in `o` or `a`, **F4** searches Comic Vine by name. See [Comic Vine](comicvine.md).
 
 ## …get back a file I replaced?
 

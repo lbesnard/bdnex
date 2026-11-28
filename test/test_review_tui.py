@@ -1923,3 +1923,65 @@ def test_a_with_a_comic_vine_volume_address_links_the_marked_files_after_a_quest
     with Library(db) as lib:
         sources = {lib.get_album(lib.get_file(p)["album_id"])["source"] for p in files.values()}
     assert sources == {"comicvine"}
+
+
+def test_the_o_window_can_search_comic_vine_and_a_picked_volume_is_used_like_an_address(env, monkeypatch):
+    from bdnex.importer import comicvine
+
+    db, files = env
+    searched, read = [], []
+
+    def search(settings, text, limit=20):
+        searched.append(text)
+        return [comicvine.VolumeHit(18040, "Fell", 2005, "Image", 9, "https://comicvine.gamespot.com/fell/4050-18040/")]
+
+    def volume(settings, text, paths, progress=None):
+        read.append((text, paths))
+        return comicvine.VolumeAnswer("Fell", {p: comicvine_info(2) for p in paths})
+
+    monkeypatch.setattr(comicvine, "search_volumes", search)
+    monkeypatch.setattr(comicvine, "read_volume", volume)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("o")
+        await settle(app, pilot)
+        await pilot.press("f4")
+        await pilot.pause(0.3)
+        seen["screen"] = type(app.screen).__name__
+        app.screen.query_one("#cvwords").value = "fell"
+        await pilot.press("enter")  # searches
+        for _ in range(20):
+            if app.screen.hits:
+                break
+            await pilot.pause(0.1)
+        seen["hits"] = [h.name for h in app.screen.hits]
+        await pilot.press("enter")  # the same text: picks the highlighted volume
+        await settle(app, pilot)
+        await settle(app, pilot)
+        seen["waiting"] = len(app.waiting)
+
+    drive(db, script)
+    assert seen["screen"] == "ComicvineSearchScreen" and seen["hits"] == ["Fell"] and searched == ["fell"]
+    assert read and read[0][0] == "https://comicvine.gamespot.com/fell/4050-18040/" and len(read[0][1]) == 1 and seen["waiting"] == 1
+
+
+def test_the_cover_of_a_comic_vine_issue_is_kept_and_the_album_points_at_it(env, monkeypatch):
+    from bdnex.importer import comicvine
+
+    db, files = env
+    monkeypatch.setattr(comicvine, "read_issue", lambda settings, text: comicvine_info(1))
+    monkeypatch.setattr(comicvine, "fetch_cover", lambda settings, info: f"comicvine/{info.source_id}/cover.jpg")
+
+    async def script(app, pilot):
+        await pilot.press("i")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = "https://comicvine.gamespot.com/fell/4000-101/"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+
+    drive(db, script)
+    with Library(db) as lib:
+        albums = [lib.get_album(lib.get_file(p)["album_id"]) for p in files.values() if lib.get_file(p)["album_id"]]
+    assert any(a["source"] == "comicvine" and a["cover_file"] == "comicvine/101/cover.jpg" for a in albums)

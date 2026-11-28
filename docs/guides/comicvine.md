@@ -12,7 +12,9 @@ address of a page, in the review screen, and the file is linked to what the page
 
 ## Set it up
 
-1. Install the extra (it needs Python 3.11 or newer): `pip install "bdnex[comicvine]"`, or `uv sync --extra comicvine`. The Docker image has it.
+1. Install the extra: with uv the simplest is `all` (everything optional: this, and the web page), as the README says:
+   `uv tool install "bdnex[all] @ git+https://github.com/lbesnard/bdnex.git"`, or `uv sync --extra all` from a clone. `bdnex[comicvine]` alone
+   works too, with pip. The install script and the Docker image have it.
 2. Get a key at [comicvine.gamespot.com/api](https://comicvine.gamespot.com/api/) and give it to bdnex, in `bdnex config --edit`:
 
    ```yaml
@@ -27,6 +29,14 @@ bdnex reads Comic Vine with [Simyan](https://github.com/Metron-Project/Simyan), 
 hour) and keeps its own cache. The cache and the limit counters are two small files next to the library (`comicvine-cache.sqlite`,
 `comicvine-ratelimits.sqlite`; a volume in Docker). An answer is kept `comicvine.cache_days` (14) days: looking at a page again costs no request.
 Comic Vine's terms are for non-commercial use.
+
+## Search by name
+
+No address at hand? In the `o` window (or the `a` window), press **F4** (or the button **Search Comic Vine instead**): a box asks for the name of the
+series. **Enter** searches (one request, not one per letter: the limit is 200 an hour), the arrows move, **Enter** picks, **Ctrl-O** opens the page
+in your browser. The list says the year, the publisher and the number of issues of each volume. The volume you pick is used exactly like a pasted
+volume address: with `o`, the file under the cursor gets the issue with the number in its name; with `a`, every marked file does. Answers are kept
+(`comicvine.cache_days`), so the same search again costs nothing. Only volumes are searched, not issues.
 
 ## Link files
 
@@ -45,4 +55,4 @@ The album is stored with `source = comicvine` and the issue's id: its title (or 
 number as `volume`, the cover date, the publisher (the volume's), the summary (text, not HTML), the credits (writer, penciller, inker, colorist,
 letterer, cover artist, editor), and the characters, teams, locations and story arcs in `extra`. The language is `en`. A volume with one issue
 is a one-shot. The `$series`, `$volume` and `$title` of your `paths` templates then take Comic Vine's English names. Quality, duplicates, versions,
-`write` and `move` work on these files as on any other. The cover address is saved but the cover itself is not downloaded by the link.
+`write` and `move` work on these files as on any other. The **cover** is downloaded right after the link, as a file in `cover.dir` (when `cover.download` is on), so that `c` can put it next to the file's own cover. That is a plain request to Comic Vine's picture, not the API, so it does not count against the 200 an hour. If the picture does not come, the link stays and there is just no cover.

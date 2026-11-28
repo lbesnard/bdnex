@@ -12,12 +12,113 @@ import logging
 import os
 import time
 
+from rich.text import Text
+from textual.app import ComposeResult
+from textual.binding import Binding
+from textual.containers import Vertical
+from textual.widgets import Input, Label, OptionList
+from textual.widgets.option_list import Option
+
 from bdnex.importer import comicvine
 from bdnex.library import review_batch as batch
+from bdnex.ui.review_modal import Modal
 
 logger = logging.getLogger(__name__)
 
 SHOWN = 8
+
+
+class ComicvineSearchScreen(Modal):
+    """Search Comic Vine for a volume (a series) by name. Enter searches (one request: not one per letter, the limit is 200 an hour), the arrows
+    and Enter pick, and the answer is the volume's address, which ``a`` and ``i`` already know what to do with. Dismisses with ``None`` on Esc."""
+
+    BINDINGS = [Binding("escape", "back", "Back"), Binding("ctrl+o", "open", "Open the page"),
+                Binding("down", "move(1)", show=False, priority=True), Binding("up", "move(-1)", show=False, priority=True)]
+    CSS = """
+    ComicvineSearchScreen { align: center middle; }
+    #cvsearch { width: 90%; height: 85%; border: round $accent; padding: 1 2; background: $surface; }
+    #cvhits { height: 1fr; }
+    #cvwords { border: tall $accent; background: $boost; }
+    #cvwords:focus { border: double $success; background: $panel; }
+    """
+
+    def __init__(self, start: str = "", about=None) -> None:
+        super().__init__()
+        self.start, self.about = start, about or []
+        self.hits: list = []
+        self.searched = None  # the text the hits answer
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="cvsearch"):
+            yield Label(Text("Search Comic Vine for the volume (the series) of the file(s)", style="bold"))
+            if self.about:
+                yield Label(Text("\n".join(self.about), style="cyan"))
+            yield Input(value=self.start, id="cvwords", placeholder="the name of the series, then Enter")
+            yield Label("", id="cvcount")
+            yield OptionList(id="cvhits")
+            yield Label(Text("Enter searches, then picks · ↑↓ move · Ctrl-O opens the page · Esc goes back. Each search is one request of the 200 an hour; "
+                             "answers are kept.", style="dim"))
+
+    def on_mount(self) -> None:
+        self.query_one(Input).focus()
+
+    def action_back(self) -> None:
+        self.dismiss(None)
+
+    def action_move(self, step: int) -> None:
+        options = self.query_one(OptionList)
+        if options.option_count:
+            options.highlighted = max(0, min(options.option_count - 1, (options.highlighted or 0) + step))
+
+    def action_open(self) -> None:
+        index = self.query_one(OptionList).highlighted
+        if index is not None and index < len(self.hits):
+            from bdnex.ui.review_tui import open_in_browser, show_address
+
+            if not open_in_browser(self.hits[index].url):
+                show_address(self.app, self.hits[index].url)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        event.stop()
+        text = event.value.strip()
+        if self.hits and text == self.searched:  # the same text again: Enter picks the highlighted volume
+            self.pick(self.query_one(OptionList).highlighted)
+        elif text:
+            self.query_one("#cvcount", Label).update(Text("looking...", style="dim"))
+            self.run_worker(self.find(text), exclusive=True)
+
+    async def find(self, text: str) -> None:
+        try:
+            hits = await asyncio.to_thread(comicvine.search_volumes, self.app.settings, text)
+        except Exception as err:
+            if self.is_attached:
+                self.query_one("#cvcount", Label).update(Text(str(err), style="red"))
+            return
+        if not self.is_attached:
+            return
+        self.hits, self.searched = hits, text
+        options = self.query_one(OptionList)
+        options.clear_options()
+        options.add_options([Option(self.line(hit)) for hit in hits])
+        if hits:
+            options.highlighted = 0
+        self.query_one("#cvcount", Label).update(Text(f"{len(hits)} volume(s)" if hits else "nothing found", style="dim"))
+
+    @staticmethod
+    def line(hit) -> Text:
+        line = Text(f"{hit.year or '    ':<4}  ", style="dim")
+        line.append(f"{(hit.publisher or '')[:18]:<18}  ", style="cyan")
+        line.append(f"{hit.issues:>4} issue(s)  ", style="dim")
+        line.append(hit.name, style="bold")
+        return line
+
+    def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        event.stop()
+        self.pick(event.option_index)
+
+    def pick(self, index) -> None:
+        if index is not None and index < len(self.hits):
+            self.dismiss(self.hits[index].url)
 
 
 class ReviewComicvine:
@@ -46,6 +147,7 @@ class ReviewComicvine:
             finally:
                 self.comicvine_busy([row], False)
             self.link_page(row, info)
+            self.run_worker(self.guarded(self.comicvine_covers([(row, info)]), "the cover"))
             return
         paths = [r.path for r in chosen]
         self.comicvine_busy(chosen, True)
@@ -85,6 +187,7 @@ class ReviewComicvine:
     def link_infos(self, pairs: list) -> None:
         """Each file linked to its album now (a write in the library: the album's record is already complete, nothing is fetched)."""
         done = 0
+        linked = []
         for row, info in pairs:
             if row.status or row.busy:  # decided while the question was open
                 continue
@@ -99,6 +202,17 @@ class ReviewComicvine:
             self.decided["linked"] = self.decided.get("linked", 0) + 1
             logger.info("%s: %s", os.path.basename(row.path), row.message)
             self.refresh_row(row)
+            linked.append((row, info))
             done += 1
-        self.notify(f"{done} file(s) linked to Comic Vine", timeout=6)
+        self.notify(f"{done} file(s) linked to Comic Vine" + ("; their covers are being saved" if linked and self.settings.cover.download else ""), timeout=6)
         self.advance()
+        if linked:
+            self.run_worker(self.guarded(self.comicvine_covers(linked), "the covers"))
+
+    async def comicvine_covers(self, linked: list) -> None:
+        """Keep each linked album's cover as a file, so that ``c`` can put it next to the file's. One at a time: plain requests to Comic Vine's
+        pictures (they are not the API: no limit counted), the file name decides, the library is written here, in the screen's thread."""
+        for row, info in linked:
+            kept = await asyncio.to_thread(comicvine.fetch_cover, self.settings, info)
+            if kept and row.album_id is not None:
+                self.library.set_cover_file(row.album_id, kept)
