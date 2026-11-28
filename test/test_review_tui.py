@@ -1985,3 +1985,35 @@ def test_the_cover_of_a_comic_vine_issue_is_kept_and_the_album_points_at_it(env,
     with Library(db) as lib:
         albums = [lib.get_album(lib.get_file(p)["album_id"]) for p in files.values() if lib.get_file(p)["album_id"]]
     assert any(a["source"] == "comicvine" and a["cover_file"] == "comicvine/101/cover.jpg" for a in albums)
+
+
+def test_a_volume_picked_in_the_comic_vine_search_closes_both_windows_without_an_error(env, monkeypatch):
+    """Opened with the button, the search window calls back in the `o` window's own message handler, where that window closes itself: returning
+    the (awaitable) dismissal from the callback was a ScreenError (the screen came down after a real search)."""
+    from bdnex.importer import comicvine
+
+    db, files = env
+    monkeypatch.setattr(comicvine, "search_volumes", lambda s, t, limit=20: [comicvine.VolumeHit(1, "Fell", 2005, "Image", 9, "https://comicvine.gamespot.com/fell/4050-18040/")])
+    monkeypatch.setattr(comicvine, "read_volume", lambda s, t, paths, progress=None: comicvine.VolumeAnswer("Fell", {p: comicvine_info(2) for p in paths}))
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("o")
+        await settle(app, pilot)
+        app.screen.query_one("#tocv").press()  # the button, not the F4 key: its handler is the window's own, where the callback runs
+        await pilot.pause(0.3)
+        app.screen.query_one("#cvwords").value = "fell"
+        await pilot.press("enter")
+        for _ in range(20):
+            if app.screen.hits:
+                break
+            await pilot.pause(0.1)
+        app.screen.query_one("OptionList").focus()
+        await pilot.press("enter")  # Enter on the list itself (the other way to pick)
+        await settle(app, pilot)
+        await settle(app, pilot)
+        seen["screen"] = type(app.screen).__name__
+        seen["waiting"] = len(app.waiting)
+
+    drive(db, script)
+    assert seen == {"screen": "Screen", "waiting": 1}

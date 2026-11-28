@@ -478,8 +478,13 @@ class FuzzyScreen(Modal):
         """Comic Vine's own search: a volume is picked there and comes back as its address (what a pasted address does)."""
         from bdnex.ui.review_comicvine import ComicvineSearchScreen
 
-        self.app.push_screen(ComicvineSearchScreen(self.query_one("#words", Input).value.strip(), self.about),
-                             lambda address: self.dismiss(address) if address else None)
+        self.app.push_screen(ComicvineSearchScreen(self.query_one("#words", Input).value.strip(), self.about), self.comicvine_picked)
+
+    def comicvine_picked(self, address) -> None:
+        # a method that returns nothing, not a lambda that returns `self.dismiss(...)`: Textual awaits what a callback returns, and awaiting the
+        # dismissal of a screen from its own message handler is a ScreenError (the whole screen came down)
+        if address:
+            self.dismiss(address)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "tocv":
