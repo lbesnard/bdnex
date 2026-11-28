@@ -42,6 +42,7 @@ from bdnex.library import browse, review_batch as batch
 from bdnex.ui import color
 from bdnex.ui.review_extras import ReviewExtras
 from bdnex.ui.review_organise import ReviewOrganise
+from bdnex.ui.review_volumes import VolumesScreen
 from bdnex.ui.cover_text import GRAPHICS, graphic
 from bdnex.ui import review_panels as panels
 from bdnex.ui.review_actions import ActionsChip, ReviewActions
@@ -2195,13 +2196,12 @@ class ReviewApp(ColumnsMixin, ReviewComicvine, ReviewActions, ReviewOrganise, Re
                         "To link one file to one album, use `o`.", severity="warning", timeout=10)
             return
         pairs = [(r, found.mapping[r.path]) for r in chosen if r.path in found.mapping]
-        lines = [f"{os.path.basename(r.path)}  ->  {c.url.rsplit('/', 1)[-1].removesuffix('.html')}" for r, c in pairs[:8]]
-        more = f"\n... and {len(pairs) - 8} more" if len(pairs) > 8 else ""
         left = len(chosen) - len(pairs)
         question = (f"{found.name}: {len(pairs)} of {len(chosen)} file(s) find their volume"
-                    + (f" ({left} left as they are)" if left else "") + ". Link them?\n" + "\n".join(lines) + more)
-        self.ask_later(f"link {len(pairs)} file(s) to {found.name}?", lambda: AskScreen(question, None),
-                       lambda yes: self.link_many(pairs) if yes else None)
+                    + (f" ({left} left as they are)" if left else "") + ". Check each album; change one with Enter.")
+        every = [(r, found.mapping.get(r.path)) for r in chosen]  # the files with no volume are listed too: they can be matched by hand
+        self.ask_later(f"link {len(pairs)} file(s) to {found.name}?", lambda: VolumesScreen(question, every, self.hub, found.name),
+                       lambda picked: self.link_many(picked) if picked else None)
 
     def link_many(self, pairs: list) -> None:
         """Link each file to its album at once (a write in the library); the pages and covers come in the background, one by one."""

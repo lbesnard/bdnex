@@ -675,9 +675,49 @@ def test_marked_files_get_the_album_of_a_series_by_their_volume_after_one_questi
         await settle(app, pilot)
 
     result, _ = drive(db, script)
-    assert seen["marked"] == 2 and len(asked["paths"]) == 2 and seen["question"] == "AskScreen"
+    assert seen["marked"] == 2 and len(asked["paths"]) == 2 and seen["question"] == "VolumesScreen"
     assert result["cells"][0][8] == "confirmed · linked" and seen_calls == [True]
     assert len(result["app"].marked) == 1  # the mark of the linked file went with the link; the other file found no volume and stays marked
+
+
+def test_the_series_question_lists_every_file_and_an_album_can_be_changed_by_hand(env, monkeypatch):
+    from bdnex.importer.folders import SeriesProposal
+    from bdnex.ui.review_volumes import VolumesScreen
+
+    db, files = env
+    release = threading.Event()
+    release.set()
+    seen_calls.clear()
+    _linking(monkeypatch, db, release)
+    monkeypatch.setattr(batch, "propose_for_series",
+                        lambda source, candidate, paths: SeriesProposal("Nains", "s1", {files["wrong"]: FORGE}, with_volume=1, total=len(paths)))
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("space")
+        await pilot.press("space")
+        await pilot.press("a")
+        await settle(app, pilot)
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await pilot.press("w")
+        await pilot.pause()
+        screen = app.screen
+        assert isinstance(screen, VolumesScreen)
+        seen["listed"] = [(os.path.basename(r.path), c is not None) for r, c in zip(screen.rows, screen.albums)]
+        seen["label"] = str(screen.query_one("#link").label)
+        other = Candidate("999", "https://www.bedetheque.com/BD-Nains-Tome-9-999.html", "nains tome 9", 9)
+        screen.set_album(1, other)  # what the search of `o` gives back for the file that found no volume
+        seen["label2"] = str(screen.query_one("#link").label)
+        screen.action_leave()  # the cursor is on the first file: it is left out
+        seen["label3"] = str(screen.query_one("#link").label)
+        screen.action_link()
+        await settle(app, pilot)
+
+    result, _ = drive(db, script)
+    assert [listed for _, listed in seen["listed"]].count(True) == 1 and len(seen["listed"]) == 2  # both files are listed, one has an album
+    assert seen["label"] == "Link 1 file(s)" and seen["label2"] == "Link 2 file(s)" and seen["label3"] == "Link 1 file(s)"
+    assert len(seen_calls) == 1  # only the file given by hand was linked: the first was left out
 
 
 def _series_address_run(env, monkeypatch, keys):
@@ -724,7 +764,7 @@ def test_a_series_address_in_the_search_attaches_the_marked_files_by_volume(env,
         await pilot.press("enter")
 
     asked, seen, result = _series_address_run(env, monkeypatch, keys)
-    assert asked["address"] == SERIES_PAGE and len(asked["paths"]) == 1 and seen["question"] == "AskScreen"
+    assert asked["address"] == SERIES_PAGE and len(asked["paths"]) == 1 and seen["question"] == "VolumesScreen"
     assert result["cells"][0][8] == "confirmed · linked"
 
 
@@ -736,7 +776,7 @@ def test_i_with_a_series_address_attaches_the_files_too(env, monkeypatch):
         await pilot.press("enter")
 
     asked, seen, result = _series_address_run(env, monkeypatch, keys)
-    assert asked["address"] == SERIES_PAGE and seen["question"] == "AskScreen"
+    assert asked["address"] == SERIES_PAGE and seen["question"] == "VolumesScreen"
 
 
 def test_a_series_page_gives_its_albums_by_volume():

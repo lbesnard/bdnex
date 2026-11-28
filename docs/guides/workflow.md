@@ -70,8 +70,9 @@ Most collections have a folder per series with many albums in it, so you rarely 
 | the **collection** (or cycle) is odd and gives a bad destination path | `E`, **Clear** on that row | the value is emptied on all marked files, and, when your `paths.series` template uses `%ifdef{collection,$collection}`, its folder level is left out ([Writing](writing.md)) |
 | a file is only another edition | `e`, *Version of the album* | linked as a version ([Versions](versions.md)) |
 
-4. **Answer the question** the screen shows ("Nains: 12 of 12 files find their volume. Link them?"). Nothing is linked before you say yes.
-   A question from background work waits behind a red **N questions waiting · w** badge.
+4. **Check the table** the screen shows: every file next to the album it would get ("Nains: 12 of 12 files find their volume"). **Enter** on a
+   file picks another album for it by hand, **x** leaves it out, **y** links. Nothing is linked before you do.
+   The question waits behind a red **N questions waiting · w** badge until you open it.
 5. **`k`** confirms the marked files (green). Next red folder.
 
 A file whose volume the series does not have is left as it is, and the question says how many. Files that already have a site album cannot be
