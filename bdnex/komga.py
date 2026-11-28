@@ -9,11 +9,14 @@ the same folders. Nothing here reads or changes a comic file.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections import Counter
 from typing import Any, Iterable, Optional
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 500
 ROLES = {"Writer": "writer", "Penciller": "penciller", "Inker": "inker", "Colorist": "colorist",
@@ -103,23 +106,43 @@ class Client:
         return self._call("GET", f"/api/v1/series/{series_id}")
 
     def patch_book(self, book_id: str, payload: dict[str, Any]) -> list[str]:
-        """Send the metadata of one book. Komga checks a few fields (an ISBN must be a valid one) and refuses the WHOLE request for one bad
-        value: the fields it names are taken out and the rest is sent again, once. Returns the fields that were left out."""
+        """Send the metadata of one book; returns the fields Komga refused (left out, the rest was sent)."""
+        return self._patch(f"/api/v1/books/{book_id}/metadata", payload, BOOK_LOCKS)
+
+    def patch_series(self, series_id: str, payload: dict[str, Any]) -> list[str]:
+        return self._patch(f"/api/v1/series/{series_id}/metadata", payload, SERIES_LOCKS)
+
+    def _patch(self, path: str, payload: dict[str, Any], locks: dict[str, str]) -> list[str]:
+        """Komga checks a few fields (an ISBN must be a valid one) and refuses the WHOLE request for one bad value. So the fields it names are
+        taken out and the rest is sent again; when it names none, each field is tried on its own to find the bad one. Nothing valid is held back
+        by one bad value, and every field left out is logged. Raises only when nothing could be sent."""
         try:
-            self._call("PATCH", f"/api/v1/books/{book_id}/metadata", json=payload)
+            self._call("PATCH", path, json=payload)
             return []
         except KomgaError as err:
-            bad = refused_fields(err, payload)
-            if not bad:
+            if err.status != 400:
                 raise
-            rest = {k: v for k, v in payload.items() if k not in bad and k not in {BOOK_LOCKS.get(b) for b in bad}}
-            if not any(k in rest for k in BOOK_LOCKS):  # nothing but the refused values was left to send
+            bad = refused_fields(err, payload)
+            if bad:
+                rest = {k: v for k, v in payload.items() if k not in bad and k not in {locks.get(b) for b in bad}}
+            else:  # a 400 that names no field: find the bad one by sending the fields apart
+                rest, bad = {}, []
+                for name in [k for k in payload if k in locks]:
+                    piece = {name: payload[name], **({locks[name]: payload[locks[name]]} if locks[name] in payload else {})}
+                    try:
+                        self._call("PATCH", path, json=piece)
+                    except KomgaError as one:
+                        if one.status != 400:
+                            raise
+                        bad.append(name)
+                if not bad:
+                    raise
+                logger.warning("Komga refused %s of %s: %s", ", ".join(bad), path, err.body[:300])
                 return bad
-            self._call("PATCH", f"/api/v1/books/{book_id}/metadata", json=rest)
+            logger.warning("Komga refused %s of %s: %s", ", ".join(bad), path, err.body[:300])
+            if any(k in rest for k in locks):  # something valid is left to send
+                self._call("PATCH", path, json=rest)
             return bad
-
-    def patch_series(self, series_id: str, payload: dict[str, Any]) -> None:
-        self._call("PATCH", f"/api/v1/series/{series_id}/metadata", json=payload)
 
 
 def refused_fields(err: "KomgaError", payload: dict[str, Any]) -> list[str]:
