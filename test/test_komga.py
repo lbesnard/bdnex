@@ -535,3 +535,37 @@ def test_a_refusal_that_names_no_field_of_ours_is_still_an_error():
 
     with pytest.raises(komga.KomgaError, match="400"):
         komga.Client(CONFIG, Refusing('{"error": "nope"}')).patch_book("b1", {"title": "T"})
+
+
+class PickyKomga:
+    """Refuses (400, naming no field) any update that holds an ``isbn``; accepts the others."""
+
+    def __init__(self):
+        self.headers, self.auth, self.calls = {}, None, []
+
+    def request(self, method, url, **kwargs):
+        body = kwargs.get("json")
+        self.calls.append(body)
+        if "isbn" in body:
+            response = FakeResponse("bad", 400)
+            response.text = '{"message": "Validation failed"}'
+            return response
+        return FakeResponse(None)
+
+
+def test_when_komga_names_no_field_each_field_is_tried_apart_so_the_valid_ones_still_go(caplog):
+    session = PickyKomga()
+    payload = {"title": "T", "titleLock": True, "isbn": "9", "isbnLock": True, "summary": "S", "summaryLock": True}
+    with caplog.at_level("WARNING"):
+        left_out = komga.Client(CONFIG, session).patch_book("b1", payload)
+    assert left_out == ["isbn"]
+    accepted = [c for c in session.calls[1:] if "isbn" not in c]
+    assert {"title": "T", "titleLock": True} in accepted and {"summary": "S", "summaryLock": True} in accepted
+    assert "refused isbn" in caplog.text  # the problem is in the log, not only in the window
+
+
+def test_a_series_update_leaves_out_a_refused_field_too():
+    body = '{"violations":[{"fieldName":"language","message":"bad"}]}'
+    session = Refusing(body)
+    assert komga.Client(CONFIG, session).patch_series("s1", {"title": "T", "titleLock": True, "language": "xx", "languageLock": True}) == ["language"]
+    assert session.calls[1] == {"title": "T", "titleLock": True}
