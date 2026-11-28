@@ -38,9 +38,12 @@ class VolumesScreen(Modal):
     #volumesbuttons Button { margin-left: 2; }
     """
 
-    def __init__(self, heading: str, pairs: list, hub=None, series: str = ""):
+    def __init__(self, heading: str, pairs: list, hub=None, series: str = "", describe=album_name, pick=None, note=None):
+        """``describe``: the text of an album; ``pick(index, done)``: opens the way to choose another one for a file (the album search by
+        default); ``note(count)``: a line under the table that follows the number of files to link (what it will cost)."""
         super().__init__()
         self.heading, self.hub, self.series = heading, hub, series
+        self.describe, self.picker, self.note = describe, pick, note
         self.rows = [row for row, _ in pairs]
         self.albums: list = [candidate for _, candidate in pairs]
 
@@ -49,6 +52,7 @@ class VolumesScreen(Modal):
             yield Label(Text(self.heading, style="bold"))
             yield Label(Text("Enter: pick another album for the file · x: leave the file out · y: link · Esc: cancel", style="dim"))
             yield DataTable(id="volumestable", cursor_type="row", zebra_stripes=True)
+            yield Label("", id="volumesnote")
             with Horizontal(id="volumesbuttons"):
                 yield Button("Link", id="link", variant="success", tooltip="Link the files that have an album (key y).")
                 yield Button("Pick album", id="pick", tooltip="Another album for the file under the cursor: the search of `o` (Enter).")
@@ -63,15 +67,16 @@ class VolumesScreen(Modal):
         table.focus()
         self.count()
 
-    @staticmethod
-    def cell(candidate) -> Text:
-        return Text(album_name(candidate)) if candidate is not None else Text(NONE_TEXT, style="dim")
+    def cell(self, candidate) -> Text:
+        return Text(self.describe(candidate)) if candidate is not None else Text(NONE_TEXT, style="dim")
 
     def count(self) -> None:
         total = sum(c is not None for c in self.albums)
         button = self.query_one("#link", Button)
         button.label = f"Link {total} file(s)"
         button.disabled = not total
+        if self.note:
+            self.query_one("#volumesnote", Label).update(Text(self.note(total), style="dim"))
 
     def current(self) -> Optional[int]:
         table = self.query_one(DataTable)
@@ -88,12 +93,17 @@ class VolumesScreen(Modal):
             self.set_album(index, None)
 
     def action_pick(self) -> None:
+        index = self.current()
+        if index is None:
+            return
+        if self.picker is not None:
+            self.picker(index, lambda candidate: self.set_album(index, candidate) if candidate is not None else None)
+            return
         from bdnex.importer.folders import title_and_volume  # the volume read from the name seeds the search
 
         from bdnex.ui.review_tui import FuzzyScreen
 
-        index = self.current()
-        if index is None or self.hub is None:
+        if self.hub is None:
             return
         row = self.rows[index]
         volume = title_and_volume(row.path)[1]
@@ -116,3 +126,36 @@ class VolumesScreen(Modal):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
         {"link": self.action_link, "pick": self.action_pick, "leave": self.action_leave, "cancel": self.action_cancel}[event.button.id]()
+
+
+class ChoiceScreen(Modal):
+    """A short list to choose one thing from (the issues of a volume): Enter picks, Esc goes back. Dismisses with the value, or ``None``."""
+
+    BINDINGS = [Binding("escape", "back", "Back")]
+    CSS = """
+    ChoiceScreen { align: center middle; }
+    #choice { width: 70%; height: 80%; border: round $accent; padding: 1 2; background: $surface; }
+    #choices { height: 1fr; margin-top: 1; }
+    """
+
+    def __init__(self, heading: str, options: list[tuple[str, object]]):
+        super().__init__()
+        self.heading, self.options = heading, options
+
+    def compose(self) -> ComposeResult:
+        from textual.widgets import OptionList
+        from textual.widgets.option_list import Option
+
+        with Vertical(id="choice"):
+            yield Label(Text(self.heading, style="bold"))
+            yield OptionList(*[Option(text) for text, _ in self.options], id="choices")
+
+    def on_mount(self) -> None:
+        self.query_one("#choices").focus()
+
+    def on_option_list_option_selected(self, event) -> None:
+        event.stop()
+        self.dismiss(self.options[event.option_index][1])
+
+    def action_back(self) -> None:
+        self.dismiss(None)

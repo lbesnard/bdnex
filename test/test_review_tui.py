@@ -15,6 +15,7 @@ pytest.importorskip("textual")
 
 from bdnex.config import load_config  # noqa: E402
 from bdnex.importer.source import Candidate  # noqa: E402
+from textual.coordinate import Coordinate  # noqa: E402
 from bdnex.library import AlbumInfo, Library, SeriesInfo  # noqa: E402
 from bdnex.library import review_batch as batch  # noqa: E402
 from bdnex.ui import review_tui  # noqa: E402
@@ -1889,7 +1890,8 @@ def comicvine_volume(monkeypatch, number=lambda path: 2):
 
     def volume(settings, text, paths):
         volumes.append(list(paths))
-        return comicvine.VolumeAnswer("Fell", None, {p: NS(id=100 + number(p), number=str(number(p)), name="Feral City") for p in paths})
+        listed = NS(issues=[NS(id=100 + n, number=str(n), name="Feral City") for n in range(1, 10)])
+        return comicvine.VolumeAnswer("Fell", listed, {p: NS(id=100 + number(p), number=str(number(p)), name="Feral City") for p in paths})
 
     def read(settings, answer, paths, progress=None):
         issues.append(list(paths))
@@ -1970,7 +1972,10 @@ def test_a_with_a_comic_vine_volume_address_reads_the_volume_asks_and_only_then_
         seen["issues_before_yes"] = list(issues)  # nothing per issue is read before the person says yes
         await pilot.press("w")
         await pilot.pause(0.3)
-        seen["question"] = str(app.screen.query_one("#ask Label").render())
+        screen = app.screen
+        table = screen.query_one("DataTable")
+        seen["question"] = " ".join([str(screen.query_one("#volumes Label").render()), str(screen.query_one("#volumesnote").render())]
+                                    + [str(table.get_cell_at(Coordinate(i, 1))) for i in range(len(screen.rows))])
         await pilot.press("y")
         await settle(app, pilot)
         await settle(app, pilot)
@@ -1983,6 +1988,41 @@ def test_a_with_a_comic_vine_volume_address_reads_the_volume_asks_and_only_then_
         sources = {lib.get_album(lib.get_file(p)["album_id"])["source"] for p in files.values()}
     assert sources == {"comicvine"}
 
+
+
+def test_a_comic_vine_issue_can_be_picked_by_hand_before_the_issues_are_read(env, monkeypatch):
+    from bdnex.ui.review_volumes import ChoiceScreen, VolumesScreen
+
+    db, files = env
+    volumes, issues = comicvine_volume(monkeypatch, lambda p: 2 if "T02" in p else 5)
+    seen = {}
+
+    async def script(app, pilot):
+        await pilot.press("m")
+        await pilot.press("a")
+        await settle(app, pilot)
+        app.screen.query_one("Input").value = "https://comicvine.gamespot.com/fell/4050-18040/"
+        await pilot.press("enter")
+        await settle(app, pilot)
+        await settle(app, pilot)
+        await pilot.press("w")
+        await pilot.pause(0.3)
+        assert isinstance(app.screen, VolumesScreen)
+        await pilot.press("enter")  # the file under the cursor: pick another issue
+        await pilot.pause(0.3)
+        assert isinstance(app.screen, ChoiceScreen)
+        seen["options"] = app.screen.query_one("#choices").option_count
+        await pilot.press("down", "enter")  # the second issue of the volume
+        await pilot.pause(0.3)
+        assert isinstance(app.screen, VolumesScreen)
+        seen["first"] = str(app.screen.query_one("DataTable").get_cell_at(Coordinate(0, 1)))
+        await pilot.press("y")
+        await settle(app, pilot)
+        await settle(app, pilot)
+
+    drive(db, script)
+    assert seen["options"] == 9 and "#2" in seen["first"] and len(issues) == 1 and len(issues[0]) == 3  # still one request per file
+    assert len(volumes) == 1
 
 
 def test_the_o_window_can_search_comic_vine_and_a_picked_volume_is_used_like_an_address(env, monkeypatch):
@@ -2101,7 +2141,10 @@ def test_a_comic_vine_volume_found_from_o_goes_to_every_marked_file_not_only_the
         await settle(app, pilot)
         await pilot.press("w")
         await pilot.pause(0.3)
-        seen["question"] = str(app.screen.query_one("#ask Label").render())
+        screen = app.screen
+        table = screen.query_one("DataTable")
+        seen["question"] = " ".join([str(screen.query_one("#volumes Label").render()), str(screen.query_one("#volumesnote").render())]
+                                    + [str(table.get_cell_at(Coordinate(i, 1))) for i in range(len(screen.rows))])
 
     drive(db, script)
     assert len(read) == 1 and len(read[0]) == 3  # one reading for the three marked files
